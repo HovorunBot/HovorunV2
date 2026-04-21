@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher
 from cache import CacheService
 from config import settings
 from controllers.bot import router
+from database import DatabaseService
 from logger_conf import get_logger
 from message_service import MessageService
 
@@ -18,6 +19,7 @@ async def main() -> None:
     logger.info("Starting application...")
 
     cache_service = CacheService()
+    database_service = DatabaseService()
     message_service = MessageService(cache_service)
     logger.info("Services initialized")
 
@@ -26,7 +28,7 @@ async def main() -> None:
     dp.include_router(router)
 
     logger.info("Bot started and polling...")
-    await dp.start_polling(bot, message_service=message_service)
+    await dp.start_polling(bot, message_service=message_service, database_service=database_service)
 
 
 if __name__ == "__main__":

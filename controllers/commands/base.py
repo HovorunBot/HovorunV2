@@ -9,7 +9,7 @@ from logger_conf import get_logger
 
 logger = get_logger(__name__)
 
-_COMMANDS: list["BaseCommand"] = []
+_COMMANDS: dict[str, "BaseCommand"] = {}
 
 
 class BaseCommand(ABC):
@@ -46,10 +46,10 @@ def register_command[TBaseCommand: BaseCommand](command_class: type[TBaseCommand
         The registered command class.
     """
     logger.info("Registering command: %s", command_class.__name__)
-    _COMMANDS.append(command_class())
+    _COMMANDS[command_class.__name__] = command_class()
     return command_class
 
 
-def get_commands() -> list[BaseCommand]:
+def get_commands() -> dict[str, BaseCommand]:
     """Return all registered command instances."""
     return _COMMANDS
