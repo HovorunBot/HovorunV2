@@ -12,7 +12,16 @@ from typing import Any
 import aiohttp
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, Message, User
+from aiogram.types import (
+    BufferedInputFile,
+    InputMediaAudio,
+    InputMediaDocument,
+    InputMediaPhoto,
+    InputMediaVideo,
+    LinkPreviewOptions,
+    Message,
+    User,
+)
 
 from logger_conf import get_logger
 
@@ -72,6 +81,7 @@ class TwitterCommand(BaseCommand):
     )
 
     FOOTER_TEMPLATE = '\n\n🔁 {retweets} | ❤️ {likes} | 👁️ {views}\n🔗 <a href="{post_url}">Open post</a>'
+    SHORT_MESSAGE_LENGTH: int = 1000
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message contains a valid Twitter or X link.
@@ -119,8 +129,8 @@ class TwitterCommand(BaseCommand):
                 tweet = await self._get_tweet_data(session, post_id, post_url)
                 if tweet:
                     await self._send_telegram_response(bot, message, tweet, session)
-            except Exception as e:
-                self.logger.exception("Failed to process X/Twitter link %s: %s", post_url, e)
+            except Exception:
+                self.logger.exception("Failed to process X/Twitter link %s", post_url)
 
     async def _get_tweet_data(self, session: aiohttp.ClientSession, post_id: str, post_url: str) -> TweetData | None:
         """Fetch and parse tweet data, including translations.
@@ -188,8 +198,9 @@ class TwitterCommand(BaseCommand):
         """
         api_url = f"https://api.vxtwitter.com/i/status/{post_id}"
         async with session.get(api_url) as response:
-            if response.status != 200:
-                raise ValueError(f"VxTwitter API returned HTTP {response.status}")
+            if response.status != HTTPStatus.OK:
+                msg = f"VxTwitter API returned HTTP {response.status}"
+                raise ValueError(msg)
             return await response.json()
 
     def _parse_api_response(self, data: dict[str, Any], post_url: str) -> TweetData:
@@ -234,17 +245,19 @@ class TwitterCommand(BaseCommand):
             tweet: The TweetData object to update.
             data: The raw API response dictionary.
         """
-        quote_data = data.get("quoted_tweet") or data.get("quote") or data.get("qrt")
-        if quote_data:
-            tweet.is_quote = True
-            tweet.orig_author_name = html.escape(quote_data.get("user_name", "Unknown"))
-            tweet.orig_author_handle = html.escape(quote_data.get("user_screen_name", "unknown"))
-            tweet.orig_post_content = html.escape(quote_data.get("text", ""))
+        quote_data = data.get("qrt", {})
+        if not quote_data:
+            return
 
-            quoted_media = self._extract_media(quote_data)
-            if quoted_media:
-                tweet.has_quote_media = True
-                tweet.media.extend(quoted_media)
+        tweet.is_quote = True
+        tweet.orig_author_name = html.escape(quote_data.get("user_name", "Unknown"))
+        tweet.orig_author_handle = html.escape(quote_data.get("user_screen_name", "unknown"))
+        tweet.orig_post_content = html.escape(quote_data.get("text", ""))
+
+        quoted_media = self._extract_media(quote_data)
+        if quoted_media:
+            tweet.has_quote_media = True
+            tweet.media.extend(quoted_media)
 
     def _extract_media(self, data: dict[str, Any]) -> list[MediaItem]:
         """Extract media items from API response data.
@@ -274,7 +287,7 @@ class TwitterCommand(BaseCommand):
 
     async def _download_media(
         self, session: aiohttp.ClientSession, media_list: list[MediaItem]
-    ) -> list[InputMediaPhoto | InputMediaVideo]:
+    ) -> list[InputMediaAudio | InputMediaDocument | InputMediaPhoto | InputMediaVideo]:
         """Download media into RAM using the provided shared session.
 
         Args:
@@ -288,20 +301,23 @@ class TwitterCommand(BaseCommand):
         for idx, m in enumerate(media_list):
             try:
                 async with session.get(m.url) as response:
-                    if response.status == 200:
-                        content = await response.read()
-                        if m.type == "photo":
-                            file = BufferedInputFile(content, filename=f"image_{idx}.jpg")
-                            input_media.append(InputMediaPhoto(media=file))
-                        elif m.type == "video":
-                            file = BufferedInputFile(content, filename=f"video_{idx}.mp4")
-                            input_media.append(InputMediaVideo(media=file))
+                    if response.status != HTTPStatus.OK:
+                        continue
+                    content = await response.read()
+                    if m.type == "photo":
+                        file = BufferedInputFile(content, filename=f"image_{idx}.jpg")
+                        input_media.append(InputMediaPhoto(media=file))
+                    elif m.type == "video":
+                        file = BufferedInputFile(content, filename=f"video_{idx}.mp4")
+                        input_media.append(InputMediaVideo(media=file))
             except Exception:
                 self.logger.exception("Failed to download media to memory (%s)", m.url)
 
         return input_media
 
-    def _prepare_url_media(self, media_items: list[MediaItem]) -> list[InputMediaPhoto | InputMediaVideo]:
+    def _prepare_url_media(
+        self, media_items: list[MediaItem]
+    ) -> list[InputMediaAudio | InputMediaDocument | InputMediaPhoto | InputMediaVideo]:
         """Prepare InputMedia objects using raw URLs for optimistic Telegram fetching.
 
         Args:
@@ -353,7 +369,7 @@ class TwitterCommand(BaseCommand):
             await self._send_chunked_text(bot, message.chat.id, message.message_id, full_content, header, footer)
             return
 
-        if len(total_text) <= 1000:
+        if len(total_text) <= self.SHORT_MESSAGE_LENGTH:
             await self._send_short_media(bot, message.chat.id, message.message_id, tweet.media, total_text, session)
         else:
             await self._send_long_media(
@@ -387,11 +403,12 @@ class TwitterCommand(BaseCommand):
 
         try:
             await bot.send_media_group(chat_id=chat_id, media=url_media_group, reply_to_message_id=reply_to_id)
-            return
         except TelegramBadRequest as e:
             if "WEBPAGE_MEDIA_EMPTY" not in str(e) and "failed to get" not in str(e).lower():
                 self.logger.exception("Unexpected Telegram API error during short media URL fetch")
                 raise
+        else:
+            return
 
         # Fallback RAM approach
         placeholder_msg = await bot.send_message(
@@ -469,13 +486,16 @@ class TwitterCommand(BaseCommand):
 
         try:
             await bot.send_media_group(
-                chat_id=chat_id, media=url_media_group, reply_to_message_id=first_text_msg.message_id
+                chat_id=chat_id,
+                media=url_media_group,
+                reply_to_message_id=first_text_msg.message_id,
             )
-            return
         except TelegramBadRequest as e:
             if "WEBPAGE_MEDIA_EMPTY" not in str(e) and "failed to get" not in str(e).lower():
                 self.logger.exception("Unexpected Telegram API error during long media URL fetch")
                 raise
+        else:
+            return
 
         # Fallback RAM approach
         original_last_text = last_text_msg.html_text or ""

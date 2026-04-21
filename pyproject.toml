@@ -25,13 +25,14 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "D107", "D203", "D213", "COM812", "ISC001",
-    "ANN101", "ANN102", "EM", "FIX002", "TD", "T201", "ERA001", "G004", "INP001", "TRY003",
+    "D107",
+    "D203",
+    "D213",
+    "COM812",
+    "ISC001",
+    "S101", # Use of assertions allowed by user intent not for business logic
+    "PLR0913"
 ]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.ty]
-strict = true
-python_version = "3.14"

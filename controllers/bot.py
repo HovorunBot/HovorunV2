@@ -4,7 +4,7 @@ from aiogram import Bot, Router, types
 
 from controllers.commands import get_commands
 from logger_conf import get_logger
-from services.message import MessageService
+from message_service import MessageService
 
 logger = get_logger(__name__)
 router = Router()

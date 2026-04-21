@@ -14,7 +14,7 @@ def twitter_command() -> TwitterCommand:
     return TwitterCommand()
 
 
-def create_mock_message(text: str | None, is_bot: bool = False) -> Message:
+def create_mock_message(text: str | None, is_bot: bool = False) -> Message:  # noqa: FBT001, FBT002
     """Create a mock Telegram message."""
     message = MagicMock(spec=Message)
     message.text = text
@@ -41,7 +41,7 @@ def create_mock_message(text: str | None, is_bot: bool = False) -> Message:
         (None, False),
     ],
 )
-async def test_is_triggered(twitter_command: TwitterCommand, text: str | None, expected: bool) -> None:
+async def test_is_triggered(twitter_command: TwitterCommand, text: str | None, expected: bool) -> None:  # noqa: FBT001
     """Test the is_triggered method with various inputs."""
     message = create_mock_message(text)
     assert await twitter_command.is_triggered(message) == expected

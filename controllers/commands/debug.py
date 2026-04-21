@@ -18,7 +18,7 @@ class DebugCommand(BaseCommand):
         """Check if message starts with /debug."""
         return bool(message.text and message.text.startswith("/debug"))
 
-    async def handle(self, message: Message, _bot: Bot) -> None:
+    async def handle(self, message: Message, bot: Bot) -> None:  # noqa: ARG002
         """Handle debug command."""
         logger.info("Executing debug command for user %s", message.from_user.id if message.from_user else "unknown")
         await message.answer(f"It works. Your message: {message.text}.")
