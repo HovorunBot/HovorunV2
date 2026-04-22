@@ -1,26 +1,32 @@
 """Tests for the AllowBotCommand class."""
 
-from unittest.mock import AsyncMock, MagicMock
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
 
-from hovorunv2.config import settings
-from hovorunv2.controllers.commands.whitelist import AllowBotCommand
-from hovorunv2.database import DatabaseService
+from hovorunv2.infrastructure.config import settings
+from hovorunv2.interface.telegram.commands.whitelist import AllowBotCommand
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.fixture
-def mock_db() -> MagicMock:
-    """Fixture to provide a mocked DatabaseService."""
-    return MagicMock(spec=DatabaseService)
+def mock_container() -> Iterator[MagicMock]:
+    """Fixture to mock the container and its services."""
+    with patch("hovorunv2.interface.telegram.commands.whitelist.container") as mock:
+        mock.whitelist_service = MagicMock()
+        mock.whitelist_service.add_to_whitelist = AsyncMock()
+        yield mock
 
 
 @pytest.fixture
-def whitelist_command(mock_db: MagicMock) -> AllowBotCommand:
-    """Fixture to provide an AllowBotCommand instance with mocked DB."""
-    return AllowBotCommand(database_service=mock_db)
+def whitelist_command() -> AllowBotCommand:
+    """Fixture to provide an AllowBotCommand instance."""
+    return AllowBotCommand()
 
 
 def create_mock_message(text: str | None, user_id: int = 123, chat_id: int = 456) -> Message:
@@ -54,7 +60,7 @@ async def test_is_triggered(whitelist_command: AllowBotCommand, text: str | None
 
 
 @pytest.mark.asyncio
-async def test_handle_authorized(whitelist_command: AllowBotCommand, mock_db: MagicMock) -> None:
+async def test_handle_authorized(whitelist_command: AllowBotCommand, mock_container: MagicMock) -> None:
     """Test handling by an authorized user."""
     admin_id = settings.admin_ids[0]
     chat_id = 789
@@ -63,12 +69,12 @@ async def test_handle_authorized(whitelist_command: AllowBotCommand, mock_db: Ma
 
     await whitelist_command.handle(message, bot)
 
-    mock_db.add_to_whitelist.assert_called_once_with(chat_id)
+    mock_container.whitelist_service.add_to_whitelist.assert_called_once_with(chat_id)
     message.answer.assert_called_once_with("Bot is now allowed in this chat.")  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
-async def test_handle_unauthorized(whitelist_command: AllowBotCommand, mock_db: MagicMock) -> None:
+async def test_handle_unauthorized(whitelist_command: AllowBotCommand, mock_container: MagicMock) -> None:
     """Test handling by an unauthorized user."""
     user_id = 999  # Not in admin_ids
     chat_id = 789
@@ -77,5 +83,5 @@ async def test_handle_unauthorized(whitelist_command: AllowBotCommand, mock_db: 
 
     await whitelist_command.handle(message, bot)
 
-    mock_db.add_to_whitelist.assert_not_called()
+    mock_container.whitelist_service.add_to_whitelist.assert_not_called()
     message.answer.assert_not_called()  # ty: ignore[unresolved-attribute]

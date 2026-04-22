@@ -4,10 +4,9 @@ from typing import Any
 
 from diskcache_rs import Cache
 
-from hovorunv2.logger_conf import get_logger
+from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
-
 
 
 class CacheService:

@@ -1,15 +1,17 @@
 """Base command abstraction."""
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-from aiogram import Bot
-from aiogram.types import Message
+from hovorunv2.infrastructure.logger import get_logger
 
-from hovorunv2.logger_conf import get_logger
+if TYPE_CHECKING:
+    from aiogram import Bot
+    from aiogram.types import Message
 
 logger = get_logger(__name__)
 
-_COMMANDS: dict[str, "BaseCommand"] = {}
+_COMMANDS: dict[str, BaseCommand] = {}
 
 
 class BaseCommand(ABC):

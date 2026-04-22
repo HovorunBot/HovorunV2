@@ -2,20 +2,18 @@
 
 from aiogram import Bot, Router, types
 
-from hovorunv2.controllers.commands import get_commands
-from hovorunv2.controllers.commands.whitelist import AllowBotCommand
-from hovorunv2.database import DatabaseService
-from hovorunv2.logger_conf import get_logger
-from hovorunv2.message_service import MessageService
+from hovorunv2.infrastructure.container import container
+from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.interface.telegram.commands import get_commands
+from hovorunv2.interface.telegram.commands.debug import DebugCommand
+from hovorunv2.interface.telegram.commands.whitelist import AllowBotCommand
 
 logger = get_logger(__name__)
 router = Router()
 
 
 @router.message()
-async def handle_message(
-    message: types.Message, bot: Bot, message_service: MessageService, database_service: DatabaseService
-) -> None:
+async def handle_message(message: types.Message, bot: Bot) -> None:
     """Handle incoming telegram messages by checking registered commands."""
     logger.debug(
         "Received message from %s (ID: %d) in chat %d",
@@ -23,15 +21,23 @@ async def handle_message(
         message.message_id,
         message.chat.id,
     )
-    message_service.cache_message(message)
 
-    is_whitelisted = database_service.is_chat_whitelisted(message.chat.id)
+    if not container.message_service or not container.whitelist_service:
+        logger.error("Container not initialized")
+        return
+
+    container.message_service.cache_message(message)
+
+    is_whitelisted = await container.whitelist_service.is_whitelisted(message.chat.id)
     commands = get_commands()
 
     # Whitelist command (AllowBotCommand) should always be processed if triggered
     # Other commands should only be processed if the chat is whitelisted
-    allowed_commands = [commands[AllowBotCommand.__name__]] if not is_whitelisted else commands.values()
-    logger.info(command.__class__.__name__ for command in allowed_commands)
+    allowed_commands = (
+        [commands[AllowBotCommand.__name__], commands[DebugCommand.__name__]]
+        if not is_whitelisted
+        else commands.values()
+    )
 
     for command in allowed_commands:
         if await command.is_triggered(message):

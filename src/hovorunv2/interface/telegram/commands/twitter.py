@@ -7,10 +7,9 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from http import HTTPStatus
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
-from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     BufferedInputFile,
@@ -23,9 +22,12 @@ from aiogram.types import (
     User,
 )
 
-from hovorunv2.logger_conf import get_logger
+from hovorunv2.infrastructure.logger import get_logger
 
 from .base import BaseCommand, register_command
+
+if TYPE_CHECKING:
+    from aiogram import Bot
 
 
 @dataclass

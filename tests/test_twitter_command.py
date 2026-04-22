@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from aiogram.types import Message, User
 
-from hovorunv2.controllers.commands.twitter import TwitterCommand
+from hovorunv2.interface.telegram.commands.twitter import TwitterCommand
 
 
 @pytest.fixture

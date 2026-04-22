@@ -1,11 +1,14 @@
 """Debug command module."""
 
-from aiogram import Bot
-from aiogram.types import Message
+from typing import TYPE_CHECKING
 
-from hovorunv2.logger_conf import get_logger
+from hovorunv2.infrastructure.logger import get_logger
 
 from .base import BaseCommand, register_command
+
+if TYPE_CHECKING:
+    from aiogram import Bot
+    from aiogram.types import Message
 
 logger = get_logger(__name__)
 

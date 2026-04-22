@@ -1,8 +1,12 @@
 """Configuration settings for bot."""
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from hovorunv2.logger_conf import get_logger
+from hovorunv2.infrastructure.logger import get_logger
+
+DOT_ENV_DIR = Path(__file__).parent.parent.parent.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -20,7 +24,7 @@ class Settings(BaseSettings):
     db_path: str
     openrouter_api_key: str
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=DOT_ENV_DIR, extra="ignore")
 
 
 logger = get_logger(__name__)
