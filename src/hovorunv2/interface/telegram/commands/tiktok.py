@@ -46,24 +46,6 @@ class TikTokCommand(RichMediaCommand):
 
             video_data = data["data"]
             author = video_data.get("author", {})
-            music = video_data.get("music_info", {})
-
-            author_nickname = author.get("nickname", "")
-            music_author = music.get("author", "")
-            music_title = music.get("title", "")
-            music_url = music.get("play", "")
-
-            # Filter out generic soundtracks (e.g., "Original Sound - [User]")
-            is_original = any(x in music_title.lower() for x in ["original sound", "оригінальний звук", "звук від"])
-            is_self_audio = is_original and (music_author == author_nickname or not music_author)
-
-            music_section = ""
-            if music_title and not is_self_audio:
-                raw_music_text = f"{music_title} - {music_author}" if music_author else music_title
-                music_text = html.escape(raw_music_text)
-                music_section = (
-                    f'\n\n🎵 <a href="{music_url}">{music_text}</a>' if music_url else f"\n\n🎵 {music_text}"
-                )
 
             raw_description = video_data.get("title", "")
             clean_desc = re.sub(r"#\w+", "", raw_description)
@@ -84,14 +66,16 @@ class TikTokCommand(RichMediaCommand):
                 f'🔗 <a href="{url}">Original video</a>'
             )
 
+            title = html.escape(video_data.get("title", "No Title").split("#")[0].strip())
+            content = f"<b>{title}</b>"
+            if desc and desc != title:
+                content += f"\n<i>{desc}</i>"
+
             return RichMediaPayload(
                 author_name=html.escape(author.get("nickname", "Unknown")),
                 author_handle=html.escape(author.get("unique_id", "unknown")),
                 author_url=f"https://www.tiktok.com/@{author.get('unique_id', 'unknown')}",
-                content=(
-                    f"<b>{html.escape(video_data.get('title', 'No Title').split('#')[0].strip())}</b>\n"
-                    f"<i>{desc}</i>{music_section}"
-                ),
+                content=content,
                 footer_text=footer,
                 original_url=url,
                 media_urls=media_urls,
