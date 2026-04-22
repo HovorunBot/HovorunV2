@@ -53,7 +53,7 @@ def create_mock_message(text: str | None, user_id: int = 123, chat_id: int = 456
         (None, False),
     ],
 )
-async def test_is_triggered(whitelist_command: AllowBotCommand, text: str | None, expected: bool) -> None:  # noqa: FBT001
+async def test_is_triggered(whitelist_command: AllowBotCommand, text: str | None, expected: bool) -> None:
     """Test the is_triggered method."""
     message = create_mock_message(text)
     assert await whitelist_command.is_triggered(message) == expected

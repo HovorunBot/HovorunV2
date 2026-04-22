@@ -39,6 +39,8 @@ This project uses a `Makefile` to automate tool installation and application lif
 - **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) configuration (`ALL`). Target version `py314`.
 - **Docstrings:** Google convention.
 - **Type Hints:** Mandatory for all function signatures.
+- **HTTP Status Codes:** NEVER use status code literals (e.g., 200, 404). ALWAYS use the `HTTPStatus` enum from the `http` library.
+- **Magic Numbers:** NEVER use "magic numbers" (unnamed numerical literals) in business logic. ALWAYS define significant values as named constants or enums at the class or module level to improve clarity and maintainability.
 
 ## Key Files
 - `src/hovorunv2/__main__.py`: Application entry point.

@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from hovorunv2.application.services.media_service import MediaService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.services.whitelist_service import WhitelistService
@@ -21,6 +22,7 @@ class Container:
         self.message_service = None
         self.whitelist_service = None
         self.translation_service = None
+        self.media_service = None
         self._session = None
 
     async def init(self) -> None:
@@ -31,6 +33,7 @@ class Container:
         self.cache_service = CacheService()
         self.message_service = MessageService(self.cache_service)
         self.translation_service = TranslationService()
+        self.media_service = MediaService()
 
         # For simple use cases, we keep one session per container instance for now
         # or services can open their own via session_maker.

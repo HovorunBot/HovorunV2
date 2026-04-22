@@ -67,5 +67,8 @@ ignore = [
     "D104"
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["FBT"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"

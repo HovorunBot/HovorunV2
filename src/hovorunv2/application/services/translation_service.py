@@ -56,7 +56,10 @@ class TranslationService:
             async with session.get(url, params=params) as resp:
                 if resp.status == HTTPStatus.OK:
                     data = await resp.json()
-                    src_lang = data[2]
+                    # Google Translate API structure for 'gtx' client:
+                    # [ [ [target, source, ...], ... ], None, source_lang, ... ]
+                    source_lang_index = 2
+                    src_lang = data[source_lang_index]
 
                     if src_lang not in self._ignored_langs:
                         return "".join([sentence[0] for sentence in data[0] if sentence[0]])

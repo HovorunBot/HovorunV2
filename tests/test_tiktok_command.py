@@ -38,7 +38,7 @@ def create_mock_message(text: str | None, is_bot: bool = False) -> Message:
         (None, False),
     ],
 )
-async def test_is_triggered(tiktok_command: TikTokCommand, text: str | None, expected: bool) -> None:  # noqa: FBT001
+async def test_is_triggered(tiktok_command: TikTokCommand, text: str | None, expected: bool) -> None:
     """Test the is_triggered method."""
     message = create_mock_message(text)
     assert await tiktok_command.is_triggered(message) == expected

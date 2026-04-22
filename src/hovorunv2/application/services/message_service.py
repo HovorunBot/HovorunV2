@@ -15,10 +15,12 @@ logger = get_logger(__name__)
 class MessageService:
     """Service for handling and caching Telegram messages."""
 
+    CACHE_TTL_SECONDS: int = 60 * 60 * 24  # 24 hours
+
     def __init__(self, cache_service: CacheService) -> None:
         """Initialize message service with a cache service."""
         self.cache = cache_service
-        self.ttl = 60 * 60 * 24  # 24 hours
+        self.ttl = self.CACHE_TTL_SECONDS
         logger.debug("MessageService initialized with TTL: %d seconds", self.ttl)
 
     def cache_message(self, message: types.Message) -> None:
