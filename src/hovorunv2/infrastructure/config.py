@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     admin_ids: list[int]
     db_path: str
     openrouter_api_key: str
+    translation_target_lang: str = "uk"
+    translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
 
     model_config = SettingsConfigDict(env_file=DOT_ENV_DIR, extra="ignore")
 

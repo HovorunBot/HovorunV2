@@ -23,11 +23,16 @@ To use the bot, you must run your own instance following the instructions below.
 
 ## ✨ Features
 
-- **🐦 Twitter (X) Integration**: Automatically detects Twitter/X links and provides rich previews, including:
+- **🐦 Twitter (X) Integration**: Automatically detects Twitter/X links and provides rich previews:
     - Full tweet text and media (photos/videos) in high quality.
     - Support for quoted tweets.
     - Automatic translation to Ukrainian for foreign-language posts.
     - Engagement metrics (likes, retweets, views).
+- **🎬 TikTok Integration**: Seamlessly share TikTok videos and slideshows:
+    - Automatically extracts and attaches the original video content.
+    - Full support for image-based slideshows.
+    - Rich captions including author, video title, and music information.
+    - Automatic translation of video descriptions.
 - **🛡️ Chat Whitelisting**: Secure your bot by restricting it to specific chats. Admins can easily allow or disallow the
   bot in any group.
 - **🛠️ Debug Utilities**: Built-in tools for admins to check chat IDs and bot status on the fly.
@@ -84,8 +89,8 @@ The setup process automatically handles installing [uv](https://astral.sh/uv/) a
 
 HovorunV2 follows the **Onion Architecture** to ensure the code remains modular and maintainable:
 
-- **Domain**: Pure business logic and database models (SQLAlchemy 2.0).
-- **Application**: Service layer for orchestration.
+- **Domain**: Pure business logic and modern SQLAlchemy 2.0 database models.
+- **Application**: Service layer for orchestration (Translation, Whitelisting, Caching).
 - **Infrastructure**: Database repositories, disk caching, and configuration.
 - **Interface**: Telegram bot handlers and command registration.
 
