@@ -6,9 +6,9 @@ import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
 
-from config import settings
-from controllers.commands.whitelist import AllowBotCommand
-from database import DatabaseService
+from hovorunv2.config import settings
+from hovorunv2.controllers.commands.whitelist import AllowBotCommand
+from hovorunv2.database import DatabaseService
 
 
 @pytest.fixture

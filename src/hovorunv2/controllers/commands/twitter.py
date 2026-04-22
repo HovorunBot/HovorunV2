@@ -23,7 +23,7 @@ from aiogram.types import (
     User,
 )
 
-from logger_conf import get_logger
+from hovorunv2.logger_conf import get_logger
 
 from .base import BaseCommand, register_command
 

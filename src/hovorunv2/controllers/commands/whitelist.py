@@ -3,9 +3,9 @@
 from aiogram import Bot
 from aiogram.types import Message
 
-from config import settings
-from database import DatabaseService
-from logger_conf import get_logger
+from hovorunv2.config import settings
+from hovorunv2.database import DatabaseService
+from hovorunv2.logger_conf import get_logger
 
 from .base import BaseCommand, register_command
 
@@ -16,8 +16,9 @@ logger = get_logger(__name__)
 class AllowBotCommand(BaseCommand):
     """Command to allow bot in a chat."""
 
-    def __init__(self) -> None:
-        self.db = DatabaseService()
+    def __init__(self, database_service: DatabaseService | None = None) -> None:
+        """Initialize command with optional database service."""
+        self.db = database_service or DatabaseService()
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message is /allow_bot."""

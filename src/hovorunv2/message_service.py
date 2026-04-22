@@ -2,8 +2,8 @@
 
 from aiogram import types
 
-from cache import CacheService
-from logger_conf import get_logger
+from hovorunv2.cache import CacheService
+from hovorunv2.logger_conf import get_logger
 
 logger = get_logger(__name__)
 

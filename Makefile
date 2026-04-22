@@ -5,7 +5,7 @@ export PATH := $(HOME)/.local/bin:$(HOME)/.cargo/bin:$(PATH)
 
 REPO_URL = https://github.com/HovorunBot/HovorunV2
 
-.PHONY: all setup run run-daemon update help install-uv install-python install-git checkout
+.PHONY: all setup run run-daemon stop update help install-uv install-python install-git checkout
 
 # Default target: setup and run the app
 all: setup run
@@ -14,8 +14,9 @@ help:
 	@echo "Available commands:"
 	@echo "  make setup      - Install tools, checkout/update code, and sync dependencies"
 	@echo "  make update     - Pull latest changes from main branch and sync"
-	@echo "  make run        - Start the application using 'uv run main.py'"
+	@echo "  make run        - Start the application using 'uv run hovorunv2'"
 	@echo "  make run-daemon - Start the application in the background (daemon)"
+	@echo "  make stop       - Stop the daemonized application"
 	@echo "  make all        - Perform full setup and launch the application"
 
 # 1. Check whether or not uv is installed. If not, install it.
@@ -85,9 +86,14 @@ setup: install-python checkout
 # 7. Run the application in foreground.
 run: setup
 	@echo "Starting HovorunBot..."
-	@uv run main.py
+	@uv run hovorunv2
 
 # 8. Run the application as a daemon (in background).
 run-daemon: setup
 	@echo "Starting HovorunBot in background..."
-	@nohup uv run main.py > hovorun.log 2>&1 & echo "Daemon started! Logs are written to hovorun.log. PID: $$!"
+	@nohup uv run hovorunv2 > hovorun.log 2>&1 & echo "Daemon started! Logs are written to hovorun.log. PID: $$!"
+
+# 9. Stop the application.
+stop:
+	@echo "Stopping HovorunBot..."
+	@pkill -f "uv run hovorunv2" || echo "Process not found."

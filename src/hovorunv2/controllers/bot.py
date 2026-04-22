@@ -2,11 +2,11 @@
 
 from aiogram import Bot, Router, types
 
-from controllers.commands import get_commands
-from controllers.commands.whitelist import AllowBotCommand
-from database import DatabaseService
-from logger_conf import get_logger
-from message_service import MessageService
+from hovorunv2.controllers.commands import get_commands
+from hovorunv2.controllers.commands.whitelist import AllowBotCommand
+from hovorunv2.database import DatabaseService
+from hovorunv2.logger_conf import get_logger
+from hovorunv2.message_service import MessageService
 
 logger = get_logger(__name__)
 router = Router()

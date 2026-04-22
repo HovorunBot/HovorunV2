@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from aiogram import Bot
 from aiogram.types import Message
 
-from logger_conf import get_logger
+from hovorunv2.logger_conf import get_logger
 
 logger = get_logger(__name__)
 

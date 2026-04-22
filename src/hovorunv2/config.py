@@ -2,7 +2,7 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from logger_conf import get_logger
+from hovorunv2.logger_conf import get_logger
 
 
 class Settings(BaseSettings):

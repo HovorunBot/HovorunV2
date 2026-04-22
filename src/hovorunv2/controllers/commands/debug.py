@@ -3,7 +3,7 @@
 from aiogram import Bot
 from aiogram.types import Message
 
-from logger_conf import get_logger
+from hovorunv2.logger_conf import get_logger
 
 from .base import BaseCommand, register_command
 

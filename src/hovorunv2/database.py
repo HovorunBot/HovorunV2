@@ -3,7 +3,7 @@
 import sqlite3
 from pathlib import Path
 
-from logger_conf import get_logger
+from hovorunv2.logger_conf import get_logger
 
 logger = get_logger(__name__)
 
