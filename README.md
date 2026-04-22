@@ -1,88 +1,116 @@
 # HovorunV2
-Second version of best helper bot.
 
-## Getting Started
+**The ultimate wingman for your Telegram group chats — making them smarter, faster, and way more fun.**
 
-This project uses a `Makefile` to automate setup and execution.
+HovorunV2 is a feature-rich Telegram chatbot designed to level up your group conversations with smart utilities and
+seamless integrations.
+
+---
+
+## 🚀 Project Status: Alpha
+
+HovorunV2 is currently in its **Alpha** stage. I'm actively building out core features and refining the experience.
+
+### ⚠️ Current Hosting Model
+
+At this stage, **HovorunV2 is self-hosted only.**
+To use the bot, you must run your own instance following the instructions below.
+
+> **Future Note:** I am planning to launch an **official public server** in the future, which will allow you to simply
+> add the bot to your chats without any technical setup. Stay tuned!
+
+---
+
+## ✨ Features
+
+- **🐦 Twitter (X) Integration**: Automatically detects Twitter/X links and provides rich previews, including:
+    - Full tweet text and media (photos/videos) in high quality.
+    - Support for quoted tweets.
+    - Automatic translation to Ukrainian for foreign-language posts.
+    - Engagement metrics (likes, retweets, views).
+- **🛡️ Chat Whitelisting**: Secure your bot by restricting it to specific chats. Admins can easily allow or disallow the
+  bot in any group.
+- **🛠️ Debug Utilities**: Built-in tools for admins to check chat IDs and bot status on the fly.
+- **More coming soon!** I'm working on more integrations to make your chats even better.
+
+---
+
+## 🛠️ Getting Started
+
+This project uses a `Makefile` to automate everything from tool installation to execution.
 
 ### Prerequisites
-- `make`
-- `git` (The Makefile will attempt to install it on macOS via Homebrew or on Debian/Ubuntu via apt if missing).
 
-The `Makefile` will automatically handle the installation of `uv` (package manager) and Python 3.14 if they are missing.
+- `make`
+- `git`
+
+The setup process automatically handles installing [uv](https://astral.sh/uv/) and Python 3.14.
 
 ### Quick Start
 
-You can get the application in two ways:
-
-1. **Via Git Clone**:
+1. **Clone and Setup**:
    ```bash
    git clone https://github.com/HovorunBot/HovorunV2.git
    cd HovorunV2
-   make
-   ```
-
-2. **Via Standalone Makefile**:
-   If you only have the `Makefile`, place it in an empty directory and run:
-   ```bash
-   make
-   ```
-   The `Makefile` will automatically initialize the repository and download the rest of the code.
-
-### Manual Setup
-
-1. **Initialize Environment**: Install `uv`, Python 3.14, and project dependencies.
-   ```bash
    make setup
    ```
 
-2. **Configure Secrets**: Open the newly created `.env` file and provide your `BOT_TOKEN`.
+2. **Configure Secrets**:
+   Open the generated `.env` file and add your Telegram Bot Token:
    ```bash
-   # .env
    BOT_TOKEN=your_telegram_bot_token_here
    ```
 
-3. **Start the Bot**:
+3. **Launch**:
    ```bash
    make run
    ```
 
-### Available Commands
+---
 
-- `make setup`: Install tools, checkout or update the codebase from the repository, and synchronize dependencies. It also creates a `.env` file from `example.env` if it's missing.
-- `make run`: Starts the application using `uv run main.py`.
-- `make run-daemon`: Starts the application in the background (daemon mode) and logs to `hovorun.log`.
-- `make update`: Pulls the latest changes from the `main` branch and synchronizes dependencies.
-- `make all` (Default): Performs `setup` and then `run`.
-- `make help`: Shows the list of available commands.
+## 📖 Available Commands
 
-### Development
+| Command           | Description                                                  |
+|-------------------|--------------------------------------------------------------|
+| `make setup`      | Installs tools, clones/updates code, and syncs dependencies. |
+| `make run`        | Starts the bot in the foreground.                            |
+| `make run-daemon` | Starts the bot in the background (logs to `hovorun.log`).    |
+| `make stop`       | Gracefully stops the background process.                     |
+| `make update`     | Pulls the latest changes and synchronizes your environment.  |
 
-To run tests:
+---
+
+## 🏗️ Architecture (For Developers)
+
+HovorunV2 follows the **Onion Architecture** to ensure the code remains modular and maintainable:
+
+- **Domain**: Pure business logic and database models (SQLAlchemy 2.0).
+- **Application**: Service layer for orchestration.
+- **Infrastructure**: Database repositories, disk caching, and configuration.
+- **Interface**: Telegram bot handlers and command registration.
+
+---
+
+## 🧪 Development
+
+**Run Tests**:
+
 ```bash
-PYTHONPATH=. uv run pytest
+PYTHONPATH=src uv run pytest
 ```
 
-### Tips & Tricks
+**Linting**:
 
-#### How to kill a process on macOS
-If you need to stop the bot and `Ctrl+C` doesn't work, or if it's running in the background:
+```bash
+uv run ruff check .
+```
 
-1. **Find and kill by name**:
-   ```bash
-   pkill -f main.py
-   ```
-   or
-   ```bash
-   killall python3.14
-   ```
+---
 
-2. **Find PID and kill**:
-   ```bash
-   ps aux | grep main.py
-   # Find the PID in the second column
-   kill -9 <PID>
-   ```
+## 📄 License
 
-3. **Using Activity Monitor**:
-   Open **Activity Monitor.app**, search for `python`, select the process, and click the **X** button at the top.
+HovorunV2 is released under the **BSD 3-Clause License**. See the [LICENSE](LICENSE) file for details.
+
+---
+
+**Developed with ❤️ by TwilightSparkle42**

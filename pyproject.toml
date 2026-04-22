@@ -1,6 +1,21 @@
 [project]
 name = "hovorunv2"
 version = "0.1.0"
+description = "The ultimate wingman for your Telegram group chats — making them smarter, faster, and way more fun."
+readme = "README.md"
+authors = [
+    { name = "TwilightSparkle42", email = "jaden.corr42@gmail.com" }
+]
+license = { text = "BSD-3-Clause" }
+keywords = ["telegram", "bot", "aiogram", "chat-management"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Communications :: Chat",
+]
 requires-python = ">=3.14"
 dependencies = [
     "aiogram",
@@ -12,6 +27,10 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "greenlet>=3.4.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/HovorunBot/HovorunV2"
+Issues = "https://github.com/HovorunBot/HovorunV2/issues"
 
 [project.scripts]
 hovorunv2 = "hovorunv2.__main__:main"
