@@ -5,7 +5,7 @@ export PATH := $(HOME)/.local/bin:$(HOME)/.cargo/bin:$(PATH)
 
 REPO_URL = https://github.com/HovorunBot/HovorunV2
 
-.PHONY: all setup run run-daemon stop update help install-uv install-python install-git checkout
+.PHONY: all setup run run-daemon stop update help install-uv install-python install-git checkout migrate
 
 # Default target: setup and run the app
 all: setup run
@@ -14,6 +14,7 @@ help:
 	@echo "Available commands:"
 	@echo "  make setup      - Install tools, checkout/update code, and sync dependencies"
 	@echo "  make update     - Pull latest changes from main branch and sync"
+	@echo "  make migrate    - Apply database migrations via alembic"
 	@echo "  make run        - Start the application using 'uv run hovorunv2'"
 	@echo "  make run-daemon - Start the application in the background (daemon)"
 	@echo "  make stop       - Stop the daemonized application"
@@ -69,6 +70,12 @@ checkout: install-git
 # 5. Get last version of main branch and sync.
 update: checkout
 	@uv sync
+	@$(MAKE) migrate
+
+# 5.1 Apply migrations.
+migrate:
+	@echo "Applying database migrations..."
+	@PYTHONPATH=src uv run alembic upgrade head
 
 # 6. Setup and sync dependencies.
 setup: install-python checkout
@@ -78,6 +85,7 @@ setup: install-python checkout
 		echo "No .env file detected. Creating from example.env..."; \
 		cp example.env .env 2>/dev/null || true; \
 	fi
+	@$(MAKE) migrate
 	@echo "------------------------------------------------------------"
 	@echo "Setup complete."
 	@echo "IMPORTANT: Please verify your secrets in the .env file!"

@@ -62,7 +62,9 @@ class MediaService:
         results = await asyncio.gather(*tasks)
         return [r for r in results if r is not None]
 
-    async def _perform_download(self, session: aiohttp.ClientSession, url: str, filename: str) -> BufferedInputFile | None:
+    async def _perform_download(
+        self, session: aiohttp.ClientSession, url: str, filename: str
+    ) -> BufferedInputFile | None:
         """Perform the actual network request."""
         try:
             async with session.get(url, timeout=self.DEFAULT_TIMEOUT_SECONDS) as resp:
@@ -74,4 +76,3 @@ class MediaService:
             logger.exception("Exception during media download: %s", url)
 
         return None
-

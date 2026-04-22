@@ -6,7 +6,6 @@ from aiogram import Bot, Dispatcher
 
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.container import container
-from hovorunv2.infrastructure.database.models.chat import Base
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.bot import router
 
@@ -20,11 +19,7 @@ async def run_bot() -> None:
     # Initialize container
     await container.init()
 
-    # Initialize database tables
-    assert container.engine is not None, "Database engine is not initialized"
-    async with container.engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database schema created")
+    logger.info("Services initialized")
 
     bot = Bot(token=settings.bot_token)
     dp = Dispatcher()

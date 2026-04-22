@@ -32,15 +32,13 @@ class Container:
 
         self.cache_service = CacheService()
         self.message_service = MessageService(self.cache_service)
-        self.translation_service = TranslationService()
         self.media_service = MediaService()
 
-        # For simple use cases, we keep one session per container instance for now
-        # or services can open their own via session_maker.
-        # Given current repo structure, repo needs a session.
+        # Repository needs a session
         self._session = self.session_maker()
         chat_repository = SQLAlchemyChatRepository(self._session)
         self.whitelist_service = WhitelistService(chat_repository)
+        self.translation_service = TranslationService(chat_repository)
 
 
 # Global instance

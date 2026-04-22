@@ -26,6 +26,8 @@ dependencies = [
     "sqlalchemy>=2.0.49",
     "aiosqlite>=0.22.1",
     "greenlet>=3.4.0",
+    "alembic>=1.18.4",
+    "emoji-country-flag>=2.1.0",
 ]
 
 [project.urls]
@@ -53,6 +55,7 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py314"
+exclude = ["alembic"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -64,11 +67,18 @@ ignore = [
     "ISC001",
     "S101", # Use of assertions allowed by user intent not for business logic
     "PLR0913",
-    "D104"
+    "D104",
+    "BLE001"
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["FBT"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ty.src]
+exclude = ["alembic/**"]

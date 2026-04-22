@@ -5,15 +5,13 @@ import re
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-import aiohttp
-
 from hovorunv2.infrastructure.container import container
 from hovorunv2.infrastructure.logger import get_logger
 
 from .base import RichMediaCommand, RichMediaPayload, register_command
 
 if TYPE_CHECKING:
-    from aiogram import Bot
+    import aiohttp
 
 logger = get_logger(__name__)
 
@@ -29,7 +27,9 @@ class TwitterCommand(RichMediaCommand):
             r"https?://(?:www\.)?(?:api\.)?(?:x\.com|twitter\.com)/(?:\w+/status/|2/tweets/)(?P<post_id>\d+)",
         )
 
-    async def _extract_payload(self, session: aiohttp.ClientSession, match: re.Match) -> RichMediaPayload | None:
+    async def _extract_payload(
+        self, session: aiohttp.ClientSession, match: re.Match, chat_id: int, platform: str
+    ) -> RichMediaPayload | None:
         """Fetch tweet data and construct a RichMediaPayload."""
         post_id = match.group("post_id")
         post_url = match.group(0)
@@ -40,7 +40,6 @@ class TwitterCommand(RichMediaCommand):
                 return None
             data = await response.json()
 
-
         raw_text = data.get("text", "")
         qrt_url = data.get("qrtURL")
         if qrt_url and qrt_url in raw_text:
@@ -50,18 +49,20 @@ class TwitterCommand(RichMediaCommand):
 
         # Translation
         if container.translation_service:
-            translated = await container.translation_service.translate_if_needed(content, session)
-            if translated:
-                content += f"\n\n🇺🇦 <b>Translated:</b>\n{html.escape(translated)}"
+            trans_res = await container.translation_service.translate_if_needed(content, chat_id, platform, session)
+            if trans_res:
+                content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
         # Handle Quote
         quote_data = data.get("qrt", {})
         if quote_data:
             orig_text = html.escape(quote_data.get("text", ""))
             if container.translation_service:
-                orig_trans = await container.translation_service.translate_if_needed(orig_text, session)
-                if orig_trans:
-                    orig_text += f"\n\n🇺🇦 <b>Translated:</b>\n{html.escape(orig_trans)}"
+                quote_trans_res = await container.translation_service.translate_if_needed(
+                    orig_text, chat_id, platform, session
+                )
+                if quote_trans_res:
+                    orig_text += f"\n\n{quote_trans_res.flag} <b>Translated:</b>\n{html.escape(quote_trans_res.text)}"
 
             quote_section = (
                 "<blockquote expandable>\n"

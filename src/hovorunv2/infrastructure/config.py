@@ -1,12 +1,16 @@
 """Configuration settings for bot."""
 
 from pathlib import Path
+from typing import Any
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from hovorunv2.infrastructure.logger import get_logger
 
-DOT_ENV_DIR = Path(__file__).parent.parent.parent.parent / ".env"
+# ROOT is 4 levels up from this file: src/hovorunv2/infrastructure/config.py
+ROOT_DIR = Path(__file__).parent.parent.parent.parent
+DOT_ENV_PATH = ROOT_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -26,10 +30,19 @@ class Settings(BaseSettings):
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
 
-    model_config = SettingsConfigDict(env_file=DOT_ENV_DIR, extra="ignore")
+    @field_validator("db_path", mode="after")
+    @classmethod
+    def make_db_path_absolute(cls, v: str) -> str:
+        """Ensure the database path is absolute relative to the project root."""
+        path = Path(v)
+        if not path.is_absolute():
+            return str((ROOT_DIR / path).absolute())
+        return str(path.absolute())
+
+    model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore")
 
 
 logger = get_logger(__name__)
-logger.info("Loading settings...")
+logger.info("Loading settings from %s...", DOT_ENV_PATH)
 settings = Settings()  # ty: ignore[missing-argument]
-logger.info("Settings loaded")
+logger.info("Settings loaded. DB Path: %s", settings.db_path)

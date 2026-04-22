@@ -1,7 +1,6 @@
 """Base classes and registration utilities for bot commands."""
 
 import html
-import re
 from abc import ABC, abstractmethod
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -15,6 +14,8 @@ from hovorunv2.infrastructure.container import container
 from hovorunv2.infrastructure.logger import get_logger
 
 if TYPE_CHECKING:
+    import re
+
     from aiogram import Bot
 
 logger = get_logger(__name__)
@@ -69,7 +70,7 @@ class RichMediaCommand(BaseCommand, ABC):
             return False
         return bool(self.pattern.search(message.text))
 
-    async def handle(self, message: Message, bot: "Bot") -> None:
+    async def handle(self, message: Message, bot: Bot) -> None:
         """Standardized handling of rich media links."""
         if not message.text or not message.from_user:
             return
@@ -78,24 +79,28 @@ class RichMediaCommand(BaseCommand, ABC):
         if not matches:
             return
 
-        logger.info("Processing %d link(s) for %s from user %s", len(matches), self.__class__.__name__, message.from_user.id)
+        logger.info(
+            "Processing %d link(s) for %s from user %s", len(matches), self.__class__.__name__, message.from_user.id
+        )
 
         timeout = aiohttp.ClientTimeout(total=self.API_TIMEOUT_SECONDS)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             for match in matches:
                 try:
-                    payload = await self._extract_payload(session, match)
+                    payload = await self._extract_payload(session, match, message.chat.id, "telegram")
                     if payload:
                         await self._send_rich_media(bot, message, payload, session)
                 except Exception:
                     logger.exception("Failed to process link: %s", match.group(0))
 
     @abstractmethod
-    async def _extract_payload(self, session: aiohttp.ClientSession, match: re.Match) -> RichMediaPayload | None:
+    async def _extract_payload(
+        self, session: aiohttp.ClientSession, match: re.Match, chat_id: int, platform: str
+    ) -> RichMediaPayload | None:
         """Extract rich media payload from a regex match."""
 
     async def _send_rich_media(
-        self, bot: "Bot", message: Message, payload: RichMediaPayload, session: aiohttp.ClientSession
+        self, bot: Bot, message: Message, payload: RichMediaPayload, session: aiohttp.ClientSession
     ) -> None:
         """Execute the standardized media delivery lifecycle."""
         if not message.from_user:

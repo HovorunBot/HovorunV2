@@ -5,15 +5,13 @@ import re
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-import aiohttp
-
 from hovorunv2.infrastructure.container import container
 from hovorunv2.infrastructure.logger import get_logger
 
 from .base import RichMediaCommand, RichMediaPayload, register_command
 
 if TYPE_CHECKING:
-    from aiogram.types import Message
+    import aiohttp
 
 logger = get_logger(__name__)
 
@@ -33,7 +31,9 @@ class TikTokCommand(RichMediaCommand):
             r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com/(?P<short_id>\w+)",
         )
 
-    async def _extract_payload(self, session: aiohttp.ClientSession, match: re.Match) -> RichMediaPayload | None:
+    async def _extract_payload(
+        self, session: aiohttp.ClientSession, match: re.Match, chat_id: int, platform: str
+    ) -> RichMediaPayload | None:
         """Fetch TikTok data and construct a RichMediaPayload."""
         url = match.group(0)
         async with session.get(self.API_URL, params={"url": url}) as resp:
@@ -71,9 +71,9 @@ class TikTokCommand(RichMediaCommand):
             desc = html.escape(clean_desc)
 
             if container.translation_service:
-                translated = await container.translation_service.translate_if_needed(desc, session)
-                if translated:
-                    desc += f"\n\n🇺🇦 <b>Translated:</b>\n{html.escape(translated)}"
+                trans_res = await container.translation_service.translate_if_needed(desc, chat_id, platform, session)
+                if trans_res:
+                    desc += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
             media_urls = video_data.get("images", []) or [video_data.get("play", "")]
             is_video = not bool(video_data.get("images"))
