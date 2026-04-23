@@ -159,3 +159,6 @@ cython_debug/
 /src/hovorunv2/cache/
 /bot.db
 /data/
+/file:testdb
+/package.json
+/package-lock.json
