@@ -52,6 +52,8 @@ async def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     # set url dynamically from settings
     section = config.get_section(config.config_ini_section)
+    if section is None:
+        section = {}
     section["sqlalchemy.url"] = f"sqlite+aiosqlite:///{settings.db_path}"
 
     connectable = async_engine_from_config(
@@ -66,7 +68,25 @@ async def run_migrations_online() -> None:
     await connectable.dispose()
 
 
-if context.is_offline_mode():
-    run_migrations_offline()
-else:
-    asyncio.run(run_migrations_online())
+def run_migrations():
+    if context.is_offline_mode():
+        run_migrations_offline()
+    else:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(run_migrations_online())
+        else:
+            import threading
+            def _run():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    new_loop.run_until_complete(run_migrations_online())
+                finally:
+                    new_loop.close()
+            thread = threading.Thread(target=_run)
+            thread.start()
+            thread.join()
+
+run_migrations()

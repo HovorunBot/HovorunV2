@@ -32,6 +32,7 @@ class MediaService:
 
         Returns:
             BufferedInputFile or None if download fails.
+
         """
         actual_session = session or self._session
         if not actual_session:
@@ -53,6 +54,7 @@ class MediaService:
 
         Returns:
             List of successfully downloaded BufferedInputFile objects.
+
         """
         tasks = []
         for i, url in enumerate(urls):

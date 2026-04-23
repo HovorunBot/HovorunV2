@@ -4,22 +4,28 @@ HovorunV2 is a Telegram helper bot built with Python 3.14+, following **Onion Ar
 
 ## Project Overview
 
-- **Main Technologies:** Python 3.14, [aiogram](https://github.com/aiogram/aiogram), [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (Async), [Valkey](https://github.com/valkey-io/valkey) (Async Cache), [uv](https://github.com/astral-sh/uv), [Docker](https://www.docker.com/).
+- **Main Technologies:** Python
+  3.14, [aiogram](https://github.com/aiogram/aiogram), [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (
+  Async), [Valkey](https://github.com/valkey-io/valkey) (Async
+  Cache), [uv](https://github.com/astral-sh/uv), [Docker](https://www.docker.com/).
 - **Architecture (Onion):**
-  - **Domain:** Pure database models using modern SQLAlchemy `Mapped` types.
-  - **Application:** Service layer for business logic (e.g., `WhitelistService`, `TranslationService`, `MessageService`).
-  - **Infrastructure:** Async Redis-compatible caching (Valkey), Database repositories, and configuration.
-  - **Interface:** Delivery adapters (Telegram Bot handlers via `aiogram`).
+    - **Domain:** Pure database models using modern SQLAlchemy `Mapped` types.
+    - **Application:** Service layer for business logic (e.g., `WhitelistService`, `TranslationService`,
+      `MessageService`).
+    - **Infrastructure:** Async Redis-compatible caching (Valkey), Database repositories, and configuration.
+    - **Interface:** Delivery adapters (Telegram Bot handlers via `aiogram`).
 
 ## Dependency Management
 
-The project uses a centralized `Container` (`infrastructure/container.py`) for global service management. All caching operations are **asynchronous** and use **JSON** serialization for security.
+The project uses a centralized `Container` (`infrastructure/container.py`) for global service management. All caching
+operations are **asynchronous** and use **JSON** serialization for security.
 
 ## Building and Running
 
 Automated via `Makefile`.
 
 ### Commands
+
 - **Setup:** `make setup` - Prepares `.env`, data directory, and builds Docker images.
 - **Run (Prod):** `make run` - Starts the bot and Valkey in Docker.
 - **Stop:** `make stop` - Stops all Docker services.
@@ -30,14 +36,26 @@ Automated via `Makefile`.
 ## Development Conventions
 
 ### Code Style & Quality
+
+- **Errors:** ALWAYS use semantic exceptions (e.g., `ValueError`, `AttributeError`, `TypeError`) or custom domain
+  exceptions. NEVER raise generic `RuntimeError`.
 - **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) configuration (`ALL`).
 - **Type Hints:** Mandatory. Checked with `ty`.
 - **Async:** Mandatory for all I/O operations (Database, Cache, Network).
-- **JSON Serialization:** Use `model_dump_json()` for Pydantic/Aiogram objects to handle non-serializable types correctly.
+- **JSON Serialization:** Use `model_dump(mode="json")` for Pydantic/Aiogram objects before stringifying to handle non-serializable types like `Default` correctly. Avoid direct `model_dump_json()` on complex Aiogram types.
 - **HTTP Status Codes:** Use `HTTPStatus` enum.
 - **Magic Numbers:** Define as constants/enums.
 
+### Testing Requirements
+- **No Mocks Policy:** Internal code must be tested without mocks. ALWAYS use real services, real objects, real databases (SQLite memory for tests), and real Valkey instances.
+- **External APIs:** Only external network requests (e.g., to `api.vxtwitter.com`, `tikwm.com`) may be mocked. Use `aioresponses` or similar to mock at the HTTP layer while keeping service logic real.
+- **Persistence:** Avoid `unittest.mock` where real implementations can be used. Verify state in Database and Cache directly.
+- **Type Integrity:** NEVER resolve type-checker (`ty`) errors by using `# ty:ignore` or `Any` casts to suppress warnings. Resolve the root cause via proper type hints or improved mock structures. Use `Any` return type for mock factories if needed to avoid casting in every assertion.
+- **Persistence of User Changes:** NEVER rollback or revert code changes provided by the user unless explicitly instructed. This is a critical rule to ensure progress is not lost.
+
+
 ## Key Files
+
 - `src/hovorunv2/__main__.py`: Application entry point.
 - `src/hovorunv2/infrastructure/container.py`: Service container.
 - `src/hovorunv2/infrastructure/cache.py`: Async Valkey cache service.

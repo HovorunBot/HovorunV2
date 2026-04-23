@@ -1,5 +1,6 @@
 """Message service for handling Telegram messages and caching."""
 
+import json
 from typing import TYPE_CHECKING
 
 from aiogram import types
@@ -27,19 +28,24 @@ class MessageService:
         """Cache a Telegram message with all available information."""
         key = self._generate_key(message.chat.id, message.message_id)
         logger.debug("Caching message %d from chat %d", message.message_id, message.chat.id)
-        # Use model_dump_json() for proper serialization of Default values
-        json_data = message.model_dump_json()
-        await self.cache.set(key, json_data, expire=self.ttl)
+
+        try:
+            # aiogram objects have a bot reference and internal defaults.
+            # We export only the data fields.
+            json_data = message.model_dump_json(exclude_defaults=True)
+            await self.cache.set(key, json_data, expire=self.ttl)
+        except Exception:
+            logger.exception("Failed to serialize message")
+            # Fallback: manual dict conversion if model_dump_json fails
+            data_dict = message.model_dump(exclude_none=True)
+            await self.cache.set(key, json.dumps(data_dict), expire=self.ttl)
 
     async def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
         """Retrieve a cached message by chat ID and message ID."""
         key = self._generate_key(chat_id, message_id)
         data = await self.cache.get(key)
         if data:
-            logger.debug("Cached message found for key: %s", key)
-            # data is already a JSON string (from model_dump_json)
             return types.Message.model_validate_json(data)
-        logger.debug("Cached message not found for key: %s", key)
         return None
 
     def _generate_key(self, chat_id: int, message_id: int) -> str:

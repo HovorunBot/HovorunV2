@@ -3,7 +3,6 @@
 import html
 from abc import ABC, abstractmethod
 from contextlib import suppress
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -18,21 +17,9 @@ if TYPE_CHECKING:
 
     from aiogram import Bot
 
+    from hovorunv2.application.dtos import RichMediaPayload
+
 logger = get_logger(__name__)
-
-
-@dataclass
-class RichMediaPayload:
-    """Standard payload for rich media responses."""
-
-    author_name: str
-    author_handle: str
-    author_url: str
-    content: str
-    footer_text: str = ""
-    original_url: str = ""
-    media_urls: list[str] = field(default_factory=list)
-    is_video: bool = False
 
 
 class BaseCommand(ABC):
@@ -147,10 +134,6 @@ class RichMediaCommand(BaseCommand, ABC):
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
 
-        if not container.media_service:
-            logger.error("MediaService not available in container")
-            return
-
         downloaded_files = await container.media_service.download_batch(
             payload.media_urls,
             prefix="media",
@@ -196,20 +179,6 @@ class RichMediaCommand(BaseCommand, ABC):
                     link_preview_options=LinkPreviewOptions(is_disabled=True),
                 )
 
-    def _format_number(self, num: int) -> str:
-        """Format large numbers into readable text (e.g. 1.2K, 3.4M)."""
-        billion_threshold = 1_000_000_000
-        million_threshold = 1_000_000
-        thousand_threshold = 1_000
-
-        if num >= billion_threshold:
-            return f"{num / billion_threshold:.1f}B".replace(".0B", "B")
-        if num >= million_threshold:
-            return f"{num / million_threshold:.1f}M".replace(".0M", "M")
-        if num >= thousand_threshold:
-            return f"{num / thousand_threshold:.1f}K".replace(".0K", "K")
-        return str(num)
-
     def _prepare_media_group(self, payload: RichMediaPayload, caption: str) -> list[Any]:
         """Construct InputMedia objects using raw URLs."""
         media_group = []
@@ -227,13 +196,16 @@ _COMMANDS: dict[str, BaseCommand] = {}
 
 
 def register_command[TBaseCommand: BaseCommand](command_class: type[TBaseCommand]) -> type[TBaseCommand]:
-    """Decorator to register a command class.
+    """Register a command class.
+
+    This function can be used as class decorator
 
     Args:
         command_class: The command class to register.
 
     Returns:
         The registered command class.
+
     """
     logger.info("Registering command: %s", command_class.__name__)
     _COMMANDS[command_class.__name__] = command_class()

@@ -19,7 +19,7 @@ class DebugCommand(BaseCommand):
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /debug."""
-        return bool(message.text and message.text.startswith("/debug"))
+        return bool(message.text and message.text.strip().startswith("/debug"))
 
     async def handle(self, message: Message, bot: Bot) -> None:  # noqa: ARG002
         """Handle debug command."""

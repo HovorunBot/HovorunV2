@@ -81,6 +81,7 @@ class TranslationService:
 
         Returns:
             TranslationResult or None if translation is not needed or fails.
+
         """
         if not text or not text.strip():
             return None

@@ -53,3 +53,7 @@ class CacheService:
             return default
         else:
             return value
+
+    async def close(self) -> None:
+        """Close cache connection."""
+        await self._cache.aclose()

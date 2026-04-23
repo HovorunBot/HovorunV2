@@ -20,11 +20,12 @@ class Settings(BaseSettings):
         admin_ids: List of admin IDs for whitelisting.
         db_path: Path to the database file.
         openrouter_api_key: OpenRouter API key.
+
     """
 
     bot_token: str
     admin_ids: list[int]
-    db_path: str
+    db_path: str = "data/bot.db"
     openrouter_api_key: str
     valkey_url: str = "redis://localhost:6379/0"
     translation_target_lang: str = "uk"
