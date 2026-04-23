@@ -28,6 +28,7 @@ dependencies = [
     "greenlet>=3.4.0",
     "alembic>=1.18.4",
     "emoji-country-flag>=2.1.0",
+    "yt-dlp>=2026.3.17",
 ]
 
 [project.urls]

@@ -52,6 +52,7 @@ Automated via `Makefile`.
 - **Persistence:** Avoid `unittest.mock` where real implementations can be used. Verify state in Database and Cache directly.
 - **Type Integrity:** NEVER resolve type-checker (`ty`) errors by using `# ty:ignore` or `Any` casts to suppress warnings. Resolve the root cause via proper type hints or improved mock structures. Use `Any` return type for mock factories if needed to avoid casting in every assertion.
 - **Persistence of User Changes:** NEVER rollback or revert code changes provided by the user unless explicitly instructed. This is a critical rule to ensure progress is not lost.
+- **Mandatory Dependencies:** Services must require their dependencies in `__init__`. Injected dependencies from the `Container` MUST NOT be `None`. Avoid `Optional` or `None` defaults for core service dependencies. No `if dependency:` nonsense.
 
 
 ## Key Files

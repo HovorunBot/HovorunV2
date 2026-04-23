@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from hovorunv2.application.services.media_extractor_service import MediaExtractorService
 from hovorunv2.application.services.media_service import MediaService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.tiktok_service import TikTokService
@@ -30,6 +31,7 @@ class Container:
         self.media_service: MediaService = UNDEFINED
         self.tiktok_service: TikTokService = UNDEFINED
         self.twitter_service: TwitterService = UNDEFINED
+        self.media_extractor_service: MediaExtractorService = UNDEFINED
 
         self._session: Any = UNDEFINED
         self._is_initialized: bool = False
@@ -61,8 +63,9 @@ class Container:
         self.translation_service = TranslationService(chat_repository)
 
         # Services with dependencies
-        self.tiktok_service = TikTokService(self.translation_service)
-        self.twitter_service = TwitterService(self.translation_service)
+        self.tiktok_service = TikTokService(translation_service=self.translation_service)
+        self.twitter_service = TwitterService(translation_service=self.translation_service)
+        self.media_extractor_service = MediaExtractorService(translation_service=self.translation_service)
 
         self._is_initialized = True
 

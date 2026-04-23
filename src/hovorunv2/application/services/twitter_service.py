@@ -6,7 +6,6 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.utils import format_number
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -25,8 +24,8 @@ class TwitterService:
         r"https?://(?:www\.)?(?:api\.)?(?:x\.com|twitter\.com)/(?:\w+/status/|2/tweets/)(?P<post_id>\d+)",
     )
 
-    def __init__(self, translation_service: TranslationService | None = None) -> None:
-        """Initialize with optional translation service."""
+    def __init__(self, translation_service: TranslationService) -> None:
+        """Initialize with required translation service."""
         self._translation_service = translation_service
 
     async def extract_payload(
@@ -53,21 +52,17 @@ class TwitterService:
         content = html.escape(raw_text)
 
         # Translation
-        if self._translation_service:
-            trans_res = await self._translation_service.translate_if_needed(content, chat_id, platform, session)
-            if trans_res:
-                content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
+        trans_res = await self._translation_service.translate_if_needed(content, chat_id, platform, session)
+        if trans_res:
+            content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
         # Handle Quote
         quote_data = data.get("qrt", {})
         if quote_data:
             orig_text = html.escape(quote_data.get("text", ""))
-            if self._translation_service:
-                quote_trans_res = await self._translation_service.translate_if_needed(
-                    orig_text, chat_id, platform, session
-                )
-                if quote_trans_res:
-                    orig_text += f"\n\n{quote_trans_res.flag} <b>Translated:</b>\n{html.escape(quote_trans_res.text)}"
+            quote_trans_res = await self._translation_service.translate_if_needed(orig_text, chat_id, platform, session)
+            if quote_trans_res:
+                orig_text += f"\n\n{quote_trans_res.flag} <b>Translated:</b>\n{html.escape(quote_trans_res.text)}"
 
             quote_section = (
                 "<blockquote expandable>\n"

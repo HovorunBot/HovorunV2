@@ -6,7 +6,6 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.utils import format_number
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -29,8 +28,8 @@ class TikTokService:
         r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com/(?P<short_id>\w+)",
     )
 
-    def __init__(self, translation_service: TranslationService | None = None) -> None:
-        """Initialize with optional translation service."""
+    def __init__(self, translation_service: TranslationService) -> None:
+        """Initialize with required translation service."""
         self._translation_service = translation_service
 
     async def extract_payload(
@@ -53,10 +52,9 @@ class TikTokService:
             clean_desc = re.sub(r"\s+", " ", clean_desc).strip()
             desc = html.escape(clean_desc)
 
-            if self._translation_service:
-                trans_res = await self._translation_service.translate_if_needed(desc, chat_id, platform, session)
-                if trans_res:
-                    desc += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
+            trans_res = await self._translation_service.translate_if_needed(desc, chat_id, platform, session)
+            if trans_res:
+                desc += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
             media_urls = video_data.get("images", []) or [video_data.get("play", "")]
             is_video = not bool(video_data.get("images"))

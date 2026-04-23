@@ -2,11 +2,15 @@
 
 import asyncio
 from http import HTTPStatus
+from typing import TYPE_CHECKING
 
 import aiohttp
 from aiogram.types import BufferedInputFile
 
 from hovorunv2.infrastructure.logger import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 logger = get_logger(__name__)
 
@@ -15,6 +19,10 @@ class MediaService:
     """Service to handle downloading media from URLs into RAM."""
 
     DEFAULT_TIMEOUT_SECONDS: int = 30
+    DEFAULT_HEADERS: Mapping[str, str] = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
 
     def __init__(self, session: aiohttp.ClientSession | None = None) -> None:
         """Initialize service with optional session."""
@@ -36,7 +44,7 @@ class MediaService:
         """
         actual_session = session or self._session
         if not actual_session:
-            async with aiohttp.ClientSession() as new_session:
+            async with aiohttp.ClientSession(headers=self.DEFAULT_HEADERS) as new_session:
                 return await self._perform_download(new_session, url, filename)
 
         return await self._perform_download(actual_session, url, filename)

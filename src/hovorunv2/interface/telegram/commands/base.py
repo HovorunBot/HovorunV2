@@ -121,7 +121,8 @@ class RichMediaCommand(BaseCommand, ABC):
                 chat_id=message.chat.id, media=media_group, reply_to_message_id=message.message_id
             )
         except TelegramBadRequest as e:
-            if "WEBPAGE_MEDIA_EMPTY" not in str(e) and "failed to get" not in str(e).lower():
+            err_msg = str(e).upper()
+            if not any(item in err_msg for item in ("WEBPAGE_CURL_FAILED", "FAILED TO GET")):
                 logger.exception("Unexpected Telegram API error during optimistic URL fetch")
                 raise
         else:
