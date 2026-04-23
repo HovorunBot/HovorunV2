@@ -14,7 +14,7 @@ HovorunV2 is currently in its **Alpha** stage. I'm actively building out core fe
 ### ⚠️ Current Hosting Model
 
 At this stage, **HovorunV2 is self-hosted only.**
-To use the bot, you must run your own instance following the instructions below.
+To use the bot, you must run your own instance using Docker.
 
 > **Future Note:** I am planning to launch an **official public server** in the future, which will allow you to simply
 > add the bot to your chats without any technical setup. Stay tuned!
@@ -35,28 +35,23 @@ To use the bot, you must run your own instance following the instructions below.
     - Automatic translation of video descriptions.
 - **🛡️ Chat Whitelisting**: Secure your bot by restricting it to specific chats. Admins can easily allow or disallow the
   bot in any group.
-- **🛠️ Debug Utilities**: Built-in tools for admins to check chat IDs and bot status on the fly.
 - **More coming soon!** I'm working on more integrations to make your chats even better.
 
 ---
 
 ## 🛠️ Getting Started
 
-This project uses a `Makefile` to automate everything from tool installation to execution.
+This project uses a `Makefile` and Docker to automate everything from tool installation to execution.
 
 ### Prerequisites
 
 - `make`
-- `git`
-
-The setup process automatically handles installing [uv](https://astral.sh/uv/) and Python 3.14.
+- `docker`
 
 ### Quick Start
 
-1. **Clone and Setup**:
+1. **Setup**:
    ```bash
-   git clone https://github.com/HovorunBot/HovorunV2.git
-   cd HovorunV2
    make setup
    ```
 
@@ -64,6 +59,7 @@ The setup process automatically handles installing [uv](https://astral.sh/uv/) a
    Open the generated `.env` file and add your Telegram Bot Token:
    ```bash
    BOT_TOKEN=your_telegram_bot_token_here
+   ADMIN_IDS=[123,456]
    ```
 
 3. **Launch**:
@@ -75,13 +71,13 @@ The setup process automatically handles installing [uv](https://astral.sh/uv/) a
 
 ## 📖 Available Commands
 
-| Command           | Description                                                  |
-|-------------------|--------------------------------------------------------------|
-| `make setup`      | Installs tools, clones/updates code, and syncs dependencies. |
-| `make run`        | Starts the bot in the foreground.                            |
-| `make run-daemon` | Starts the bot in the background (logs to `hovorun.log`).    |
-| `make stop`       | Gracefully stops the background process.                     |
-| `make update`     | Pulls the latest changes and synchronizes your environment.  |
+| Command        | Description                                                       |
+|----------------|-------------------------------------------------------------------|
+| `make setup`   | Prepares `.env`, data directory, and builds Docker images.        |
+| `make run`     | Starts the production environment (Bot + Valkey) in Docker.       |
+| `make stop`    | Stops all Docker services.                                        |
+| `make run-dev` | Starts Valkey in Docker and runs Bot locally (no Docker for Bot). |
+| `make update`  | Pulls the latest changes and rebuilds images.                     |
 
 ---
 
@@ -91,7 +87,7 @@ HovorunV2 follows the **Onion Architecture** to ensure the code remains modular 
 
 - **Domain**: Pure business logic and modern SQLAlchemy 2.0 database models.
 - **Application**: Service layer for orchestration (Translation, Whitelisting, Caching).
-- **Infrastructure**: Database repositories, disk caching, and configuration.
+- **Infrastructure**: Database repositories, Valkey async caching, and configuration.
 - **Interface**: Telegram bot handlers and command registration.
 
 ---
@@ -101,6 +97,7 @@ HovorunV2 follows the **Onion Architecture** to ensure the code remains modular 
 **Run Tests**:
 
 ```bash
+make dev  # Start Valkey dependency
 PYTHONPATH=src uv run pytest
 ```
 
@@ -108,6 +105,12 @@ PYTHONPATH=src uv run pytest
 
 ```bash
 uv run ruff check .
+```
+
+**Type Checking**:
+
+```bash
+uv run ty check src
 ```
 
 ---

@@ -22,7 +22,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "aiohttp",
-    "diskcache-rs>=0.4.9",
+    "redis>=5.0.0",
     "sqlalchemy>=2.0.49",
     "aiosqlite>=0.22.1",
     "greenlet>=3.4.0",

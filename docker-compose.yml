@@ -1,0 +1,30 @@
+services:
+  valkey:
+    image: valkey/valkey:8.0
+    container_name: hovorun-valkey
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hovorun-bot
+    restart: always
+    profiles:
+      - prod
+    depends_on:
+      - valkey
+    env_file:
+      - .env
+    environment:
+      - VALKEY_URL=redis://valkey:6379/0
+      - DB_PATH=/app/data/bot.db
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  valkey_data:

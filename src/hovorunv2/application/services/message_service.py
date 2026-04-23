@@ -23,21 +23,22 @@ class MessageService:
         self.ttl = self.CACHE_TTL_SECONDS
         logger.debug("MessageService initialized with TTL: %d seconds", self.ttl)
 
-    def cache_message(self, message: types.Message) -> None:
+    async def cache_message(self, message: types.Message) -> None:
         """Cache a Telegram message with all available information."""
         key = self._generate_key(message.chat.id, message.message_id)
         logger.debug("Caching message %d from chat %d", message.message_id, message.chat.id)
-        # Store as much info as possible via model_dump
-        data = message.model_dump()
-        self.cache.set(key, data, expire=self.ttl)
+        # Use model_dump_json() for proper serialization of Default values
+        json_data = message.model_dump_json()
+        await self.cache.set(key, json_data, expire=self.ttl)
 
-    def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
+    async def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
         """Retrieve a cached message by chat ID and message ID."""
         key = self._generate_key(chat_id, message_id)
-        data = self.cache.get(key)
+        data = await self.cache.get(key)
         if data:
             logger.debug("Cached message found for key: %s", key)
-            return types.Message.model_validate(data)
+            # data is already a JSON string (from model_dump_json)
+            return types.Message.model_validate_json(data)
         logger.debug("Cached message not found for key: %s", key)
         return None
 

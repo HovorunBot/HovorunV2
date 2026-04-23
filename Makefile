@@ -1,59 +1,31 @@
 # Makefile for HovorunV2
-# Automates installation of uv, Python 3.14, and application startup.
-
-export PATH := $(HOME)/.local/bin:$(HOME)/.cargo/bin:$(PATH)
+# Focused on Docker-based workflow and local development
 
 REPO_URL = https://github.com/HovorunBot/HovorunV2
 
-.PHONY: all setup run run-daemon stop update help install-uv install-python install-git checkout migrate
+.PHONY: all setup run stop update help install-git checkout migrate dev run-dev
 
-# Default target: setup and run the app
+# Default target: setup and run the app in Docker
 all: setup run
 
 help:
 	@echo "Available commands:"
-	@echo "  make setup      - Install tools, checkout/update code, and sync dependencies"
-	@echo "  make update     - Pull latest changes from main branch and sync"
-	@echo "  make migrate    - Apply database migrations via alembic"
-	@echo "  make run        - Start the application using 'uv run hovorunv2'"
-	@echo "  make run-daemon - Start the application in the background (daemon)"
-	@echo "  make stop       - Stop the daemonized application"
-	@echo "  make all        - Perform full setup and launch the application"
+	@echo "  make setup      - Prepare .env, data directory, and build Docker images"
+	@echo "  make run        - Start the production environment (Bot + Valkey) in Docker"
+	@echo "  make stop       - Stop all Docker services"
+	@echo "  make update     - Pull latest changes and rebuild"
+	@echo "  make migrate    - Manually run database migrations inside Docker"
+	@echo "  make dev        - Start development dependencies (Valkey only) in Docker"
+	@echo "  make run-dev    - Start Valkey in Docker and run Bot locally (no Docker for Bot)"
 
-# 1. Check whether or not uv is installed. If not, install it.
-install-uv:
-	@command -v uv >/dev/null 2>&1 || { \
-		echo "uv not found. Installing via curl..."; \
-		curl -LsSf https://astral.sh/uv/install.sh | sh; \
-	}
-	@echo "uv is ready."
-
-# 2. Check whether or not python 3.14 is installed with uv. If not, install.
-install-python: install-uv
-	@echo "Checking Python 3.14 installation..."
-	@uv python install 3.14
-
-# 3. Check whether git is installed, if not, install.
+# 1. Check whether git is installed.
 install-git:
 	@command -v git >/dev/null 2>&1 || { \
-		echo "Git not found. Attempting to install..."; \
-		if [ "$$(uname)" = "Darwin" ]; then \
-			if command -v brew >/dev/null 2>&1; then \
-				brew install git; \
-			else \
-				echo "Error: Homebrew not found. Please install Git manually."; \
-				exit 1; \
-			fi; \
-		elif [ -f /etc/debian_version ]; then \
-			sudo apt-get update && sudo apt-get install -y git; \
-		else \
-			echo "Error: Please install Git manually for your operating system."; \
-			exit 1; \
-		fi; \
+		echo "Error: Git not found. Please install Git manually."; \
+		exit 1; \
 	}
-	@echo "Git is ready."
 
-# 4. Checkout or update the codebase from repository.
+# 2. Checkout or update the codebase.
 checkout: install-git
 	@if [ ! -d .git ]; then \
 		echo "No git repository found. Initializing and connecting to $(REPO_URL)..."; \
@@ -67,41 +39,50 @@ checkout: install-git
 		git pull origin main; \
 	fi
 
-# 5. Get last version of main branch and sync.
-update: checkout
-	@uv sync
-	@$(MAKE) migrate
-
-# 5.1 Apply migrations.
-migrate:
-	@echo "Applying database migrations..."
-	@PYTHONPATH=src uv run alembic upgrade head
-
-# 6. Setup and sync dependencies.
-setup: install-python checkout
-	@echo "Syncing project dependencies..."
-	@uv sync
+# 3. Setup environment and build images.
+setup: checkout
 	@if [ ! -f .env ]; then \
 		echo "No .env file detected. Creating from example.env..."; \
 		cp example.env .env 2>/dev/null || true; \
 	fi
-	@$(MAKE) migrate
-	@echo "------------------------------------------------------------"
-	@echo "Setup complete."
-	@echo "IMPORTANT: Please verify your secrets in the .env file!"
-	@echo "------------------------------------------------------------"
+	@mkdir -p data
+	@if [ -f bot.db ] && [ ! -f data/bot.db ]; then \
+		echo "Found existing bot.db. Moving it to data/ directory for Docker persistence..."; \
+		mv bot.db data/bot.db; \
+	fi
+	docker compose build
 
-# 7. Run the application in foreground.
-run: setup
-	@echo "Starting HovorunBot..."
-	@uv run hovorunv2
+# 4. Run the production environment in Docker.
+# Always rebuilds the bot image to ensure the latest local changes are included.
+run:
+	docker compose build bot
+	docker compose --profile prod up -d
 
-# 8. Run the application as a daemon (in background).
-run-daemon: setup
-	@echo "Starting HovorunBot in background..."
-	@nohup uv run hovorunv2 > hovorun.log 2>&1 & echo "Daemon started! Logs are written to hovorun.log. PID: $$!"
-
-# 9. Stop the application.
+# 5. Stop all services.
 stop:
-	@echo "Stopping HovorunBot..."
-	@pkill -f "uv run hovorunv2" || echo "Process not found."
+	docker compose down --remove-orphans
+
+# 6. Update and rebuild.
+update: checkout
+	docker compose build
+
+# 7. Apply migrations manually (though they run on startup).
+migrate:
+	docker compose run --rm bot uv run alembic upgrade head
+
+# 8. Start development tools (Valkey only).
+dev:
+	docker compose up -d valkey
+
+# 9. Run the bot locally (no Docker for Bot) with Valkey in Docker.
+run-dev: dev
+	@if [ ! -f .env ]; then \
+		echo "Error: .env file missing. Run 'make setup' first."; \
+		exit 1; \
+	fi
+	@echo "Starting HovorunV2 locally..."
+	@# Ensure dependencies are synced locally
+	uv sync
+	@# Load .env and run the bot
+	@# We use 'set -a' to export all variables from .env for the command
+	@set -a; [ -f .env ] && . ./.env; set +a; uv run hovorunv2

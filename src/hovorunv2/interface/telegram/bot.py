@@ -26,7 +26,7 @@ async def handle_message(message: types.Message, bot: Bot) -> None:
         logger.error("Container not initialized")
         return
 
-    container.message_service.cache_message(message)
+    await container.message_service.cache_message(message)
 
     is_whitelisted = await container.whitelist_service.is_whitelisted(message.chat.id)
     commands = get_commands()
