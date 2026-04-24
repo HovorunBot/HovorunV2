@@ -2,11 +2,16 @@
 # Focused on Docker-based workflow and local development
 
 REPO_URL = https://github.com/HovorunBot/HovorunV2
+DOCKER_PROD = docker compose --profile prod
+BUILD_SENTINEL = .docker-built
 
-.PHONY: all setup run stop update help install-git checkout migrate dev run-dev
+.PHONY: all setup run stop update help install-git checkout migrate dev run-dev env-init build-prod clean-build \
+        _all _setup _run _update _migrate _deploy
 
-# Default target: setup and run the app in Docker
-all: setup run
+# Public targets with automatic cleanup
+all setup run update migrate deploy:
+	@$(MAKE) _$@
+	@$(MAKE) clean-build
 
 help:
 	@echo "Available commands:"
@@ -31,16 +36,26 @@ checkout: install-git
 		echo "No git repository found. Initializing and connecting to $(REPO_URL)..."; \
 		git init; \
 		git remote add origin $(REPO_URL) 2>/dev/null || git remote set-url origin $(REPO_URL); \
-		git fetch origin; \
+		git fetch origin main; \
 		git checkout -f -B main origin/main; \
 	else \
 		echo "Updating project from origin main..."; \
-		git checkout main 2>/dev/null || git checkout -b main; \
-		git pull origin main; \
+		if [ -n "$$(git status --porcelain)" ]; then \
+			echo "Preserving uncommitted changes..."; \
+			git stash push -m "Makefile auto-stash"; \
+			git fetch origin main; \
+			git checkout -B main origin/main; \
+			echo "Restoring uncommitted changes..."; \
+			git stash pop; \
+		else \
+			git fetch origin main; \
+			git checkout -B main origin/main; \
+		fi; \
 	fi
+	@$(MAKE) clean-build
 
-# 3. Setup environment and build images.
-setup: checkout
+# 3. Internal helper for environment initialization.
+env-init:
 	@if [ ! -f .env ]; then \
 		echo "No .env file detected. Creating from example.env..."; \
 		cp example.env .env 2>/dev/null || true; \
@@ -50,42 +65,44 @@ setup: checkout
 		echo "Found existing bot.db. Moving it to data/ directory for Docker persistence..."; \
 		mv bot.db data/bot.db; \
 	fi
-	docker compose build
 
-# 4. Run the production environment in Docker.
-# Always rebuilds the bot image to ensure the latest local changes are included.
-run:
-	docker compose build bot
-	docker compose --profile prod up -d
+# 4. Internal logic (prefixed with _)
+_all: _setup _run
 
-# 5. Stop all services.
+_setup: checkout env-init build-prod
+
+_run: build-prod
+	$(DOCKER_PROD) up -d --no-build
+
+_update: checkout build-prod
+
+_migrate: build-prod
+	$(DOCKER_PROD) run --rm bot uv run --no-dev alembic upgrade head
+
+_deploy: stop _update _migrate _run
+
+# 5. Build helpers with sentinel
+build-prod: $(BUILD_SENTINEL)
+
+$(BUILD_SENTINEL):
+	@echo "Building Docker images..."
+	$(DOCKER_PROD) build --pull
+	@touch $(BUILD_SENTINEL)
+
+clean-build:
+	@rm -f $(BUILD_SENTINEL)
+
+# 6. Stop all services.
 stop:
-	docker compose --profile prod down --remove-orphans
+	$(DOCKER_PROD) down --remove-orphans
 
-# 6. Update and rebuild.
-update: checkout
-	docker compose build
-
-# 7. Apply migrations manually (though they run on startup).
-migrate:
-	docker compose run --rm bot uv run --no-dev alembic upgrade head
-
-# 7a. Full deployment: stop, setup, migrate, and run as daemon.
-deploy: stop update migrate run
-
-# 8. Start development tools (Valkey only).
+# 7. Start development tools (Valkey only).
 dev:
 	docker compose up -d valkey
 
-# 9. Run the bot locally (no Docker for Bot) with Valkey in Docker.
-run-dev: dev
-	@if [ ! -f .env ]; then \
-		echo "Error: .env file missing. Run 'make setup' first."; \
-		exit 1; \
-	fi
+# 8. Run the bot locally (no Docker for Bot) with Valkey in Docker.
+run-dev: dev env-init
 	@echo "Starting HovorunV2 locally..."
-	@# Ensure dependencies are synced locally
 	uv sync
-	@# Load .env and run the bot
-	@# We use 'set -a' to export all variables from .env for the command
 	@set -a; [ -f .env ] && . ./.env; set +a; uv run hovorunv2
+	@$(MAKE) clean-build
