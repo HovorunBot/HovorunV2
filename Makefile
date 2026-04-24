@@ -58,7 +58,7 @@ checkout: install-git
 env-init:
 	@if [ ! -f .env ]; then \
 		echo "No .env file detected. Creating from example.env..."; \
-		cp example.env .env 2>/dev/null || true; \
+		cp -n example.env .env 2>/dev/null || true; \
 	fi
 	@mkdir -p data
 	@if [ -f bot.db ] && [ ! -f data/bot.db ]; then \
