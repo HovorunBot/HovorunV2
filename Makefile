@@ -61,13 +61,9 @@ env-init:
 		cp -n example.env .env 2>/dev/null || true; \
 	fi
 	@mkdir -p data
-	@chmod 775 data
 	@if [ -f bot.db ] && [ ! -f data/bot.db ]; then \
 		echo "Found existing bot.db. Moving it to data/ directory for Docker persistence..."; \
 		mv bot.db data/bot.db; \
-	fi
-	@if [ -f data/bot.db ]; then \
-		chmod 664 data/bot.db; \
 	fi
 
 # 4. Internal logic (prefixed with _)
