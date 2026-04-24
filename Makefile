@@ -60,7 +60,7 @@ run:
 
 # 5. Stop all services.
 stop:
-	docker compose down --remove-orphans
+	docker compose --profile prod down --remove-orphans
 
 # 6. Update and rebuild.
 update: checkout
@@ -68,7 +68,11 @@ update: checkout
 
 # 7. Apply migrations manually (though they run on startup).
 migrate:
-	docker compose run --rm bot uv run alembic upgrade head
+	docker compose run --rm bot uv run --no-dev alembic upgrade head
+
+# 7a. Full deployment: stop, setup, migrate, and run as daemon.
+deploy: stop setup migrate
+	docker compose --profile prod up -d
 
 # 8. Start development tools (Valkey only).
 dev:
