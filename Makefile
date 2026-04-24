@@ -71,8 +71,7 @@ migrate:
 	docker compose run --rm bot uv run --no-dev alembic upgrade head
 
 # 7a. Full deployment: stop, setup, migrate, and run as daemon.
-deploy: stop setup migrate
-	docker compose --profile prod up -d
+deploy: stop update migrate run
 
 # 8. Start development tools (Valkey only).
 dev:
