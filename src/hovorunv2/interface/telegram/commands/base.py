@@ -45,6 +45,7 @@ class RichMediaCommand(BaseCommand, ABC):
     FOOTER_TEMPLATE = '<a href="{original_url}">‎</a>'  # Hidden link for preview
 
     API_TIMEOUT_SECONDS: int = 30
+    CAPTION_LIMIT: int = 1024
 
     @property
     @abstractmethod
@@ -114,8 +115,18 @@ class RichMediaCommand(BaseCommand, ABC):
             )
             return
 
+        # Handle long captions: send text first, then media with short caption
+        caption = total_text
+        if len(total_text) > self.CAPTION_LIMIT:
+            await message.answer(
+                total_text, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True)
+            )
+            caption = header + self.FOOTER_TEMPLATE.format(original_url=payload.original_url)
+            if len(caption) > self.CAPTION_LIMIT:
+                caption = self.FOOTER_TEMPLATE.format(original_url=payload.original_url)
+
         # 1. Optimistic URL approach
-        media_group = self._prepare_media_group(payload, total_text)
+        media_group = self._prepare_media_group(payload, caption)
         try:
             await bot.send_media_group(
                 chat_id=message.chat.id, media=media_group, reply_to_message_id=message.message_id
@@ -130,7 +141,7 @@ class RichMediaCommand(BaseCommand, ABC):
 
         # 2. Fallback RAM approach
         placeholder_msg = await message.answer(
-            text=total_text + "\n\n⏳ <i>Downloading media...</i>",
+            text=caption + "\n\n⏳ <i>Downloading media...</i>",
             parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
@@ -147,7 +158,7 @@ class RichMediaCommand(BaseCommand, ABC):
                 await bot.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=placeholder_msg.message_id,
-                    text=total_text + "\n\n⚠️ <i>Failed to download media.</i>",
+                    text=caption + "\n\n⚠️ <i>Failed to download media.</i>",
                     parse_mode="HTML",
                     link_preview_options=LinkPreviewOptions(is_disabled=True),
                 )
@@ -159,7 +170,7 @@ class RichMediaCommand(BaseCommand, ABC):
             item = InputMediaVideo(media=file) if payload.is_video else InputMediaPhoto(media=file)
 
             if i == 0:
-                item.caption = total_text
+                item.caption = caption
                 item.parse_mode = "HTML"
             final_group.append(item)
 
@@ -175,7 +186,7 @@ class RichMediaCommand(BaseCommand, ABC):
                 await bot.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=placeholder_msg.message_id,
-                    text=total_text + "\n\n⚠️ <i>Failed to upload media.</i>",
+                    text=caption + "\n\n⚠️ <i>Failed to upload media.</i>",
                     parse_mode="HTML",
                     link_preview_options=LinkPreviewOptions(is_disabled=True),
                 )
