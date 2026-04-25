@@ -34,7 +34,7 @@ class TranslationService:
 
     def __init__(
         self,
-        chat_repository: "SQLAlchemyChatRepository",
+        chat_repository: SQLAlchemyChatRepository,
     ) -> None:
         """Initialize service with repository."""
         self._chat_repository = chat_repository
@@ -93,7 +93,7 @@ class TranslationService:
                         chat_ignored = json.loads(chat.ignored_langs)
                         if isinstance(chat_ignored, list):
                             ignored_langs = chat_ignored
-                    except (json.JSONDecodeError, TypeError):
+                    except json.JSONDecodeError, TypeError:
                         logger.warning("Failed to parse ignored_langs for chat %d", chat_id)
 
         # Enforce mandatory ignores and include target_lang
@@ -107,16 +107,10 @@ class TranslationService:
             if not actual_session:
                 actual_session = await stack.enter_async_context(aiohttp.ClientSession())
 
-            translated_text = await self._perform_translation(
-                actual_session, text, target_lang, list(all_ignored)
-            )
+            translated_text = await self._perform_translation(actual_session, text, target_lang, list(all_ignored))
 
         if translated_text:
-            return TranslationResult(
-                text=translated_text,
-                target_lang=target_lang,
-                flag=self.get_flag(target_lang)
-            )
+            return TranslationResult(text=translated_text, target_lang=target_lang, flag=self.get_flag(target_lang))
 
         return None
 
@@ -144,16 +138,15 @@ class TranslationService:
                     data = await resp.json(content_type=None)
 
                     # Defensively check the response payload structure
-                    if not isinstance(data, list) or len(data) < 3:
+                    if not isinstance(data, list) or len(data) < 3:  # noqa: PLR2004
                         return None
 
                     src_lang = data[2] or "und"
 
                     if src_lang not in ignored_langs and data[0] and isinstance(data[0], list):
-                        return "".join([
-                            sentence[0] for sentence in data[0]
-                            if isinstance(sentence, list) and sentence[0]
-                        ])
+                        return "".join(
+                            [sentence[0] for sentence in data[0] if isinstance(sentence, list) and sentence[0]]
+                        )
         except Exception:
             logger.exception("Translation API call failed")
 

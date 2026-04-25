@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from hovorunv2.application.services.media_extractor_service import MediaExtractorService
 from hovorunv2.application.services.media_service import MediaService
 from hovorunv2.application.services.message_service import MessageService
+from hovorunv2.application.services.threads_service import ThreadsService
 from hovorunv2.application.services.tiktok_service import TikTokService
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.services.twitter_service import TwitterService
@@ -31,6 +32,7 @@ class Container:
         self.media_service: MediaService = UNDEFINED
         self.tiktok_service: TikTokService = UNDEFINED
         self.twitter_service: TwitterService = UNDEFINED
+        self.threads_service: ThreadsService = UNDEFINED
         self.media_extractor_service: MediaExtractorService = UNDEFINED
 
         self._session: Any = UNDEFINED
@@ -65,6 +67,7 @@ class Container:
         # Services with dependencies
         self.tiktok_service = TikTokService(translation_service=self.translation_service)
         self.twitter_service = TwitterService(translation_service=self.translation_service)
+        self.threads_service = ThreadsService(translation_service=self.translation_service)
         self.media_extractor_service = MediaExtractorService(translation_service=self.translation_service)
 
         self._is_initialized = True
