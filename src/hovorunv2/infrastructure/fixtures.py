@@ -22,6 +22,7 @@ INITIAL_COMMANDS = [
     {"name": "instagram", "description": "Process Instagram links"},
     {"name": "facebook", "description": "Process Facebook links"},
     {"name": "threads", "description": "Process Threads links"},
+    {"name": "bluesky", "description": "Process Bluesky links"},
     {"name": "youtube", "description": "Process YouTube links"},
 ]
 

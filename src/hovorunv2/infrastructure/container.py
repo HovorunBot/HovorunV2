@@ -5,6 +5,7 @@ from typing import Any
 import aiohttp
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from hovorunv2.application.clients.bluesky import BlueskyService
 from hovorunv2.application.clients.facebook import FacebookService
 from hovorunv2.application.clients.instagram import InstagramService
 from hovorunv2.application.clients.threads import ThreadsService
@@ -46,6 +47,7 @@ class Container:
         self.threads_service: ThreadsService = UNDEFINED
         self.instagram_service: InstagramService = UNDEFINED
         self.facebook_service: FacebookService = UNDEFINED
+        self.bluesky_service: BlueskyService = UNDEFINED
         self.media_extractor: MediaExtractor = UNDEFINED
         self.http_session: aiohttp.ClientSession = UNDEFINED
 
@@ -91,6 +93,7 @@ class Container:
         self.facebook_service = FacebookService(
             translation_service=self.translation_service, media_extractor=self.media_extractor
         )
+        self.bluesky_service = BlueskyService(translation_service=self.translation_service)
 
         self._is_initialized = True
 
