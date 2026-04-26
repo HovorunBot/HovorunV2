@@ -3,14 +3,14 @@
 import json
 from typing import TYPE_CHECKING
 
-from hovorunv2.infrastructure.database.models.chat import ChatDB
-from hovorunv2.infrastructure.database.repositories.chat_repository import SQLAlchemyChatRepository
+from hovorunv2.domain.chat import ChatDB
+from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
-class ChatDataService:
+class ChatService:
     """Service to handle database transactions for chat-related entities."""
 
     def __init__(self, session_maker: async_sessionmaker) -> None:

@@ -8,7 +8,7 @@ import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
 
-from hovorunv2.interface.telegram.commands.twitter import TwitterCommand
+from hovorunv2.interface.telegram.handlers.twitter import TwitterCommand
 
 if TYPE_CHECKING:
     from hovorunv2.infrastructure.container import Container

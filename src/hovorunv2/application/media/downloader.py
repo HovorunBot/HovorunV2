@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class MediaService:
+class MediaDownloader:
     """Service to handle downloading media from URLs into RAM."""
 
     DEFAULT_TIMEOUT_SECONDS: int = 30

@@ -8,7 +8,7 @@ import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
 
-from hovorunv2.interface.telegram.commands.threads import ThreadsCommand
+from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
 
 if TYPE_CHECKING:
     from hovorunv2.infrastructure.container import Container

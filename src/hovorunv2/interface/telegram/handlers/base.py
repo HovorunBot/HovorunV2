@@ -145,7 +145,7 @@ class RichMediaCommand(BaseCommand, ABC):
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
 
-        downloaded_files = await container.media_service.download_batch(
+        downloaded_files = await container.media_downloader.download_batch(
             payload.media_urls,
             prefix="media",
             ext="mp4" if payload.is_video else "jpg",

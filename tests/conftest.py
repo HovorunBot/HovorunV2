@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from hovorunv2.infrastructure.container import Container
-from hovorunv2.infrastructure.database.models.chat import Base
+from hovorunv2.domain.chat import Base
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -48,12 +48,12 @@ async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[Container]:
     await container.init()
 
     with (
-        patch("hovorunv2.interface.telegram.commands.whitelist.container", container),
-        patch("hovorunv2.interface.telegram.commands.tiktok.container", container),
-        patch("hovorunv2.interface.telegram.commands.twitter.container", container),
-        patch("hovorunv2.interface.telegram.commands.threads.container", container),
-        patch("hovorunv2.interface.telegram.commands.set_language.container", container),
-        patch("hovorunv2.interface.telegram.commands.base.container", container),
+        patch("hovorunv2.interface.telegram.handlers.whitelist.container", container),
+        patch("hovorunv2.interface.telegram.handlers.tiktok.container", container),
+        patch("hovorunv2.interface.telegram.handlers.twitter.container", container),
+        patch("hovorunv2.interface.telegram.handlers.threads.container", container),
+        patch("hovorunv2.interface.telegram.handlers.set_language.container", container),
+        patch("hovorunv2.interface.telegram.handlers.base.container", container),
         patch("hovorunv2.infrastructure.container.container", container),
     ):
         yield container

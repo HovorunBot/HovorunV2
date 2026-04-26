@@ -2,9 +2,9 @@
 
 from aiogram import Router
 
-from hovorunv2.interface.telegram.commands import get_commands
-from hovorunv2.interface.telegram.commands.debug import DebugCommand
-from hovorunv2.interface.telegram.commands.whitelist import AllowBotCommand
+from hovorunv2.interface.telegram.handlers import get_commands
+from hovorunv2.interface.telegram.handlers.debug import DebugCommand
+from hovorunv2.interface.telegram.handlers.whitelist import AllowBotCommand
 from hovorunv2.interface.telegram.middlewares import MessageCacheMiddleware, WhitelistMiddleware
 
 router = Router()

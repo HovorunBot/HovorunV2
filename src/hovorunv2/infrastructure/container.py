@@ -5,15 +5,15 @@ from typing import Any
 import aiohttp
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from hovorunv2.application.services.chat_data_service import ChatDataService
+from hovorunv2.application.data.chat_service import ChatService
 from hovorunv2.application.services.language_service import LanguageService
-from hovorunv2.application.services.media_extractor_service import MediaExtractorService
-from hovorunv2.application.services.media_service import MediaService
+from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.application.services.threads_service import ThreadsService
-from hovorunv2.application.services.tiktok_service import TikTokService
+from hovorunv2.application.clients.threads import ThreadsService
+from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.services.twitter_service import TwitterService
+from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.application.utils import UNDEFINED
 from hovorunv2.infrastructure.cache import CacheService
@@ -29,15 +29,15 @@ class Container:
         self.session_maker: Any = UNDEFINED
         self.cache_service: CacheService = UNDEFINED
         self.message_service: MessageService = UNDEFINED
-        self.chat_data_service: ChatDataService = UNDEFINED
+        self.chat_service: ChatService = UNDEFINED
         self.whitelist_service: WhitelistService = UNDEFINED
         self.language_service: LanguageService = UNDEFINED
         self.translation_service: TranslationService = UNDEFINED
-        self.media_service: MediaService = UNDEFINED
+        self.media_downloader: MediaDownloader = UNDEFINED
         self.tiktok_service: TikTokService = UNDEFINED
         self.twitter_service: TwitterService = UNDEFINED
         self.threads_service: ThreadsService = UNDEFINED
-        self.media_extractor_service: MediaExtractorService = UNDEFINED
+        self.media_extractor: MediaExtractor = UNDEFINED
         self.http_session: aiohttp.ClientSession = UNDEFINED
 
         self._is_initialized: bool = False
@@ -61,18 +61,18 @@ class Container:
         self.http_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
         self.cache_service = CacheService()
         self.message_service = MessageService(self.cache_service)
-        self.media_service = MediaService(self.http_session)
+        self.media_downloader = MediaDownloader(self.http_session)
 
-        self.chat_data_service = ChatDataService(self.session_maker)
-        self.whitelist_service = WhitelistService(self.chat_data_service)
-        self.language_service = LanguageService(self.chat_data_service)
+        self.chat_service = ChatService(self.session_maker)
+        self.whitelist_service = WhitelistService(self.chat_service)
+        self.language_service = LanguageService(self.chat_service)
         self.translation_service = TranslationService(self.language_service, self.http_session)
 
         # Services with dependencies
         self.tiktok_service = TikTokService(translation_service=self.translation_service)
         self.twitter_service = TwitterService(translation_service=self.translation_service)
         self.threads_service = ThreadsService(translation_service=self.translation_service)
-        self.media_extractor_service = MediaExtractorService(translation_service=self.translation_service)
+        self.media_extractor = MediaExtractor(translation_service=self.translation_service)
 
         self._is_initialized = True
 

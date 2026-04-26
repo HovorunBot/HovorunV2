@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, select
 
-from hovorunv2.infrastructure.database.models.chat import ChatDB
+from hovorunv2.domain.chat import ChatDB
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession

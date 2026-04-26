@@ -9,8 +9,8 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 
 from hovorunv2.infrastructure.config import settings
-from hovorunv2.infrastructure.database.repositories.chat_repository import SQLAlchemyChatRepository
-from hovorunv2.interface.telegram.commands.set_language import SetLanguageCommand
+from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
+from hovorunv2.interface.telegram.handlers.set_language import SetLanguageCommand
 
 if TYPE_CHECKING:
     from hovorunv2.infrastructure.container import Container

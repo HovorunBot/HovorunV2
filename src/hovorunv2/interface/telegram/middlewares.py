@@ -1,9 +1,7 @@
-"""Middlewares for Aiogram bot."""
-
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
-from aiogram.types import Message
+from aiogram.types import Message, TelegramObject
 
 from hovorunv2.infrastructure.container import container
 from hovorunv2.infrastructure.logger import get_logger
@@ -16,12 +14,12 @@ class MessageCacheMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[Message, dict[str, Any]], Awaitable[Any]],
-        event: Message,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
         """Cache message before any filters run."""
-        if container.message_service:
+        if isinstance(event, Message) and container.message_service:
             await container.message_service.cache_message(event)
         return await handler(event, data)
 
@@ -31,15 +29,23 @@ class WhitelistMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[Message, dict[str, Any]], Awaitable[Any]],
-        event: Message,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
         """Check whitelist before executing handler."""
+        # Only process Messages
+        if not isinstance(event, Message):
+            return await handler(event, data)
+
         # Allow handlers with 'bypass_whitelist' flag
         handler_flags = data.get("handler_flags", {})
         if handler_flags.get("bypass_whitelist"):
             return await handler(event, data)
+
+        if not container.whitelist_service:
+            logger.error("WhitelistService not initialized")
+            return None
 
         is_whitelisted = await container.whitelist_service.is_whitelisted(event.chat.id)
         if is_whitelisted:

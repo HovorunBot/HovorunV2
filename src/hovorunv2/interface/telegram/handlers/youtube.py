@@ -1,4 +1,4 @@
-"""Module for handling Facebook media using MediaExtractorService."""
+"""Module for handling YouTube Shorts using MediaExtractor."""
 
 from typing import TYPE_CHECKING
 
@@ -18,16 +18,16 @@ logger = get_logger(__name__)
 
 
 @register_command
-class FacebookCommand(RichMediaCommand):
-    """Command for interacting with Facebook and processing links."""
+class YoutubeShortsCommand(RichMediaCommand):
+    """Command for interacting with YouTube and processing Shorts links."""
 
     @property
     def pattern(self) -> re.Pattern:
-        """Regex pattern to match Facebook links."""
-        return container.media_extractor_service.FACEBOOK_PATTERN
+        """Regex pattern to match YouTube Shorts links."""
+        return container.media_extractor.YT_SHORTS_PATTERN
 
     async def _extract_payload(
         self, session: aiohttp.ClientSession, match: re.Match, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
-        """Fetch Facebook data using MediaExtractorService."""
-        return await container.media_extractor_service.extract_payload(session, match.group(0), chat_id, platform)
+        """Fetch YouTube Shorts data using MediaExtractor."""
+        return await container.media_extractor.extract_payload(session, match.group(0), chat_id, platform)

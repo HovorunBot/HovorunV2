@@ -8,7 +8,7 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 
 from hovorunv2.infrastructure.config import settings
-from hovorunv2.interface.telegram.commands.whitelist import AllowBotCommand
+from hovorunv2.interface.telegram.handlers.whitelist import AllowBotCommand
 
 if TYPE_CHECKING:
     from hovorunv2.infrastructure.container import Container

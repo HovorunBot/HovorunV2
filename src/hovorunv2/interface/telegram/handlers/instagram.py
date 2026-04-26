@@ -1,4 +1,4 @@
-"""Module for handling Instagram media using MediaExtractorService."""
+"""Module for handling Instagram media using MediaExtractor."""
 
 from typing import TYPE_CHECKING
 
@@ -24,10 +24,10 @@ class InstagramCommand(RichMediaCommand):
     @property
     def pattern(self) -> re.Pattern:
         """Regex pattern to match Instagram links."""
-        return container.media_extractor_service.INSTAGRAM_PATTERN
+        return container.media_extractor.INSTAGRAM_PATTERN
 
     async def _extract_payload(
         self, session: aiohttp.ClientSession, match: re.Match, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
-        """Fetch Instagram data using MediaExtractorService."""
-        return await container.media_extractor_service.extract_payload(session, match.group(0), chat_id, platform)
+        """Fetch Instagram data using MediaExtractor."""
+        return await container.media_extractor.extract_payload(session, match.group(0), chat_id, platform)

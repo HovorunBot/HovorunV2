@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class MediaExtractorService:
+class MediaExtractor:
     """Service to extract media info from various platforms using yt-dlp."""
 
     # Patterns for supported platforms

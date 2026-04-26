@@ -7,7 +7,7 @@ import pytest
 from aiogram import Bot
 from aiogram.types import Message, User
 
-from hovorunv2.interface.telegram.commands.debug import DebugCommand
+from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 
 
 @pytest.fixture
