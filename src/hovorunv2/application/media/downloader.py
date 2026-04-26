@@ -4,13 +4,14 @@ import asyncio
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-import aiohttp
 from aiogram.types import BufferedInputFile
 
 from hovorunv2.infrastructure.logger import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    import aiohttp
 
 logger = get_logger(__name__)
 

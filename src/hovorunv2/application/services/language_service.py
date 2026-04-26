@@ -21,7 +21,7 @@ class LanguageService:
     async def get_chat_settings(self, chat_id: int, platform: str = "telegram") -> tuple[str, list[str]]:
         """Get target language and ignored languages for a chat."""
         chat = await self._chat_service.get_chat(chat_id, platform)
-        
+
         target_lang = self._default_target_lang
         ignored_langs = list(self._default_ignored_langs)
 
@@ -36,7 +36,7 @@ class LanguageService:
                         chat_ignored = json.loads(chat.ignored_langs)
                         if isinstance(chat_ignored, list):
                             ignored_langs = chat_ignored
-                    except (json.JSONDecodeError, TypeError):
+                    except json.JSONDecodeError, TypeError:
                         pass
 
         return target_lang, ignored_langs

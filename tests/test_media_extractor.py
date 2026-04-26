@@ -25,9 +25,7 @@ async def test_extract_payload_youtube_shorts(test_container: Container) -> None
         "view_count": 1000,
     }
 
-    with patch(
-        "hovorunv2.application.media.extractor.yt_dlp.YoutubeDL.extract_info", return_value=mock_info
-    ):
+    with patch("hovorunv2.application.media.extractor.yt_dlp.YoutubeDL.extract_info", return_value=mock_info):
         payload = await test_container.media_extractor.extract_payload(
             session=MagicMock(), url="https://youtube.com/shorts/abc-123", chat_id=123, platform="telegram"
         )

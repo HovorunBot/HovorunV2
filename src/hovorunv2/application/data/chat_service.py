@@ -23,7 +23,7 @@ class ChatService:
             repo = SQLAlchemyChatRepository(session)
             return await repo.get_by_id(chat_id, platform)
 
-    async def update_whitelist_status(self, chat_id: int, platform: str, is_whitelisted: bool) -> None:
+    async def update_whitelist_status(self, chat_id: int, platform: str, *, is_whitelisted: bool) -> None:
         """Update whitelist status for a chat."""
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)

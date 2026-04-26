@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
-import aiohttp
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, Message
 
@@ -15,6 +14,7 @@ from hovorunv2.infrastructure.logger import get_logger
 if TYPE_CHECKING:
     import re
 
+    import aiohttp
     from aiogram import Bot
 
     from hovorunv2.application.dtos import RichMediaPayload

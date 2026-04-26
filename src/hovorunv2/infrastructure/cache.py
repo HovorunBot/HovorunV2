@@ -47,7 +47,7 @@ class CacheService:
 
             value = json.loads(raw_value)
             logger.debug("Cache lookup for key: %s (found: True)", key)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             logger.exception("Failed to decode cache value for key %s", key)
             return default
         else:

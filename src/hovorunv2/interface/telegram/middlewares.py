@@ -1,10 +1,15 @@
-from typing import Any, Awaitable, Callable
+"""ALL middlewares of Hovorun application."""
+
+from typing import TYPE_CHECKING, Any
 
 from aiogram import BaseMiddleware
 from aiogram.types import Message, TelegramObject
 
 from hovorunv2.infrastructure.container import container
 from hovorunv2.infrastructure.logger import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = get_logger(__name__)
 
@@ -17,7 +22,7 @@ class MessageCacheMiddleware(BaseMiddleware):
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
         data: dict[str, Any],
-    ) -> Any:
+    ) -> Any:  # noqa: ANN401
         """Cache message before any filters run."""
         if isinstance(event, Message) and container.message_service:
             await container.message_service.cache_message(event)
@@ -32,7 +37,7 @@ class WhitelistMiddleware(BaseMiddleware):
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
         data: dict[str, Any],
-    ) -> Any:
+    ) -> Any:  # noqa: ANN401
         """Check whitelist before executing handler."""
         # Only process Messages
         if not isinstance(event, Message):

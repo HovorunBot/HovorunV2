@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from hovorunv2.infrastructure.container import Container
 from hovorunv2.domain.chat import Base
+from hovorunv2.infrastructure.container import Container
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
