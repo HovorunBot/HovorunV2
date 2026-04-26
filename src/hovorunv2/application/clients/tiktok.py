@@ -5,7 +5,7 @@ import re
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.utils import format_number
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -56,8 +56,11 @@ class TikTokService:
             if trans_res:
                 desc += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
-            media_urls = video_data.get("images", []) or [video_data.get("play", "")]
-            is_video = not bool(video_data.get("images"))
+            images = video_data.get("images", [])
+            if images:
+                media_items = [MediaItem(url=img, is_video=False) for img in images]
+            else:
+                media_items = [MediaItem(url=video_data.get("play", ""), is_video=True)]
 
             footer = (
                 f"\n\n❤️ {format_number(video_data.get('digg_count', 0))} | "
@@ -77,6 +80,5 @@ class TikTokService:
                 content=content,
                 footer_text=footer,
                 original_url=url,
-                media_urls=media_urls,
-                is_video=is_video,
+                media_items=media_items,
             )

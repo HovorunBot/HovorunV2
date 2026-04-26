@@ -5,6 +5,8 @@ from typing import Any
 import aiohttp
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from hovorunv2.application.clients.facebook import FacebookService
+from hovorunv2.application.clients.instagram import InstagramService
 from hovorunv2.application.clients.threads import ThreadsService
 from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
@@ -42,6 +44,8 @@ class Container:
         self.tiktok_service: TikTokService = UNDEFINED
         self.twitter_service: TwitterService = UNDEFINED
         self.threads_service: ThreadsService = UNDEFINED
+        self.instagram_service: InstagramService = UNDEFINED
+        self.facebook_service: FacebookService = UNDEFINED
         self.media_extractor: MediaExtractor = UNDEFINED
         self.http_session: aiohttp.ClientSession = UNDEFINED
 
@@ -79,11 +83,14 @@ class Container:
         self.language_service = LanguageService(self.chat_service)
         self.translation_service = TranslationService(self.language_service, self.http_session)
 
-        # Services with dependencies
+        self.media_extractor = MediaExtractor(translation_service=self.translation_service)
         self.tiktok_service = TikTokService(translation_service=self.translation_service)
         self.twitter_service = TwitterService(translation_service=self.translation_service)
         self.threads_service = ThreadsService(translation_service=self.translation_service)
-        self.media_extractor = MediaExtractor(translation_service=self.translation_service)
+        self.instagram_service = InstagramService(translation_service=self.translation_service)
+        self.facebook_service = FacebookService(
+            translation_service=self.translation_service, media_extractor=self.media_extractor
+        )
 
         self._is_initialized = True
 

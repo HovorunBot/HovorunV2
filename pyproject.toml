@@ -29,6 +29,7 @@ dependencies = [
     "alembic>=1.18.4",
     "emoji-country-flag>=2.1.0",
     "yt-dlp>=2026.3.17",
+    "instaloader>=4.14",
 ]
 
 [project.urls]

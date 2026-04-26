@@ -1,4 +1,4 @@
-"""Module for handling Facebook media using MediaExtractor."""
+"""Module for handling Facebook media using FacebookService."""
 
 from typing import TYPE_CHECKING
 
@@ -24,10 +24,10 @@ class FacebookCommand(RichMediaCommand):
     @property
     def pattern(self) -> re.Pattern:
         """Regex pattern to match Facebook links."""
-        return container.media_extractor.FACEBOOK_PATTERN
+        return container.facebook_service.PATTERN
 
     async def _extract_payload(
         self, session: aiohttp.ClientSession, match: re.Match, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
-        """Fetch Facebook data using MediaExtractor."""
-        return await container.media_extractor.extract_payload(session, match.group(0), chat_id, platform)
+        """Fetch Facebook data using FacebookService."""
+        return await container.facebook_service.extract_payload(session, match.group(0), chat_id, platform)

@@ -51,6 +51,8 @@ async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[Container]:
         patch("hovorunv2.interface.telegram.handlers.whitelist.container", container),
         patch("hovorunv2.interface.telegram.handlers.tiktok.container", container),
         patch("hovorunv2.interface.telegram.handlers.twitter.container", container),
+        patch("hovorunv2.interface.telegram.handlers.facebook.container", container),
+        patch("hovorunv2.interface.telegram.handlers.instagram.container", container),
         patch("hovorunv2.interface.telegram.handlers.threads.container", container),
         patch("hovorunv2.interface.telegram.handlers.set_language.container", container),
         patch("hovorunv2.interface.telegram.handlers.commands_config.container", container),

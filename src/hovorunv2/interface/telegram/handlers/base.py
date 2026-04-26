@@ -157,9 +157,8 @@ class RichMediaCommand(BaseCommand, ABC):
         )
 
         downloaded_files = await container.media_downloader.download_batch(
-            payload.media_urls,
+            payload.media_items,
             prefix="media",
-            ext="mp4" if payload.is_video else "jpg",
             session=session,
         )
 
@@ -177,7 +176,9 @@ class RichMediaCommand(BaseCommand, ABC):
         # 3. Final delivery from RAM
         final_group = []
         for i, file in enumerate(downloaded_files):
-            item = InputMediaVideo(media=file) if payload.is_video else InputMediaPhoto(media=file)
+            # Determine type from MediaItem since downloaded_files matches order
+            item_meta = payload.media_items[i]
+            item = InputMediaVideo(media=file) if item_meta.is_video else InputMediaPhoto(media=file)
 
             if i == 0:
                 item.caption = caption
@@ -204,8 +205,8 @@ class RichMediaCommand(BaseCommand, ABC):
     def _prepare_media_group(self, payload: RichMediaPayload, caption: str) -> list[Any]:
         """Construct InputMedia objects using raw URLs."""
         media_group = []
-        for i, url in enumerate(payload.media_urls):
-            item = InputMediaVideo(media=url) if payload.is_video else InputMediaPhoto(media=url)
+        for i, item_meta in enumerate(payload.media_items):
+            item = InputMediaVideo(media=item_meta.url) if item_meta.is_video else InputMediaPhoto(media=item_meta.url)
 
             if i == 0:
                 item.caption = caption

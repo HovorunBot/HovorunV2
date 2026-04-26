@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
     import aiohttp
 
+    from hovorunv2.application.dtos import MediaItem
+
 logger = get_logger(__name__)
 
 
@@ -47,14 +49,13 @@ class MediaDownloader:
         return await self._perform_download(actual_session, url, filename)
 
     async def download_batch(
-        self, urls: list[str], prefix: str = "media", ext: str = "jpg", session: aiohttp.ClientSession | None = None
+        self, items: list[MediaItem], prefix: str = "media", session: aiohttp.ClientSession | None = None
     ) -> list[BufferedInputFile]:
-        """Download multiple URLs concurrently.
+        """Download multiple media items concurrently.
 
         Args:
-            urls: List of URLs to download.
+            items: List of MediaItem to download.
             prefix: Filename prefix.
-            ext: Default extension.
             session: Optional aiohttp session.
 
         Returns:
@@ -62,9 +63,10 @@ class MediaDownloader:
 
         """
         tasks = []
-        for i, url in enumerate(urls):
+        for i, item in enumerate(items):
+            ext = "mp4" if item.is_video else "jpg"
             filename = f"{prefix}_{i}.{ext}"
-            tasks.append(self.download_as_buffered_file(url, filename, session))
+            tasks.append(self.download_as_buffered_file(item.url, filename, session))
 
         results = await asyncio.gather(*tasks)
         return [r for r in results if r is not None]

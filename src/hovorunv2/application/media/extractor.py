@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import yt_dlp
 
-from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.utils import format_number
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -24,8 +24,6 @@ class MediaExtractor:
 
     # Patterns for supported platforms
     YT_SHORTS_PATTERN = re.compile(r"https?://(?:www\.)?youtube\.com/shorts/(?P<id>[\w-]+)")
-    INSTAGRAM_PATTERN = re.compile(r"https?://(?:www\.)?instagram\.com/(?:reels?|p|tv)/(?P<id>[\w-]+)")
-    FACEBOOK_PATTERN = re.compile(r"https?://(?:www\.)?facebook\.com/(?:reel|watch|share/v|videos)/(?P<id>\d+)")
 
     def __init__(self, translation_service: TranslationService) -> None:
         """Initialize with required translation service."""
@@ -94,19 +92,23 @@ class MediaExtractor:
             elif info["formats"]:
                 media_url = info["formats"][-1].get("url")
 
-        media_urls = [media_url] if media_url else []
-        logger.info("Extracted %d media URL(s) for %s", len(media_urls), url)
-        if media_urls:
-            logger.debug("Media URL: %s", media_urls[0])
+        media_items = [MediaItem(url=media_url, is_video=True)] if media_url else []
+        logger.info("Extracted %d media item(s) for %s", len(media_items), url)
+        if media_items:
+            logger.debug("Media URL: %s", media_items[0].url)
 
         likes = info.get("like_count") or 0
         views = info.get("view_count") or 0
+
+        # Differentiate post type based on URL/Platform
+        is_reel = "/reel" in url or "/shorts" in url
+        post_type_label = "reel" if is_reel else "post"
 
         footer = ""
         if likes or views:
             footer = f"\n\n❤️ {format_number(likes)} | 👁️ {format_number(views)}\n"
 
-        footer += f'🔗 <a href="{url}">Original post</a>'
+        footer += f'🔗 <a href="{url}">Original {post_type_label}</a>'
 
         return RichMediaPayload(
             author_name=html.escape(author_name),
@@ -115,6 +117,5 @@ class MediaExtractor:
             content=content,
             footer_text=footer,
             original_url=url,
-            media_urls=media_urls,
-            is_video=True,
+            media_items=media_items,
         )

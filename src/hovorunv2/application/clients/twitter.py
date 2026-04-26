@@ -5,7 +5,7 @@ import re
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.utils import format_number
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -74,9 +74,9 @@ class TwitterService:
             )
             content += f"\n\n{quote_section}"
 
-        media_items = data.get("media_extended", [])
-        media_urls = [m["url"] for m in media_items]
-        is_video = any(m["type"] in ("video", "gif") for m in media_items)
+        media_items = [
+            MediaItem(url=m["url"], is_video=m["type"] in ("video", "gif")) for m in data.get("media_extended", [])
+        ]
 
         footer = (
             f"\n\n🔁 {format_number(data.get('retweets', 0))} | "
@@ -92,6 +92,5 @@ class TwitterService:
             content=content,
             footer_text=footer,
             original_url=url,
-            media_urls=media_urls,
-            is_video=is_video,
+            media_items=media_items,
         )

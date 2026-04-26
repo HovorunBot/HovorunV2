@@ -6,7 +6,8 @@ import urllib.parse
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.utils import extract_og_metadata
 from hovorunv2.infrastructure.logger import get_logger
 
 if TYPE_CHECKING:
@@ -50,7 +51,7 @@ class ThreadsService:
             logger.exception("Failed to fetch Threads URL %s", url)
             return None
 
-        metadata = self._extract_metadata(html_content)
+        metadata = extract_og_metadata(html_content)
         if not metadata:
             logger.error("No metadata found for Threads URL: %s", url)
             return None
@@ -64,17 +65,14 @@ class ThreadsService:
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
         # 2. Parse Media (Prefer video, then image)
-        media_urls = []
-        is_video = False
+        media_items = []
 
         if "video:secure_url" in metadata:
-            media_urls = [metadata["video:secure_url"]]
-            is_video = True
+            media_items = [MediaItem(url=metadata["video:secure_url"], is_video=True)]
         elif "video" in metadata:
-            media_urls = [metadata["video"]]
-            is_video = True
+            media_items = [MediaItem(url=metadata["video"], is_video=True)]
         elif "image" in metadata:
-            media_urls = [metadata["image"]]
+            media_items = [MediaItem(url=metadata["image"], is_video=False)]
 
         # 3. Parse Author Info
         title = metadata.get("title", "")
@@ -97,23 +95,5 @@ class ThreadsService:
             content=content,
             footer_text=footer,
             original_url=url,
-            media_urls=media_urls,
-            is_video=is_video,
+            media_items=media_items,
         )
-
-    def _extract_metadata(self, html_content: str) -> dict[str, str]:
-        """Robustly extract OG and Twitter metadata from HTML."""
-        metadata = {}
-        # Match meta tags and extract key-value pairs
-        for meta in re.finditer(r"<meta\s+([^>]+)>", html_content, re.IGNORECASE):
-            body = meta.group(1)
-            # Find property="og:..." or name="twitter:..." etc.
-            key_m = re.search(r'(?:property|name)=["\'](?:og:|twitter:)?([^"\']+)["\']', body, re.IGNORECASE)
-            val_m = re.search(r'content=["\']([^"\']+)["\']', body, re.IGNORECASE)
-
-            if key_m and val_m:
-                key = key_m.group(1).lower()
-                val = html.unescape(val_m.group(1))
-                if key not in metadata:
-                    metadata[key] = val
-        return metadata
