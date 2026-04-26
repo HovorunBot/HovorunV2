@@ -1,19 +1,16 @@
 """Application service for text translation."""
 
 import html
-import json
-from contextlib import AsyncExitStack
 from http import HTTPStatus
 from typing import TYPE_CHECKING, NamedTuple
 
 import aiohttp
 import flag
 
-from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.logger import get_logger
 
 if TYPE_CHECKING:
-    from hovorunv2.infrastructure.database.repositories.chat_repository import SQLAlchemyChatRepository
+    from hovorunv2.application.services.language_service import LanguageService
 
 logger = get_logger(__name__)
 
@@ -34,12 +31,12 @@ class TranslationService:
 
     def __init__(
         self,
-        chat_repository: SQLAlchemyChatRepository,
+        language_service: LanguageService,
+        session: aiohttp.ClientSession,
     ) -> None:
-        """Initialize service with repository."""
-        self._chat_repository = chat_repository
-        self._default_target_lang = settings.translation_target_lang
-        self._default_ignored_langs = settings.translation_ignored_langs
+        """Initialize service with language service and session."""
+        self._language_service = language_service
+        self._session = session
 
     def get_flag(self, lang_code: str) -> str:
         """Get flag emoji for a language code."""
@@ -76,25 +73,8 @@ class TranslationService:
         if not text or not text.strip():
             return None
 
-        # Fetch chat settings
-        target_lang = self._default_target_lang
-        ignored_langs = list(self._default_ignored_langs)
-
-        chat = await self._chat_repository.get_by_id(chat_id, platform)
-        if chat:
-            if chat.target_lang:
-                target_lang = chat.target_lang
-            if chat.ignored_langs:
-                # Safely handle both native JSON columns (lists) and text columns (strings)
-                if isinstance(chat.ignored_langs, list):
-                    ignored_langs = chat.ignored_langs
-                elif isinstance(chat.ignored_langs, str):
-                    try:
-                        chat_ignored = json.loads(chat.ignored_langs)
-                        if isinstance(chat_ignored, list):
-                            ignored_langs = chat_ignored
-                    except json.JSONDecodeError, TypeError:
-                        logger.warning("Failed to parse ignored_langs for chat %d", chat_id)
+        # Fetch chat settings from language service
+        target_lang, ignored_langs = await self._language_service.get_chat_settings(chat_id, platform)
 
         # Enforce mandatory ignores and include target_lang
         all_ignored = set(ignored_langs)
@@ -102,12 +82,8 @@ class TranslationService:
         for lang in self.MANDATORY_IGNORED_LANGS:
             all_ignored.add(lang)
 
-        async with AsyncExitStack() as stack:
-            actual_session = session
-            if not actual_session:
-                actual_session = await stack.enter_async_context(aiohttp.ClientSession())
-
-            translated_text = await self._perform_translation(actual_session, text, target_lang, list(all_ignored))
+        actual_session = session or self._session
+        translated_text = await self._perform_translation(actual_session, text, target_lang, list(all_ignored))
 
         if translated_text:
             return TranslationResult(text=translated_text, target_lang=target_lang, flag=self.get_flag(target_lang))

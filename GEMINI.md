@@ -10,9 +10,16 @@ HovorunV2 is a Telegram helper bot built with Python 3.14+, following **Onion Ar
   Cache), [uv](https://github.com/astral-sh/uv), [Docker](https://www.docker.com/).
 - **Architecture (Onion):**
     - **Domain:** Pure database models using modern SQLAlchemy `Mapped` types.
-    - **Application:** Service layer for business logic (e.g., `WhitelistService`, `TranslationService`,
-      `MessageService`).
-    - **Infrastructure:** Async Redis-compatible caching (Valkey), Database repositories, and configuration.
+    - **Infrastructure:** Async Redis-compatible caching (Valkey), configuration, and Database repositories.
+        - **Repositories:** Pure data access. They know how to query/persist objects but *never* manage transactions or
+          sessions. They accept a `session` in their constructor.
+    - **Application:** Split into two layers:
+        - **Data Services:** Intermediary layer (e.g., `ChatDataService`). They encapsulate `session_maker`, manage
+          transaction boundaries (`commit`/`rollback`), and use Repositories to perform operations. They provide
+          high-level data primitives to business services.
+        - **Business Services:** High-level logic (e.g., `WhitelistService`, `LanguageService`). They focus on "what"
+          should happen. They use Data Services to interact with the database and never touch repositories or sessions
+          directly.
     - **Interface:** Delivery adapters (Telegram Bot handlers via `aiogram`).
 
 ## Dependency Management
@@ -40,20 +47,30 @@ Automated via `Makefile`.
 - **Errors:** ALWAYS use semantic exceptions (e.g., `ValueError`, `AttributeError`, `TypeError`) or custom domain
   exceptions. NEVER raise generic `RuntimeError`.
 - **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) configuration (`ALL`).
-- **Type Hints:** Mandatory. Checked with `ty`.
+- **Type Hints:** Mandatory. Checked with `ty`. As we use Python 3.14+, deferred evaluation of type annotations is the
+  default; do NOT use strings (`"Service"`) for forward references or circular dependencies.
 - **Async:** Mandatory for all I/O operations (Database, Cache, Network).
-- **JSON Serialization:** Use `model_dump(mode="json")` for Pydantic/Aiogram objects before stringifying to handle non-serializable types like `Default` correctly. Avoid direct `model_dump_json()` on complex Aiogram types.
+- **JSON Serialization:** Use `model_dump(mode="json")` for Pydantic/Aiogram objects before stringifying to handle
+  non-serializable types like `Default` correctly. Avoid direct `model_dump_json()` on complex Aiogram types.
 - **HTTP Status Codes:** Use `HTTPStatus` enum.
 - **Magic Numbers:** Define as constants/enums.
 
 ### Testing Requirements
-- **No Mocks Policy:** Internal code must be tested without mocks. ALWAYS use real services, real objects, real databases (SQLite memory for tests), and real Valkey instances.
-- **External APIs:** Only external network requests (e.g., to `api.vxtwitter.com`, `tikwm.com`) may be mocked. Use `aioresponses` or similar to mock at the HTTP layer while keeping service logic real.
-- **Persistence:** Avoid `unittest.mock` where real implementations can be used. Verify state in Database and Cache directly.
-- **Type Integrity:** NEVER resolve type-checker (`ty`) errors by using `# ty:ignore` or `Any` casts to suppress warnings. Resolve the root cause via proper type hints or improved mock structures. Use `Any` return type for mock factories if needed to avoid casting in every assertion.
-- **Persistence of User Changes:** NEVER rollback or revert code changes provided by the user unless explicitly instructed. This is a critical rule to ensure progress is not lost.
-- **Mandatory Dependencies:** Services must require their dependencies in `__init__`. Injected dependencies from the `Container` MUST NOT be `None`. Avoid `Optional` or `None` defaults for core service dependencies. No `if dependency:` nonsense.
 
+- **No Mocks Policy:** Internal code must be tested without mocks. ALWAYS use real services, real objects, real
+  databases (SQLite memory for tests), and real Valkey instances.
+- **External APIs:** Only external network requests (e.g., to `api.vxtwitter.com`, `tikwm.com`) may be mocked. Use
+  `aioresponses` or similar to mock at the HTTP layer while keeping service logic real.
+- **Persistence:** Avoid `unittest.mock` where real implementations can be used. Verify state in Database and Cache
+  directly.
+- **Type Integrity:** NEVER resolve type-checker (`ty`) errors by using `# ty:ignore` or `Any` casts to suppress
+  warnings. Resolve the root cause via proper type hints or improved mock structures. Use `Any` return type for mock
+  factories if needed to avoid casting in every assertion.
+- **Persistence of User Changes:** NEVER rollback or revert code changes provided by the user unless explicitly
+  instructed. This is a critical rule to ensure progress is not lost.
+- **Mandatory Dependencies:** Services must require their dependencies in `__init__`. Injected dependencies from the
+  `Container` MUST NOT be `None`. Avoid `Optional` or `None` defaults for core service dependencies. No `if dependency:`
+  nonsense.
 
 ## Key Files
 

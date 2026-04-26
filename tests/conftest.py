@@ -53,6 +53,7 @@ async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[Container]:
         patch("hovorunv2.interface.telegram.commands.twitter.container", container),
         patch("hovorunv2.interface.telegram.commands.threads.container", container),
         patch("hovorunv2.interface.telegram.commands.set_language.container", container),
+        patch("hovorunv2.interface.telegram.commands.base.container", container),
         patch("hovorunv2.infrastructure.container.container", container),
     ):
         yield container

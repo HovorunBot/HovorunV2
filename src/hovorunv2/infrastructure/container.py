@@ -2,8 +2,11 @@
 
 from typing import Any
 
+import aiohttp
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from hovorunv2.application.services.chat_data_service import ChatDataService
+from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.media_extractor_service import MediaExtractorService
 from hovorunv2.application.services.media_service import MediaService
 from hovorunv2.application.services.message_service import MessageService
@@ -15,7 +18,6 @@ from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.application.utils import UNDEFINED
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import settings
-from hovorunv2.infrastructure.database.repositories.chat_repository import SQLAlchemyChatRepository
 
 
 class Container:
@@ -27,15 +29,17 @@ class Container:
         self.session_maker: Any = UNDEFINED
         self.cache_service: CacheService = UNDEFINED
         self.message_service: MessageService = UNDEFINED
+        self.chat_data_service: ChatDataService = UNDEFINED
         self.whitelist_service: WhitelistService = UNDEFINED
+        self.language_service: LanguageService = UNDEFINED
         self.translation_service: TranslationService = UNDEFINED
         self.media_service: MediaService = UNDEFINED
         self.tiktok_service: TikTokService = UNDEFINED
         self.twitter_service: TwitterService = UNDEFINED
         self.threads_service: ThreadsService = UNDEFINED
         self.media_extractor_service: MediaExtractorService = UNDEFINED
+        self.http_session: aiohttp.ClientSession = UNDEFINED
 
-        self._session: Any = UNDEFINED
         self._is_initialized: bool = False
 
     @property
@@ -54,15 +58,15 @@ class Container:
         if self.session_maker is UNDEFINED:
             self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
 
+        self.http_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
         self.cache_service = CacheService()
         self.message_service = MessageService(self.cache_service)
-        self.media_service = MediaService()
+        self.media_service = MediaService(self.http_session)
 
-        # Repository needs a session
-        self._session = self.session_maker()
-        chat_repository = SQLAlchemyChatRepository(self._session)
-        self.whitelist_service = WhitelistService(chat_repository)
-        self.translation_service = TranslationService(chat_repository)
+        self.chat_data_service = ChatDataService(self.session_maker)
+        self.whitelist_service = WhitelistService(self.chat_data_service)
+        self.language_service = LanguageService(self.chat_data_service)
+        self.translation_service = TranslationService(self.language_service, self.http_session)
 
         # Services with dependencies
         self.tiktok_service = TikTokService(translation_service=self.translation_service)
@@ -77,11 +81,14 @@ class Container:
         if not self._is_initialized:
             return
 
-        if self._session is not UNDEFINED:
-            await self._session.close()
-
         if self.cache_service is not UNDEFINED:
             await self.cache_service.close()
+
+        if self.http_session is not UNDEFINED:
+            await self.http_session.close()
+
+        if self.engine is not UNDEFINED:
+            await self.engine.dispose()
 
         self._is_initialized = False
 

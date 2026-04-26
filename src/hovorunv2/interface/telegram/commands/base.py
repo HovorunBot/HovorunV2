@@ -71,15 +71,14 @@ class RichMediaCommand(BaseCommand, ABC):
             "Processing %d link(s) for %s from user %s", len(matches), self.__class__.__name__, message.from_user.id
         )
 
-        timeout = aiohttp.ClientTimeout(total=self.API_TIMEOUT_SECONDS)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            for match in matches:
-                try:
-                    payload = await self._extract_payload(session, match, message.chat.id, "telegram")
-                    if payload:
-                        await self._send_rich_media(bot, message, payload, session)
-                except Exception:
-                    logger.exception("Failed to process link: %s", match.group(0))
+        session = container.http_session
+        for match in matches:
+            try:
+                payload = await self._extract_payload(session, match, message.chat.id, "telegram")
+                if payload:
+                    await self._send_rich_media(bot, message, payload, session)
+            except Exception:
+                logger.exception("Failed to process link: %s", match.group(0))
 
     @abstractmethod
     async def _extract_payload(

@@ -9,6 +9,7 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 
 from hovorunv2.infrastructure.config import settings
+from hovorunv2.infrastructure.database.repositories.chat_repository import SQLAlchemyChatRepository
 from hovorunv2.interface.telegram.commands.set_language import SetLanguageCommand
 
 if TYPE_CHECKING:
@@ -64,17 +65,19 @@ async def test_handle_authorized(set_language_command: SetLanguageCommand, test_
     await set_language_command.handle(message, cast("Bot", bot))
 
     # Check database directly
-    chat = await test_container.whitelist_service.chat_repository.get_by_id(chat_id, "telegram")
-    assert chat is not None
-    assert chat.target_lang == "uk"
+    async with test_container.session_maker() as session:
+        repo = SQLAlchemyChatRepository(session)
+        chat = await repo.get_by_id(chat_id, "telegram")
+        assert chat is not None
+        assert chat.target_lang == "uk"
 
-    ignored_langs = chat.ignored_langs
-    assert ignored_langs is not None
-    ignored = json.loads(ignored_langs)
+        ignored_langs = chat.ignored_langs
+        assert ignored_langs is not None
+        ignored = json.loads(ignored_langs)
 
-    assert "en" in ignored
-    assert "ru" in ignored
-    assert "und" in ignored
+        assert "en" in ignored
+        assert "ru" in ignored
+        assert "und" in ignored
 
     message.answer.assert_called_once()
     assert "Translation settings updated" in message.answer.call_args[0][0]
@@ -104,7 +107,9 @@ async def test_handle_unauthorized(set_language_command: SetLanguageCommand, tes
 
     await set_language_command.handle(message, cast("Bot", bot))
 
-    chat = await test_container.whitelist_service.chat_repository.get_by_id(chat_id, "telegram")
-    assert chat is None
+    async with test_container.session_maker() as session:
+        repo = SQLAlchemyChatRepository(session)
+        chat = await repo.get_by_id(chat_id, "telegram")
+        assert chat is None
 
     message.answer.assert_not_called()

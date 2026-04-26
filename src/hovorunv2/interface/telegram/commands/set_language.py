@@ -1,12 +1,10 @@
 """Command to configure translation settings for a chat."""
 
-import json
 import re
 from typing import TYPE_CHECKING
 
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.container import container
-from hovorunv2.infrastructure.database.models.chat import ChatDB
 from hovorunv2.infrastructure.logger import get_logger
 
 from .base import BaseCommand, register_command
@@ -61,19 +59,10 @@ class SetLanguageCommand(BaseCommand):
         platform = "telegram"
 
         # Update chat settings in database
-        assert container.whitelist_service is not None, "Must be specified"
-        assert container.whitelist_service.chat_repository is not None, "Must be provided"
-        chat = await container.whitelist_service.chat_repository.get_by_id(chat_id, platform)
-        if not chat:
-            # Create chat if it doesn't exist but is being configured
-            chat = ChatDB(chat_id=chat_id, platform=platform, is_whitelisted=False)
-
-        chat.target_lang = target
-        chat.ignored_langs = json.dumps(ignored_list)
-
-        assert container.whitelist_service is not None, "Must be specified"
-        assert container.whitelist_service.chat_repository is not None, "Must be provided"
-        await container.whitelist_service.chat_repository.save(chat)
+        assert container.language_service is not None, "Must be specified"
+        await container.language_service.update_settings(
+            chat_id=chat_id, target_lang=target, ignored_langs=ignored_list, platform=platform
+        )
 
         logger.info("Translation settings updated for chat %d: target=%s, ignored=%s", chat_id, target, ignored_list)
         await message.answer(

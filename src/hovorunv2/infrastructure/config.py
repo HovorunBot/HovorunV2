@@ -45,5 +45,5 @@ class Settings(BaseSettings):
 
 logger = get_logger(__name__)
 logger.info("Loading settings from %s...", DOT_ENV_PATH)
-settings = Settings()  # ty: ignore[missing-argument]
+settings = Settings.model_validate({})
 logger.info("Settings loaded. DB Path: %s", settings.db_path)

@@ -36,10 +36,7 @@ class SQLAlchemyChatRepository:
         else:
             self.session.add(chat)
 
-        await self.session.commit()
-
     async def remove_from_whitelist(self, chat_id: int, platform: str = "telegram") -> None:
         """Remove chat from whitelist."""
         stmt = delete(ChatDB).where(ChatDB.chat_id == chat_id, ChatDB.platform == platform)
         await self.session.execute(stmt)
-        await self.session.commit()

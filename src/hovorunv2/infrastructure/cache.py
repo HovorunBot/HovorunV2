@@ -26,8 +26,7 @@ class CacheService:
     async def set(self, key: str, value: Any, expire: int | None = None) -> None:  # noqa: ANN401
         """Store a value in the cache with an optional expiration time in seconds."""
         logger.debug("Caching key: %s (expire: %s)", key, expire)
-        # Avoid double serialization if value is already a JSON string
-        json_value = value if isinstance(value, str) else json.dumps(value)
+        json_value = json.dumps(value)
         await self._cache.set(key, json_value, ex=expire)
 
     async def get(self, key: str, default: Any = None) -> Any:  # noqa: ANN401
@@ -48,7 +47,7 @@ class CacheService:
 
             value = json.loads(raw_value)
             logger.debug("Cache lookup for key: %s (found: True)", key)
-        except json.JSONDecodeError, UnicodeDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             logger.exception("Failed to decode cache value for key %s", key)
             return default
         else:

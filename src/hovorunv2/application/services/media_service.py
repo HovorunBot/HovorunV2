@@ -24,8 +24,8 @@ class MediaService:
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
 
-    def __init__(self, session: aiohttp.ClientSession | None = None) -> None:
-        """Initialize service with optional session."""
+    def __init__(self, session: aiohttp.ClientSession) -> None:
+        """Initialize service with mandatory session."""
         self._session = session
 
     async def download_as_buffered_file(
@@ -36,17 +36,13 @@ class MediaService:
         Args:
             url: The URL to download.
             filename: The filename to assign to the buffer.
-            session: Optional aiohttp session.
+            session: Optional aiohttp session to override the default one.
 
         Returns:
             BufferedInputFile or None if download fails.
 
         """
         actual_session = session or self._session
-        if not actual_session:
-            async with aiohttp.ClientSession(headers=self.DEFAULT_HEADERS) as new_session:
-                return await self._perform_download(new_session, url, filename)
-
         return await self._perform_download(actual_session, url, filename)
 
     async def download_batch(
