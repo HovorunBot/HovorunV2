@@ -32,10 +32,11 @@ To use the bot, you must run your own instance using Docker.
     - Automatically extracts and attaches the original video content.
     - Full support for image-based slideshows.
     - Rich captions including author, video title, and music information.
-    - Automatic translation of video descriptions.
-- **🛡️ Chat Whitelisting**: Secure your bot by restricting it to specific chats. Admins can easily allow or disallow the
-  bot in any group.
-- **More coming soon!** I'm working on more integrations to make your chats even better.
+- **📸 Instagram Reels**: Automatically detects Reels links and provides native video previews.
+- **📺 YouTube Shorts**: Seamlessly share YouTube Shorts with high-quality video attachments.
+- **🧵 Threads Integration**: Rich previews for Threads posts, including text, media, and translation.
+- **🛡️ Chat Whitelisting**: Secure your bot by restricting it to specific chats. Admins can easily allow or disallow the bot in any group.
+- **🌍 Dynamic Translation**: Automatically translates shared content into the chat's target language (default: Ukrainian).
 
 ---
 
@@ -47,6 +48,7 @@ This project uses a `Makefile` and Docker to automate everything from tool insta
 
 - `make`
 - `docker`
+- `uv` (for local development)
 
 ### Quick Start
 
@@ -56,10 +58,11 @@ This project uses a `Makefile` and Docker to automate everything from tool insta
    ```
 
 2. **Configure Secrets**:
-   Open the generated `.env` file and add your Telegram Bot Token:
+   Open the generated `.env` file and add your Telegram Bot Token and Admin IDs:
    ```bash
    BOT_TOKEN=your_telegram_bot_token_here
    ADMIN_IDS=[123,456]
+   OPENROUTER_API_KEY=...
    ```
 
 3. **Launch**:
@@ -83,32 +86,30 @@ This project uses a `Makefile` and Docker to automate everything from tool insta
 
 ## 🏗️ Architecture (For Developers)
 
-HovorunV2 follows the **Onion Architecture** to ensure the code remains modular and maintainable:
-
-- **Domain**: Pure business logic and modern SQLAlchemy 2.0 database models.
-- **Application**: Service layer for orchestration (Translation, Whitelisting, Caching).
-- **Infrastructure**: Database repositories, Valkey async caching, and configuration.
-- **Interface**: Telegram bot handlers and command registration.
+- **Domain**: Core entities and SQLAlchemy 2.0 database models.
+- **Infrastructure**: Low-level implementation of repositories, Valkey async caching, and centralized DI container.
+- **Application**:
+    - **Data Services**: Orchestrate database transactions and repository operations.
+    - **Business Services**: Pure business logic (Translation, Whitelisting, Language Management).
+    - **Clients**: Specialized scrapers for external platforms (Twitter, TikTok, Threads).
+    - **Media**: Binary IO and download management.
+- **Interface**: Idiomatic Telegram bot handlers using `aiogram` routers and middlewares.
 
 ---
 
 ## 🧪 Development
 
 **Run Tests**:
-
 ```bash
-make dev  # Start Valkey dependency
 PYTHONPATH=src uv run pytest
 ```
 
 **Linting**:
-
 ```bash
 uv run ruff check .
 ```
 
 **Type Checking**:
-
 ```bash
 uv run ty check src
 ```
