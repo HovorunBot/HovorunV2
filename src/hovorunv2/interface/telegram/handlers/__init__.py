@@ -1,6 +1,7 @@
 """Bot commands package providing access to registered bot commands."""
 
 from . import (
+    bluesky,
     commands_config,
     debug,
     facebook,
@@ -15,6 +16,7 @@ from . import (
 from .base import get_commands, register_command
 
 __all__ = [
+    "bluesky",
     "commands_config",
     "debug",
     "facebook",

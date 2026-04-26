@@ -23,8 +23,8 @@ class BlueskyService:
     API_BASE_URL = "https://public.api.bsky.app/xrpc"
 
     # Pattern to catch Bluesky post links
-    # https://bsky.app/profile/handle/post/rkey
-    PATTERN = re.compile(r"https?://(?:www\.)?bsky\.app/profile/(?P<handle>[\w.-]+)/post/(?P<rkey>[\w-]+)")
+    # https://bsky.app/profile/handle/post/rkey or https://go.bsky.app/announcement
+    PATTERN = re.compile(r"https?://(?:www\.|go\.)?bsky\.app/(?:profile/(?P<handle>[\w.-]+)/post/)?(?P<rkey>[\w.-]+)")
 
     def __init__(self, translation_service: TranslationService) -> None:
         """Initialize with required services."""
@@ -34,8 +34,19 @@ class BlueskyService:
         self, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
         """Fetch Bluesky data and construct a RichMediaPayload."""
-        match = self.PATTERN.search(url)
-        if not match:
+        actual_url = url
+        if "go.bsky.app" in url:
+            try:
+                # Follow redirect to get the actual post URL
+                async with session.get(url, allow_redirects=True, timeout=10) as resp:
+                    actual_url = str(resp.url)
+            except Exception:
+                logger.exception("Failed to follow Bluesky redirect for %s", url)
+                return None
+
+        match = self.PATTERN.search(actual_url)
+        if not match or not match.group("handle"):
+            # If still no handle (e.g. invalid URL after redirect), abort
             return None
 
         handle = match.group("handle")
