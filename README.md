@@ -37,6 +37,7 @@ To use the bot, you must run your own instance using Docker.
 - **🧵 Threads Integration**: Rich previews for Threads posts, including text, media, and translation.
 - **🛡️ Chat Whitelisting**: Secure your bot by restricting it to specific chats. Admins can easily allow or disallow the bot in any group.
 - **🌍 Dynamic Translation**: Automatically translates shared content into the chat's target language (default: Ukrainian).
+- **⚙️ Command Configuration**: Granular control over bot features. Enable or disable specific commands (tiktok, twitter, etc.) per chat.
 
 ---
 
@@ -73,6 +74,18 @@ This project uses a `Makefile` and Docker to automate everything from tool insta
 ---
 
 ## 📖 Available Commands
+
+### Bot Commands (Telegram)
+
+| Command        | Description                                          |
+|----------------|------------------------------------------------------|
+| `/allow_chat`  | Whitelist the current chat (Admin only).             |
+| `/set_lang`    | Configure target and ignored languages (Admin only). |
+| `/enable_cmd`  | Enable a specific feature/command for the chat.      |
+| `/disable_cmd` | Disable a specific feature/command for the chat.     |
+| `/debug`       | Show debug information.                              |
+
+### Development Commands (CLI)
 
 | Command        | Description                                                       |
 |----------------|-------------------------------------------------------------------|

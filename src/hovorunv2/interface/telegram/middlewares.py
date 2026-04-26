@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 from aiogram import BaseMiddleware
+from aiogram.dispatcher.flags import get_flag
 from aiogram.types import Message, TelegramObject
 
 from hovorunv2.infrastructure.container import container
@@ -44,8 +45,7 @@ class WhitelistMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Allow handlers with 'bypass_whitelist' flag
-        handler_flags = data.get("handler_flags", {})
-        if handler_flags.get("bypass_whitelist"):
+        if get_flag(data, "bypass_whitelist"):
             return await handler(event, data)
 
         if not container.whitelist_service:
@@ -57,4 +57,34 @@ class WhitelistMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         logger.debug("Ignoring message in non-whitelisted chat %d", event.chat.id)
+        return None
+
+
+class CommandConfigurationMiddleware(BaseMiddleware):
+    """Middleware to check if command is enabled for the chat."""
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:  # noqa: ANN401
+        """Check if command is enabled before executing handler."""
+        if not isinstance(event, Message):
+            return await handler(event, data)
+
+        command_name = get_flag(data, "command_name")
+
+        if not command_name:
+            return await handler(event, data)
+
+        if not container.command_service:
+            logger.error("CommandService not initialized")
+            return await handler(event, data)
+
+        is_allowed = await container.command_service.is_command_allowed(event.chat.id, command_name)
+        if is_allowed:
+            return await handler(event, data)
+
+        logger.info("Command %s is not allowed in chat %d", command_name, event.chat.id)
         return None

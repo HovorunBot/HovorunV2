@@ -1,6 +1,7 @@
 """Bot commands package providing access to registered bot commands."""
 
 from . import (
+    commands_config,
     debug,
     facebook,
     instagram,
@@ -14,6 +15,7 @@ from . import (
 from .base import get_commands, register_command
 
 __all__ = [
+    "commands_config",
     "debug",
     "facebook",
     "get_commands",

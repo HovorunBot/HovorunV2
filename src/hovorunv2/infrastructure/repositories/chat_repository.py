@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, select
+from sqlalchemy.orm import selectinload
 
 from hovorunv2.domain.chat import ChatDB
 
@@ -19,7 +20,11 @@ class SQLAlchemyChatRepository:
 
     async def get_by_id(self, chat_id: int, platform: str = "telegram") -> ChatDB | None:
         """Fetch chat from database."""
-        stmt = select(ChatDB).where(ChatDB.chat_id == chat_id, ChatDB.platform == platform)
+        stmt = (
+            select(ChatDB)
+            .where(ChatDB.chat_id == chat_id, ChatDB.platform == platform)
+            .options(selectinload(ChatDB.commands))
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

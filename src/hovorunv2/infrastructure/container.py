@@ -9,8 +9,10 @@ from hovorunv2.application.clients.threads import ThreadsService
 from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.data.chat_service import ChatService
+from hovorunv2.application.data.command_service import CommandDataService
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.translation_service import TranslationService
@@ -18,6 +20,7 @@ from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.application.utils import UNDEFINED
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import settings
+from hovorunv2.infrastructure.fixtures import setup_fixtures
 
 
 class Container:
@@ -30,6 +33,8 @@ class Container:
         self.cache_service: CacheService = UNDEFINED
         self.message_service: MessageService = UNDEFINED
         self.chat_service: ChatService = UNDEFINED
+        self.command_data_service: CommandDataService = UNDEFINED
+        self.command_service: CommandService = UNDEFINED
         self.whitelist_service: WhitelistService = UNDEFINED
         self.language_service: LanguageService = UNDEFINED
         self.translation_service: TranslationService = UNDEFINED
@@ -64,7 +69,13 @@ class Container:
         self.media_downloader = MediaDownloader(self.http_session)
 
         self.chat_service = ChatService(self.session_maker)
+        self.command_data_service = CommandDataService(self.session_maker)
+        self.command_service = CommandService(self.command_data_service)
         self.whitelist_service = WhitelistService(self.chat_service)
+
+        # Populate fixtures
+        await setup_fixtures(self.session_maker)
+
         self.language_service = LanguageService(self.chat_service)
         self.translation_service = TranslationService(self.language_service, self.http_session)
 

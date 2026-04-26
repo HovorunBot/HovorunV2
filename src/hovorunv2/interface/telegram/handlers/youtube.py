@@ -22,6 +22,11 @@ class YoutubeShortsCommand(RichMediaCommand):
     """Command for interacting with YouTube and processing Shorts links."""
 
     @property
+    def name(self) -> str:
+        """Command name."""
+        return "youtube"
+
+    @property
     def pattern(self) -> re.Pattern:
         """Regex pattern to match YouTube Shorts links."""
         return container.media_extractor.YT_SHORTS_PATTERN

@@ -36,9 +36,9 @@ def create_mock_message(text: str | None, user_id: int = 123, chat_id: int = 456
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("/allow_bot", True),
-        (" /allow_bot ", True),
-        ("/allow_bot extra", False),
+        ("/allow_chat", True),
+        (" /allow_chat ", True),
+        ("/allow_chat extra", False),
         ("/other_command", False),
         ("", False),
         (None, False),
@@ -55,7 +55,7 @@ async def test_handle_authorized(whitelist_command: AllowBotCommand, init_contai
     """Test handling by an authorized user."""
     admin_id = settings.admin_ids[0]
     chat_id = 789
-    message = create_mock_message("/allow_bot", user_id=admin_id, chat_id=chat_id)
+    message = create_mock_message("/allow_chat", user_id=admin_id, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
 
     await whitelist_command.handle(message, cast("Bot", bot))
@@ -65,13 +65,17 @@ async def test_handle_authorized(whitelist_command: AllowBotCommand, init_contai
     assert is_whitelisted is True
     message.answer.assert_called_once_with("Bot is now allowed in this chat.")
 
+    # Check that AUTO_ALLOW commands are enabled
+    is_tiktok_allowed = await init_container.command_service.is_command_allowed(chat_id, "tiktok")
+    assert is_tiktok_allowed is True
+
 
 @pytest.mark.asyncio
 async def test_handle_unauthorized(whitelist_command: AllowBotCommand, init_container: Container) -> None:
     """Test handling by an unauthorized user."""
     user_id = 999  # Not in admin_ids
     chat_id = 7890
-    message = create_mock_message("/allow_bot", user_id=user_id, chat_id=chat_id)
+    message = create_mock_message("/allow_chat", user_id=user_id, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
 
     await whitelist_command.handle(message, cast("Bot", bot))

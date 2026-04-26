@@ -3,7 +3,7 @@
 import html
 from abc import ABC, abstractmethod
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, Message
@@ -25,6 +25,15 @@ logger = get_logger(__name__)
 class BaseCommand(ABC):
     """Abstract base class for all bot commands."""
 
+    @property
+    def name(self) -> str:
+        """Command name for configuration purposes."""
+        name = self.__class__.__name__.lower()
+        return name.removesuffix("command")
+
+    BYPASS_WHITELIST: ClassVar[bool] = False
+    AUTO_ALLOW: ClassVar[bool] = False
+
     @abstractmethod
     async def is_triggered(self, message: Message) -> bool:
         """Check if the command should be triggered by the given message."""
@@ -36,6 +45,8 @@ class BaseCommand(ABC):
 
 class RichMediaCommand(BaseCommand, ABC):
     """Base class for commands that send rich media with standardized formatting."""
+
+    AUTO_ALLOW: ClassVar[bool] = True
 
     HEADER_TEMPLATE = (
         '🗣 Shared by <a href="tg://user?id={tg_user_id}">{tg_user_name}</a>\n'

@@ -14,10 +14,10 @@ HovorunV2 is a Telegram helper bot built with Python 3.14+, following **Onion Ar
         - **Repositories:** Pure data access. They know how to query/persist objects but *never* manage transactions or
           sessions. They accept a `session` in their constructor.
     - **Application:** Split into two layers:
-        - **Data Services:** Intermediary layer (e.g., `ChatDataService`). They encapsulate `session_maker`, manage
+        - **Data Services:** Intermediary layer (e.g., `ChatDataService`, `CommandDataService`). They encapsulate `session_maker`, manage
           transaction boundaries (`commit`/`rollback`), and use Repositories to perform operations. They provide
           high-level data primitives to business services.
-        - **Business Services:** High-level logic (e.g., `WhitelistService`, `LanguageService`). They focus on "what"
+        - **Business Services:** High-level logic (e.g., `WhitelistService`, `LanguageService`, `CommandService`). They focus on "what"
           should happen. They use Data Services to interact with the database and never touch repositories or sessions
           directly.
     - **Interface:** Delivery adapters (Telegram Bot handlers via `aiogram`).
@@ -74,8 +74,10 @@ Automated via `Makefile`.
 
 ## Key Files
 
-- `src/hovorunv2/__main__.py`: Application entry point.
+- `src/hovorunv2/domain/chat.py`: Chat model and M2M associations.
+- `src/hovorunv2/domain/command.py`: Command model.
 - `src/hovorunv2/infrastructure/container.py`: Service container.
+- `src/hovorunv2/infrastructure/fixtures.py`: Database fixtures.
 - `src/hovorunv2/infrastructure/cache.py`: Async Valkey cache service.
 - `src/hovorunv2/application/services/`: Business logic services.
 - `src/hovorunv2/interface/telegram/`: Aiogram implementation.

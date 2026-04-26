@@ -1,11 +1,22 @@
 """SQLAlchemy model for a Chat."""
 
-from sqlalchemy import String
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from typing import TYPE_CHECKING
 
+from sqlalchemy import Column, ForeignKey, Integer, String, Table
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-class Base(DeclarativeBase):
-    """Base for SQLAlchemy models."""
+from hovorunv2.domain import Base
+
+if TYPE_CHECKING:
+    from hovorunv2.domain.command import CommandDB
+
+# Association table for M2M relationship between Chats and Commands
+chat_commands = Table(
+    "chat_commands",
+    Base.metadata,
+    Column("chat_id", Integer, ForeignKey("chats.id"), primary_key=True),
+    Column("command_id", Integer, ForeignKey("commands.id"), primary_key=True),
+)
 
 
 class ChatDB(Base):
@@ -19,3 +30,6 @@ class ChatDB(Base):
     platform: Mapped[str] = mapped_column(String, default="telegram")
     target_lang: Mapped[str | None] = mapped_column(String, nullable=True)
     ignored_langs: Mapped[str | None] = mapped_column(String, nullable=True)  # Comma-separated or JSON
+
+    # M2M Relationship
+    commands: Mapped[list[CommandDB]] = relationship(secondary=chat_commands, back_populates="chats")

@@ -3,15 +3,18 @@
 from aiogram import Router
 
 from hovorunv2.interface.telegram.handlers import get_commands
-from hovorunv2.interface.telegram.handlers.debug import DebugCommand
-from hovorunv2.interface.telegram.handlers.whitelist import AllowBotCommand
-from hovorunv2.interface.telegram.middlewares import MessageCacheMiddleware, WhitelistMiddleware
+from hovorunv2.interface.telegram.middlewares import (
+    CommandConfigurationMiddleware,
+    MessageCacheMiddleware,
+    WhitelistMiddleware,
+)
 
 router = Router()
 
 # Register middlewares
 router.message.outer_middleware(MessageCacheMiddleware())
 router.message.middleware(WhitelistMiddleware())
+router.message.middleware(CommandConfigurationMiddleware())
 
 
 def register_handlers() -> None:
@@ -19,10 +22,10 @@ def register_handlers() -> None:
     commands = get_commands()
 
     for command in commands.values():
-        flags = {}
-        # Whitelist and Debug commands skip the whitelist check
-        if isinstance(command, AllowBotCommand | DebugCommand):
-            flags["bypass_whitelist"] = True
+        flags = {
+            "command_name": command.name,
+            "bypass_whitelist": command.BYPASS_WHITELIST,
+        }
 
         # Register the command handler with its custom trigger filter
         router.message.register(

@@ -12,7 +12,9 @@ from alembic import context
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from hovorunv2.infrastructure.config import settings
-from hovorunv2.domain.chat import Base
+from hovorunv2.domain import Base
+from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.command import CommandDB
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -1,6 +1,6 @@
 """Debug command module."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -16,6 +16,8 @@ logger = get_logger(__name__)
 @register_command
 class DebugCommand(BaseCommand):
     """Command for debugging purposes."""
+
+    BYPASS_WHITELIST: ClassVar[bool] = True
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /debug."""

@@ -20,6 +20,11 @@ logger = get_logger(__name__)
 class SetLanguageCommand(BaseCommand):
     """Command for admins to set translation target and ignored languages."""
 
+    @property
+    def name(self) -> str:
+        """Command name."""
+        return "set_lang"
+
     # Pattern: /set_lang <target_lang> [ignored_langs_comma_separated]
     # Example: /set_lang uk en,ru,es
     SET_LANG_PATTERN = re.compile(r"^/set_lang\s+(?P<target>\w+)(?:\s+(?P<ignored>[\w,]+))?$")
