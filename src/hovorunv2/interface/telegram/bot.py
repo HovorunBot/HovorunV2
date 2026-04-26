@@ -1,49 +1,36 @@
 """Telegram bot message handlers."""
 
-from aiogram import Bot, Router, types
+from aiogram import Router
 
-from hovorunv2.infrastructure.container import container
-from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.commands import get_commands
 from hovorunv2.interface.telegram.commands.debug import DebugCommand
 from hovorunv2.interface.telegram.commands.whitelist import AllowBotCommand
+from hovorunv2.interface.telegram.middlewares import MessageCacheMiddleware, WhitelistMiddleware
 
-logger = get_logger(__name__)
 router = Router()
 
+# Register middlewares
+router.message.outer_middleware(MessageCacheMiddleware())
+router.message.middleware(WhitelistMiddleware())
 
-@router.message()
-async def handle_message(message: types.Message, bot: Bot) -> None:
-    """Handle incoming telegram messages by checking registered commands."""
-    logger.debug(
-        "Received message from %s (ID: %d) in chat %d",
-        message.from_user.username if message.from_user else "Unknown",
-        message.message_id,
-        message.chat.id,
-    )
 
-    if not container.message_service or not container.whitelist_service:
-        logger.error("Container not initialized")
-        return
-
-    await container.message_service.cache_message(message)
-
-    is_whitelisted = await container.whitelist_service.is_whitelisted(message.chat.id)
+def register_handlers() -> None:
+    """Register all command handlers with the router."""
     commands = get_commands()
 
-    # Whitelist command (AllowBotCommand) should always be processed if triggered
-    # Other commands should only be processed if the chat is whitelisted
-    allowed_commands = (
-        [commands[AllowBotCommand.__name__], commands[DebugCommand.__name__]]
-        if not is_whitelisted
-        else commands.values()
-    )
+    for command in commands.values():
+        flags = {}
+        # Whitelist and Debug commands skip the whitelist check
+        if isinstance(command, AllowBotCommand | DebugCommand):
+            flags["bypass_whitelist"] = True
 
-    for command in allowed_commands:
-        if await command.is_triggered(message):
-            logger.info("Command %s triggered", command.__class__.__name__)
-            await command.handle(message, bot)
-            return
+        # Register the command handler with its custom trigger filter
+        router.message.register(
+            command.handle,
+            command.is_triggered,
+            flags=flags,
+        )
 
-    if not is_whitelisted:
-        logger.debug("Ignoring message in non-whitelisted chat %d", message.chat.id)
+
+# Initialize handlers
+register_handlers()
