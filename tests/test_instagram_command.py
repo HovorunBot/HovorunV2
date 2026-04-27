@@ -75,6 +75,7 @@ async def test_handle_instagram_post(instagram_command: InstagramCommand, init_c
     # Mock instaloader Post
     mock_post = MagicMock()
     mock_post.owner_username = "test_user"
+    mock_post.owner_profile.full_name = "Test Full Name"
     mock_post.caption = "Beautiful sunset #nature"
     mock_post.typename = "GraphImage"
     mock_post.is_video = False
@@ -127,6 +128,7 @@ async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_c
     # Mock instaloader Post
     mock_post = MagicMock()
     mock_post.owner_username = "test_user"
+    mock_post.owner_profile.full_name = "Test Full Name"
     mock_post.caption = "Cool reel"
     mock_post.typename = "GraphVideo"
     mock_post.is_video = True

@@ -89,7 +89,9 @@ class Container:
         self.tiktok_service = TikTokService(translation_service=self.translation_service)
         self.twitter_service = TwitterService(translation_service=self.translation_service)
         self.threads_service = ThreadsService(translation_service=self.translation_service)
-        self.instagram_service = InstagramService(translation_service=self.translation_service)
+        self.instagram_service = InstagramService(
+            translation_service=self.translation_service, media_extractor=self.media_extractor
+        )
         self.facebook_service = FacebookService(
             translation_service=self.translation_service, media_extractor=self.media_extractor
         )
