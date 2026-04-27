@@ -100,15 +100,14 @@ class MediaExtractor:
         likes = info.get("like_count") or 0
         views = info.get("view_count") or 0
 
-        # Differentiate post type based on URL/Platform
-        is_reel = "/reel" in url or "/shorts" in url
-        post_type_label = "reel" if is_reel else "post"
-
         footer = ""
         if likes or views:
-            footer = f"\n\n❤️ {format_number(likes)} | 👁️ {format_number(views)}\n"
-
-        footer += f'🔗 <a href="{url}">Original {post_type_label}</a>'
+            stats = []
+            if likes:
+                stats.append(f"❤️ {format_number(likes)}")
+            if views:
+                stats.append(f"👁️ {format_number(views)}")
+            footer = " | ".join(stats)
 
         return RichMediaPayload(
             author_name=html.escape(author_name),

@@ -57,32 +57,32 @@ class TwitterService:
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
         # Handle Quote
+        quoted_payload = None
         quote_data = data.get("qrt", {})
         if quote_data:
-            orig_text = html.escape(quote_data.get("text", ""))
-            quote_trans_res = await self._translation_service.translate_if_needed(orig_text, chat_id, platform, session)
-            if quote_trans_res:
-                orig_text += f"\n\n{quote_trans_res.flag} <b>Translated:</b>\n{html.escape(quote_trans_res.text)}"
-
-            quote_section = (
-                "<blockquote expandable>\n"
-                f"🔄 <b>Original by {html.escape(quote_data.get('user_name', 'Unknown'))}</b> "
-                f'(<a href="https://x.com/{quote_data.get("user_screen_name", "unknown")}">'
-                f"@{quote_data.get('user_screen_name', 'unknown')}</a>):\n"
-                f"{orig_text}\n"
-                "</blockquote>"
+            quote_text = html.escape(quote_data.get("text", ""))
+            quote_trans_res = await self._translation_service.translate_if_needed(
+                quote_text, chat_id, platform, session
             )
-            content += f"\n\n{quote_section}"
+            if quote_trans_res:
+                quote_text += f"\n\n{quote_trans_res.flag} <b>Translated:</b>\n{html.escape(quote_trans_res.text)}"
+
+            quoted_payload = RichMediaPayload(
+                author_name=html.escape(quote_data.get("user_name", "Unknown")),
+                author_handle=html.escape(quote_data.get("user_screen_name", "unknown")),
+                author_url=f"https://x.com/{quote_data.get('user_screen_name', 'unknown')}",
+                content=quote_text,
+            )
 
         media_items = [
             MediaItem(url=m["url"], is_video=m["type"] in ("video", "gif")) for m in data.get("media_extended", [])
         ]
 
+        # Metrics only for footer
         footer = (
-            f"\n\n🔁 {format_number(data.get('retweets', 0))} | "
+            f"🔁 {format_number(data.get('retweets', 0))} | "
             f"❤️ {format_number(data.get('likes', 0))} | "
-            f"👁️ {format_number(data.get('replies', 0))}\n"
-            f'🔗 <a href="{url}">Open post</a>'
+            f"💬 {format_number(data.get('replies', 0))}"
         )
 
         return RichMediaPayload(
@@ -93,4 +93,5 @@ class TwitterService:
             footer_text=footer,
             original_url=url,
             media_items=media_items,
+            quoted_payload=quoted_payload,
         )

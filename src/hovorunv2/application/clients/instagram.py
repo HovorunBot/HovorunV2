@@ -93,15 +93,11 @@ class InstagramService:
         comments = post.comments
         views = post.video_view_count if post.is_video else None
 
-        is_reel = "/reel" in url
-        post_type_label = "reel" if is_reel else "post"
-
         stats = [f"❤️ {format_number(likes)}", f"💬 {format_number(comments)}"]
         if views is not None:
             stats.insert(1, f"👁️ {format_number(views)}")
 
-        footer = f"\n\n{' | '.join(stats)}\n"
-        footer += f'🔗 <a href="{url}">Original {post_type_label}</a>'
+        footer = " | ".join(stats)
 
         return RichMediaPayload(
             author_name=html.escape(author_name),

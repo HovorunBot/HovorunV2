@@ -87,18 +87,12 @@ class FacebookService:
         if " - " in title:
             author_name = title.split(" - ")[0]
 
-        site_name = metadata.get("site_name", "Facebook")
-        is_reel = "/reel" in url
-        post_type_label = "reel" if is_reel else "post"
-
-        footer = f'\n\n🔗 <a href="{url}">Original {post_type_label} on {site_name}</a>'
-
         return RichMediaPayload(
             author_name=html.escape(author_name),
             author_handle="facebook",
             author_url="https://www.facebook.com",
             content=content,
-            footer_text=footer,
+            footer_text="",
             original_url=url,
             media_items=media_items,
         )

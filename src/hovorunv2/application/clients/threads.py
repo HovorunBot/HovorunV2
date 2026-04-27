@@ -85,15 +85,12 @@ class ThreadsService:
             author_name = author_match.group(1).strip()
             author_handle = author_match.group(2).strip()
 
-        # 4. Footer
-        footer = f'\n\n🔗 <a href="{url}">Open thread</a>'
-
         return RichMediaPayload(
             author_name=html.escape(author_name),
             author_handle=html.escape(author_handle),
             author_url=f"https://www.threads.{tld}/@{urllib.parse.quote(author_handle)}",
             content=content,
-            footer_text=footer,
+            footer_text="",
             original_url=url,
             media_items=media_items,
         )

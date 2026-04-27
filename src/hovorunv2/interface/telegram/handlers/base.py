@@ -48,12 +48,19 @@ class RichMediaCommand(BaseCommand, ABC):
 
     AUTO_ALLOW: ClassVar[bool] = True
 
-    HEADER_TEMPLATE = (
-        '🗣 Shared by <a href="tg://user?id={tg_user_id}">{tg_user_name}</a>\n'
-        '👤 <b>{author_name}</b> (<a href="{author_url}">@{author_handle}</a>)\n\n'
+    # Standard templates for all media responses
+    HEADER_TEMPLATE: ClassVar[str] = (
+        "🗣 <b>{tg_user_name}</b> shared a post by <b>{author_name}</b> "
+        '(<a href="{author_url}">@{author_handle}</a>)\n\n'
     )
 
-    FOOTER_TEMPLATE = '<a href="{original_url}">‎</a>'  # Hidden link for preview
+    QUOTE_TEMPLATE: ClassVar[str] = (
+        '<blockquote>🔄 <b>{author_name}</b> (<a href="{author_url}">@{author_handle}</a>)\n{content}</blockquote>\n'
+    )
+
+    METRICS_TEMPLATE: ClassVar[str] = "📊 {metrics}\n"
+
+    FOOTER_TEMPLATE: ClassVar[str] = '🔗 <a href="{url}">Open on {platform}</a>'
 
     API_TIMEOUT_SECONDS: int = 30
     CAPTION_LIMIT: int = 1024
@@ -62,6 +69,11 @@ class RichMediaCommand(BaseCommand, ABC):
     @abstractmethod
     def pattern(self) -> re.Pattern:
         """Regex pattern to match links handled by this command."""
+
+    @property
+    def platform_name(self) -> str:
+        """Human-readable platform name."""
+        return self.name.capitalize()
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message contains links matching the command's pattern."""
@@ -97,6 +109,34 @@ class RichMediaCommand(BaseCommand, ABC):
     ) -> RichMediaPayload | None:
         """Extract rich media payload from a regex match."""
 
+    def _build_caption(self, payload: RichMediaPayload, tg_user_name: str) -> str:
+        """Build caption from payload using standardized format."""
+        header = self.HEADER_TEMPLATE.format(
+            tg_user_name=html.escape(tg_user_name),
+            author_name=payload.author_name,
+            author_handle=payload.author_handle,
+            author_url=payload.author_url,
+        )
+
+        content = payload.content + "\n\n" if payload.content else ""
+
+        quote = ""
+        if payload.quoted_payload:
+            quote = self.QUOTE_TEMPLATE.format(
+                author_name=payload.quoted_payload.author_name,
+                author_handle=payload.quoted_payload.author_handle,
+                author_url=payload.quoted_payload.author_url,
+                content=payload.quoted_payload.content,
+            )
+
+        metrics = ""
+        if payload.footer_text and payload.footer_text.strip():
+            metrics = self.METRICS_TEMPLATE.format(metrics=payload.footer_text.strip().replace("\n", " "))
+
+        footer = self.FOOTER_TEMPLATE.format(url=payload.original_url, platform=self.platform_name)
+
+        return f"{header}{content}{quote}{metrics}{footer}".strip()
+
     async def _send_rich_media(
         self, bot: Bot, message: Message, payload: RichMediaPayload, session: aiohttp.ClientSession
     ) -> None:
@@ -104,24 +144,14 @@ class RichMediaCommand(BaseCommand, ABC):
         if not message.from_user:
             return
 
-        header = self.HEADER_TEMPLATE.format(
-            tg_user_id=message.from_user.id,
-            tg_user_name=html.escape(message.from_user.full_name),
-            author_name=payload.author_name,
-            author_handle=payload.author_handle,
-            author_url=payload.author_url,
-        )
+        tg_user_name = message.from_user.full_name
+        total_text = self._build_caption(payload, tg_user_name)
 
-        total_text = (
-            header
-            + payload.content
-            + payload.footer_text
-            + self.FOOTER_TEMPLATE.format(original_url=payload.original_url)
-        )
-
-        if not payload.media_urls:
+        if not payload.media_items:
             await message.answer(
-                total_text, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True)
+                total_text,
+                parse_mode="HTML",
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
             return
 
@@ -129,11 +159,22 @@ class RichMediaCommand(BaseCommand, ABC):
         caption = total_text
         if len(total_text) > self.CAPTION_LIMIT:
             await message.answer(
-                total_text, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True)
+                total_text,
+                parse_mode="HTML",
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
-            caption = header + self.FOOTER_TEMPLATE.format(original_url=payload.original_url)
+            # Short caption for media
+            header_text = self.HEADER_TEMPLATE.format(
+                tg_user_name=html.escape(tg_user_name),
+                author_name=payload.author_name,
+                author_handle=payload.author_handle,
+                author_url=payload.author_url,
+            )
+            footer_text = self.FOOTER_TEMPLATE.format(url=payload.original_url, platform=self.platform_name)
+            caption = f"{header_text}{footer_text}".strip()
+            # If even header too long, just link
             if len(caption) > self.CAPTION_LIMIT:
-                caption = self.FOOTER_TEMPLATE.format(original_url=payload.original_url)
+                caption = footer_text
 
         # 1. Optimistic URL approach
         media_group = self._prepare_media_group(payload, caption)

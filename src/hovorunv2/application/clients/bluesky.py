@@ -98,8 +98,6 @@ class BlueskyService:
             if playlist:
                 media_items.append(MediaItem(url=playlist, is_video=True))
 
-        # Handle external links or other embeds if needed
-
         # 5. Stats and Footer
         likes = post.get("likeCount", 0)
         reposts = post.get("repostCount", 0)
@@ -109,10 +107,7 @@ class BlueskyService:
         author_handle = author.get("handle") or "unknown"
         author_url = f"https://bsky.app/profile/{author_handle}"
 
-        footer = (
-            f"\n\n💬 {format_number(replies)} | 🔄 {format_number(reposts)} | ❤️ {format_number(likes)}\n"
-            f'🔗 <a href="{url}">Original post on Bluesky</a>'
-        )
+        footer = f"💬 {format_number(replies)} | 🔄 {format_number(reposts)} | ❤️ {format_number(likes)}"
 
         return RichMediaPayload(
             author_name=html.escape(author_name),

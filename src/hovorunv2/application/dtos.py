@@ -22,6 +22,7 @@ class RichMediaPayload:
     footer_text: str = ""
     original_url: str = ""
     media_items: list[MediaItem] = field(default_factory=list)
+    quoted_payload: RichMediaPayload | None = None
 
     @property
     def media_urls(self) -> list[str]:

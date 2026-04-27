@@ -63,9 +63,8 @@ class TikTokService:
                 media_items = [MediaItem(url=video_data.get("play", ""), is_video=True)]
 
             footer = (
-                f"\n\n❤️ {format_number(video_data.get('digg_count', 0))} | "
-                f"👁️ {format_number(video_data.get('play_count', 0))}\n"
-                f'🔗 <a href="{url}">Original video</a>'
+                f"❤️ {format_number(video_data.get('digg_count', 0))} | "
+                f"👁️ {format_number(video_data.get('play_count', 0))}"
             )
 
             title = html.escape(video_data.get("title", "No Title").split("#")[0].strip())

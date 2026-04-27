@@ -107,10 +107,12 @@ async def test_handle_instagram_post(instagram_command: InstagramCommand, init_c
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     assert kwargs["chat_id"] == chat_id
-    assert "test_user" in kwargs["media"][0].caption
-    assert "Beautiful sunset" in kwargs["media"][0].caption
-    assert "100" in kwargs["media"][0].caption  # Likes
-    assert "Original post" in kwargs["media"][0].caption
+    caption = kwargs["media"][0].caption
+    assert "Mock User" in caption
+    assert "Test Full Name" in caption
+    assert "Beautiful sunset" in caption
+    assert "📊" in caption
+    assert "❤️ 100" in caption
 
 
 @pytest.mark.asyncio
@@ -160,5 +162,7 @@ async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_c
     # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
-    assert "Original reel" in kwargs["media"][0].caption
-    assert "5K" in kwargs["media"][0].caption  # Views (5000 -> 5K)
+    caption = kwargs["media"][0].caption
+    assert "Mock User" in caption
+    assert "📊" in caption
+    assert "👁️ 5K" in caption

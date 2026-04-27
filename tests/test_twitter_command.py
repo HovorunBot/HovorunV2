@@ -127,5 +127,11 @@ async def test_handle_twitter_post(twitter_command: TwitterCommand, init_contain
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     assert kwargs["chat_id"] == chat_id
-    assert "Elon Musk" in kwargs["media"][0].caption
-    assert "Hello world!" in kwargs["media"][0].caption
+    caption = kwargs["media"][0].caption
+    assert "Mock User" in caption
+    assert "Elon Musk" in caption
+    assert "Hello world!" in caption
+    assert "📊" in caption
+    assert "🔁 100" in caption
+    assert "❤️ 500" in caption
+    assert "💬 50" in caption
