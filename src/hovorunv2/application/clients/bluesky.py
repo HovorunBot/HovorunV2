@@ -30,41 +30,80 @@ class BlueskyService:
         """Initialize with required services."""
         self._translation_service = translation_service
 
+    async def _resolve_url(self, session: aiohttp.ClientSession, url: str) -> str | None:
+        """Resolve short URLs like go.bsky.app to the actual post URL."""
+        if "go.bsky.app" not in url:
+            return url
+        try:
+            async with session.get(url, allow_redirects=True, timeout=10) as resp:
+                return str(resp.url)
+        except Exception:
+            logger.exception("Failed to follow Bluesky redirect for %s", url)
+            return None
+
+    async def _resolve_did(self, session: aiohttp.ClientSession, handle: str) -> str | None:
+        """Resolve handle to DID if needed."""
+        if handle.startswith("did:"):
+            return handle
+        profile = await self._get_profile(session, handle)
+        return profile.get("did") if profile else None
+
+    async def _handle_quote(
+        self,
+        session: aiohttp.ClientSession,
+        embed: dict[str, Any],
+        chat_id: int,
+        platform: str,
+    ) -> tuple[RichMediaPayload | None, list[MediaItem], str]:
+        """Process quoted post if present in the embed."""
+        record_view = None
+        if embed.get("$type") == "app.bsky.embed.record#view":
+            record_view = embed.get("record")
+        elif embed.get("$type") == "app.bsky.embed.recordWithMedia#view":
+            record_view = embed.get("record", {}).get("record")
+
+        if not record_view or record_view.get("$type") != "app.bsky.feed.post#view":
+            return None, [], ""
+
+        quote_author = record_view.get("author", {})
+        quote_record = record_view.get("record", {})
+        quote_text = html.escape(quote_record.get("text", ""))
+
+        quote_trans = await self._translation_service.translate_if_needed(quote_text, chat_id, platform, session)
+        if quote_trans:
+            quote_text += f"\n\n{quote_trans.flag} <b>Translated:</b>\n{html.escape(quote_trans.text)}"
+
+        quoted_media = self._extract_media_from_embed(record_view.get("embed", {}))
+        info_note = "\n\nℹ️️ <i>Post includes quoted media</i>" if quoted_media else ""  # noqa: RUF001
+
+        payload = RichMediaPayload(
+            author_name=html.escape(quote_author.get("displayName") or quote_author.get("handle", "Unknown")),
+            author_handle=html.escape(quote_author.get("handle", "unknown")),
+            author_url=f"https://bsky.app/profile/{quote_author.get('handle', 'unknown')}",
+            content=quote_text,
+            media_items=quoted_media,
+        )
+        return payload, quoted_media, info_note
+
     async def extract_payload(
         self, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
         """Fetch Bluesky data and construct a RichMediaPayload."""
-        actual_url = url
-        if "go.bsky.app" in url:
-            try:
-                # Follow redirect to get the actual post URL
-                async with session.get(url, allow_redirects=True, timeout=10) as resp:
-                    actual_url = str(resp.url)
-            except Exception:
-                logger.exception("Failed to follow Bluesky redirect for %s", url)
-                return None
+        actual_url = await self._resolve_url(session, url)
+        if not actual_url:
+            return None
 
         match = self.PATTERN.search(actual_url)
         if not match or not match.group("handle"):
-            # If still no handle (e.g. invalid URL after redirect), abort
             return None
 
         handle = match.group("handle")
         rkey = match.group("rkey")
 
-        # 1. Resolve handle to DID (if handle is not a DID)
-        did = handle
-        if not handle.startswith("did:"):
-            profile = await self._get_profile(session, handle)
-            if not profile:
-                return None
-            did = profile.get("did")
-            if not did:
-                return None
-        else:
-            profile = await self._get_profile(session, handle)
+        did = await self._resolve_did(session, handle)
+        if not did:
+            return None
 
-        # 2. Get the post thread
         at_uri = f"at://{did}/app.bsky.feed.post/{rkey}"
         thread_data = await self._get_post_thread(session, at_uri)
         if not thread_data or "thread" not in thread_data:
@@ -74,31 +113,18 @@ class BlueskyService:
         record = post.get("record", {})
         author = post.get("author", {})
 
-        # 3. Extract content
-        raw_text = record.get("text", "")
-        content = html.escape(raw_text)
-
-        # Translation
+        content = html.escape(record.get("text", ""))
         trans_res = await self._translation_service.translate_if_needed(content, chat_id, platform, session)
         if trans_res:
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
-        # 4. Handle Media
-        media_items = []
         embed = post.get("embed", {})
+        media_items = self._extract_media_from_embed(embed)
 
-        # Images
-        if embed.get("$type") == "app.bsky.embed.images#view":
-            media_items.extend(MediaItem(url=i.get("fullsize"), is_video=False) for i in embed.get("images", []))
+        quoted_payload, quoted_media, info_note = await self._handle_quote(session, embed, chat_id, platform)
+        media_items.extend(quoted_media)
+        content += info_note
 
-        # Video
-        elif embed.get("$type") == "app.bsky.embed.video#view":
-            # Bluesky videos might need specific handling or direct playlist URLs
-            playlist = embed.get("playlist")
-            if playlist:
-                media_items.append(MediaItem(url=playlist, is_video=True))
-
-        # 5. Stats and Footer
         likes = post.get("likeCount", 0)
         reposts = post.get("repostCount", 0)
         replies = post.get("replyCount", 0)
@@ -106,7 +132,6 @@ class BlueskyService:
         author_name = author.get("displayName") or author.get("handle") or "Unknown"
         author_handle = author.get("handle") or "unknown"
         author_url = f"https://bsky.app/profile/{author_handle}"
-
         footer = f"💬 {format_number(replies)} | 🔄 {format_number(reposts)} | ❤️ {format_number(likes)}"
 
         return RichMediaPayload(
@@ -117,7 +142,24 @@ class BlueskyService:
             footer_text=footer,
             original_url=url,
             media_items=media_items,
+            quoted_payload=quoted_payload,
         )
+
+    def _extract_media_from_embed(self, embed: dict[str, Any]) -> list[MediaItem]:
+        """Extract media items from a Bluesky embed."""
+        items = []
+        embed_type = embed.get("$type")
+
+        if embed_type == "app.bsky.embed.recordWithMedia#view":
+            items.extend(self._extract_media_from_embed(embed.get("media", {})))
+        elif embed_type == "app.bsky.embed.images#view":
+            items.extend(MediaItem(url=i.get("fullsize"), is_video=False) for i in embed.get("images", []))
+        elif embed_type == "app.bsky.embed.video#view":
+            playlist = embed.get("playlist")
+            if playlist:
+                items.append(MediaItem(url=playlist, is_video=True))
+
+        return items
 
     async def _get_profile(self, session: aiohttp.ClientSession, actor: str) -> dict[str, Any] | None:
         """Fetch actor profile from Bluesky."""

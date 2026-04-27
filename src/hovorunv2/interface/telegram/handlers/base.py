@@ -58,7 +58,7 @@ class RichMediaCommand(BaseCommand, ABC):
         '<blockquote>🔄 <b>{author_name}</b> (<a href="{author_url}">@{author_handle}</a>)\n{content}</blockquote>\n'
     )
 
-    METRICS_TEMPLATE: ClassVar[str] = "📊 {metrics}\n"
+    METRICS_TEMPLATE: ClassVar[str] = "{metrics}\n"
 
     FOOTER_TEMPLATE: ClassVar[str] = '🔗 <a href="{url}">Open on {platform}</a>'
 

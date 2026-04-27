@@ -22,6 +22,8 @@ logger = get_logger(__name__)
 class MediaExtractor:
     """Service to extract media info from various platforms using yt-dlp."""
 
+    MIN_DESCRIPTION_LENGTH: int = 10
+
     # Patterns for supported platforms
     YT_SHORTS_PATTERN = re.compile(r"https?://(?:www\.)?youtube\.com/shorts/(?P<id>[\w-]+)")
 
@@ -69,7 +71,7 @@ class MediaExtractor:
         clean_desc = re.sub(r"\s+", " ", clean_desc).strip()
 
         # Use title if description is short or missing
-        display_text = clean_desc if len(clean_desc) > 10 else title  # noqa: PLR2004
+        display_text = clean_desc if len(clean_desc) > self.MIN_DESCRIPTION_LENGTH else title
         content = html.escape(display_text)
 
         trans_res = await self._translation_service.translate_if_needed(content, chat_id, platform, session)

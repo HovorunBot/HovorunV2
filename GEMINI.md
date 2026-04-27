@@ -44,6 +44,7 @@ Automated via `Makefile`.
 
 ### Code Style & Quality
 
+- **Magic Numbers:** FORBIDDEN. All numeric literals (except `0`, `1`, `-1` in obvious loop/index contexts) must be defined as named constants or enums. This includes thresholds, timeouts, limits, and array indices. Use `noqa: PLR2004` ONLY if the value is truly structural and non-configurable, but prefer constants.
 - **Errors:** ALWAYS use semantic exceptions (e.g., `ValueError`, `AttributeError`, `TypeError`) or custom domain
   exceptions. NEVER raise generic `RuntimeError`.
 - **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) configuration (`ALL`).

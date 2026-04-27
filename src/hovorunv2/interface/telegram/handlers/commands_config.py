@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 class EnableCommand(BaseCommand):
     """Handler for /enable_cmd command."""
 
+    MIN_PARTS: int = 2
+    COMMAND_NAME_INDEX: int = 1
+
     @property
     def name(self) -> str:
         """Command name."""
@@ -34,11 +37,11 @@ class EnableCommand(BaseCommand):
             return
 
         parts = message.text.split() if message.text else []
-        if len(parts) < 2:  # noqa: PLR2004
+        if len(parts) < self.MIN_PARTS:
             await message.reply("Usage: /enable_cmd <command_name>")
             return
 
-        cmd_name = parts[1].lower().lstrip("/")
+        cmd_name = parts[self.COMMAND_NAME_INDEX].lower().lstrip("/")
         success = await container.command_service.enable_command(message.chat.id, cmd_name)
         if success:
             await message.reply(f"Command /{cmd_name} enabled for this chat.")
@@ -49,6 +52,9 @@ class EnableCommand(BaseCommand):
 @register_command
 class DisableCommand(BaseCommand):
     """Handler for /disable_cmd command."""
+
+    MIN_PARTS: int = 2
+    COMMAND_NAME_INDEX: int = 1
 
     @property
     def name(self) -> str:
@@ -69,11 +75,11 @@ class DisableCommand(BaseCommand):
             return
 
         parts = message.text.split() if message.text else []
-        if len(parts) < 2:  # noqa: PLR2004
+        if len(parts) < self.MIN_PARTS:
             await message.reply("Usage: /disable_cmd <command_name>")
             return
 
-        cmd_name = parts[1].lower().lstrip("/")
+        cmd_name = parts[self.COMMAND_NAME_INDEX].lower().lstrip("/")
 
         if cmd_name in container.command_service.DEFAULT_COMMANDS:
             await message.reply(f"Cannot disable default command /{cmd_name}.")

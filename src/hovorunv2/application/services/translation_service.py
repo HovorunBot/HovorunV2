@@ -30,6 +30,12 @@ class TranslationService:
     MANDATORY_IGNORED_LANGS: tuple[str, ...] = ("und",)
     DEFAULT_FLAG: str = "🌐"
 
+    # Google Translate Response Index Mapping
+    MIN_RESPONSE_PARTS: int = 3
+    SRC_LANG_INDEX: int = 2
+    SENTENCES_INDEX: int = 0
+    TEXT_INDEX: int = 0
+
     def __init__(
         self,
         language_service: LanguageService,
@@ -115,14 +121,22 @@ class TranslationService:
                     data = await resp.json(content_type=None)
 
                     # Defensively check the response payload structure
-                    if not isinstance(data, list) or len(data) < 3:  # noqa: PLR2004
+                    if not isinstance(data, list) or len(data) < self.MIN_RESPONSE_PARTS:
                         return None
 
-                    src_lang = data[2] or "und"
+                    src_lang = data[self.SRC_LANG_INDEX] or "und"
 
-                    if src_lang not in ignored_langs and data[0] and isinstance(data[0], list):
+                    if (
+                        src_lang not in ignored_langs
+                        and data[self.SENTENCES_INDEX]
+                        and isinstance(data[self.SENTENCES_INDEX], list)
+                    ):
                         return "".join(
-                            [sentence[0] for sentence in data[0] if isinstance(sentence, list) and sentence[0]]
+                            [
+                                sentence[self.TEXT_INDEX]
+                                for sentence in data[self.SENTENCES_INDEX]
+                                if isinstance(sentence, list) and sentence[self.TEXT_INDEX]
+                            ]
                         )
         except Exception:
             logger.exception("Translation API call failed")

@@ -56,6 +56,10 @@ class TwitterService:
         if trans_res:
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
 
+        media_items = [
+            MediaItem(url=m["url"], is_video=m["type"] in ("video", "gif")) for m in data.get("media_extended", [])
+        ]
+
         # Handle Quote
         quoted_payload = None
         quote_data = data.get("qrt", {})
@@ -67,16 +71,22 @@ class TwitterService:
             if quote_trans_res:
                 quote_text += f"\n\n{quote_trans_res.flag} <b>Translated:</b>\n{html.escape(quote_trans_res.text)}"
 
+            # Extract quoted media
+            quoted_media = [
+                MediaItem(url=m["url"], is_video=m["type"] in ("video", "gif"))
+                for m in quote_data.get("media_extended", [])
+            ]
+            if quoted_media:
+                media_items.extend(quoted_media)
+                content += "\n\nℹ️️ <i>Post includes quoted media</i>"  # noqa: RUF001
+
             quoted_payload = RichMediaPayload(
                 author_name=html.escape(quote_data.get("user_name", "Unknown")),
                 author_handle=html.escape(quote_data.get("user_screen_name", "unknown")),
                 author_url=f"https://x.com/{quote_data.get('user_screen_name', 'unknown')}",
                 content=quote_text,
+                media_items=quoted_media,
             )
-
-        media_items = [
-            MediaItem(url=m["url"], is_video=m["type"] in ("video", "gif")) for m in data.get("media_extended", [])
-        ]
 
         # Metrics only for footer
         footer = (

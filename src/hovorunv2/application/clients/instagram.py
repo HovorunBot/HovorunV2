@@ -23,6 +23,9 @@ logger = get_logger(__name__)
 class InstagramService:
     """Service to interact with Instagram using instaloader."""
 
+    MIN_DESCRIPTION_LENGTH: int = 5
+    STATS_VIEWS_INDEX: int = 1
+
     PATTERN = re.compile(r"https?://(?:www\.)?instagram\.com/(?:[^/]+/)?(?:reels?|p|tv)/(?P<id>[\w-]+)")
 
     def __init__(self, translation_service: TranslationService, media_extractor: MediaExtractor) -> None:
@@ -64,7 +67,7 @@ class InstagramService:
         clean_desc = re.sub(r"\s+", " ", clean_desc).strip()
 
         # If description is empty or too short after stripping hashtags, use raw_text
-        if len(clean_desc) < 5 and raw_text:  # noqa: PLR2004
+        if len(clean_desc) < self.MIN_DESCRIPTION_LENGTH and raw_text:
             display_text = raw_text
         else:
             display_text = clean_desc or f"Instagram {post.typename.replace('Graph', '').lower()}"
@@ -95,7 +98,7 @@ class InstagramService:
 
         stats = [f"❤️ {format_number(likes)}", f"💬 {format_number(comments)}"]
         if views is not None:
-            stats.insert(1, f"👁️ {format_number(views)}")
+            stats.insert(self.STATS_VIEWS_INDEX, f"👁️ {format_number(views)}")
 
         footer = " | ".join(stats)
 
