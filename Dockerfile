@@ -15,6 +15,9 @@ COPY pyproject.toml uv.lock README.md ./
 # Install dependencies (use frozen to ensure lockfile is respected)
 RUN uv sync --frozen --no-dev --no-install-project
 
+# Install playwright browsers and their system dependencies
+RUN uv run playwright install --with-deps chromium
+
 # Copy source code and migrations
 COPY src ./src
 COPY alembic ./alembic

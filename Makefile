@@ -104,5 +104,6 @@ dev:
 run-dev: dev env-init
 	@echo "Starting HovorunV2 locally..."
 	uv sync
+	uv run playwright install chromium
 	@set -a; [ -f .env ] && . ./.env; set +a; uv run hovorunv2
 	@$(MAKE) clean-build
