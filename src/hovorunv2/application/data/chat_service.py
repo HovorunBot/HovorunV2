@@ -1,13 +1,11 @@
 """Application service for low-level chat data operations."""
 
 import json
-from typing import TYPE_CHECKING
+
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 class ChatService:

@@ -1,23 +1,34 @@
 """Whitelist command module."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import Any, ClassVar
 
-from hovorunv2.infrastructure.config import settings
-from hovorunv2.infrastructure.container import container
+from aiogram import Bot
+from aiogram.types import Message
+from dishka.integrations.aiogram import FromDishka
+
+from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.whitelist_service import WhitelistService
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger
 
-from .base import BaseCommand, get_commands, register_command
-
-if TYPE_CHECKING:
-    from aiogram import Bot
-    from aiogram.types import Message
+from .base import BaseCommand
 
 logger = get_logger(__name__)
 
 
-@register_command
 class AllowBotCommand(BaseCommand):
     """Command to allow bot in a chat."""
+
+    def __init__(
+        self,
+        whitelist_service: WhitelistService,
+        command_service: CommandService,
+        settings: Settings,
+    ) -> None:
+        """Initialize command with its dependencies."""
+        self._whitelist_service = whitelist_service
+        self._command_service = command_service
+        self._settings = settings
 
     @property
     def name(self) -> str:
@@ -30,23 +41,28 @@ class AllowBotCommand(BaseCommand):
         """Check if message is /allow_chat."""
         return bool(message.text and message.text.strip() == "/allow_chat")
 
-    async def handle(self, message: Message, bot: Bot) -> None:  # noqa: ARG002
+    async def handle(
+        self,
+        message: Message,
+        bot: Bot,  # noqa: ARG002
+        commands: FromDishka[list[BaseCommand]] | None = None,
+        **kwargs: Any,  # noqa: ANN401, ARG002
+    ) -> None:
         """Handle allow bot command."""
-        if not container.whitelist_service:
-            logger.error("WhitelistService not available in container")
+        if commands is None:
             return
 
         user_id = message.from_user.id if message.from_user else None
-        if user_id not in settings.admin_ids:
+        if user_id not in self._settings.admin_ids:
             logger.warning("Unauthorized /allow_bot attempt by user %s", user_id)
             return
 
         chat_id = message.chat.id
-        await container.whitelist_service.add_to_whitelist(chat_id)
+        await self._whitelist_service.add_to_whitelist(chat_id)
 
         # Auto-allow commands
-        for command in (c for c in get_commands().values() if c.AUTO_ALLOW):
-            await container.command_service.enable_command(chat_id, command.name)
+        for command in (c for c in commands if c.AUTO_ALLOW):
+            await self._command_service.enable_command(chat_id, command.name)
 
         await message.answer("Bot is now allowed in this chat.")
         logger.info("Bot allowed in chat %d by user %d", chat_id, user_id)

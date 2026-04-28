@@ -1,15 +1,11 @@
 """Application service for low-level command data operations."""
 
-from typing import TYPE_CHECKING
-
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 class CommandDataService:

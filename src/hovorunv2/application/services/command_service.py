@@ -1,9 +1,6 @@
 """Application service for managing allowed commands per chat."""
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from hovorunv2.application.data.command_service import CommandDataService
+from hovorunv2.application.data.command_service import CommandDataService
 
 
 class CommandService:

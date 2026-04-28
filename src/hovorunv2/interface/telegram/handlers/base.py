@@ -1,29 +1,51 @@
 """Base classes and registration utilities for bot commands."""
 
 import html
+import re
 from abc import ABC, abstractmethod
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
+import aiohttp
+from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramEntityTooLarge
 from aiogram.types import InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, Message
+from dishka.integrations.aiogram import FromDishka
 
-from hovorunv2.infrastructure.container import container
+from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.infrastructure.logger import get_logger
-
-if TYPE_CHECKING:
-    import re
-
-    import aiohttp
-    from aiogram import Bot
-
-    from hovorunv2.application.dtos import RichMediaPayload
 
 logger = get_logger(__name__)
 
 
-class BaseCommand(ABC):
-    """Abstract base class for all bot commands."""
+@runtime_checkable
+class BaseCommand(Protocol):
+    """Protocol for all bot commands."""
+
+    @property
+    def name(self) -> str:
+        """Command name for configuration purposes."""
+        ...
+
+    BYPASS_WHITELIST: ClassVar[bool] = False
+    AUTO_ALLOW: ClassVar[bool] = False
+
+    async def is_triggered(self, message: Message) -> bool:
+        """Check if the command should be triggered by the given message."""
+        ...
+
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401
+        """Handle the triggered command."""
+        ...
+
+
+class RichMediaCommand(ABC):
+    """Base class for commands that send rich media with standardized formatting."""
+
+    def __init__(self, media_downloader: MediaDownloader) -> None:
+        """Initialize command with its dependencies."""
+        self._media_downloader = media_downloader
 
     @property
     def name(self) -> str:
@@ -32,20 +54,6 @@ class BaseCommand(ABC):
         return name.removesuffix("command")
 
     BYPASS_WHITELIST: ClassVar[bool] = False
-    AUTO_ALLOW: ClassVar[bool] = False
-
-    @abstractmethod
-    async def is_triggered(self, message: Message) -> bool:
-        """Check if the command should be triggered by the given message."""
-
-    @abstractmethod
-    async def handle(self, message: Message, bot: Bot) -> None:
-        """Handle the triggered command."""
-
-
-class RichMediaCommand(BaseCommand, ABC):
-    """Base class for commands that send rich media with standardized formatting."""
-
     AUTO_ALLOW: ClassVar[bool] = True
 
     # Standard templates for all media responses
@@ -81,9 +89,15 @@ class RichMediaCommand(BaseCommand, ABC):
             return False
         return bool(self.pattern.search(message.text))
 
-    async def handle(self, message: Message, bot: Bot) -> None:
+    async def handle(
+        self,
+        message: Message,
+        bot: Bot,
+        session: FromDishka[aiohttp.ClientSession] | None = None,
+        **kwargs: Any,  # noqa: ARG002,ANN401
+    ) -> None:
         """Standardized handling of rich media links."""
-        if not message.text or not message.from_user:
+        if not message.text or not message.from_user or session is None:
             return
 
         matches = list(self.pattern.finditer(message.text))
@@ -94,7 +108,6 @@ class RichMediaCommand(BaseCommand, ABC):
             "Processing %d link(s) for %s from user %s", len(matches), self.__class__.__name__, message.from_user.id
         )
 
-        session = container.http_session
         for match in matches:
             try:
                 payload = await self._extract_payload(session, match, message.chat.id, "telegram")
@@ -227,7 +240,7 @@ class RichMediaCommand(BaseCommand, ABC):
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
 
-        downloaded_files = await container.media_downloader.download_batch(
+        downloaded_files = await self._media_downloader.download_batch(
             payload.media_items,
             prefix="media",
             session=session,
@@ -289,28 +302,3 @@ class RichMediaCommand(BaseCommand, ABC):
                 item.parse_mode = "HTML"
             media_group.append(item)
         return media_group
-
-
-_COMMANDS: dict[str, BaseCommand] = {}
-
-
-def register_command[TBaseCommand: BaseCommand](command_class: type[TBaseCommand]) -> type[TBaseCommand]:
-    """Register a command class.
-
-    This function can be used as class decorator
-
-    Args:
-        command_class: The command class to register.
-
-    Returns:
-        The registered command class.
-
-    """
-    logger.info("Registering command: %s", command_class.__name__)
-    _COMMANDS[command_class.__name__] = command_class()
-    return command_class
-
-
-def get_commands() -> dict[str, BaseCommand]:
-    """Return all registered command instances."""
-    return _COMMANDS

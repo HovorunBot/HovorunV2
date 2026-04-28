@@ -2,26 +2,6 @@
 
 import html
 import re
-from typing import Any, Final, NoReturn
-
-
-class Undefined:
-    """Sentinel for uninitialized services that raises AttributeError on access."""
-
-    def __getattr__(self, name: str) -> NoReturn:
-        """Raise exception on any access to these object attributes."""
-        msg = (
-            f"Access to '{name}' failed. Service not initialized. "
-            "Ensure container.init() was called and awaited before use."
-        )
-        raise AttributeError(msg)
-
-    def __bool__(self) -> bool:
-        """Indicate that this object represents an undefined state."""
-        return False
-
-
-UNDEFINED: Final[Any] = Undefined()
 
 
 def format_number(num: int) -> str:

@@ -6,14 +6,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiogram import Bot
 from aiogram.types import Message, User
+from dishka import AsyncContainer
 
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 
 
 @pytest.fixture
-def debug_command() -> DebugCommand:
+async def debug_command(init_container: AsyncContainer) -> DebugCommand:
     """Fixture to provide a DebugCommand instance."""
-    return DebugCommand()
+    return await init_container.get(DebugCommand)
 
 
 def create_mock_message(text: str | None, user_id: int = 123) -> MagicMock:

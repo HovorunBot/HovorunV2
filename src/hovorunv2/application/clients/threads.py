@@ -3,18 +3,14 @@
 import html
 import re
 import urllib.parse
-from typing import TYPE_CHECKING
 
+import aiohttp
 from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.services.translation_service import TranslationService
+from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.logger import get_logger
-
-if TYPE_CHECKING:
-    import aiohttp
-
-    from hovorunv2.application.services.translation_service import TranslationService
-    from hovorunv2.infrastructure.browser import BrowserService
 
 logger = get_logger(__name__)
 

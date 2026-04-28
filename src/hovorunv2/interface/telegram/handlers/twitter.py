@@ -1,33 +1,34 @@
 """Module for handling Twitter/X post links using TwitterService."""
 
-from typing import TYPE_CHECKING
+import re
 
-from hovorunv2.infrastructure.container import container
+import aiohttp
+
+from hovorunv2.application.clients.twitter import TwitterService
+from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.infrastructure.logger import get_logger
 
-from .base import RichMediaCommand, register_command
-
-if TYPE_CHECKING:
-    import re
-
-    import aiohttp
-
-    from hovorunv2.application.dtos import RichMediaPayload
+from .base import RichMediaCommand
 
 logger = get_logger(__name__)
 
 
-@register_command
 class TwitterCommand(RichMediaCommand):
     """Command for interacting with Twitter and processing tweet links."""
+
+    def __init__(self, twitter_service: TwitterService, media_downloader: MediaDownloader) -> None:
+        """Initialize command with its dependencies."""
+        super().__init__(media_downloader)
+        self._twitter_service = twitter_service
 
     @property
     def pattern(self) -> re.Pattern:
         """Regex pattern to match Twitter links."""
-        return container.twitter_service.PATTERN
+        return self._twitter_service.PATTERN
 
     async def _extract_payload(
         self, session: aiohttp.ClientSession, match: re.Match, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
         """Fetch tweet data using TwitterService."""
-        return await container.twitter_service.extract_payload(session, match.group(0), chat_id, platform)
+        return await self._twitter_service.extract_payload(session, match.group(0), chat_id, platform)

@@ -1,24 +1,27 @@
 """Command to configure translation settings for a chat."""
 
 import re
-from typing import TYPE_CHECKING
+from typing import Any
 
-from hovorunv2.infrastructure.config import settings
-from hovorunv2.infrastructure.container import container
+from aiogram import Bot
+from aiogram.types import Message
+
+from hovorunv2.application.services.language_service import LanguageService
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger
 
-from .base import BaseCommand, register_command
-
-if TYPE_CHECKING:
-    from aiogram import Bot
-    from aiogram.types import Message
+from .base import BaseCommand
 
 logger = get_logger(__name__)
 
 
-@register_command
 class SetLanguageCommand(BaseCommand):
     """Command for admins to set translation target and ignored languages."""
+
+    def __init__(self, language_service: LanguageService, settings: Settings) -> None:
+        """Initialize command with its dependencies."""
+        self._language_service = language_service
+        self._settings = settings
 
     @property
     def name(self) -> str:
@@ -35,10 +38,10 @@ class SetLanguageCommand(BaseCommand):
             return False
         return message.text.strip().startswith("/set_lang")
 
-    async def handle(self, message: Message, bot: Bot) -> None:  # noqa: ARG002
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
         """Handle the set_language command."""
         user_id = message.from_user.id if message.from_user else None
-        if user_id not in settings.admin_ids:
+        if user_id not in self._settings.admin_ids:
             logger.warning("Unauthorized /set_lang attempt by user %s", user_id)
             return
 
@@ -64,8 +67,7 @@ class SetLanguageCommand(BaseCommand):
         platform = "telegram"
 
         # Update chat settings in database
-        assert container.language_service is not None, "Must be specified"
-        await container.language_service.update_settings(
+        await self._language_service.update_settings(
             chat_id=chat_id, target_lang=target, ignored_langs=ignored_list, platform=platform
         )
 

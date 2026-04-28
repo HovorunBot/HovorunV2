@@ -1,19 +1,14 @@
 """Application service for media downloading."""
 
 import asyncio
+from collections.abc import Mapping
 from http import HTTPStatus
-from typing import TYPE_CHECKING
 
+import aiohttp
 from aiogram.types import BufferedInputFile
 
+from hovorunv2.application.dtos import MediaItem
 from hovorunv2.infrastructure.logger import get_logger
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    import aiohttp
-
-    from hovorunv2.application.dtos import MediaItem
 
 logger = get_logger(__name__)
 

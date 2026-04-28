@@ -1,18 +1,16 @@
 """Shared test configuration and fixtures."""
 
 import asyncio
-from typing import TYPE_CHECKING
-from unittest.mock import patch
+from collections.abc import AsyncGenerator
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from dishka import AsyncContainer, Scope, make_async_container, provide
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from hovorunv2.domain.chat import Base
-from hovorunv2.infrastructure.container import Container
-
-if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
+from hovorunv2.infrastructure.fixtures import setup_fixtures
 
 
 @pytest.fixture(scope="session")
@@ -26,11 +24,12 @@ def event_loop() -> asyncio.AbstractEventLoop:
         return loop
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def test_engine() -> AsyncGenerator[AsyncEngine]:
     """Create a test database engine."""
+    # Use unique name for each test if using shared cache, or just use pure memory
     engine = create_async_engine(
-        "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared",
+        "sqlite+aiosqlite:///:memory:",
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
@@ -40,33 +39,33 @@ async def test_engine() -> AsyncGenerator[AsyncEngine]:
     await engine.dispose()
 
 
+class TestInfrastructureProvider(InfrastructureProvider):
+    """Infrastructure provider for tests."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__()
+        self._engine = engine
+
+    @provide(scope=Scope.APP)
+    async def get_engine(self) -> AsyncEngine:
+        """Provide test engine."""
+        return self._engine
+
+
 @pytest.fixture
-async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[Container]:
-    """Provide a container with real services but test database/cache."""
-    container = Container()
-    container.engine = test_engine
-    await container.init()
+async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[AsyncContainer]:
+    """Provide a dishka container for tests."""
+    container = make_async_container(TestInfrastructureProvider(test_engine), AppProvider())
 
-    with (
-        patch("hovorunv2.interface.telegram.handlers.whitelist.container", container),
-        patch("hovorunv2.interface.telegram.handlers.tiktok.container", container),
-        patch("hovorunv2.interface.telegram.handlers.twitter.container", container),
-        patch("hovorunv2.interface.telegram.handlers.facebook.container", container),
-        patch("hovorunv2.interface.telegram.handlers.instagram.container", container),
-        patch("hovorunv2.interface.telegram.handlers.bluesky.container", container),
-        patch("hovorunv2.interface.telegram.handlers.threads.container", container),
-        patch("hovorunv2.interface.telegram.handlers.set_language.container", container),
-        patch("hovorunv2.interface.telegram.handlers.commands_config.container", container),
-        patch("hovorunv2.interface.telegram.middlewares.container", container),
-        patch("hovorunv2.interface.telegram.handlers.base.container", container),
-        patch("hovorunv2.infrastructure.container.container", container),
-    ):
-        yield container
+    # Setup fixtures
+    session_maker = await container.get(async_sessionmaker)
+    await setup_fixtures(session_maker)
 
+    yield container
     await container.close()
 
 
 @pytest.fixture
-async def init_container(test_container: Container) -> Container:
+async def init_container(test_container: AsyncContainer) -> AsyncContainer:
     """Alias for test_container to keep existing tests working."""
     return test_container

@@ -1,16 +1,15 @@
 """Tests for MediaExtractor."""
 
-from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
+from dishka import AsyncContainer
 
-if TYPE_CHECKING:
-    from hovorunv2.infrastructure.container import Container
+from hovorunv2.application.media.extractor import MediaExtractor
 
 
 @pytest.mark.asyncio
-async def test_extract_payload_youtube_shorts(test_container: Container) -> None:
+async def test_extract_payload_youtube_shorts(init_container: AsyncContainer) -> None:
     """Test extracting payload from YouTube Shorts."""
     # Use real translation service from test container
 
@@ -25,8 +24,9 @@ async def test_extract_payload_youtube_shorts(test_container: Container) -> None
         "view_count": 1000,
     }
 
+    media_extractor = await init_container.get(MediaExtractor)
     with patch("hovorunv2.application.media.extractor.yt_dlp.YoutubeDL.extract_info", return_value=mock_info):
-        payload = await test_container.media_extractor.extract_payload(
+        payload = await media_extractor.extract_payload(
             session=MagicMock(), url="https://youtube.com/shorts/abc-123", chat_id=123, platform="telegram"
         )
 
@@ -39,13 +39,14 @@ async def test_extract_payload_youtube_shorts(test_container: Container) -> None
 
 
 @pytest.mark.asyncio
-async def test_extract_payload_failure(test_container: Container) -> None:
+async def test_extract_payload_failure(init_container: AsyncContainer) -> None:
     """Test service behavior when yt-dlp fails."""
+    media_extractor = await init_container.get(MediaExtractor)
     with patch(
         "hovorunv2.application.media.extractor.yt_dlp.YoutubeDL.extract_info",
         side_effect=Exception("Failed"),
     ):
-        payload = await test_container.media_extractor.extract_payload(
+        payload = await media_extractor.extract_payload(
             session=MagicMock(), url="https://invalid.url", chat_id=123, platform="telegram"
         )
         assert payload is None

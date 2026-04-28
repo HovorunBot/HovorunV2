@@ -1,23 +1,23 @@
 """Tests for the TwitterCommand class."""
 
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
+from dishka import AsyncContainer
 
+from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.interface.telegram.handlers.twitter import TwitterCommand
-
-if TYPE_CHECKING:
-    from hovorunv2.infrastructure.container import Container
 
 
 @pytest.fixture
-def twitter_command() -> TwitterCommand:
+async def twitter_command(init_container: AsyncContainer) -> TwitterCommand:
     """Fixture to provide a TwitterCommand instance."""
-    return TwitterCommand()
+    return await init_container.get(TwitterCommand)
 
 
 # Test Constants
@@ -74,7 +74,7 @@ async def test_is_triggered(
     twitter_command: TwitterCommand,
     text: str | None,
     expected: bool,
-    init_container: Container,  # noqa: ARG001
+    init_container: AsyncContainer,  # noqa: ARG001
 ) -> None:
     """Test the is_triggered method with various inputs."""
     message = create_mock_message(text)
@@ -98,7 +98,7 @@ async def test_is_triggered_no_user(twitter_command: TwitterCommand) -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_twitter_post(twitter_command: TwitterCommand, init_container: Container) -> None:
+async def test_handle_twitter_post(twitter_command: TwitterCommand, init_container: AsyncContainer) -> None:
     """Test handling a Twitter post with real service logic and mocked network."""
     chat_id = MOCK_CHAT_ID
     url = "https://x.com/elonmusk/status/1234567890"
@@ -107,7 +107,8 @@ async def test_handle_twitter_post(twitter_command: TwitterCommand, init_contain
     bot.send_media_group = AsyncMock()
 
     # Whitelist the chat first (real DB)
-    await init_container.whitelist_service.add_to_whitelist(chat_id)
+    whitelist_service = await init_container.get(WhitelistService)
+    await whitelist_service.add_to_whitelist(chat_id)
 
     # Mock vxtwitter API response
     twitter_response = {
@@ -136,8 +137,9 @@ async def test_handle_twitter_post(twitter_command: TwitterCommand, init_contain
         mock_resp.__aexit__ = AsyncMock(return_value=None)
         return mock_resp
 
+    session = await init_container.get(aiohttp.ClientSession)
     with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await twitter_command.handle(message, cast("Bot", bot))
+        await twitter_command.handle(message, cast("Bot", bot), session=session)
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
@@ -154,7 +156,7 @@ async def test_handle_twitter_post(twitter_command: TwitterCommand, init_contain
 
 
 @pytest.mark.asyncio
-async def test_handle_twitter_qrt_with_media(twitter_command: TwitterCommand, init_container: Container) -> None:
+async def test_handle_twitter_qrt_with_media(twitter_command: TwitterCommand, init_container: AsyncContainer) -> None:
     """Test handling a Twitter QRT with media in both posts."""
     chat_id = MOCK_CHAT_ID
     url = "https://x.com/elonmusk/status/1234567890"
@@ -163,7 +165,8 @@ async def test_handle_twitter_qrt_with_media(twitter_command: TwitterCommand, in
     bot.send_media_group = AsyncMock()
 
     # Whitelist the chat
-    await init_container.whitelist_service.add_to_whitelist(chat_id)
+    whitelist_service = await init_container.get(WhitelistService)
+    await whitelist_service.add_to_whitelist(chat_id)
 
     # Mock vxtwitter API response with QRT
     twitter_response = {
@@ -194,8 +197,9 @@ async def test_handle_twitter_qrt_with_media(twitter_command: TwitterCommand, in
         mock_resp.__aexit__ = AsyncMock(return_value=None)
         return mock_resp
 
+    session = await init_container.get(aiohttp.ClientSession)
     with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await twitter_command.handle(message, cast("Bot", bot))
+        await twitter_command.handle(message, cast("Bot", bot), session=session)
 
     # Verify interaction
     bot.send_media_group.assert_called_once()

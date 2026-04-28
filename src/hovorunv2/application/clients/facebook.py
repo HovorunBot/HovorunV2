@@ -3,17 +3,14 @@
 import html
 import re
 from http import HTTPStatus
-from typing import TYPE_CHECKING
+
+import aiohttp
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.utils import extract_og_metadata
 from hovorunv2.infrastructure.logger import get_logger
-
-if TYPE_CHECKING:
-    import aiohttp
-
-    from hovorunv2.application.media.extractor import MediaExtractor
-    from hovorunv2.application.services.translation_service import TranslationService
 
 logger = get_logger(__name__)
 

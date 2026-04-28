@@ -1,12 +1,9 @@
 """Application service for managing language preferences."""
 
 import json
-from typing import TYPE_CHECKING
 
+from hovorunv2.application.data.chat_service import ChatService
 from hovorunv2.infrastructure.config import settings
-
-if TYPE_CHECKING:
-    from hovorunv2.application.data.chat_service import ChatService
 
 
 class LanguageService:

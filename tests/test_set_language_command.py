@@ -1,25 +1,24 @@
 """Tests for the SetLanguageCommand class."""
 
 import json
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
+from dishka import AsyncContainer
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 from hovorunv2.interface.telegram.handlers.set_language import SetLanguageCommand
 
-if TYPE_CHECKING:
-    from hovorunv2.infrastructure.container import Container
-
 
 @pytest.fixture
-def set_language_command() -> SetLanguageCommand:
+async def set_language_command(init_container: AsyncContainer) -> SetLanguageCommand:
     """Fixture to provide a SetLanguageCommand instance."""
-    return SetLanguageCommand()
+    return await init_container.get(SetLanguageCommand)
 
 
 def create_mock_message(text: str | None, user_id: int = 123, chat_id: int = 456) -> MagicMock:
@@ -55,7 +54,7 @@ async def test_is_triggered(set_language_command: SetLanguageCommand, text: str 
 
 
 @pytest.mark.asyncio
-async def test_handle_authorized(set_language_command: SetLanguageCommand, test_container: Container) -> None:
+async def test_handle_authorized(set_language_command: SetLanguageCommand, init_container: AsyncContainer) -> None:
     """Test handling by an authorized user."""
     admin_id = settings.admin_ids[0]
     chat_id = 789
@@ -65,7 +64,8 @@ async def test_handle_authorized(set_language_command: SetLanguageCommand, test_
     await set_language_command.handle(message, cast("Bot", bot))
 
     # Check database directly
-    async with test_container.session_maker() as session:
+    session_maker = await init_container.get(async_sessionmaker)
+    async with session_maker() as session:
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(chat_id, "telegram")
         assert chat is not None
@@ -98,7 +98,7 @@ async def test_handle_invalid_format(set_language_command: SetLanguageCommand) -
 
 
 @pytest.mark.asyncio
-async def test_handle_unauthorized(set_language_command: SetLanguageCommand, test_container: Container) -> None:
+async def test_handle_unauthorized(set_language_command: SetLanguageCommand, init_container: AsyncContainer) -> None:
     """Test handling by an unauthorized user."""
     user_id = 999  # Not in admin_ids
     chat_id = 7890
@@ -107,7 +107,8 @@ async def test_handle_unauthorized(set_language_command: SetLanguageCommand, tes
 
     await set_language_command.handle(message, cast("Bot", bot))
 
-    async with test_container.session_maker() as session:
+    session_maker = await init_container.get(async_sessionmaker)
+    async with session_maker() as session:
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(chat_id, "telegram")
         assert chat is None

@@ -32,6 +32,7 @@ dependencies = [
     "instaloader",
     "playwright",
     "beautifulsoup4",
+    "dishka",
 ]
 
 [project.urls]
@@ -73,7 +74,8 @@ ignore = [
     "S101", # Use of assertions allowed by user intent not for business logic
     "PLR0913",
     "D104",
-    "BLE001"
+    "BLE001",
+    "TC"
 ]
 
 [tool.ruff.lint.mccabe]

@@ -3,16 +3,14 @@
 import html
 import re
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import aiohttp
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.utils import format_number
 from hovorunv2.infrastructure.logger import get_logger
-
-if TYPE_CHECKING:
-    import aiohttp
-
-    from hovorunv2.application.services.translation_service import TranslationService
 
 logger = get_logger(__name__)
 

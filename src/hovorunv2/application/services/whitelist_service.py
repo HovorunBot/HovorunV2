@@ -1,9 +1,6 @@
 """Application service for managing chat whitelisting."""
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from hovorunv2.application.data.chat_service import ChatService
+from hovorunv2.application.data.chat_service import ChatService
 
 
 class WhitelistService:

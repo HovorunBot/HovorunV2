@@ -2,16 +2,13 @@
 
 import html
 from http import HTTPStatus
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple
 
+import aiohttp
 import flag
 
+from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.infrastructure.logger import get_logger
-
-if TYPE_CHECKING:
-    import aiohttp
-
-    from hovorunv2.application.services.language_service import LanguageService
 
 logger = get_logger(__name__)
 

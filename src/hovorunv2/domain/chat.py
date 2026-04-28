@@ -1,14 +1,10 @@
 """SQLAlchemy model for a Chat."""
 
-from typing import TYPE_CHECKING
-
 from sqlalchemy import Column, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from hovorunv2.domain import Base
-
-if TYPE_CHECKING:
-    from hovorunv2.domain.command import CommandDB
+from hovorunv2.domain.command import CommandDB
 
 # Association table for M2M relationship between Chats and Commands
 chat_commands = Table(

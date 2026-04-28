@@ -1,23 +1,23 @@
 """Tests for the BlueskyCommand class."""
 
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
+from dishka import AsyncContainer
 
+from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.interface.telegram.handlers.bluesky import BlueskyCommand
-
-if TYPE_CHECKING:
-    from hovorunv2.infrastructure.container import Container
 
 
 @pytest.fixture
-def bluesky_command() -> BlueskyCommand:
+async def bluesky_command(init_container: AsyncContainer) -> BlueskyCommand:
     """Fixture to provide a BlueskyCommand instance."""
-    return BlueskyCommand()
+    return await init_container.get(BlueskyCommand)
 
 
 EXPECTED_MEDIA_COUNT: int = 2
@@ -54,7 +54,7 @@ async def test_is_triggered(
     bluesky_command: BlueskyCommand,
     text: str | None,
     expected: bool,
-    init_container: Container,  # noqa: ARG001
+    init_container: AsyncContainer,  # noqa: ARG001
 ) -> None:
     """Test the is_triggered method with various inputs."""
     message = create_mock_message(text)
@@ -62,7 +62,7 @@ async def test_is_triggered(
 
 
 @pytest.mark.asyncio
-async def test_handle_bluesky_post(bluesky_command: BlueskyCommand, init_container: Container) -> None:
+async def test_handle_bluesky_post(bluesky_command: BlueskyCommand, init_container: AsyncContainer) -> None:
     """Test handling a Bluesky post using public API."""
     chat_id = 789
     url = "https://bsky.app/profile/danabra.mov/post/3lj6v5szvj22a"
@@ -71,7 +71,8 @@ async def test_handle_bluesky_post(bluesky_command: BlueskyCommand, init_contain
     bot.send_media_group = AsyncMock()
 
     # Whitelist the chat
-    await init_container.whitelist_service.add_to_whitelist(chat_id)
+    whitelist_service = await init_container.get(WhitelistService)
+    await whitelist_service.add_to_whitelist(chat_id)
 
     # Mock Profile response
     profile_response = {"did": "did:plc:123", "handle": "danabra.mov", "displayName": "Dan"}
@@ -111,8 +112,9 @@ async def test_handle_bluesky_post(bluesky_command: BlueskyCommand, init_contain
         mock_resp.__aexit__ = AsyncMock(return_value=None)
         return mock_resp
 
+    session = await init_container.get(aiohttp.ClientSession)
     with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await bluesky_command.handle(message, cast("Bot", bot))
+        await bluesky_command.handle(message, cast("Bot", bot), session=session)
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
@@ -126,7 +128,7 @@ async def test_handle_bluesky_post(bluesky_command: BlueskyCommand, init_contain
 
 
 @pytest.mark.asyncio
-async def test_handle_bluesky_quote_with_media(bluesky_command: BlueskyCommand, init_container: Container) -> None:
+async def test_handle_bluesky_quote_with_media(bluesky_command: BlueskyCommand, init_container: AsyncContainer) -> None:
     """Test handling a Bluesky quote post where the quoted post has media."""
     chat_id = 789
     url = "https://bsky.app/profile/danabra.mov/post/quote123"
@@ -135,7 +137,8 @@ async def test_handle_bluesky_quote_with_media(bluesky_command: BlueskyCommand, 
     bot.send_media_group = AsyncMock()
 
     # Whitelist the chat
-    await init_container.whitelist_service.add_to_whitelist(chat_id)
+    whitelist_service = await init_container.get(WhitelistService)
+    await whitelist_service.add_to_whitelist(chat_id)
 
     # Mock Thread response with recordWithMedia (Main post media + Quote)
     thread_response = {
@@ -181,8 +184,9 @@ async def test_handle_bluesky_quote_with_media(bluesky_command: BlueskyCommand, 
         mock_resp.__aexit__ = AsyncMock(return_value=None)
         return mock_resp
 
+    session = await init_container.get(aiohttp.ClientSession)
     with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await bluesky_command.handle(message, cast("Bot", bot))
+        await bluesky_command.handle(message, cast("Bot", bot), session=session)
 
     # Verify interaction
     bot.send_media_group.assert_called_once()

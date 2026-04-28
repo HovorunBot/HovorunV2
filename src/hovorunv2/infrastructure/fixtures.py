@@ -1,14 +1,10 @@
 """Database fixtures for initial setup."""
 
-from typing import TYPE_CHECKING
-
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.infrastructure.logger import get_logger
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
 
 logger = get_logger(__name__)
 

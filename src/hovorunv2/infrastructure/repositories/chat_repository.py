@@ -1,14 +1,10 @@
 """Implementation of Chat repository using SQLAlchemy."""
 
-from typing import TYPE_CHECKING
-
 from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from hovorunv2.domain.chat import ChatDB
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class SQLAlchemyChatRepository:

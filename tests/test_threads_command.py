@@ -1,23 +1,24 @@
 """Tests for the ThreadsCommand class."""
 
 from http import HTTPStatus
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
+from dishka import AsyncContainer
 
+from hovorunv2.application.services.whitelist_service import WhitelistService
+from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
-
-if TYPE_CHECKING:
-    from hovorunv2.infrastructure.container import Container
 
 
 @pytest.fixture
-def threads_command() -> ThreadsCommand:
+async def threads_command(init_container: AsyncContainer) -> ThreadsCommand:
     """Fixture to provide a ThreadsCommand instance."""
-    return ThreadsCommand()
+    return await init_container.get(ThreadsCommand)
 
 
 # Test Constants
@@ -65,7 +66,7 @@ async def test_is_triggered(
     threads_command: ThreadsCommand,
     text: str | None,
     expected: bool,
-    init_container: Container,  # noqa: ARG001
+    init_container: AsyncContainer,  # noqa: ARG001
 ) -> None:
     """Test the is_triggered method with various inputs."""
     message = create_mock_message(text)
@@ -73,7 +74,7 @@ async def test_is_triggered(
 
 
 @pytest.mark.asyncio
-async def test_handle_threads_post(threads_command: ThreadsCommand, init_container: Container) -> None:
+async def test_handle_threads_post(threads_command: ThreadsCommand, init_container: AsyncContainer) -> None:
     """Test handling a Threads post with real service logic and mocked network."""
     chat_id = MOCK_CHAT_ID
     url = "https://www.threads.com/@zuck/post/CuW6-7Ky5jG"
@@ -82,7 +83,8 @@ async def test_handle_threads_post(threads_command: ThreadsCommand, init_contain
     bot.send_media_group = AsyncMock()
 
     # Whitelist the chat first (real DB)
-    await init_container.whitelist_service.add_to_whitelist(chat_id)
+    whitelist_service = await init_container.get(WhitelistService)
+    await whitelist_service.add_to_whitelist(chat_id)
 
     # Mock native Threads HTML response
     html_response = """
@@ -100,6 +102,8 @@ async def test_handle_threads_post(threads_command: ThreadsCommand, init_contain
     # Mock Translation API response
     translation_response = [[["Hello Threads!", "Hello Threads!", None, None, 1]], None, "en"]
 
+    session = await init_container.get(aiohttp.ClientSession)
+    browser_service = await init_container.get(BrowserService)
     with patch("aiohttp.ClientSession.get") as mock_get:
         # Mock Translation API
         mock_resp = MagicMock()
@@ -110,8 +114,8 @@ async def test_handle_threads_post(threads_command: ThreadsCommand, init_contain
         mock_get.return_value = mock_resp
 
         # Mock BrowserService
-        with patch.object(init_container.browser_service, "get_content", AsyncMock(return_value=html_response)):
-            await threads_command.handle(message, cast("Bot", bot))
+        with patch.object(browser_service, "get_content", AsyncMock(return_value=html_response)):
+            await threads_command.handle(message, cast("Bot", bot), session=session)
 
     # Verify interaction
     bot.send_media_group.assert_called_once()

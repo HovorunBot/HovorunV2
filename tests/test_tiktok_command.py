@@ -1,23 +1,23 @@
 """Tests for the TikTokCommand class."""
 
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
+from dishka import AsyncContainer
 
+from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.interface.telegram.handlers.tiktok import TikTokCommand
-
-if TYPE_CHECKING:
-    from hovorunv2.infrastructure.container import Container
 
 
 @pytest.fixture
-def tiktok_command() -> TikTokCommand:
+async def tiktok_command(init_container: AsyncContainer) -> TikTokCommand:
     """Fixture to provide a TikTokCommand instance."""
-    return TikTokCommand()
+    return await init_container.get(TikTokCommand)
 
 
 def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = 456) -> MagicMock:
@@ -52,7 +52,7 @@ async def test_is_triggered(
     tiktok_command: TikTokCommand,
     text: str | None,
     expected: bool,
-    init_container: Container,  # noqa: ARG001
+    init_container: AsyncContainer,  # noqa: ARG001
 ) -> None:
     """Test the is_triggered method."""
     message = create_mock_message(text)
@@ -60,7 +60,7 @@ async def test_is_triggered(
 
 
 @pytest.mark.asyncio
-async def test_is_triggered_by_bot(tiktok_command: TikTokCommand, init_container: Container) -> None:  # noqa: ARG001
+async def test_is_triggered_by_bot(tiktok_command: TikTokCommand, init_container: AsyncContainer) -> None:  # noqa: ARG001
     """Test that it's not triggered by bot messages."""
     text = "https://www.tiktok.com/@fueltothe_max/video/7397394517311212818"
     message = create_mock_message(text, is_bot=True)
@@ -68,7 +68,7 @@ async def test_is_triggered_by_bot(tiktok_command: TikTokCommand, init_container
 
 
 @pytest.mark.asyncio
-async def test_handle_tiktok_video(tiktok_command: TikTokCommand, test_container: Container) -> None:
+async def test_handle_tiktok_video(tiktok_command: TikTokCommand, init_container: AsyncContainer) -> None:
     """Test handling a TikTok video link with real service logic and mocked network."""
     chat_id = 456
     url = "https://www.tiktok.com/@user/video/1234567890"
@@ -77,7 +77,8 @@ async def test_handle_tiktok_video(tiktok_command: TikTokCommand, test_container
     bot.send_media_group = AsyncMock()
 
     # Whitelist the chat first (real DB)
-    await test_container.whitelist_service.add_to_whitelist(chat_id)
+    whitelist_service = await init_container.get(WhitelistService)
+    await whitelist_service.add_to_whitelist(chat_id)
 
     # Mock TikWM API response
     tiktok_response = {
@@ -108,8 +109,9 @@ async def test_handle_tiktok_video(tiktok_command: TikTokCommand, test_container
         mock_resp.__aexit__ = AsyncMock(return_value=None)
         return mock_resp
 
+    session = await init_container.get(aiohttp.ClientSession)
     with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await tiktok_command.handle(message, cast("Bot", bot))
+        await tiktok_command.handle(message, cast("Bot", bot), session=session)
 
     # Verify interaction
     bot.send_media_group.assert_called_once()

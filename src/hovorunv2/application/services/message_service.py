@@ -1,14 +1,11 @@
 """Message service for handling Telegram messages and caching."""
 
 import json
-from typing import TYPE_CHECKING
 
 from aiogram import types
 
+from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.logger import get_logger
-
-if TYPE_CHECKING:
-    from hovorunv2.infrastructure.cache import CacheService
 
 logger = get_logger(__name__)
 
