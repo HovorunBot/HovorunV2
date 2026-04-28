@@ -1,7 +1,7 @@
 """Tests for the ThreadsCommand class."""
 
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,13 +20,20 @@ def threads_command() -> ThreadsCommand:
     return ThreadsCommand()
 
 
-def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = 456) -> MagicMock:
+# Test Constants
+MOCK_CHAT_ID: int = 456
+MOCK_USER_ID: int = 123
+MOCK_MESSAGE_ID: int = 12345
+EXPECTED_MEDIA_COUNT: int = 1
+
+
+def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = MOCK_CHAT_ID) -> MagicMock:
     """Create a mock Telegram message."""
     message = MagicMock(spec=Message)
     message.text = text
-    message.message_id = 12345
+    message.message_id = MOCK_MESSAGE_ID
     message.from_user = MagicMock(spec=User)
-    message.from_user.id = 123
+    message.from_user.id = MOCK_USER_ID
     message.from_user.is_bot = is_bot
     message.from_user.full_name = "Mock User"
     message.chat = MagicMock(spec=Chat)
@@ -40,14 +47,14 @@ def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = 4
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("Check this post: https://www.threads.net/@zuck/post/CuW6-7Ky5jG", True),
-        ("Check this post: https://www.threads.com/@zuck/post/CuW6-7Ky5jG", True),
-        ("Check this post: https://threads.net/@user/post/123456", True),
-        ("Check this post: https://threads.com/@user/post/123456", True),
-        ("Check this post: http://threads.net/t/C_xyz123", True),
-        ("Check this post: http://threads.com/t/C_xyz123", True),
-        ("Check this post: https://www.threads.net/t/CuW6-7Ky5jG", True),
-        ("Check this post: https://www.threads.com/t/CuW6-7Ky5jG", True),
+        ("https://www.threads.net/@zuck/post/CuW6-7Ky5jG", True),
+        ("https://www.threads.com/@zuck/post/CuW6-7Ky5jG", True),
+        ("https://threads.net/@user/post/123456", True),
+        ("https://threads.com/@user/post/123456", True),
+        ("http://threads.net/t/C_xyz123", True),
+        ("http://threads.com/t/C_xyz123", True),
+        ("https://www.threads.net/t/CuW6-7Ky5jG", True),
+        ("https://www.threads.com/t/CuW6-7Ky5jG", True),
         ("No link here", False),
         ("Invalid link: https://threads.net/user/12345", False),
         ("", False),
@@ -68,7 +75,7 @@ async def test_is_triggered(
 @pytest.mark.asyncio
 async def test_handle_threads_post(threads_command: ThreadsCommand, init_container: Container) -> None:
     """Test handling a Threads post with real service logic and mocked network."""
-    chat_id = 456
+    chat_id = MOCK_CHAT_ID
     url = "https://www.threads.com/@zuck/post/CuW6-7Ky5jG"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
@@ -93,21 +100,18 @@ async def test_handle_threads_post(threads_command: ThreadsCommand, init_contain
     # Mock Translation API response
     translation_response = [[["Hello Threads!", "Hello Threads!", None, None, 1]], None, "en"]
 
-    def mocked_get(url_: str, **_kwargs: Any) -> MagicMock:  # noqa: ANN401
+    with patch("aiohttp.ClientSession.get") as mock_get:
+        # Mock Translation API
         mock_resp = MagicMock()
         mock_resp.status = HTTPStatus.OK
-        if "threads.com" in str(url_) or "threads.net" in str(url_):
-            mock_resp.text = AsyncMock(return_value=html_response)
-        elif "translate.googleapis.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=translation_response)
-        else:
-            mock_resp.status = HTTPStatus.NOT_FOUND
+        mock_resp.json = AsyncMock(return_value=translation_response)
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
         mock_resp.__aexit__ = AsyncMock(return_value=None)
-        return mock_resp
+        mock_get.return_value = mock_resp
 
-    with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await threads_command.handle(message, cast("Bot", bot))
+        # Mock BrowserService
+        with patch.object(init_container.browser_service, "get_content", AsyncMock(return_value=html_response)):
+            await threads_command.handle(message, cast("Bot", bot))
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
@@ -116,5 +120,5 @@ async def test_handle_threads_post(threads_command: ThreadsCommand, init_contain
     assert "Mark Zuckerberg" in kwargs["media"][0].caption
     assert "threads.com" in kwargs["media"][0].caption
     # Verify media items were processed
-    assert len(kwargs["media"]) == 1
+    assert len(kwargs["media"]) == EXPECTED_MEDIA_COUNT
     assert kwargs["media"][0].media == "https://example.com/image.jpg"

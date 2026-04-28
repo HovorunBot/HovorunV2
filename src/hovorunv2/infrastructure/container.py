@@ -21,6 +21,7 @@ from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.application.utils import UNDEFINED
+from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
@@ -49,6 +50,7 @@ class Container:
         self.facebook_service: FacebookService = UNDEFINED
         self.bluesky_service: BlueskyService = UNDEFINED
         self.media_extractor: MediaExtractor = UNDEFINED
+        self.browser_service: BrowserService = UNDEFINED
         self.http_session: aiohttp.ClientSession = UNDEFINED
 
         self._is_initialized: bool = False
@@ -74,6 +76,11 @@ class Container:
         self.message_service = MessageService(self.cache_service)
         self.media_downloader = MediaDownloader(self.http_session)
 
+        self.browser_service = BrowserService(
+            max_tabs=settings.playwright_max_tabs,
+            idle_timeout=settings.playwright_idle_timeout,
+        )
+
         self.chat_service = ChatService(self.session_maker)
         self.command_data_service = CommandDataService(self.session_maker)
         self.command_service = CommandService(self.command_data_service)
@@ -88,7 +95,9 @@ class Container:
         self.media_extractor = MediaExtractor(translation_service=self.translation_service)
         self.tiktok_service = TikTokService(translation_service=self.translation_service)
         self.twitter_service = TwitterService(translation_service=self.translation_service)
-        self.threads_service = ThreadsService(translation_service=self.translation_service)
+        self.threads_service = ThreadsService(
+            translation_service=self.translation_service, browser_service=self.browser_service
+        )
         self.instagram_service = InstagramService(
             translation_service=self.translation_service, media_extractor=self.media_extractor
         )
@@ -103,6 +112,9 @@ class Container:
         """Close all services and resources."""
         if not self._is_initialized:
             return
+
+        if self.browser_service is not UNDEFINED:
+            await self.browser_service.close()
 
         if self.cache_service is not UNDEFINED:
             await self.cache_service.close()

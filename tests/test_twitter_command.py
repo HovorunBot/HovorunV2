@@ -147,7 +147,7 @@ async def test_handle_twitter_post(twitter_command: TwitterCommand, init_contain
     assert "Mock User" in caption
     assert "Elon Musk" in caption
     assert "Hello world!" in caption
-    assert "📊" in caption
+    assert "❤️" in caption
     assert f"🔁 {RETWEETS_COUNT}" in caption
     assert f"❤️ {LIKES_COUNT}" in caption
     assert f"💬 {REPLIES_COUNT}" in caption

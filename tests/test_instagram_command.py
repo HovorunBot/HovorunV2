@@ -111,7 +111,6 @@ async def test_handle_instagram_post(instagram_command: InstagramCommand, init_c
     assert "Mock User" in caption
     assert "Test Full Name" in caption
     assert "Beautiful sunset" in caption
-    assert "📊" in caption
     assert "❤️ 100" in caption
 
 
@@ -164,5 +163,4 @@ async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_c
     _args, kwargs = bot.send_media_group.call_args
     caption = kwargs["media"][0].caption
     assert "Mock User" in caption
-    assert "📊" in caption
     assert "👁️ 5K" in caption

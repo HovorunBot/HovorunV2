@@ -30,6 +30,8 @@ dependencies = [
     "emoji-country-flag",
     "yt-dlp",
     "instaloader",
+    "playwright",
+    "beautifulsoup4",
 ]
 
 [project.urls]

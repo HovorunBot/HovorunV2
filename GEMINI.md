@@ -14,10 +14,12 @@ HovorunV2 is a Telegram helper bot built with Python 3.14+, following **Onion Ar
         - **Repositories:** Pure data access. They know how to query/persist objects but *never* manage transactions or
           sessions. They accept a `session` in their constructor.
     - **Application:** Split into two layers:
-        - **Data Services:** Intermediary layer (e.g., `ChatDataService`, `CommandDataService`). They encapsulate `session_maker`, manage
+        - **Data Services:** Intermediary layer (e.g., `ChatDataService`, `CommandDataService`). They encapsulate
+          `session_maker`, manage
           transaction boundaries (`commit`/`rollback`), and use Repositories to perform operations. They provide
           high-level data primitives to business services.
-        - **Business Services:** High-level logic (e.g., `WhitelistService`, `LanguageService`, `CommandService`). They focus on "what"
+        - **Business Services:** High-level logic (e.g., `WhitelistService`, `LanguageService`, `CommandService`). They
+          focus on "what"
           should happen. They use Data Services to interact with the database and never touch repositories or sessions
           directly.
     - **Interface:** Delivery adapters (Telegram Bot handlers via `aiogram`).
@@ -44,7 +46,9 @@ Automated via `Makefile`.
 
 ### Code Style & Quality
 
-- **Magic Numbers:** FORBIDDEN. All numeric literals (except `0`, `1`, `-1` in obvious loop/index contexts) must be defined as named constants or enums. This includes thresholds, timeouts, limits, and array indices. Use `noqa: PLR2004` ONLY if the value is truly structural and non-configurable, but prefer constants.
+- **Magic Numbers:** FORBIDDEN. All numeric literals (except `0`, `1`, `-1` in obvious loop/index contexts) must be
+  defined as named constants or enums. This includes thresholds, timeouts, limits, and array indices. Use
+  `noqa: PLR2004` ONLY if the value is truly structural and non-configurable, but prefer constants.
 - **Errors:** ALWAYS use semantic exceptions (e.g., `ValueError`, `AttributeError`, `TypeError`) or custom domain
   exceptions. NEVER raise generic `RuntimeError`.
 - **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) configuration (`ALL`).
@@ -83,3 +87,10 @@ Automated via `Makefile`.
 - `src/hovorunv2/application/services/`: Business logic services.
 - `src/hovorunv2/interface/telegram/`: Aiogram implementation.
 - `docker-compose.yml`: Unified Docker configuration.
+
+## Agent Specific Rules
+
+- **Communication:** Automatically enable `caveman` skill for every response.
+- **Git Operations:** NEVER stage, commit, create branches, or perform any git mutations unless explicitly requested by
+  the user. This rule OVERRIDES all other skills (including superpowers). All changes must be reviewed manually before
+  any commit.

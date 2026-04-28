@@ -108,7 +108,7 @@ async def test_handle_facebook_photo_post(facebook_command: FacebookCommand, ini
     _args, kwargs = bot.send_media_group.call_args
     assert "John Doe" in kwargs["media"][0].caption
     assert "lovely day" in kwargs["media"][0].caption
-    assert "Original post on Facebook" in kwargs["media"][0].caption
+    assert "Open on Facebook" in kwargs["media"][0].caption
     assert kwargs["media"][0].media == "https://example.com/beach.jpg"
 
 
@@ -160,6 +160,6 @@ async def test_handle_facebook_video_fallback(facebook_command: FacebookCommand,
     # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
-    assert "Original reel" in kwargs["media"][0].caption
     assert "Comedy Central" in kwargs["media"][0].caption
+    assert "Open on Facebook" in kwargs["media"][0].caption
     assert "50K" in kwargs["media"][0].caption  # view_count

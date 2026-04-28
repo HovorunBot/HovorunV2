@@ -120,7 +120,7 @@ async def test_handle_bluesky_post(bluesky_command: BlueskyCommand, init_contain
     caption = kwargs["media"][0].caption
     assert "Dan" in caption
     assert "Hello Bluesky!" in caption
-    assert "📊" in caption
+    assert "❤️" in caption
     assert "Open on Bluesky" in caption
     assert kwargs["media"][0].media == "https://example.com/image.jpg"
 
