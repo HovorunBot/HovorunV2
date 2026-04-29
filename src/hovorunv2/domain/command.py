@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from hovorunv2.domain import Base
 
 if TYPE_CHECKING:
-    from hovorunv2.domain import ChatDB
+    from hovorunv2.domain.chat import ChatDB
 
 
 class CommandDB(Base):
