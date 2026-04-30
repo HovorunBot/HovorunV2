@@ -21,8 +21,8 @@ class TikTokService:
     SUCCESS_CODE = 0
 
     PATTERN = re.compile(
-        r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com/(?:v/|t/|(?P<username>[@\w.-]+)/)?(?:video|photo)?/(?P<video_id>\d+)|"
-        r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com/(?P<short_id>\w+)",
+        r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com/(?:(?P<type>v|t|video|photo)/|(?P<username>[@\w.-]+)/)?"
+        r"(?:(?P<type_alt>video|photo)/)?(?P<id>[\w-]+)/?(?:(?<=/)\w+/?)*(?=[^\w/]|$)",
     )
 
     def __init__(self, translation_service: TranslationService) -> None:
@@ -35,13 +35,18 @@ class TikTokService:
         """Fetch TikTok data and construct a RichMediaPayload."""
         async with session.get(self.API_URL, params={"url": url}) as resp:
             if resp.status != HTTPStatus.OK:
+                logger.error("Tikwm API returned HTTP %d for %s", resp.status, url)
                 return None
             data = await resp.json()
             if data.get("code") != self.SUCCESS_CODE:
-                logger.error("Tikwm API error: %s", data.get("msg"))
+                logger.error("Tikwm API error for %s: %s", url, data.get("msg"))
                 return None
 
-            video_data = data["data"]
+            video_data = data.get("data")
+            if not video_data:
+                logger.error("Tikwm API returned success code but no data for %s", url)
+                return None
+
             author = video_data.get("author", {})
 
             raw_description = video_data.get("title", "")
@@ -57,7 +62,8 @@ class TikTokService:
             if images:
                 media_items = [MediaItem(url=img, is_video=False) for img in images]
             else:
-                media_items = [MediaItem(url=video_data.get("play", ""), is_video=True)]
+                video_url = video_data.get("play") or video_data.get("hdplay") or video_data.get("wmplay", "")
+                media_items = [MediaItem(url=video_url, is_video=True)] if video_url else []
 
             footer = (
                 f"❤️ {format_number(video_data.get('digg_count', 0))} | "

@@ -59,8 +59,7 @@ async def test_handle_authorized(whitelist_command: AllowBotCommand, init_contai
     message = create_mock_message("/allow_chat", user_id=admin_id, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
 
-    commands = await init_container.get(list[BaseCommand])
-    await whitelist_command.handle(message, cast("Bot", bot), commands=commands)
+    await whitelist_command.handle(message, cast("Bot", bot))
 
     # Check database directly through service
     whitelist_service = await init_container.get(WhitelistService)
@@ -82,8 +81,7 @@ async def test_handle_unauthorized(whitelist_command: AllowBotCommand, init_cont
     message = create_mock_message("/allow_chat", user_id=user_id, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
 
-    commands = await init_container.get(list[BaseCommand])
-    await whitelist_command.handle(message, cast("Bot", bot), commands=commands)
+    await whitelist_command.handle(message, cast("Bot", bot))
 
     whitelist_service = await init_container.get(WhitelistService)
     is_whitelisted = await whitelist_service.is_whitelisted(chat_id)

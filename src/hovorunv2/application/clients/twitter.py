@@ -38,8 +38,13 @@ class TwitterService:
 
         async with session.get(api_url) as response:
             if response.status != HTTPStatus.OK:
+                logger.error("vxtwitter API returned HTTP %d for %s", response.status, url)
                 return None
             data = await response.json()
+
+        if not data or "text" not in data:
+            logger.error("vxtwitter API returned invalid data for %s", url)
+            return None
 
         raw_text = data.get("text", "")
         qrt_url = data.get("qrtURL")

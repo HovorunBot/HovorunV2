@@ -43,9 +43,10 @@ class BaseCommand(Protocol):
 class RichMediaCommand(ABC):
     """Base class for commands that send rich media with standardized formatting."""
 
-    def __init__(self, media_downloader: MediaDownloader) -> None:
+    def __init__(self, media_downloader: MediaDownloader, session: aiohttp.ClientSession) -> None:
         """Initialize command with its dependencies."""
         self._media_downloader = media_downloader
+        self._session = session
 
     @property
     def name(self) -> str:
@@ -93,11 +94,10 @@ class RichMediaCommand(ABC):
         self,
         message: Message,
         bot: Bot,
-        session: FromDishka[aiohttp.ClientSession] | None = None,
         **kwargs: Any,  # noqa: ARG002,ANN401
     ) -> None:
         """Standardized handling of rich media links."""
-        if not message.text or not message.from_user or session is None:
+        if not message.text or not message.from_user:
             return
 
         matches = list(self.pattern.finditer(message.text))
@@ -110,9 +110,13 @@ class RichMediaCommand(ABC):
 
         for match in matches:
             try:
-                payload = await self._extract_payload(session, match, message.chat.id, "telegram")
+                payload = await self._extract_payload(self._session, match, message.chat.id, "telegram")
                 if payload:
-                    await self._send_rich_media(bot, message, payload, session)
+                    await self._send_rich_media(bot, message, payload, self._session)
+                else:
+                    logger.warning(
+                        "Extraction returned empty payload for %s (%s)", match.group(0), self.__class__.__name__
+                    )
             except Exception:
                 logger.exception("Failed to process link: %s", match.group(0))
 

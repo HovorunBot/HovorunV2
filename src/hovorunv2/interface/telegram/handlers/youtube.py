@@ -17,9 +17,14 @@ logger = get_logger(__name__)
 class YoutubeShortsCommand(RichMediaCommand):
     """Command for interacting with YouTube and processing Shorts links."""
 
-    def __init__(self, media_extractor: MediaExtractor, media_downloader: MediaDownloader) -> None:
+    def __init__(
+        self,
+        media_extractor: MediaExtractor,
+        media_downloader: MediaDownloader,
+        session: aiohttp.ClientSession,
+    ) -> None:
         """Initialize command with its dependencies."""
-        super().__init__(media_downloader)
+        super().__init__(media_downloader, session)
         self._media_extractor = media_extractor
 
     @property

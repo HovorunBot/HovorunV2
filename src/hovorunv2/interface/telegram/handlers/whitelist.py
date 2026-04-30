@@ -4,7 +4,6 @@ from typing import Any, ClassVar
 
 from aiogram import Bot
 from aiogram.types import Message
-from dishka.integrations.aiogram import FromDishka
 
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.whitelist_service import WhitelistService
@@ -24,11 +23,13 @@ class AllowBotCommand(BaseCommand):
         whitelist_service: WhitelistService,
         command_service: CommandService,
         settings: Settings,
+        commands: list[BaseCommand],
     ) -> None:
         """Initialize command with its dependencies."""
         self._whitelist_service = whitelist_service
         self._command_service = command_service
         self._settings = settings
+        self._commands = commands
 
     @property
     def name(self) -> str:
@@ -45,13 +46,9 @@ class AllowBotCommand(BaseCommand):
         self,
         message: Message,
         bot: Bot,  # noqa: ARG002
-        commands: FromDishka[list[BaseCommand]] | None = None,
         **kwargs: Any,  # noqa: ANN401, ARG002
     ) -> None:
         """Handle allow bot command."""
-        if commands is None:
-            return
-
         user_id = message.from_user.id if message.from_user else None
         if user_id not in self._settings.admin_ids:
             logger.warning("Unauthorized /allow_bot attempt by user %s", user_id)
@@ -61,7 +58,7 @@ class AllowBotCommand(BaseCommand):
         await self._whitelist_service.add_to_whitelist(chat_id)
 
         # Auto-allow commands
-        for command in (c for c in commands if c.AUTO_ALLOW):
+        for command in (c for c in self._commands if c.AUTO_ALLOW):
             await self._command_service.enable_command(chat_id, command.name)
 
         await message.answer("Bot is now allowed in this chat.")

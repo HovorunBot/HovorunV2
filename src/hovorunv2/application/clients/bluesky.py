@@ -89,10 +89,12 @@ class BlueskyService:
         """Fetch Bluesky data and construct a RichMediaPayload."""
         actual_url = await self._resolve_url(session, url)
         if not actual_url:
+            logger.error("Failed to resolve Bluesky URL: %s", url)
             return None
 
         match = self.PATTERN.search(actual_url)
         if not match or not match.group("handle"):
+            logger.error("Failed to parse Bluesky URL components from %s", actual_url)
             return None
 
         handle = match.group("handle")
@@ -100,11 +102,13 @@ class BlueskyService:
 
         did = await self._resolve_did(session, handle)
         if not did:
+            logger.error("Failed to resolve Bluesky DID for handle %s", handle)
             return None
 
         at_uri = f"at://{did}/app.bsky.feed.post/{rkey}"
         thread_data = await self._get_post_thread(session, at_uri)
         if not thread_data or "thread" not in thread_data:
+            logger.error("Failed to fetch Bluesky post thread for %s", at_uri)
             return None
 
         post = thread_data["thread"]["post"]

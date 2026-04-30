@@ -62,7 +62,7 @@ class WhitelistMiddleware(BaseMiddleware):
         if is_whitelisted:
             return await handler(event, data)
 
-        logger.debug("Ignoring message in non-whitelisted chat %d", event.chat.id)
+        logger.info("Ignoring message in non-whitelisted chat %d", event.chat.id)
         return None
 
 

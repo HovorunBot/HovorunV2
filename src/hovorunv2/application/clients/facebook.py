@@ -24,10 +24,9 @@ class FacebookService:
         r"permalink\.php|photo\.php|reel/[\w-]+|watch/|videos/[\w-]+|share/[vp]/[\w-]+|story\.php|(?P<id>\w+))"
     )
 
-    def __init__(self, translation_service: TranslationService, media_extractor: MediaExtractor) -> None:
+    def __init__(self, translation_service: TranslationService) -> None:
         """Initialize with required services."""
         self._translation_service = translation_service
-        self._media_extractor = media_extractor
 
     async def extract_payload(
         self, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
@@ -48,8 +47,7 @@ class FacebookService:
             metadata = {}
 
         if not metadata:
-            # Fallback to yt-dlp if OG fails
-            return await self._media_extractor.extract_payload(session, url, chat_id, platform)
+            return None
 
         # 2. Extract info from metadata
         is_video = metadata.get("type") == "video" or "video" in metadata
@@ -65,15 +63,8 @@ class FacebookService:
         media_items = []
         if is_video:
             # If it's a video, OG tags often provide a player URL, not a direct file.
-            # Use yt-dlp to get the actual video file if possible.
-            ytdlp_payload = await self._media_extractor.extract_payload(session, url, chat_id, platform)
-            if ytdlp_payload:
-                return ytdlp_payload
-
-            # If yt-dlp fails, use OG video if it looks like a direct link
-            video_url = metadata.get("video:secure_url") or metadata.get("video")
-            if video_url:
-                media_items.append(MediaItem(url=video_url, is_video=True))
+            # Return None to let Command level fallback to yt-dlp which is better at Facebook video.
+            return None
 
         if not media_items and "image" in metadata:
             media_items.append(MediaItem(url=metadata["image"], is_video=False))

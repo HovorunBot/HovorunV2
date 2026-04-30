@@ -35,10 +35,11 @@ class MediaExtractor:
             # yt-dlp is blocking, run in thread to keep event loop free
             info = await asyncio.to_thread(self._extract_info, url)
             if not info:
+                logger.error("yt-dlp failed to extract info for %s (returned None)", url)
                 return None
             return await self._process_info(info, session, url, chat_id, platform)
         except Exception:
-            logger.exception("Failed to extract media from %s", url)
+            logger.exception("Failed to extract media from %s using yt-dlp", url)
             return None
 
     def _extract_info(self, url: str) -> dict | None:

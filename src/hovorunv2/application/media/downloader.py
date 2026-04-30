@@ -71,7 +71,7 @@ class MediaDownloader:
     ) -> BufferedInputFile | None:
         """Perform the actual network request."""
         try:
-            async with session.get(url, timeout=self.DEFAULT_TIMEOUT_SECONDS) as resp:
+            async with session.get(url, timeout=self.DEFAULT_TIMEOUT_SECONDS, headers=self.DEFAULT_HEADERS) as resp:
                 if resp.status == HTTPStatus.OK:
                     content = await resp.read()
                     return BufferedInputFile(content, filename=filename)

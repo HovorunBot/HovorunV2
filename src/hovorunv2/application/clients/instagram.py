@@ -24,10 +24,9 @@ class InstagramService:
 
     PATTERN = re.compile(r"https?://(?:www\.)?instagram\.com/(?:[^/]+/)?(?:reels?|p|tv)/(?P<id>[\w-]+)")
 
-    def __init__(self, translation_service: TranslationService, media_extractor: MediaExtractor) -> None:
+    def __init__(self, translation_service: TranslationService) -> None:
         """Initialize with required services."""
         self._translation_service = translation_service
-        self._media_extractor = media_extractor
         self._loader = instaloader.Instaloader(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -47,10 +46,9 @@ class InstagramService:
 
         try:
             post = await asyncio.to_thread(instaloader.Post.from_shortcode, self._loader.context, shortcode)
-        except Exception:
-            logger.warning("Instaloader failed for %s, falling back to yt-dlp", shortcode)
-            # Fallback to yt-dlp
-            return await self._media_extractor.extract_payload(session, url, chat_id, platform)
+        except Exception as e:
+            logger.warning("Instaloader failed for %s (%s)", shortcode, str(e))
+            return None
 
         # Metadata
         author_name = post.owner_profile.full_name or post.owner_username

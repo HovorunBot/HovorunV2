@@ -27,15 +27,13 @@ class MessageService:
         logger.debug("Caching message %d from chat %d", message.message_id, message.chat.id)
 
         try:
-            # aiogram objects have a bot reference and internal defaults.
-            # We export only the data fields.
-            json_data = message.model_dump_json(exclude_defaults=True)
+            # Use model_dump(mode="json") to handle non-serializable types like Default
+            data_dict = message.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
+            json_data = json.dumps(data_dict)
             await self.cache.set(key, json_data, expire=self.ttl)
         except Exception:
             logger.exception("Failed to serialize message")
-            # Fallback: manual dict conversion if model_dump_json fails
-            data_dict = message.model_dump(exclude_none=True)
-            await self.cache.set(key, json.dumps(data_dict), expire=self.ttl)
+
 
     async def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
         """Retrieve a cached message by chat ID and message ID."""

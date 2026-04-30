@@ -43,6 +43,8 @@ def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = 4
         ("https://www.tiktok.com/@fueltothe_max/video/7397394517311212818", True),
         ("Check this: https://vm.tiktok.com/ZMrBy9vGj/ cool right?", True),
         ("https://tiktok.com/@user/video/1234567890", True),
+        ("https://vt.tiktok.com/ZS9fuFD3q/", True),
+        ("https://www.tiktok.com/t/ZS9fuFD3q/", True),
         ("Just a random text", False),
         ("", False),
         (None, False),

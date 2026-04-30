@@ -92,3 +92,4 @@ class DisableCommand(BaseCommand):
             await message.reply(f"Command /{cmd_name} disabled for this chat.")
         else:
             await message.reply(f"Command /{cmd_name} not found or not enabled.")
+

@@ -23,8 +23,9 @@ from hovorunv2.application.services.translation_service import TranslationServic
 from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
-from hovorunv2.infrastructure.config import Settings, settings
-from hovorunv2.interface.telegram.handlers.base import BaseCommand
+from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.config import settings as app_settings
+from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.bluesky import BlueskyCommand
 from hovorunv2.interface.telegram.handlers.commands_config import DisableCommand, EnableCommand
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
@@ -44,7 +45,7 @@ class InfrastructureProvider(Provider):
     @provide(scope=Scope.APP)
     def get_settings(self) -> Settings:
         """Provide application settings."""
-        return settings
+        return app_settings
 
     @provide(scope=Scope.APP)
     async def get_engine(self, config: Settings) -> AsyncIterable[AsyncEngine]:
@@ -111,14 +112,13 @@ class AppProvider(Provider):
     tiktok_command = provide(TikTokCommand)
     twitter_command = provide(TwitterCommand)
     youtube_command = provide(YoutubeShortsCommand)
-    allow_bot_command = provide(AllowBotCommand)
     set_language_command = provide(SetLanguageCommand)
     debug_command = provide(DebugCommand)
     enable_cmd_command = provide(EnableCommand)
     disable_cmd_command = provide(DisableCommand)
 
     @provide(scope=Scope.APP)
-    def get_commands(
+    def get_rich_media_commands(
         self,
         bluesky_command: BlueskyCommand,
         facebook_command: FacebookCommand,
@@ -127,14 +127,9 @@ class AppProvider(Provider):
         tiktok_command: TikTokCommand,
         twitter_command: TwitterCommand,
         youtube_command: YoutubeShortsCommand,
-        allow_bot_command: AllowBotCommand,
-        set_language_command: SetLanguageCommand,
-        debug_command: DebugCommand,
-        enable_cmd_command: EnableCommand,
-        disable_cmd_command: DisableCommand,
-    ) -> list[BaseCommand]:
-        """Provide list of all bot commands."""
-        commands: list[BaseCommand] = [
+    ) -> list[RichMediaCommand]:
+        """Provide list of rich media commands."""
+        return [
             bluesky_command,
             facebook_command,
             instagram_command,
@@ -142,7 +137,39 @@ class AppProvider(Provider):
             tiktok_command,
             twitter_command,
             youtube_command,
+        ]
+
+    @provide(scope=Scope.APP)
+    def get_allow_bot_command(
+        self,
+        whitelist_service: WhitelistService,
+        command_service: CommandService,
+        settings: Settings,
+        rich_media_commands: list[RichMediaCommand],
+    ) -> AllowBotCommand:
+        """Provide AllowBotCommand with its dependencies."""
+        # Note: we cast rich_media_commands to list[BaseCommand] because AllowBotCommand expects that
+        return AllowBotCommand(
+            whitelist_service=whitelist_service,
+            command_service=command_service,
+            settings=settings,
+            commands=rich_media_commands,  # type: ignore[arg-type]
+        )
+
+    @provide(scope=Scope.APP)
+    def get_commands(
+        self,
+        allow_bot_command: AllowBotCommand,
+        rich_media_commands: list[RichMediaCommand],
+        set_language_command: SetLanguageCommand,
+        debug_command: DebugCommand,
+        enable_cmd_command: EnableCommand,
+        disable_cmd_command: DisableCommand,
+    ) -> list[BaseCommand]:
+        """Provide list of all bot commands."""
+        commands: list[BaseCommand] = [
             allow_bot_command,
+            *rich_media_commands,
             set_language_command,
             debug_command,
             enable_cmd_command,

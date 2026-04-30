@@ -54,6 +54,10 @@ class ThreadsService:
             logger.exception("Failed to fetch Threads URL via Playwright: %s", url)
             return None
 
+        if not html_content:
+            logger.error("Browser returned empty content for Threads URL: %s", url)
+            return None
+
         soup = BeautifulSoup(html_content, "html.parser")
 
         # 1. Parse Author Info
@@ -69,6 +73,14 @@ class ThreadsService:
 
         # 3. Parse Media (Prioritize DOM for carousels and videos)
         media_items = self._extract_media_from_soup(soup)
+
+        if not media_items:
+            # If no media in DOM but OG has video, return None to trigger yt-dlp fallback
+            if soup.find("meta", property="og:video"):
+                logger.info("Threads DOM media empty but OG video found, yielding to yt-dlp")
+                return None
+            # Otherwise use thumbnail (og:image)
+            media_items = self._extract_thumbnail(soup)
 
         # 4. Handle Quoted Post
         quoted_payload = self._extract_quoted_post(soup)
@@ -193,31 +205,16 @@ class ThreadsService:
                 if src and "cdninstagram.com" in src and "profile picture" not in alt:
                     items.append(MediaItem(url=src, is_video=False))
 
-        if items:
-            return items
-
-        # 3. Fallback to meta tags if DOM parsing yielded nothing
-        return self._extract_media_from_og(soup)
-
-    def _extract_media_from_og(self, soup: BeautifulSoup) -> list[MediaItem]:
-        """Fallback to OG tags for media extraction."""
-        items: list[MediaItem] = []
-
-        og_video = soup.find("meta", property="og:video")
-        if og_video and isinstance(og_video, Tag) and og_video.get("content"):
-            items.append(MediaItem(url=html.unescape(str(og_video["content"])), is_video=True))
-            return items
-
-        og_images = soup.find_all("meta", property="og:image")
-        items.extend(
-            [
-                MediaItem(url=html.unescape(str(img["content"])), is_video=False)
-                for img in og_images
-                if isinstance(img, Tag) and img.get("content")
-            ]
-        )
-
         return items
+
+    def _extract_thumbnail(self, soup: BeautifulSoup) -> list[MediaItem]:
+        """Fallback to OG images (thumbnails) for media extraction."""
+        og_images = soup.find_all("meta", property="og:image")
+        return [
+            MediaItem(url=html.unescape(str(img["content"])), is_video=False)
+            for img in og_images
+            if isinstance(img, Tag) and img.get("content")
+        ]
 
     def _find_quoted_container(self, container: Tag) -> Tag | None:
         """Find the container representing a quoted post within a main container."""
