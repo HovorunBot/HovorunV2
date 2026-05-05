@@ -25,8 +25,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
+COPY entrypoint.sh ./entrypoint.sh
 
-RUN uv sync --frozen --no-dev
+RUN chmod +x entrypoint.sh && uv sync --frozen --no-dev
 
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run hovorunv2"]
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["uv", "run", "hovorunv2"]
 

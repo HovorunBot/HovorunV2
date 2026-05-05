@@ -19,6 +19,7 @@ help:
 	@echo "  make run        - Start the production environment (Bot + Valkey) in Docker"
 	@echo "  make stop       - Stop all Docker services"
 	@echo "  make update     - Pull latest changes and rebuild"
+	@echo "  make deploy     - Rebuild and restart services (alias for stop + run)"
 	@echo "  make migrate    - Manually run database migrations inside Docker"
 	@echo "  make dev        - Start development dependencies (Valkey only) in Docker"
 	@echo "  make run-dev    - Start Valkey in Docker and run Bot locally (no Docker for Bot)"
@@ -79,7 +80,8 @@ _update: checkout build-prod
 _migrate: build-prod
 	$(DOCKER_PROD) run --rm bot uv run --no-dev alembic upgrade head
 
-_deploy: stop _update _migrate _run
+_deploy: build-prod
+	$(DOCKER_PROD) up -d --build --remove-orphans
 
 # 5. Build helpers with sentinel
 build-prod: $(BUILD_SENTINEL)
