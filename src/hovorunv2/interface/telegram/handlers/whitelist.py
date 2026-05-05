@@ -1,5 +1,6 @@
 """Whitelist command module."""
 
+from collections.abc import Sequence
 from typing import Any, ClassVar
 
 from aiogram import Bot
@@ -23,7 +24,7 @@ class AllowBotCommand(BaseCommand):
         whitelist_service: WhitelistService,
         command_service: CommandService,
         settings: Settings,
-        commands: list[BaseCommand],
+        commands: Sequence[BaseCommand],
     ) -> None:
         """Initialize command with its dependencies."""
         self._whitelist_service = whitelist_service

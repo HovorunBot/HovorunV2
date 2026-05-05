@@ -74,10 +74,10 @@ class InfrastructureProvider(Provider):
 
     @provide(scope=Scope.APP)
     async def get_browser_service(self, config: Settings) -> AsyncIterable[BrowserService]:
-        """Provide BrowserService (Playwright)."""
+        """Provide BrowserService (DrissionPage)."""
         service = BrowserService(
-            max_tabs=config.playwright_max_tabs,
-            idle_timeout=config.playwright_idle_timeout,
+            max_tabs=config.browser_max_tabs,
+            idle_timeout=config.browser_idle_timeout,
         )
         yield service
         await service.close()
@@ -153,7 +153,7 @@ class AppProvider(Provider):
             whitelist_service=whitelist_service,
             command_service=command_service,
             settings=settings,
-            commands=rich_media_commands,  # type: ignore[arg-type]
+            commands=rich_media_commands,
         )
 
     @provide(scope=Scope.APP)

@@ -8,7 +8,6 @@ import aiohttp
 import instaloader
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
-from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.utils import format_number
 from hovorunv2.infrastructure.logger import get_logger

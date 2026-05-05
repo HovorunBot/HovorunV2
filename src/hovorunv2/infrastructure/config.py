@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     valkey_url: str = "redis://localhost:6379/0"
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
-    playwright_max_tabs: int = 4
-    playwright_idle_timeout: int = 600  # 10 minutes
+    browser_max_tabs: int = 4
+    browser_idle_timeout: int = 600  # 10 minutes
 
     @field_validator("db_path", mode="after")
     @classmethod

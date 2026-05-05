@@ -1,9 +1,14 @@
-"""Infrastructure service for managing a headless browser instance."""
+"""Infrastructure service for managing a headless browser instance using DrissionPage."""
 
 import asyncio
-import contextlib
+import os
+import platform
+import shutil
+from pathlib import Path
+from typing import Any
 
-from playwright.async_api import Browser, Error, Page, Playwright, async_playwright
+from DrissionPage import ChromiumOptions, ChromiumPage
+from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -15,25 +20,49 @@ class BrowserError(Exception):
 
 
 class BrowserLifecycleManager:
-    """Manager for browser instance lifecycle and idle shutdown."""
+    """Manager for browser instance lifecycle and idle shutdown.
+
+    Attributes:
+        _idle_timeout (int): Seconds to wait before shutting down idle browser.
+        _page (ChromiumPage | None): The managed DrissionPage instance.
+        _idle_timer (asyncio.Task | None): Task for scheduled shutdown.
+        _active_requests (int): Counter for active browser operations.
+        _lock (asyncio.Lock): Synchronization for lifecycle state changes.
+
+    """
 
     def __init__(self, idle_timeout: int) -> None:
+        """Initialize the manager.
+
+        Args:
+            idle_timeout: Seconds to wait before shutting down idle browser.
+
+        """
         self._idle_timeout = idle_timeout
-        self._playwright: Playwright | None = None
-        self._browser: Browser | None = None
+        self._page: ChromiumPage | None = None
         self._idle_timer: asyncio.Task | None = None
         self._active_requests = 0
         self._lock = asyncio.Lock()
 
     @property
-    def browser(self) -> Browser | None:
-        """Get current browser instance."""
-        return self._browser
+    def page(self) -> ChromiumPage | None:
+        """Get current page instance.
+
+        Returns:
+            ChromiumPage instance or None if not started.
+
+        """
+        return self._page
 
     @property
     def is_running(self) -> bool:
-        """Check if browser instance is currently running and connected."""
-        return self._browser is not None and self._browser.is_connected()
+        """Check if browser instance is currently running.
+
+        Returns:
+            True if _page exists.
+
+        """
+        return self._page is not None
 
     async def acquire(self) -> None:
         """Initialize browser and tracking for a new request."""
@@ -51,18 +80,83 @@ class BrowserLifecycleManager:
 
     async def _ensure_browser(self) -> None:
         """Ensure browser instance is running."""
-        if not self._playwright:
-            logger.info("Starting playwright instance")
-            self._playwright = await async_playwright().start()
+        if not self._page:
+            logger.info("Starting new headless DrissionPage instance")
+            await asyncio.to_thread(self._init_page)
 
-        if not self._browser or not self._browser.is_connected():
-            if self._browser:
-                logger.info("Browser disconnected, closing old instance")
-                with contextlib.suppress(Exception):
-                    await self._browser.close()
+    def _init_page(self) -> None:
+        """Initialize ChromiumPage in a thread with detected browser path."""
+        options = ChromiumOptions()
+        options.set_argument("--headless")
+        options.set_argument("--no-sandbox")
+        options.set_argument("--disable-gpu")
 
-            logger.info("Starting new headless browser instance")
-            self._browser = await self._playwright.chromium.launch(headless=True)
+        if browser_path := self._find_browser_path():
+            logger.info("Using browser at: %s", browser_path)
+            options.set_browser_path(browser_path)
+
+        self._page = ChromiumPage(options)
+
+    def _find_browser_path(self) -> str | None:
+        """Find a suitable Chromium-based browser executable on the system.
+
+        Returns:
+            Path to executable or None if not found.
+
+        """
+        # Check manual override
+        if env_path := os.environ.get("BROWSER_PATH"):
+            if Path(env_path).exists():
+                return env_path
+            logger.warning("BROWSER_PATH set but not found: %s", env_path)
+
+        system = platform.system()
+
+        candidates = [
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "brave-browser",
+            "microsoft-edge",
+            "microsoft-edge-stable",
+            "vivaldi",
+            "chrome",
+        ]
+        for candidate in candidates:
+            if path := shutil.which(candidate):
+                return path
+
+        if system == "Darwin":
+            mac_paths = [
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+                "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            ]
+            for path in mac_paths:
+                if Path(path).exists():
+                    return path
+
+        if system == "Windows":
+            program_files = os.environ.get("PROGRAMFILES", "C:\\Program Files")
+            program_files_x86 = os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")
+            local_app_data = os.environ.get("LOCALAPPDATA", str(Path("~\\AppData\\Local").expanduser()))
+
+            win_paths = [
+                rf"{program_files}\Google\Chrome\Application\chrome.exe",
+                rf"{program_files_x86}\Google\Chrome\Application\chrome.exe",
+                rf"{local_app_data}\Google\Chrome\Application\chrome.exe",
+                rf"{program_files}\BraveSoftware\Brave-Browser\Application\brave.exe",
+                rf"{program_files}\Microsoft\Edge\Application\msedge.exe",
+                rf"{local_app_data}\Vivaldi\Application\vivaldi.exe",
+            ]
+            for path in win_paths:
+                if Path(path).exists():
+                    return path
+
+        return None
 
     def _start_idle_timer(self) -> None:
         """Start idle shutdown timer."""
@@ -88,57 +182,71 @@ class BrowserLifecycleManager:
 
     async def _perform_close(self) -> None:
         """Close without lock."""
-        # Ensure timer is stopped
         if self._idle_timer:
             self._idle_timer.cancel()
             self._idle_timer = None
 
-        if self._browser:
+        if self._page:
             try:
-                # Use wait_for to prevent infinite hang
-                await asyncio.wait_for(self._browser.close(), timeout=5.0)
+                await asyncio.to_thread(self._page.quit)
             except Exception:
-                logger.exception("Error closing browser")
-            self._browser = None
-
-        if self._playwright:
-            try:
-                await asyncio.wait_for(self._playwright.stop(), timeout=5.0)
-            except Exception:
-                logger.exception("Error stopping playwright")
-            self._playwright = None
+                logger.exception("Error closing DrissionPage")
+            self._page = None
         logger.info("Browser lifecycle manager closed")
 
     async def close(self) -> None:
-        """Close browser and playwright instance."""
+        """Close browser and page instance."""
         async with self._lock:
             await self._perform_close()
 
 
 class BrowserService:
-    """Service for fetching web content using a headless browser."""
+    """Service for fetching web content using a headless browser.
 
-    DEFAULT_TIMEOUT_MS = 30000
-    SELECTOR_TIMEOUT_MS = 10000
+    Provides a thread-safe interface for web scraping with automatic
+    lifecycle management and tab-based isolation.
+    """
+
+    DEFAULT_TIMEOUT_S = 30
+    SELECTOR_TIMEOUT_S = 10
     MAX_RETRIES = 2
 
     def __init__(self, max_tabs: int, idle_timeout: int) -> None:
+        """Initialize the service.
+
+        Args:
+            max_tabs: Maximum concurrent tabs (controlled by semaphore).
+            idle_timeout: Seconds to wait before shutting down idle browser.
+
+        """
         self._manager = BrowserLifecycleManager(idle_timeout)
         self._semaphore = asyncio.Semaphore(max_tabs)
 
     @property
     def is_running(self) -> bool:
-        """Check if browser instance is currently running and connected."""
+        """Check if browser instance is currently running."""
         return self._manager.is_running
 
     async def get_content(self, url: str, wait_selector: str | None = None) -> str:
-        """Fetch HTML content of given URL with retries."""
+        """Fetch HTML content of given URL with retries.
+
+        Args:
+            url: Target URL to fetch.
+            wait_selector: Optional CSS selector to wait for before returning.
+
+        Returns:
+            The HTML content of the page.
+
+        Raises:
+            BrowserError: If fetching fails after all retries.
+
+        """
         async with self._semaphore:
             for attempt in range(self.MAX_RETRIES):
                 await self._manager.acquire()
                 try:
                     return await self._fetch_url_content(url, wait_selector)
-                except Error as e:
+                except (BaseError, Exception) as e:
                     if self._is_recoverable_error(e) and attempt == 0:
                         logger.warning("Browser error, retrying: %s", e)
                         await self._manager.close()
@@ -150,36 +258,82 @@ class BrowserService:
         msg = f"Failed to fetch content from {url} after retries"
         raise BrowserError(msg)
 
-    def _is_recoverable_error(self, error: Error) -> bool:
-        """Check if browser error is recoverable by restarting."""
+    def _is_recoverable_error(self, error: Exception) -> bool:
+        """Check if browser error is recoverable by restarting.
+
+        Args:
+            error: The exception to check.
+
+        Returns:
+            True if error suggests a crash/disconnect that a restart might fix.
+
+        """
+        if isinstance(error, (PageDisconnectedError, BrowserConnectError, ConnectionError)):
+            return True
         err_msg = str(error).lower()
-        return "closed" in err_msg or "connection" in err_msg
+        return "closed" in err_msg or "connection" in err_msg or "disconnected" in err_msg
 
     async def _fetch_url_content(self, url: str, wait_selector: str | None = None) -> str:
-        """Fetch content using a new page."""
-        browser = self._manager.browser
-        if not browser:
+        """Fetch content using a new tab in the managed page.
+
+        Args:
+            url: URL to fetch.
+            wait_selector: CSS selector to wait for.
+
+        Returns:
+            HTML content.
+
+        """
+        page = self._manager.page
+        if not page:
             msg = "Browser instance is not initialized"
             raise BrowserError(msg)
 
-        page = await browser.new_page()
+        return await asyncio.to_thread(self._sync_fetch, page, url, wait_selector)
+
+    def _sync_fetch(self, page: ChromiumPage, url: str, wait_selector: str | None) -> str:
+        """Fetch content synchronously in a thread.
+
+        Uses tabs for lightweight control isolation. Note that in DrissionPage,
+        tabs within a single ChromiumPage instance share the same session,
+        cookies, and local storage.
+
+        Args:
+            page: Main ChromiumPage instance.
+            url: URL to fetch.
+            wait_selector: CSS selector to wait for.
+
+        Returns:
+            HTML content.
+        """
+        logger.info("Fetching content from %s", url)
+        # new_tab creates a new tab object; get(url) loads the content
+        tab = page.new_tab(url)
         try:
-            logger.info("Fetching content from %s", url)
-            await page.goto(url, wait_until="domcontentloaded", timeout=self.DEFAULT_TIMEOUT_MS)
+            tab.get(url, timeout=self.DEFAULT_TIMEOUT_S)
 
             if wait_selector:
-                await self._wait_for_selector_safely(page, url, wait_selector)
+                self._wait_for_selector_sync(tab, url, wait_selector)
 
-            return await page.content()
+            return tab.html
         finally:
-            await page.close()
+            # Closing the tab ensures we don't leak resources
+            tab.close()
 
-    async def _wait_for_selector_safely(self, page: Page, url: str, selector: str) -> None:
-        """Wait for selector without failing whole request on timeout."""
+
+    def _wait_for_selector_sync(self, tab: Any, url: str, selector: str) -> None:  # noqa: ANN401
+        """Wait for selector synchronously.
+
+        Args:
+            tab: DrissionPage tab instance.
+            url: URL being fetched (for logging).
+            selector: CSS selector to wait for.
+
+        """
         try:
             logger.debug("Waiting for selector: %s", selector)
-            await page.wait_for_selector(selector, timeout=self.SELECTOR_TIMEOUT_MS)
-        except Error:
+            tab.ele(selector, timeout=self.SELECTOR_TIMEOUT_S)
+        except Exception:
             logger.warning(
                 "Timeout waiting for selector '%s' on %s, returning current content",
                 selector,

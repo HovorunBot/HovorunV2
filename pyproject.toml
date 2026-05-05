@@ -30,7 +30,7 @@ dependencies = [
     "emoji-country-flag",
     "yt-dlp",
     "instaloader",
-    "playwright",
+    "DrissionPage",
     "beautifulsoup4",
     "dishka",
 ]

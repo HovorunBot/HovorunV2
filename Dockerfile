@@ -1,30 +1,32 @@
 FROM python:3.14-slim
 
-# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Set working directory
 WORKDIR /app
 
-# Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
 
-# Copy project files
+# Use nala for parallel package downloads to speed up build
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt \
+    apt-get update && apt-get install -y nala --no-install-recommends
+
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt \
+    nala install -y \
+    chromium \
+    --no-install-recommends
+
 COPY pyproject.toml uv.lock README.md ./
 
-# Install dependencies (use frozen to ensure lockfile is respected)
+# Install dependencies without the project itself to leverage layer caching
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Install playwright browsers and their system dependencies
-RUN uv run playwright install --with-deps chromium
-
-# Copy source code and migrations
 COPY src ./src
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 
-# Install the project
 RUN uv sync --frozen --no-dev
 
-# Run migrations and then start the bot
 CMD ["sh", "-c", "uv run alembic upgrade head && uv run hovorunv2"]
+

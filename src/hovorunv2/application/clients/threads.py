@@ -40,7 +40,7 @@ class ThreadsService:
     async def extract_payload(
         self, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
-        """Fetch native Threads data using Playwright for full extraction."""
+        """Fetch native Threads data using BrowserService for full extraction."""
         match = self.PATTERN.search(url)
         if not match:
             return None
@@ -51,7 +51,7 @@ class ThreadsService:
             # Use wait_selector to ensure React hydration of the post content
             html_content = await self._browser_service.get_content(url, wait_selector="article")
         except Exception:
-            logger.exception("Failed to fetch Threads URL via Playwright: %s", url)
+            logger.exception("Failed to fetch Threads URL via BrowserService: %s", url)
             return None
 
         if not html_content:

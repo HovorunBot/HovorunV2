@@ -54,6 +54,8 @@ Automated via `Makefile`.
 - **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) configuration (`ALL`).
 - **Type Hints:** Mandatory. Checked with `ty`. As we use Python 3.14+, deferred evaluation of type annotations is the
   default; do NOT use strings (`"Service"`) for forward references or circular dependencies.
+- **Path Handling:** MANDATORY use of `pathlib.Path` for all file and directory operations. Avoid `os.path` and string
+  manipulations for paths.
 - **Async:** Mandatory for all I/O operations (Database, Cache, Network).
 - **JSON Serialization:** Use `model_dump(mode="json")` for Pydantic/Aiogram objects before stringifying to handle
   non-serializable types like `Default` correctly. Avoid direct `model_dump_json()` on complex Aiogram types.

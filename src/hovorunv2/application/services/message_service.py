@@ -34,7 +34,6 @@ class MessageService:
         except Exception:
             logger.exception("Failed to serialize message")
 
-
     async def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
         """Retrieve a cached message by chat ID and message ID."""
         key = self._generate_key(chat_id, message_id)

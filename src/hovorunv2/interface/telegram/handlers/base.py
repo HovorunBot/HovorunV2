@@ -10,7 +10,6 @@ import aiohttp
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramEntityTooLarge
 from aiogram.types import InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, Message
-from dishka.integrations.aiogram import FromDishka
 
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
@@ -250,18 +249,21 @@ class RichMediaCommand(ABC):
             session=session,
         )
 
-        if not downloaded_files:
-            await self._edit_placeholder_error(bot, message.chat.id, placeholder_msg.message_id, caption, "download")
-            return
-
         final_group = []
         for i, file in enumerate(downloaded_files):
+            if file is None:
+                continue
+
             item_meta = payload.media_items[i]
             item = InputMediaVideo(media=file) if item_meta.is_video else InputMediaPhoto(media=file)
-            if i == 0:
+            if not final_group:
                 item.caption = caption
                 item.parse_mode = "HTML"
             final_group.append(item)
+
+        if not final_group:
+            await self._edit_placeholder_error(bot, message.chat.id, placeholder_msg.message_id, caption, "download")
+            return
 
         try:
             await bot.send_media_group(
