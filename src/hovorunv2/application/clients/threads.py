@@ -1,6 +1,7 @@
 """Application service for Threads media extraction."""
 
 import html
+import json
 import re
 import urllib.parse
 
@@ -9,6 +10,7 @@ from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.services.translation_service import TranslationService
+from hovorunv2.application.utils import format_number
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -46,6 +48,7 @@ class ThreadsService:
             return None
 
         tld = match.group("tld")
+        post_id = match.group("post_id")
 
         try:
             # Use wait_selector to ensure React hydration of the post content
@@ -85,16 +88,52 @@ class ThreadsService:
         # 4. Handle Quoted Post
         quoted_payload = self._extract_quoted_post(soup)
 
+        # 5. Extract Metrics for Footer
+        footer = self._extract_footer_from_soup(soup, post_id)
+
         return RichMediaPayload(
             author_name=html.escape(author_name),
             author_handle=html.escape(author_handle),
             author_url=f"https://www.threads.{tld}/@{urllib.parse.quote(author_handle)}",
             content=content,
-            footer_text="Threads",
+            footer_text=footer or "Threads",
             original_url=url,
             media_items=media_items,
             quoted_payload=quoted_payload,
         )
+
+    def _extract_footer_from_soup(self, soup: BeautifulSoup, post_id: str) -> str:
+        """Extract likes, replies, and reposts from embedded JSON for the footer."""
+        scripts = soup.find_all("script", {"type": "application/json"})
+        metrics_content = None
+        
+        # Find the script containing the main post data by matching the post_id (code)
+        for script in scripts:
+            content = script.get_text()
+            if content and re.search(rf'"code"\s*:\s*"{re.escape(post_id)}"', content) and '"like_count"' in content:
+                metrics_content = content
+                break
+        
+        if not metrics_content:
+            return ""
+            
+        likes_m = re.search(r'"like_count"\s*:\s*(\d+)', metrics_content)
+        replies_m = re.search(r'"direct_reply_count"\s*:\s*(\d+)', metrics_content)
+        reposts_m = re.search(r'"repost_count"\s*:\s*(\d+)', metrics_content)
+        
+        likes = int(likes_m.group(1)) if likes_m else 0
+        replies = int(replies_m.group(1)) if replies_m else 0
+        reposts = int(reposts_m.group(1)) if reposts_m else 0
+        
+        stats = []
+        if replies:
+            stats.append(f"💬 {format_number(replies)}")
+        if reposts:
+            stats.append(f"🔄 {format_number(reposts)}")
+        if likes:
+            stats.append(f"❤️ {format_number(likes)}")
+            
+        return " | ".join(stats) if stats else ""
 
     def _extract_author_from_soup(self, soup: BeautifulSoup) -> tuple[str, str]:
         """Extract author info from meta tags or page content."""
