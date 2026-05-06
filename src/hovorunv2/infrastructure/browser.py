@@ -1,9 +1,11 @@
 """Infrastructure service for managing a headless browser instance using DrissionPage."""
 
 import asyncio
+import html
 import os
 import platform
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -228,19 +230,7 @@ class BrowserService:
         return self._manager.is_running
 
     async def get_content(self, url: str, wait_selector: str | None = None) -> str:
-        """Fetch HTML content of given URL with retries.
-
-        Args:
-            url: Target URL to fetch.
-            wait_selector: Optional CSS selector to wait for before returning.
-
-        Returns:
-            The HTML content of the page.
-
-        Raises:
-            BrowserError: If fetching fails after all retries.
-
-        """
+        """Fetch HTML content of given URL with retries."""
         async with self._semaphore:
             for attempt in range(self.MAX_RETRIES):
                 await self._manager.acquire()
@@ -257,6 +247,81 @@ class BrowserService:
 
         msg = f"Failed to fetch content from {url} after retries"
         raise BrowserError(msg)
+
+    async def extract_and_download(
+        self,
+        url: str,
+        extractor_fn: Callable,
+        wait_selector: str | None = None,
+        cookies: list[dict[str, Any]] | None = None,
+    ) -> tuple[Any, list[bytes]]:
+        """Fetch URL, extract metadata, and download media in one browser session.
+
+        Args:
+            url: Target URL.
+            extractor_fn: Function that takes HTML string and returns metadata.
+            wait_selector: Optional CSS selector to wait for.
+            cookies: Optional list of cookie dictionaries to set before navigation.
+
+        Returns:
+            Tuple of (extracted_metadata, list of downloaded media bytes).
+
+        """
+        async with self._semaphore:
+            await self._manager.acquire()
+            try:
+                page = self._manager.page
+                if not page:
+                    msg = "Browser instance is not initialized"
+                    raise BrowserError(msg)
+
+                return await asyncio.to_thread(
+                    self._sync_extract_and_download, page, url, extractor_fn, wait_selector, cookies
+                )
+            finally:
+                await self._manager.release()
+
+    def _sync_extract_and_download(
+        self,
+        page: ChromiumPage,
+        url: str,
+        extractor_fn: Callable,
+        wait_selector: str | None,
+        cookies: list[dict[str, Any]] | None,
+    ) -> tuple[Any, list[bytes]]:
+        """Perform extraction and download synchronously in a tab."""
+        logger.info("Extracting and downloading via browser: %s", url)
+        # Create tab but don't load URL yet if we need to set cookies
+        tab = page.new_tab()
+        try:
+            if cookies:
+                logger.info("Injecting %d cookies into browser session", len(cookies))
+                for cookie in cookies:
+                    tab.set.cookies(cookie)
+
+            tab.get(url, timeout=self.DEFAULT_TIMEOUT_S)
+            if wait_selector:
+                self._wait_for_selector_sync(tab, url, wait_selector)
+
+            # Try to extract using the provided function.
+            # We pass the tab instead of just HTML so the extractor can run JS if needed.
+            metadata = extractor_fn(tab, url)
+
+            downloaded_bytes = []
+            if metadata and hasattr(metadata, "media_items"):
+                for item in metadata.media_items:
+                    # Use the same tab/session to fetch the resource
+                    clean_media_url = html.unescape(item.url)
+                    logger.info("Downloading media via browser session: %s", clean_media_url)
+                    resp = tab.get(clean_media_url)
+                    if resp and hasattr(resp, "content"):
+                        downloaded_bytes.append(resp.content)
+                    elif isinstance(resp, bytes):
+                        downloaded_bytes.append(resp)
+
+            return metadata, downloaded_bytes
+        finally:
+            tab.close()
 
     def _is_recoverable_error(self, error: Exception) -> bool:
         """Check if browser error is recoverable by restarting.
@@ -305,6 +370,7 @@ class BrowserService:
 
         Returns:
             HTML content.
+
         """
         logger.info("Fetching content from %s", url)
         # new_tab creates a new tab object; get(url) loads the content
@@ -319,7 +385,6 @@ class BrowserService:
         finally:
             # Closing the tab ensures we don't leak resources
             tab.close()
-
 
     def _wait_for_selector_sync(self, tab: Any, url: str, selector: str) -> None:  # noqa: ANN401
         """Wait for selector synchronously.

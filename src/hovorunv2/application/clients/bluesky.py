@@ -33,7 +33,7 @@ class BlueskyService:
         if "go.bsky.app" not in url:
             return url
         try:
-            async with session.get(url, allow_redirects=True, timeout=10) as resp:
+            async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 return str(resp.url)
         except Exception:
             logger.exception("Failed to follow Bluesky redirect for %s", url)

@@ -34,7 +34,7 @@ class FacebookService:
         # 1. Try OG tags first (fast and covers text/photos)
         headers = {"User-Agent": "facebookexternalhit/1.1"}
         try:
-            async with session.get(url, headers=headers, timeout=10) as response:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == HTTPStatus.OK:
                     html_content = await response.text()
                     metadata = extract_og_metadata(html_content)

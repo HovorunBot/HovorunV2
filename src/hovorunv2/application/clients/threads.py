@@ -1,7 +1,6 @@
 """Application service for Threads media extraction."""
 
 import html
-import json
 import re
 import urllib.parse
 
@@ -106,25 +105,25 @@ class ThreadsService:
         """Extract likes, replies, and reposts from embedded JSON for the footer."""
         scripts = soup.find_all("script", {"type": "application/json"})
         metrics_content = None
-        
+
         # Find the script containing the main post data by matching the post_id (code)
         for script in scripts:
             content = script.get_text()
             if content and re.search(rf'"code"\s*:\s*"{re.escape(post_id)}"', content) and '"like_count"' in content:
                 metrics_content = content
                 break
-        
+
         if not metrics_content:
             return ""
-            
+
         likes_m = re.search(r'"like_count"\s*:\s*(\d+)', metrics_content)
         replies_m = re.search(r'"direct_reply_count"\s*:\s*(\d+)', metrics_content)
         reposts_m = re.search(r'"repost_count"\s*:\s*(\d+)', metrics_content)
-        
+
         likes = int(likes_m.group(1)) if likes_m else 0
         replies = int(replies_m.group(1)) if replies_m else 0
         reposts = int(reposts_m.group(1)) if reposts_m else 0
-        
+
         stats = []
         if replies:
             stats.append(f"💬 {format_number(replies)}")
@@ -132,7 +131,7 @@ class ThreadsService:
             stats.append(f"🔄 {format_number(reposts)}")
         if likes:
             stats.append(f"❤️ {format_number(likes)}")
-            
+
         return " | ".join(stats) if stats else ""
 
     def _extract_author_from_soup(self, soup: BeautifulSoup) -> tuple[str, str]:

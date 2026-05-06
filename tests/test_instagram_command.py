@@ -10,6 +10,7 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
+from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.interface.telegram.handlers.instagram import InstagramCommand
 
@@ -80,7 +81,7 @@ async def test_handle_instagram_post(instagram_command: InstagramCommand, init_c
     mock_post.caption = "Beautiful sunset #nature"
     mock_post.typename = "GraphImage"
     mock_post.is_video = False
-    mock_post.display_url = "https://example.com/sunset.jpg"
+    mock_post.url = "https://example.com/sunset.jpg"
     mock_post.likes = 100
     mock_post.comments = 10
 
@@ -138,9 +139,9 @@ async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_c
     mock_post.is_video = True
     mock_post.video_url = "https://example.com/reel.mp4"
     mock_post.video_view_count = 5000
+    mock_post.video_play_count = 6000
     mock_post.likes = 200
     mock_post.comments = 20
-
     # Mock Translation API response
     translation_response = [[["Cool reel", "Cool reel", None, None, 1]], None, "en"]
 
@@ -168,3 +169,52 @@ async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_c
     caption = kwargs["media"][0].caption
     assert "Mock User" in caption
     assert "👁️ 5K" in caption
+
+
+@pytest.mark.asyncio
+async def test_handle_instagram_browser_fallback(
+    instagram_command: InstagramCommand, init_container: AsyncContainer
+) -> None:
+    """Test handling an Instagram post using browser fallback when other services fail."""
+    chat_id = 789
+    url = "https://www.instagram.com/p/C-2v0r0nQ1A/"
+    message = create_mock_message(url, chat_id=chat_id)
+    bot = MagicMock(spec=Bot)
+    bot.send_media_group = AsyncMock()
+
+    # Whitelist the chat
+    whitelist_service = await init_container.get(WhitelistService)
+    await whitelist_service.add_to_whitelist(chat_id)
+
+    # Mock HTML content with OG tags
+
+    session = await init_container.get(aiohttp.ClientSession)
+
+    payload = RichMediaPayload(
+        author_name="Instagram User",
+        author_handle="instagram",
+        author_url="https://www.instagram.com/",
+        content="Fallback Title\n\nFallback Description",
+        footer_text="📷 Instagram (Browser Fallback)",
+        original_url=url,
+        media_items=[MediaItem(url="https://example.com/fallback.jpg", is_video=False)],
+    )
+
+    # Mock services to fail
+    with (
+        patch("instaloader.Post.from_shortcode", side_effect=Exception("Instaloader failed")),
+        patch("hovorunv2.application.media.extractor.MediaExtractor.extract_payload", return_value=None),
+        patch(
+            "hovorunv2.infrastructure.browser.BrowserService.extract_and_download",
+            return_value=(payload, [b"fake_image_bytes"]),
+        ),
+    ):
+        await instagram_command.handle(message, cast("Bot", bot), session=session)
+
+    # Verify interaction
+    bot.send_media_group.assert_called_once()
+    _args, kwargs = bot.send_media_group.call_args
+    caption = kwargs["media"][0].caption
+    assert "Fallback Title" in caption
+    assert "Fallback Description" in caption
+    assert "📷 Instagram" in caption

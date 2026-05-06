@@ -1,6 +1,7 @@
 """Application service for media downloading."""
 
 import asyncio
+import html
 import tempfile
 from collections.abc import Mapping
 from http import HTTPStatus
@@ -32,20 +33,11 @@ class MediaDownloader:
     async def download_as_buffered_file(
         self, url: str, filename: str, *, is_video: bool = False, session: aiohttp.ClientSession | None = None
     ) -> BufferedInputFile | None:
-        """Download a single URL and return a BufferedInputFile.
-
-        Args:
-            url: The URL to download.
-            filename: The filename to assign to the buffer.
-            is_video: Whether the media is a video (triggers HLS/yt-dlp fallback).
-            session: Optional aiohttp session to override the default one.
-
-        Returns:
-            BufferedInputFile or None if download fails.
-
-        """
+        """Download a single URL and return a BufferedInputFile."""
+        # Fix HTML entities in URLs (common in scraped meta tags)
+        clean_url = html.unescape(url)
         actual_session = session or self._session
-        return await self._perform_download(actual_session, url, filename, is_video=is_video)
+        return await self._perform_download(actual_session, clean_url, filename, is_video=is_video)
 
     async def download_batch(
         self, items: list[MediaItem], prefix: str = "media", session: aiohttp.ClientSession | None = None
@@ -79,7 +71,9 @@ class MediaDownloader:
 
         # 2. Try direct aiohttp download
         try:
-            async with session.get(url, timeout=self.DEFAULT_TIMEOUT_SECONDS, headers=self.DEFAULT_HEADERS) as resp:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS), headers=self.DEFAULT_HEADERS
+            ) as resp:
                 if resp.status == HTTPStatus.OK:
                     content = await resp.read()
                     # If it's supposed to be a video but we got a tiny response, it might be an HLS manifest

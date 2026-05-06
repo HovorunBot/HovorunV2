@@ -118,6 +118,26 @@ class AppProvider(Provider):
     disable_cmd_command = provide(DisableCommand)
 
     @provide(scope=Scope.APP)
+    def get_instagram_command(
+        self,
+        instagram_service: InstagramService,
+        media_downloader: MediaDownloader,
+        media_extractor: MediaExtractor,
+        browser_service: BrowserService,
+        session: aiohttp.ClientSession,
+        config: Settings,
+    ) -> InstagramCommand:
+        """Provide InstagramCommand with its dependencies."""
+        return InstagramCommand(
+            instagram_service=instagram_service,
+            media_downloader=media_downloader,
+            media_extractor=media_extractor,
+            browser_service=browser_service,
+            session=session,
+            settings=config,
+        )
+
+    @provide(scope=Scope.APP)
     def get_rich_media_commands(
         self,
         bluesky_command: BlueskyCommand,

@@ -23,6 +23,7 @@ class RichMediaPayload:
     original_url: str = ""
     media_items: list[MediaItem] = field(default_factory=list)
     quoted_payload: RichMediaPayload | None = None
+    downloaded_bytes: list[bytes] | None = None
 
     @property
     def media_urls(self) -> list[str]:

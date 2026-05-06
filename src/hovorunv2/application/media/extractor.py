@@ -28,12 +28,17 @@ class MediaExtractor:
         self._translation_service = translation_service
 
     async def extract_payload(
-        self, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        chat_id: int,
+        platform: str,
+        cookies: dict[str, str] | None = None,
     ) -> RichMediaPayload | None:
         """Extract media payload from URL."""
         try:
             # yt-dlp is blocking, run in thread to keep event loop free
-            info = await asyncio.to_thread(self._extract_info, url)
+            info = await asyncio.to_thread(self._extract_info, url, cookies)
             if not info:
                 logger.error("yt-dlp failed to extract info for %s (returned None)", url)
                 return None
@@ -42,7 +47,7 @@ class MediaExtractor:
             logger.exception("Failed to extract media from %s using yt-dlp", url)
             return None
 
-    def _extract_info(self, url: str) -> dict | None:
+    def _extract_info(self, url: str, cookies: dict[str, str] | None = None) -> dict | None:
         """Sync extraction using yt-dlp."""
         ydl_opts = {
             "quiet": True,
@@ -50,6 +55,10 @@ class MediaExtractor:
             "skip_download": True,
             "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         }
+
+        if cookies:
+            logger.info("Providing %d cookies to yt-dlp", len(cookies))
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
