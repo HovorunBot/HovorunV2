@@ -23,10 +23,18 @@ class DebugCommand(BaseCommand):
         return "debug"
 
     async def is_triggered(self, message: Message) -> bool:
-        """Check if message starts with /debug."""
-        return bool(message.text and message.text.strip().startswith("/debug"))
+        """Check if message starts with /debug or /force_error."""
+        if not message.text:
+            return False
+        return message.text.strip().startswith(("/debug", "/force_error"))
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
-        """Handle debug command."""
+        """Handle debug commands."""
+        if message.text and message.text.startswith("/force_error"):
+            logger.info("Forcing error for testing purposes")
+            msg = "Test error for Telegram DM logging"
+            logger.error("Forced error triggered: %s", msg)
+            raise ValueError(msg)
+
         logger.info("Executing debug command for user %s", message.from_user.id if message.from_user else "unknown")
         await message.answer(f"It works. Your message: {message.text}.")

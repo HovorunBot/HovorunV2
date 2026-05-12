@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from hovorunv2.infrastructure.logger import get_logger
@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     browser_max_tabs: int = 4
     browser_idle_timeout: int = 600  # 10 minutes
     instagram_sessionid: str | None = None
+    error_dm_enabled: bool = False
+    error_dm_admin_ids: list[int] = Field(default_factory=list)
 
     @field_validator("db_path", mode="after")
     @classmethod

@@ -13,7 +13,7 @@ from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
-from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.infrastructure.logger import get_logger, setup_logging
 from hovorunv2.interface.telegram.bot import router, setup_handlers, setup_middlewares
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 
@@ -50,6 +50,11 @@ async def run_bot() -> None:
 
         # Wire dishka with aiogram
         setup_dishka(container=container, router=dp)
+
+        # Initialize improved logging with Telegram DM handler
+        if settings.error_dm_enabled and settings.error_dm_admin_ids:
+            logger.info("Enabling Error DM logging to admins: %s", settings.error_dm_admin_ids)
+            setup_logging(bot=bot, admin_ids=settings.error_dm_admin_ids)
 
         logger.info("Bot started and polling...")
         await dp.start_polling(bot)
