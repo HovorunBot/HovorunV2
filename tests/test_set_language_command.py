@@ -95,22 +95,3 @@ async def test_handle_invalid_format(set_language_command: SetLanguageCommand) -
 
     message.answer.assert_called_once()
     assert "Invalid format" in message.answer.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_handle_unauthorized(set_language_command: SetLanguageCommand, init_container: AsyncContainer) -> None:
-    """Test handling by an unauthorized user."""
-    user_id = 999  # Not in admin_ids
-    chat_id = 7890
-    message = create_mock_message("/set_lang uk", user_id=user_id, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-
-    await set_language_command.handle(message, cast("Bot", bot))
-
-    session_maker = await init_container.get(async_sessionmaker)
-    async with session_maker() as session:
-        repo = SQLAlchemyChatRepository(session)
-        chat = await repo.get_by_id(chat_id, "telegram")
-        assert chat is None
-
-    message.answer.assert_not_called()

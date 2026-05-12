@@ -3,14 +3,12 @@
 from aiogram import Router
 from dishka import AsyncContainer
 
-from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.middlewares import (
-    CommandConfigurationMiddleware,
+    AccessMiddleware,
     MessageCacheMiddleware,
-    WhitelistMiddleware,
 )
 
 router = Router()
@@ -19,13 +17,11 @@ router = Router()
 async def setup_middlewares(
     container: AsyncContainer,  # noqa: ARG001
     message_service: MessageService,
-    whitelist_service: WhitelistService,
-    command_service: CommandService,
+    access_service: AccessService,
 ) -> None:
     """Register middlewares with the router."""
     router.message.outer_middleware(MessageCacheMiddleware(message_service))
-    router.message.middleware(WhitelistMiddleware(whitelist_service))
-    router.message.middleware(CommandConfigurationMiddleware(command_service))
+    router.message.middleware(AccessMiddleware(access_service))
 
 
 def setup_handlers(commands: list[BaseCommand]) -> None:
@@ -33,7 +29,7 @@ def setup_handlers(commands: list[BaseCommand]) -> None:
     for command in commands:
         flags = {
             "command_name": command.name,
-            "bypass_whitelist": command.BYPASS_WHITELIST,
+            "policy": command.policy,
         }
 
         # Register the command handler with its custom trigger filter

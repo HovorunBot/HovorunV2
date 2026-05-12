@@ -17,6 +17,7 @@ from hovorunv2.application.data.chat_service import ChatService
 from hovorunv2.application.data.command_service import CommandDataService
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.message_service import MessageService
@@ -97,6 +98,7 @@ class AppProvider(Provider):
     command_data_service = provide(CommandDataService)
     command_service = provide(CommandService)
     whitelist_service = provide(WhitelistService)
+    access_service = provide(AccessService)
     language_service = provide(LanguageService)
     translation_service = provide(TranslationService)
     media_downloader = provide(MediaDownloader)
@@ -191,13 +193,15 @@ class AppProvider(Provider):
         disable_cmd_command: DisableCommand,
     ) -> UtilityCommands:
         """Provide list of utility/infrastructure commands."""
-        return UtilityCommands([
-            help_command,
-            set_language_command,
-            debug_command,
-            enable_cmd_command,
-            disable_cmd_command,
-        ])
+        return UtilityCommands(
+            [
+                help_command,
+                set_language_command,
+                debug_command,
+                enable_cmd_command,
+                disable_cmd_command,
+            ]
+        )
 
     @provide(scope=Scope.APP)
     def get_commands(

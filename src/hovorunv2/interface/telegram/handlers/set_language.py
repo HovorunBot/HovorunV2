@@ -6,6 +6,7 @@ from typing import Any
 from aiogram import Bot
 from aiogram.types import Message
 
+from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger
@@ -28,6 +29,11 @@ class SetLanguageCommand(BaseCommand):
         """Command name."""
         return "set_lang"
 
+    @property
+    def policy(self) -> CommandPolicy:
+        """Admin only, bypasses whitelist."""
+        return CommandPolicy(requires_admin=True, requires_whitelist=False, is_toggleable=False)
+
     # Pattern: /set_lang <target_lang> [ignored_langs_comma_separated]
     # Example: /set_lang uk en,ru,es
     SET_LANG_PATTERN = re.compile(r"^/set_lang\s+(?P<target>\w+)(?:\s+(?P<ignored>[\w,]+))?$")
@@ -40,11 +46,6 @@ class SetLanguageCommand(BaseCommand):
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
         """Handle the set_language command."""
-        user_id = message.from_user.id if message.from_user else None
-        if user_id not in self._settings.admin_ids:
-            logger.warning("Unauthorized /set_lang attempt by user %s", user_id)
-            return
-
         assert message.text is not None, "Must be provided"
         match = self.SET_LANG_PATTERN.match(message.text.strip())
         if not match:

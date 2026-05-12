@@ -8,9 +8,8 @@ from aiogram.dispatcher.flags import get_flag
 from aiogram.enums import ChatType
 from aiogram.types import Message, TelegramObject
 
-from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -37,13 +36,13 @@ class MessageCacheMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
-class WhitelistMiddleware(BaseMiddleware):
-    """Inner middleware to block messages from non-whitelisted chats."""
+class AccessMiddleware(BaseMiddleware):
+    """Unified middleware to handle all access control via CommandPolicy."""
 
-    def __init__(self, whitelist_service: WhitelistService) -> None:
+    def __init__(self, access_service: AccessService) -> None:
         """Initialize middleware with dependencies."""
         super().__init__()
-        self._whitelist_service = whitelist_service
+        self._access_service = access_service
 
     async def __call__(
         self,
@@ -51,17 +50,21 @@ class WhitelistMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:  # noqa: ANN401
-        """Check whitelist before executing handler."""
+        """Check authorization before executing handler."""
         # Only process Messages
         if not isinstance(event, Message):
             return await handler(event, data)
 
-        # Allow handlers with 'bypass_whitelist' flag (e.g., HelpCommand)
-        if get_flag(data, "bypass_whitelist"):
+        policy = get_flag(data, "policy")
+        command_name = get_flag(data, "command_name")
+
+        # If no policy is attached, we assume it's a generic message that doesn't need auth
+        # (or auth is handled elsewhere/by a default policy)
+        if not policy or not isinstance(policy, CommandPolicy):
             return await handler(event, data)
 
-        chat_id = event.chat.id
         user_id = event.from_user.id if event.from_user else None
+        chat_id = event.chat.id
 
         # 1. Handle Private Chats (Direct Messages)
         if event.chat.type == ChatType.PRIVATE:
@@ -76,41 +79,16 @@ class WhitelistMiddleware(BaseMiddleware):
             await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
             return None
 
-        # 2. Handle Groups/Channels
-        is_whitelisted = await self._whitelist_service.is_whitelisted(chat_id)
-        if is_whitelisted:
-            return await handler(event, data)
+        # 2. Evaluate Policy
+        is_allowed = await self._access_service.is_allowed(
+            user_id=user_id,
+            chat_id=chat_id,
+            policy=policy,
+            command_name=command_name,
+        )
 
-        logger.info("Ignoring message in non-whitelisted chat %d", chat_id)
-        return None
-
-
-class CommandConfigurationMiddleware(BaseMiddleware):
-    """Middleware to check if command is enabled for the chat."""
-
-    def __init__(self, command_service: CommandService) -> None:
-        """Initialize middleware with dependencies."""
-        super().__init__()
-        self._command_service = command_service
-
-    async def __call__(
-        self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: dict[str, Any],
-    ) -> Any:  # noqa: ANN401
-        """Check if command is enabled before executing handler."""
-        if not isinstance(event, Message):
-            return await handler(event, data)
-
-        command_name = get_flag(data, "command_name")
-
-        if not command_name:
-            return await handler(event, data)
-
-        is_allowed = await self._command_service.is_command_allowed(event.chat.id, command_name)
         if is_allowed:
             return await handler(event, data)
 
-        logger.info("Command %s is not allowed in chat %d", command_name, event.chat.id)
+        logger.info("Access denied for command %s in chat %d", command_name, chat_id)
         return None

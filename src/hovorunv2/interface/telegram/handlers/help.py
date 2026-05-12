@@ -1,10 +1,11 @@
 """Handler for the /help command and landing page for non-admins."""
 
-from typing import Any, ClassVar
+from typing import Any
 
 from aiogram import Bot
 from aiogram.types import Message
 
+from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
@@ -18,12 +19,15 @@ class HelpCommand(BaseCommand):
     Provides bot information and contact details.
     """
 
-    BYPASS_WHITELIST: ClassVar[bool] = True
-
     @property
     def name(self) -> str:
         """Command name."""
         return "help"
+
+    @property
+    def policy(self) -> CommandPolicy:
+        """Help is always available to everyone."""
+        return CommandPolicy(requires_admin=False, requires_whitelist=False, is_toggleable=False)
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /help or /start."""

@@ -3,13 +3,19 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiogram.enums import ChatType
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
+from hovorunv2.application.services.access_service import (
+    AccessService,
+    CommandPolicy,
+)
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.interface.telegram.handlers.commands_config import EnableCommand
-from hovorunv2.interface.telegram.middlewares import CommandConfigurationMiddleware
+from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 
 
 def create_mock_message(text: str, chat_id: int = 456, user_id: int | None = None) -> MagicMock:
@@ -20,6 +26,7 @@ def create_mock_message(text: str, chat_id: int = 456, user_id: int | None = Non
     message.from_user.id = user_id or settings.admin_ids[0]
     message.chat = MagicMock(spec=Chat)
     message.chat.id = chat_id
+    message.chat.type = ChatType.SUPERGROUP
     message.reply = AsyncMock()
     # Ensure isinstance(message, Message) returns True
     message.__class__ = Message
@@ -64,25 +71,32 @@ async def test_enable_disable_command(init_container: AsyncContainer) -> None:
 @pytest.mark.asyncio
 async def test_middleware_blocks_disabled_command(init_container: AsyncContainer) -> None:
     """Test that middleware blocks disabled commands."""
-    service = await init_container.get(CommandService)
-    middleware = CommandConfigurationMiddleware(service)
+    access_service = await init_container.get(AccessService)
+    cmd_service = await init_container.get(CommandService)
+    middleware = AccessMiddleware(access_service)
     handler = AsyncMock()
     chat_id = 999999
-    message = create_mock_message("/tiktok", chat_id=chat_id)
+    # Non-admin user to trigger toggleable check
+    user_id = 12345
+    message = create_mock_message("/tiktok", chat_id=chat_id, user_id=user_id)
 
     # Mock handler object with flags
     mock_handler_obj = MagicMock()
-    # aiogram 3.x get_flag often looks for flags in various places
-    mock_handler_obj.flags = {"command_name": "tiktok"}
+    policy = CommandPolicy(requires_admin=False, requires_whitelist=True, is_toggleable=True)
+    mock_handler_obj.flags = {"command_name": "tiktok", "policy": policy}
     data = {"handler": mock_handler_obj}
 
-    # Should be blocked
+    # Should be blocked because chat is not whitelisted by default in tests
     result = await middleware(handler, message, data)
     assert result is None
     handler.assert_not_called()
 
     # Enable and try again
-    await service.enable_command(chat_id, "tiktok")
+
+    whitelist_service = await init_container.get(WhitelistService)
+    await whitelist_service.add_to_whitelist(chat_id)
+
+    await cmd_service.enable_command(chat_id, "tiktok")
     result = await middleware(handler, message, data)
     assert result is not None
     handler.assert_called_once()

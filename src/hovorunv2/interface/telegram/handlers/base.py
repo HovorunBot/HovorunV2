@@ -13,6 +13,7 @@ from aiogram.types import InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, 
 
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
+from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -27,8 +28,10 @@ class BaseCommand(Protocol):
         """Command name for configuration purposes."""
         ...
 
-    BYPASS_WHITELIST: ClassVar[bool] = False
-    AUTO_ALLOW: ClassVar[bool] = False
+    @property
+    def policy(self) -> CommandPolicy:
+        """Access policy for this command."""
+        ...
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if the command should be triggered by the given message."""
@@ -53,8 +56,10 @@ class RichMediaCommand(ABC):
         name = self.__class__.__name__.lower()
         return name.removesuffix("command")
 
-    BYPASS_WHITELIST: ClassVar[bool] = False
-    AUTO_ALLOW: ClassVar[bool] = True
+    @property
+    def policy(self) -> CommandPolicy:
+        """Media commands require whitelist and are toggleable by default."""
+        return CommandPolicy(requires_admin=False, requires_whitelist=True, is_toggleable=True, auto_enable=True)
 
     # Standard templates for all media responses
     HEADER_TEMPLATE: ClassVar[str] = (

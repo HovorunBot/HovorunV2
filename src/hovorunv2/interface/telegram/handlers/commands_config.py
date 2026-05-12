@@ -5,6 +5,7 @@ from typing import Any
 from aiogram import Bot
 from aiogram.types import Message
 
+from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.infrastructure.config import Settings
 
@@ -27,16 +28,17 @@ class EnableCommand(BaseCommand):
         """Command name."""
         return "enable_cmd"
 
+    @property
+    def policy(self) -> CommandPolicy:
+        """Admin only, bypasses whitelist."""
+        return CommandPolicy(requires_admin=True, requires_whitelist=False, is_toggleable=False)
+
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /enable_cmd."""
         return bool(message.text and message.text.startswith("/enable_cmd"))
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
-        """Enable a command for the chat."""
-        user_id = message.from_user.id if message.from_user else None
-        if user_id not in self._settings.admin_ids:
-            return
-
+        """Enable/Disable a command for the chat."""
         parts = message.text.split() if message.text else []
         if len(parts) < self.MIN_PARTS:
             await message.reply("Usage: /enable_cmd <command_name>")
@@ -66,16 +68,17 @@ class DisableCommand(BaseCommand):
         """Command name."""
         return "disable_cmd"
 
+    @property
+    def policy(self) -> CommandPolicy:
+        """Admin only, bypasses whitelist."""
+        return CommandPolicy(requires_admin=True, requires_whitelist=False, is_toggleable=False)
+
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /disable_cmd."""
         return bool(message.text and message.text.startswith("/disable_cmd"))
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
         """Disable a command for the chat."""
-        user_id = message.from_user.id if message.from_user else None
-        if user_id not in self._settings.admin_ids:
-            return
-
         parts = message.text.split() if message.text else []
         if len(parts) < self.MIN_PARTS:
             await message.reply("Usage: /disable_cmd <command_name>")

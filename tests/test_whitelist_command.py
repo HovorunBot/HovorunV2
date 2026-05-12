@@ -70,19 +70,3 @@ async def test_handle_authorized(whitelist_command: AllowBotCommand, init_contai
     command_service = await init_container.get(CommandService)
     is_tiktok_allowed = await command_service.is_command_allowed(chat_id, "tiktok")
     assert is_tiktok_allowed is True
-
-
-@pytest.mark.asyncio
-async def test_handle_unauthorized(whitelist_command: AllowBotCommand, init_container: AsyncContainer) -> None:
-    """Test handling by an unauthorized user."""
-    user_id = 999  # Not in admin_ids
-    chat_id = 7890
-    message = create_mock_message("/allow_chat", user_id=user_id, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-
-    await whitelist_command.handle(message, cast("Bot", bot))
-
-    whitelist_service = await init_container.get(WhitelistService)
-    is_whitelisted = await whitelist_service.is_whitelisted(chat_id)
-    assert is_whitelisted is False
-    message.answer.assert_not_called()

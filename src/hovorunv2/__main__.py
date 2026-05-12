@@ -7,9 +7,8 @@ from dishka import make_async_container
 from dishka.integrations.aiogram import setup_dishka
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
@@ -34,11 +33,10 @@ async def run_bot() -> None:
 
         # Resolve services for middlewares
         message_service = await container.get(MessageService)
-        whitelist_service = await container.get(WhitelistService)
-        command_service = await container.get(CommandService)
+        access_service = await container.get(AccessService)
 
         # Setup router middlewares and handlers
-        await setup_middlewares(container, message_service, whitelist_service, command_service)
+        await setup_middlewares(container, message_service, access_service)
 
         # Resolve all registered commands and register them with the router
         commands = await container.get(list[BaseCommand])

@@ -1,10 +1,11 @@
 """Debug command module."""
 
-from typing import Any, ClassVar
+from typing import Any
 
 from aiogram import Bot
 from aiogram.types import Message
 
+from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.infrastructure.logger import get_logger
 
 from .base import BaseCommand
@@ -15,12 +16,15 @@ logger = get_logger(__name__)
 class DebugCommand(BaseCommand):
     """Command for debugging purposes."""
 
-    BYPASS_WHITELIST: ClassVar[bool] = True
-
     @property
     def name(self) -> str:
         """Command name."""
         return "debug"
+
+    @property
+    def policy(self) -> CommandPolicy:
+        """Admin only, bypasses whitelist."""
+        return CommandPolicy(requires_admin=True, requires_whitelist=False, is_toggleable=False)
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /debug or /force_error."""
