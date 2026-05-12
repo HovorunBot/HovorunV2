@@ -46,6 +46,16 @@ class BlueskyService:
         profile = await self._get_profile(session, handle)
         return profile.get("did") if profile else None
 
+    def _get_record_view(self, embed: dict[str, Any]) -> dict[str, Any] | None:
+        """Retrieve the record view from the embed if present."""
+        match embed.get("$type"):
+            case "app.bsky.embed.record#view":
+                return embed.get("record")
+            case "app.bsky.embed.recordWithMedia#view":
+                return embed.get("record", {}).get("record")
+            case _:
+                return None
+
     async def _handle_quote(
         self,
         session: aiohttp.ClientSession,
@@ -54,13 +64,12 @@ class BlueskyService:
         platform: str,
     ) -> tuple[RichMediaPayload | None, list[MediaItem], str]:
         """Process quoted post if present in the embed."""
-        record_view = None
-        if embed.get("$type") == "app.bsky.embed.record#view":
-            record_view = embed.get("record")
-        elif embed.get("$type") == "app.bsky.embed.recordWithMedia#view":
-            record_view = embed.get("record", {}).get("record")
+        record_view = self._get_record_view(embed)
 
-        if not record_view or record_view.get("$type") != "app.bsky.feed.post#view":
+        if not record_view:
+            return None, [], ""
+
+        if record_view.get("$type") != "app.bsky.feed.post#view":
             return None, [], ""
 
         quote_author = record_view.get("author", {})
@@ -87,25 +96,10 @@ class BlueskyService:
         self, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
         """Fetch Bluesky data and construct a RichMediaPayload."""
-        actual_url = await self._resolve_url(session, url)
-        if not actual_url:
-            logger.error("Failed to resolve Bluesky URL: %s", url)
+        at_uri = await self._resolve_post_at_uri(session, url)
+        if not at_uri:
             return None
 
-        match = self.PATTERN.search(actual_url)
-        if not match or not match.group("handle"):
-            logger.error("Failed to parse Bluesky URL components from %s", actual_url)
-            return None
-
-        handle = match.group("handle")
-        rkey = match.group("rkey")
-
-        did = await self._resolve_did(session, handle)
-        if not did:
-            logger.error("Failed to resolve Bluesky DID for handle %s", handle)
-            return None
-
-        at_uri = f"at://{did}/app.bsky.feed.post/{rkey}"
         thread_data = await self._get_post_thread(session, at_uri)
         if not thread_data or "thread" not in thread_data:
             logger.error("Failed to fetch Bluesky post thread for %s", at_uri)
@@ -127,39 +121,64 @@ class BlueskyService:
         media_items.extend(quoted_media)
         content += info_note
 
-        likes = post.get("likeCount", 0)
-        reposts = post.get("repostCount", 0)
-        replies = post.get("replyCount", 0)
-
         author_name = author.get("displayName") or author.get("handle") or "Unknown"
         author_handle = author.get("handle") or "unknown"
-        author_url = f"https://bsky.app/profile/{author_handle}"
-        footer = f"💬 {format_number(replies)} | 🔄 {format_number(reposts)} | ❤️ {format_number(likes)}"
 
         return RichMediaPayload(
             author_name=html.escape(author_name),
             author_handle=html.escape(author_handle),
-            author_url=author_url,
+            author_url=f"https://bsky.app/profile/{author_handle}",
             content=content,
-            footer_text=footer,
+            footer_text=self._build_footer(post),
             original_url=url,
             media_items=media_items,
             quoted_payload=quoted_payload,
         )
 
+    async def _resolve_post_at_uri(self, session: aiohttp.ClientSession, url: str) -> str | None:
+        """Resolve handle and rkey from URL to an AT URI."""
+        actual_url = await self._resolve_url(session, url)
+        if not actual_url:
+            logger.error("Failed to resolve Bluesky URL: %s", url)
+            return None
+
+        match = self.PATTERN.search(actual_url)
+        if not match or not match.group("handle"):
+            logger.error("Failed to parse Bluesky URL components from %s", actual_url)
+            return None
+
+        handle = match.group("handle")
+        rkey = match.group("rkey")
+
+        did = await self._resolve_did(session, handle)
+        if not did:
+            logger.error("Failed to resolve Bluesky DID for handle %s", handle)
+            return None
+
+        return f"at://{did}/app.bsky.feed.post/{rkey}"
+
+    def _build_footer(self, post: dict[str, Any]) -> str:
+        """Build footer string with metrics."""
+        likes = post.get("likeCount", 0)
+        reposts = post.get("repostCount", 0)
+        replies = post.get("replyCount", 0)
+        return f"💬 {format_number(replies)} | 🔄 {format_number(reposts)} | ❤️ {format_number(likes)}"
+
     def _extract_media_from_embed(self, embed: dict[str, Any]) -> list[MediaItem]:
         """Extract media items from a Bluesky embed."""
         items = []
-        embed_type = embed.get("$type")
-
-        if embed_type == "app.bsky.embed.recordWithMedia#view":
-            items.extend(self._extract_media_from_embed(embed.get("media", {})))
-        elif embed_type == "app.bsky.embed.images#view":
-            items.extend(MediaItem(url=i.get("fullsize"), is_video=False) for i in embed.get("images", []))
-        elif embed_type == "app.bsky.embed.video#view":
-            playlist = embed.get("playlist")
-            if playlist:
+        match embed.get("$type"):
+            case "app.bsky.embed.recordWithMedia#view":
+                items.extend(self._extract_media_from_embed(embed.get("media", {})))
+            case "app.bsky.embed.images#view":
+                items.extend(MediaItem(url=i.get("fullsize"), is_video=False) for i in embed.get("images", []))
+            case "app.bsky.embed.video#view" if playlist := embed.get("playlist"):
+                assert isinstance(playlist, str), "Playlist URL should be a string"
                 items.append(MediaItem(url=playlist, is_video=True))
+            case "app.bsky.embed.record#view" | None:
+                logger.info("No media found in Bluesky embed")
+            case unknown_type:
+                logger.info("Unknown or unhandled Bluesky embed type: %s", unknown_type)
 
         return items
 

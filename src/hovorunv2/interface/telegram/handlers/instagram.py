@@ -166,11 +166,11 @@ class InstagramCommand(RichMediaCommand):
             ext = "mp4" if item_meta.is_video else "jpg"
             file = BufferedInputFile(content, filename=f"browser_{i}.{ext}")
 
-            item = InputMediaVideo(media=file) if item_meta.is_video else InputMediaPhoto(media=file)
+            media_item = InputMediaVideo(media=file) if item_meta.is_video else InputMediaPhoto(media=file)
             if not final_group:
-                item.caption = caption
-                item.parse_mode = "HTML"
-            final_group.append(item)
+                media_item.caption = caption
+                media_item.parse_mode = "HTML"
+            final_group.append(media_item)
 
         if final_group:
             await bot.send_media_group(
@@ -231,30 +231,35 @@ class InstagramCommand(RichMediaCommand):
             return None
 
         try:
-            data = json.loads(json_str)
+            script_data = json.loads(json_str)
 
-            def find_key(d: Any, key: str) -> Any:  # noqa: ANN401
-                """Recursively find a key in a dictionary or list."""
-                if isinstance(d, dict):
-                    if key in d:
-                        return d[key]
-                    for v in d.values():
-                        res = find_key(v, key)
-                        if res:
-                            return res
-                elif isinstance(d, list):
-                    for item in d:
-                        res = find_key(item, key)
-                        if res:
-                            return res
-                return None
-
-            video = find_key(data, "video_url")
-            image = find_key(data, "display_url")
+            video = self._find_key_in_json(script_data, "video_url")
+            image = self._find_key_in_json(script_data, "display_url")
             if video or image:
                 return self._create_payload_from_results({"video": video, "image": image}, url)
         except Exception:
             logger.debug("Failed to parse individual JSON blob")
+        return None
+
+    def _find_key_in_json(self, d: Any, key: str) -> Any:  # noqa: ANN401
+        """Recursively find a key in a dictionary or list."""
+        # Determine what we need to iterate over
+        match d:
+            case dict() if key in d:  # Guard clause checks for the key immediately
+                return d[key]
+            case dict():
+                items = d.values()
+            case list():
+                items = d
+            case _:
+                return None
+
+        # A single, unified loop for both lists and dictionaries
+        for item in items:
+            result = self._find_key_in_json(item, key)
+            if result is not None:
+                return result
+
         return None
 
     def _extract_via_regex(self, html_content: str, url: str) -> RichMediaPayload | None:

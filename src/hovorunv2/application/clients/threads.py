@@ -165,50 +165,69 @@ class ThreadsService:
     def _extract_text_from_soup(self, soup: BeautifulSoup) -> str:
         """Extract post text from DOM, falling back to meta tags."""
         main_container = self._get_main_container(soup)
-        if main_container:
-            # Identify quoted area to exclude its text from the main post text
-            quoted_container = self._find_quoted_container(main_container)
-            quoted_text_elements = set()
-            if quoted_container:
-                quoted_text_elements.update(quoted_container.find_all(["div", "span"], dir="auto"))
+        if not main_container:
+            return self._extract_text_from_meta(soup)
 
-            # Also identify common links to exclude (handle, timestamp)
-            # These are usually links at the beginning of the main container
-            noise_elements = set()
-            for link in main_container.find_all("a", role="link"):
-                href_val = link.get("href")
-                href = str(href_val) if href_val else ""
-                # Profile links or timestamp links
-                if href.startswith("/@") and len(href.split("/")) <= self.MAX_PROFILE_LINK_DEPTH:
-                    noise_elements.update(link.find_all(["div", "span"], dir="auto"))
-                    noise_elements.add(link)
+        # Identify quoted area and common links (handle, timestamp) to exclude
+        quoted_container = self._find_quoted_container(main_container)
+        quoted_elements = self._get_quoted_elements(quoted_container)
+        noise_elements = self._get_noise_elements(main_container)
 
-            # The main text is usually the first div/span with dir="auto" not in quotes or noise
-            for el in main_container.find_all(["div", "span"], dir="auto"):
-                if el in quoted_text_elements or el in noise_elements:
-                    continue
+        # The main text is usually the first div/span with dir="auto" not in quotes or noise
+        for el in main_container.find_all(["div", "span"], dir="auto"):
+            if self._is_excluded_element(el, quoted_elements, noise_elements, quoted_container):
+                continue
 
-                # Check if any parent is noise or quote
-                is_noise = False
-                for parent in el.parents:
-                    if parent in quoted_text_elements or parent in noise_elements or parent == quoted_container:
-                        is_noise = True
-                        break
-                if is_noise:
-                    continue
+            text = el.get_text().strip()
+            if self._is_valid_post_text(text):
+                return text
 
-                text = el.get_text().strip()
-                if text and (
-                    len(text) > self.MIN_TEXT_LENGTH
-                    or (not text.endswith("d") and not text.endswith("h") and text != "Translate")
-                ):
-                    return text
+        return self._extract_text_from_meta(soup)
 
-        # Fallback: og:description usually contains the post text (might be truncated)
+    def _get_quoted_elements(self, quoted_container: Tag | None) -> set[Tag]:
+        """Get set of elements belonging to a quoted post."""
+        if not quoted_container:
+            return set()
+        return set(quoted_container.find_all(["div", "span"], dir="auto"))
+
+    def _get_noise_elements(self, main_container: Tag) -> set[Tag]:
+        """Identify common links to exclude (handle, timestamp)."""
+        noise = set()
+        for link in main_container.find_all("a", role="link"):
+            href_val = link.get("href")
+            href = str(href_val) if href_val else ""
+            # Profile links or timestamp links
+            if href.startswith("/@") and len(href.split("/")) <= self.MAX_PROFILE_LINK_DEPTH:
+                noise.update(link.find_all(["div", "span"], dir="auto"))
+                noise.add(link)
+        return noise
+
+    def _is_excluded_element(self, el: Tag, quoted: set[Tag], noise: set[Tag], quoted_container: Tag | None) -> bool:
+        """Check if element should be excluded from text extraction."""
+        if el in quoted or el in noise:
+            return True
+
+        # Check if any parent is noise or quote
+        return any(parent in quoted or parent in noise or parent == quoted_container for parent in el.parents)
+
+    def _is_valid_post_text(self, text: str) -> bool:
+        """Check if extracted text looks like actual post content."""
+        if not text:
+            return False
+
+        if len(text) > self.MIN_TEXT_LENGTH:
+            return True
+
+        # Heuristic: tiny text ending in 'd' or 'h' is usually a timestamp (e.g., '2h')
+        # 'Translate' is a common button text
+        is_timestamp = text.endswith(("d", "h"))
+        return not is_timestamp and text != "Translate"
+
+    def _extract_text_from_meta(self, soup: BeautifulSoup) -> str:
+        """Fallback: og:description usually contains the post text."""
         og_desc = soup.find("meta", property="og:description")
         if og_desc and isinstance(og_desc, Tag) and og_desc.get("content"):
             return str(og_desc["content"])
-
         return ""
 
     def _extract_media_from_soup(self, soup: BeautifulSoup) -> list[MediaItem]:
@@ -224,24 +243,23 @@ class ThreadsService:
                 quoted_elements.update(quoted_container.find_all(lambda t: isinstance(t, Tag)))
 
             # 1. Extract videos from main container
-            for video in main_container.find_all("video"):
-                if video in quoted_elements:
-                    continue
-                src_val = video.get("src")
-                if src_val and isinstance(src_val, str):
-                    items.append(MediaItem(url=src_val, is_video=True))
+            items.extend(
+                MediaItem(url=str(video.get("src")), is_video=True)
+                for video in main_container.find_all("video")
+                if video not in quoted_elements and isinstance(video.get("src"), str)
+            )
 
             # 2. Extract images from main container (including carousels)
-            for img in main_container.find_all("img"):
-                if img in quoted_elements:
-                    continue
-                src_val = img.get("src")
-                alt_val = img.get("alt")
-                src = str(src_val) if src_val else ""
-                alt = str(alt_val).lower() if alt_val else ""
-                # Filter out avatars and non-content images
-                if src and "cdninstagram.com" in src and "profile picture" not in alt:
-                    items.append(MediaItem(url=src, is_video=False))
+            def _is_valid_img(img: Tag) -> bool:
+                src = str(img.get("src") or "")
+                alt = str(img.get("alt") or "").lower()
+                return img not in quoted_elements and "cdninstagram.com" in src and "profile picture" not in alt
+
+            items.extend(
+                MediaItem(url=str(img.get("src")), is_video=False)
+                for img in main_container.find_all("img")
+                if _is_valid_img(img)
+            )
 
         return items
 
@@ -333,19 +351,19 @@ class ThreadsService:
             media: list[MediaItem] = []
 
             # Check for videos
-            for video in quoted_container.find_all("video"):
-                src_val = video.get("src")
-                if src_val and isinstance(src_val, str):
-                    media.append(MediaItem(url=src_val, is_video=True))
+            media.extend(
+                MediaItem(url=str(video.get("src")), is_video=True)
+                for video in quoted_container.find_all("video")
+                if isinstance(video.get("src"), str)
+            )
 
             # Check for images
-            for img in quoted_container.find_all("img"):
-                src_val = img.get("src")
-                alt_val = img.get("alt")
-                src = str(src_val) if src_val else ""
-                alt = str(alt_val).lower() if alt_val else ""
-                if src and "cdninstagram.com" in src and "profile picture" not in alt:
-                    media.append(MediaItem(url=src, is_video=False))
+            media.extend(
+                MediaItem(url=str(img.get("src")), is_video=False)
+                for img in quoted_container.find_all("img")
+                if "cdninstagram.com" in str(img.get("src") or "")
+                and "profile picture" not in str(img.get("alt") or "").lower()
+            )
 
             return RichMediaPayload(
                 author_name=html.escape(author_name),

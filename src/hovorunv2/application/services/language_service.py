@@ -4,6 +4,9 @@ import json
 
 from hovorunv2.application.data.chat_service import ChatService
 from hovorunv2.infrastructure.config import settings
+from hovorunv2.infrastructure.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class LanguageService:
@@ -25,36 +28,31 @@ class LanguageService:
         self._default_ignored_langs = settings.translation_ignored_langs
 
     async def get_chat_settings(self, chat_id: int, platform: str = "telegram") -> tuple[str, list[str]]:
-        """Get target language and ignored languages for a chat.
-
-        Args:
-            chat_id: The ID of the chat.
-            platform: Messaging platform identifier.
-
-        Returns:
-            A tuple containing (target_lang, ignored_langs).
-
-        """
+        """Get target language and ignored languages for a chat."""
         chat = await self._chat_service.get_chat(chat_id, platform)
+        if not chat:
+            return self._default_target_lang, self._default_ignored_langs
 
-        target_lang = self._default_target_lang
-        ignored_langs = list(self._default_ignored_langs)
+        target_lang = chat.target_lang or self._default_target_lang
+        ignored_langs = self._default_ignored_langs
 
-        if chat:
-            if chat.target_lang:
-                target_lang = chat.target_lang
-            if chat.ignored_langs:
-                if isinstance(chat.ignored_langs, list):
-                    ignored_langs = chat.ignored_langs
-                elif isinstance(chat.ignored_langs, str):
-                    try:
-                        chat_ignored = json.loads(chat.ignored_langs)
-                        if isinstance(chat_ignored, list):
-                            ignored_langs = chat_ignored
-                    except json.JSONDecodeError, TypeError:
-                        pass
+        match chat.ignored_langs:
+            case list() as langs:
+                ignored_langs = langs
+            case str() as raw_langs:
+                ignored_langs = self._parse_ignored_langs(raw_langs) or ignored_langs
 
         return target_lang, ignored_langs
+
+    def _parse_ignored_langs(self, raw_langs: str) -> list[str] | None:
+        """Safely parse ignored languages from JSON string."""
+        try:
+            parsed = json.loads(raw_langs)
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning("Failed to decode ignored_langs: %s", e)
+        return None
 
     async def update_settings(
         self, chat_id: int, target_lang: str, ignored_langs: list[str], platform: str = "telegram"

@@ -2,16 +2,13 @@
 
 import asyncio
 import html
-import os
-import platform
-import shutil
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from DrissionPage import ChromiumOptions, ChromiumPage
 from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
+from hovorunv2.application.utils import find_browser_executable
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -93,72 +90,11 @@ class BrowserLifecycleManager:
         options.set_argument("--no-sandbox")
         options.set_argument("--disable-gpu")
 
-        if browser_path := self._find_browser_path():
+        if browser_path := find_browser_executable():
             logger.info("Using browser at: %s", browser_path)
             options.set_browser_path(browser_path)
 
         self._page = ChromiumPage(options)
-
-    def _find_browser_path(self) -> str | None:
-        """Find a suitable Chromium-based browser executable on the system.
-
-        Returns:
-            Path to executable or None if not found.
-
-        """
-        # Check manual override
-        if env_path := os.environ.get("BROWSER_PATH"):
-            if Path(env_path).exists():
-                return env_path
-            logger.warning("BROWSER_PATH set but not found: %s", env_path)
-
-        system = platform.system()
-
-        candidates = [
-            "google-chrome",
-            "google-chrome-stable",
-            "chromium",
-            "chromium-browser",
-            "brave-browser",
-            "microsoft-edge",
-            "microsoft-edge-stable",
-            "vivaldi",
-            "chrome",
-        ]
-        for candidate in candidates:
-            if path := shutil.which(candidate):
-                return path
-
-        if system == "Darwin":
-            mac_paths = [
-                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-                "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
-                "/Applications/Chromium.app/Contents/MacOS/Chromium",
-            ]
-            for path in mac_paths:
-                if Path(path).exists():
-                    return path
-
-        if system == "Windows":
-            program_files = os.environ.get("PROGRAMFILES", "C:\\Program Files")
-            program_files_x86 = os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")
-            local_app_data = os.environ.get("LOCALAPPDATA", str(Path("~\\AppData\\Local").expanduser()))
-
-            win_paths = [
-                rf"{program_files}\Google\Chrome\Application\chrome.exe",
-                rf"{program_files_x86}\Google\Chrome\Application\chrome.exe",
-                rf"{local_app_data}\Google\Chrome\Application\chrome.exe",
-                rf"{program_files}\BraveSoftware\Brave-Browser\Application\brave.exe",
-                rf"{program_files}\Microsoft\Edge\Application\msedge.exe",
-                rf"{local_app_data}\Vivaldi\Application\vivaldi.exe",
-            ]
-            for path in win_paths:
-                if Path(path).exists():
-                    return path
-
-        return None
 
     def _start_idle_timer(self) -> None:
         """Start idle shutdown timer."""
@@ -306,22 +242,41 @@ class BrowserService:
             # Try to extract using the provided function.
             # We pass the tab instead of just HTML so the extractor can run JS if needed.
             metadata = extractor_fn(tab, url)
+            if not metadata:
+                return None, []
+
+            if not hasattr(metadata, "media_items"):
+                return metadata, []
 
             downloaded_bytes = []
-            if metadata and hasattr(metadata, "media_items"):
-                for item in metadata.media_items:
-                    # Use the same tab/session to fetch the resource
-                    clean_media_url = html.unescape(item.url)
-                    logger.info("Downloading media via browser session: %s", clean_media_url)
-                    resp = tab.get(clean_media_url)
-                    if resp and hasattr(resp, "content"):
-                        downloaded_bytes.append(resp.content)
-                    elif isinstance(resp, bytes):
-                        downloaded_bytes.append(resp)
+            for item in metadata.media_items:
+                if not item.url:
+                    logger.warning("Skipping media item with empty URL")
+                    continue
+
+                # Use the same tab/session to fetch the resource
+                clean_media_url = html.unescape(item.url)
+                logger.info("Downloading media via browser session: %s", clean_media_url)
+
+                assert isinstance(clean_media_url, str), "Media URL cannot be empty or None"
+                resp = tab.get(clean_media_url)
+                if content := self._extract_content_from_response(resp):
+                    downloaded_bytes.append(content)
 
             return metadata, downloaded_bytes
         finally:
             tab.close()
+
+    def _extract_content_from_response(self, resp: Any) -> bytes | None:  # noqa: ANN401
+        """Extract raw bytes from various response types using pattern matching."""
+        match resp:
+            case _ if hasattr(resp, "content"):
+                return resp.content
+            case bytes() as content:
+                return content
+            case _:
+                logger.warning("Unexpected browser response type: %s", type(resp))
+                return None
 
     def _is_recoverable_error(self, error: Exception) -> bool:
         """Check if browser error is recoverable by restarting.

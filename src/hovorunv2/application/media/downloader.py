@@ -21,6 +21,7 @@ class MediaDownloader:
     """Service to handle downloading media from URLs into RAM."""
 
     DEFAULT_TIMEOUT_SECONDS: int = 30
+    HLS_MANIFEST_SIZE_THRESHOLD: int = 1024
     DEFAULT_HEADERS: Mapping[str, str] = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -74,27 +75,34 @@ class MediaDownloader:
             async with session.get(
                 url, timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS), headers=self.DEFAULT_HEADERS
             ) as resp:
-                if resp.status == HTTPStatus.OK:
-                    content = await resp.read()
-                    # If it's supposed to be a video but we got a tiny response, it might be an HLS manifest
-                    if is_video and len(content) < 1024:  # noqa: PLR2004
-                        text_content = content.decode("utf-8", errors="ignore")
-                        if "#EXTM3U" in text_content:
-                            logger.info("Detected HLS manifest via aiohttp, falling back to yt-dlp")
-                            return await self._download_with_ytdlp(url, filename)
+                if resp.status != HTTPStatus.OK:
+                    logger.error("Failed to download %s: HTTP %d", url, resp.status)
+                    return await self._handle_video_fallback(url, filename, is_video)
 
-                    return BufferedInputFile(content, filename=filename)
+                content = await resp.read()
+                if is_video and self._is_hls_manifest(content):
+                    logger.info("Detected HLS manifest via aiohttp, falling back to yt-dlp")
+                    return await self._download_with_ytdlp(url, filename)
 
-                logger.error("Failed to download %s: HTTP %d", url, resp.status)
+                return BufferedInputFile(content, filename=filename)
         except Exception:
             logger.exception("Exception during media download: %s", url)
 
-        # 3. Fallback to yt-dlp for failed video downloads
-        if is_video:
-            logger.info("Falling back to yt-dlp for video download: %s", url)
-            return await self._download_with_ytdlp(url, filename)
+        return await self._handle_video_fallback(url, filename, is_video)
 
-        return None
+    def _is_hls_manifest(self, content: bytes) -> bool:
+        """Check if content looks like an HLS manifest."""
+        if len(content) >= self.HLS_MANIFEST_SIZE_THRESHOLD:
+            return False
+        text_content = content.decode("utf-8", errors="ignore")
+        return "#EXTM3U" in text_content
+
+    async def _handle_video_fallback(self, url: str, filename: str, is_video: bool) -> BufferedInputFile | None:  # noqa: FBT001
+        """Fallback to yt-dlp for video downloads."""
+        if not is_video:
+            return None
+        logger.info("Falling back to yt-dlp for video download: %s", url)
+        return await self._download_with_ytdlp(url, filename)
 
     async def _download_with_ytdlp(self, url: str, filename: str) -> BufferedInputFile | None:
         """Download video using yt-dlp to a temporary file and return as buffer."""
@@ -111,10 +119,10 @@ class MediaDownloader:
 
                 def _download() -> bytes | None:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(url, download=True)
-                        if not info:
+                        download_info = ydl.extract_info(url, download=True)
+                        if not download_info:
                             return None
-                        file_path = Path(ydl.prepare_filename(info))
+                        file_path = Path(ydl.prepare_filename(download_info))
                         if file_path.exists():
                             return file_path.read_bytes()
                     return None
