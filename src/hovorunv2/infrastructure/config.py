@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     browser_idle_timeout: int = 600  # 10 minutes
     instagram_sessionid: str | None = None
     error_dm_enabled: bool = False
-    error_dm_admin_ids: list[int] = Field(default_factory=list)
+    owners: list[int] = Field(default_factory=list, validation_alias="OWNERS")
 
     # Project Metadata
     github_url: str = "https://github.com/HovorunBot/HovorunV2"

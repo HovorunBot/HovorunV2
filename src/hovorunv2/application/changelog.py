@@ -62,8 +62,4 @@ def get_changelog_updates(last_version: str, current_version: str) -> str | None
 def parse_version(version: str) -> tuple[int, ...]:
     """Convert version string to a comparable tuple of integers."""
     parts = version.split(".")
-    return tuple(
-        int(match.group())
-        for p in parts
-        if (match := re.search(r"\d+", p))
-    )
+    return tuple(int(match.group()) for p in parts if (match := re.search(r"\d+", p)))

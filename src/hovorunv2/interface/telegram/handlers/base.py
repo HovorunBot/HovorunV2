@@ -4,7 +4,7 @@ import html
 import re
 from abc import ABC, abstractmethod
 from contextlib import suppress
-from typing import Any, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
 import aiohttp
 from aiogram import Bot
@@ -16,6 +16,8 @@ from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.infrastructure.logger import get_logger
 
+if TYPE_CHECKING:
+    from aiogram import Router
 logger = get_logger(__name__)
 
 
@@ -39,6 +41,10 @@ class BaseCommand(Protocol):
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401
         """Handle the triggered command."""
+        ...
+
+    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
+        """Register any callback query handlers associated with this command."""
         ...
 
 
@@ -129,6 +135,9 @@ class RichMediaCommand(ABC):
         self, session: aiohttp.ClientSession, match: re.Match, chat_id: int, platform: str
     ) -> RichMediaPayload | None:
         """Extract rich media payload from a regex match."""
+
+    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:  # noqa: B027
+        """Rich media commands do not have callbacks by default."""
 
     def _build_caption(self, payload: RichMediaPayload, tg_user_name: str) -> str:
         """Build caption from payload using standardized format."""

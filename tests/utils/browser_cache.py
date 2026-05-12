@@ -33,6 +33,7 @@ class TestBrowserService(BrowserService):
         if await asyncio.to_thread(cache_file.exists):
             mtime = (await asyncio.to_thread(cache_file.stat)).st_mtime
             if (time.time() - mtime) < CACHE_EXPIRY_SECONDS:
+
                 def _read_cache() -> str:
                     with cache_file.open("r", encoding="utf-8") as f:
                         data: dict[str, Any] = json.load(f)
@@ -45,6 +46,7 @@ class TestBrowserService(BrowserService):
         # Fallback to real browser
         html = await super().get_content(url, wait_selector)
         if html:
+
             def _write_cache() -> None:
                 with cache_file.open("w", encoding="utf-8") as f:
                     json.dump({"url": url, "html": html}, f, ensure_ascii=False, indent=2)

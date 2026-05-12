@@ -56,9 +56,9 @@ async def run_bot() -> None:
         setup_dishka(container=container, router=dp)
 
         # Initialize improved logging with Telegram DM handler
-        if settings.error_dm_enabled and settings.error_dm_admin_ids:
-            logger.info("Enabling Error DM logging to admins: %s", settings.error_dm_admin_ids)
-            setup_logging(bot=bot, admin_ids=settings.error_dm_admin_ids)
+        if settings.error_dm_enabled and settings.owners:
+            logger.info("Enabling Error DM logging to owners: %s", settings.owners)
+            setup_logging(bot=bot, owner_ids=settings.owners)
 
         logger.info("Bot started and polling...")
         await dp.start_polling(bot)

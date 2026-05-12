@@ -57,6 +57,7 @@ def test_get_changelog_updates(monkeypatch: MonkeyPatch) -> None:
     assert updates == "- Feature B\n- Fix C"
 
     updates = get_changelog_updates("0.0.0", "0.2.0")
+    assert updates is not None
     assert "Initial release" in updates
     assert "Feature B" in updates
 

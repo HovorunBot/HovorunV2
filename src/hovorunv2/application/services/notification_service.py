@@ -42,11 +42,7 @@ class NotificationService:
             await self._system_service.set_last_notified_version(current_version)
             return
 
-        message = (
-            f"🚀 *Hovorun Updated to v{current_version}*\n\n"
-            f"{updates_text}\n\n"
-            "_Enjoy the new features!_"
-        )
+        message = f"🚀 *Hovorun Updated to v{current_version}*\n\n{updates_text}\n\n_Enjoy the new features!_"
 
         whitelisted_chats = await self._chat_service.get_all_whitelisted("telegram")
         if not whitelisted_chats:

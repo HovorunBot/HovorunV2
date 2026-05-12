@@ -10,7 +10,6 @@ from aiogram.types import Message, TelegramObject
 
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -51,32 +50,46 @@ class AccessMiddleware(BaseMiddleware):
         data: dict[str, Any],
     ) -> Any:  # noqa: ANN401
         """Check authorization before executing handler."""
-        # Only process Messages
-        if not isinstance(event, Message):
-            return await handler(event, data)
+        from aiogram.types import CallbackQuery  # noqa: PLC0415
 
         policy = get_flag(data, "policy")
         command_name = get_flag(data, "command_name")
 
-        # If no policy is attached, we assume it's a generic message that doesn't need auth
-        # (or auth is handled elsewhere/by a default policy)
+        # If no policy is attached, continue
         if not policy or not isinstance(policy, CommandPolicy):
             return await handler(event, data)
 
-        user_id = event.from_user.id if event.from_user else None
-        chat_id = event.chat.id
+        user_id: int | None = None
+        chat_id: int = 0
+        is_private = False
+
+        if isinstance(event, Message):
+            user_id = event.from_user.id if event.from_user else None
+            chat_id = event.chat.id
+            is_private = event.chat.type == ChatType.PRIVATE
+        elif isinstance(event, CallbackQuery):
+            user_id = event.from_user.id
+            if event.message and isinstance(event.message, Message):
+                chat_id = event.message.chat.id
+                is_private = event.message.chat.type == ChatType.PRIVATE
+
+        if not chat_id:
+            return await handler(event, data)
 
         # 1. Handle Private Chats (Direct Messages)
-        if event.chat.type == ChatType.PRIVATE:
-            # Admins get full access to everything in DM
-            if user_id in settings.admin_ids:
+        if is_private:
+            # Owners/Admins get full access to everything in DM
+            if user_id and await self._access_service.is_admin(user_id):
                 return await handler(event, data)
 
             # Non-admins get the landing page for ANY interaction in DM
-            from hovorunv2.interface.telegram.handlers.help import HelpCommand  # noqa: PLC0415
+            if isinstance(event, Message):
+                from hovorunv2.interface.telegram.handlers.help import HelpCommand  # noqa: PLC0415
 
-            help_cmd = HelpCommand()
-            await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+                help_cmd = HelpCommand()
+                await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+            elif isinstance(event, CallbackQuery):
+                await event.answer("🚫 Access denied.", show_alert=True)
             return None
 
         # 2. Evaluate Policy
@@ -84,11 +97,16 @@ class AccessMiddleware(BaseMiddleware):
             user_id=user_id,
             chat_id=chat_id,
             policy=policy,
+            bot=data["bot"],
             command_name=command_name,
         )
 
         if is_allowed:
             return await handler(event, data)
 
-        logger.info("Access denied for command %s in chat %d", command_name, chat_id)
+        logger.info("Access denied for %s in chat %d by user %s", command_name or "callback", chat_id, user_id)
+
+        if isinstance(event, CallbackQuery):
+            await event.answer("🚫 You don't have permission to do this.", show_alert=True)
+
         return None

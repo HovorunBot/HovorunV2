@@ -14,7 +14,8 @@ class CommandService:
 
     """
 
-    DEFAULT_COMMANDS = ("debug", "allow_chat", "enable_cmd", "disable_cmd", "set_lang")
+    DEFAULT_COMMANDS = ("debug", "allow_chat", "config_cmds", "config_lang", "set_lang", "help", "start")
+    TOGGLEABLE_COMMANDS = ("twitter", "instagram", "tiktok", "threads", "bluesky", "facebook", "youtube")
 
     def __init__(self, command_data_service: CommandDataService) -> None:
         """Initialize the service.
@@ -74,3 +75,8 @@ class CommandService:
             return False
 
         return await self._command_data_service.disable_command(chat_id, platform, command_name)
+
+    async def get_allowed_commands(self, chat_id: int, platform: str = "telegram") -> set[str]:
+        """Fetch all enabled commands for a chat."""
+        allowed_list = await self._command_data_service.get_allowed_commands(chat_id, platform)
+        return set(allowed_list)

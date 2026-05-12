@@ -38,7 +38,7 @@ def create_mock_message(text: str | None, user_id: int = 123, chat_id: int = 456
     [
         ("/allow_chat", True),
         (" /allow_chat ", True),
-        ("/allow_chat extra", False),
+        ("/allow_chat extra", True),  # startswith logic
         ("/other_command", False),
         ("", False),
         (None, False),
@@ -64,7 +64,7 @@ async def test_handle_authorized(whitelist_command: AllowBotCommand, init_contai
     whitelist_service = await init_container.get(WhitelistService)
     is_whitelisted = await whitelist_service.is_whitelisted(chat_id)
     assert is_whitelisted is True
-    message.answer.assert_called_once_with("Bot is now allowed in this chat.")
+    message.answer.assert_called_once_with("✅ Bot is now allowed in this chat by administrator.")
 
     # Check that AUTO_ALLOW commands are enabled
     command_service = await init_container.get(CommandService)

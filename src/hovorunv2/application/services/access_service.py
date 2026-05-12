@@ -7,7 +7,7 @@ from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import Settings
 
 if TYPE_CHECKING:
-    pass
+    from aiogram import Bot
 
 
 class CommandPolicy:
@@ -21,12 +21,14 @@ class CommandPolicy:
         self,
         *,
         requires_admin: bool = False,
+        requires_group_admin: bool = False,
         requires_whitelist: bool = True,
         is_toggleable: bool = True,
         auto_enable: bool = False,
     ) -> None:
         """Initialize policy with declarative rules."""
         self.requires_admin = requires_admin
+        self.requires_group_admin = requires_group_admin
         self.requires_whitelist = requires_whitelist
         self.is_toggleable = is_toggleable
         self.auto_enable = auto_enable
@@ -40,26 +42,35 @@ class CommandPolicy:
         access_service: AccessService,
         whitelist_service: WhitelistService,
         command_service: CommandService,
+        bot: Bot | None = None,
     ) -> bool:
         """Evaluate access rules.
 
-        Admins bypass all checks unless specific policy says otherwise.
+        Admins/Owners bypass all checks unless specific policy says otherwise.
         """
         is_admin = user_id and await access_service.is_admin(user_id, platform)
 
-        # 1. Admin always has full access
+        # 1. Global Admin always has full access
         if is_admin:
             return True
 
-        # 2. Check if admin is required
+        # 2. Check if global admin is required
         if self.requires_admin:
             return False
 
-        # 3. Whitelist check
+        # 3. Group Admin check
+        if self.requires_group_admin:
+            if not user_id or not bot:
+                return False
+            # Check if user is admin in this specific group
+            if not await access_service.is_group_admin(bot, chat_id, user_id, platform):
+                return False
+
+        # 4. Whitelist check
         if self.requires_whitelist and not await whitelist_service.is_whitelisted(chat_id, platform):
             return False
 
-        # 4. Command configuration check
+        # 5. Command configuration check
         return not (
             self.is_toggleable
             and command_name
@@ -85,13 +96,39 @@ class AccessService:
         self._whitelist_service = whitelist_service
         self._command_service = command_service
 
+    async def is_owner(self, user_id: int, platform: str = "telegram") -> bool:
+        """Check if a user is an Owner (super admin)."""
+        match platform:
+            case "telegram":
+                return user_id in self._settings.owners
+            case _:
+                return False
+
     async def is_admin(self, user_id: int, platform: str = "telegram") -> bool:
         """Check if a user has administrative privileges on a specific platform."""
         match platform:
             case "telegram":
-                return user_id in self._settings.admin_ids
+                return user_id in self._settings.admin_ids or await self.is_owner(user_id, platform)
             case _:
                 return False
+
+    async def is_group_admin(
+        self,
+        bot: Bot,
+        chat_id: int,
+        user_id: int,
+        platform: str = "telegram",
+    ) -> bool:
+        """Check if a user is an administrator in a specific group chat."""
+        if platform != "telegram":
+            return False
+
+        try:
+            member = await bot.get_chat_member(chat_id, user_id)
+        except Exception:
+            return False
+        else:
+            return member.status in ("administrator", "creator")
 
     async def ensure_admin(self, user_id: int, platform: str = "telegram") -> None:
         """Verify user is admin or raise an error."""
@@ -104,6 +141,7 @@ class AccessService:
         user_id: int | None,
         chat_id: int,
         policy: CommandPolicy,
+        bot: Bot | None = None,
         command_name: str | None = None,
         platform: str = "telegram",
     ) -> bool:
@@ -113,6 +151,7 @@ class AccessService:
             user_id: Platform-specific user ID.
             chat_id: Platform-specific chat/group ID.
             policy: The validation strategy to apply.
+            bot: The bot instance (required for group admin checks).
             command_name: Optional name of the command being executed.
             platform: Messaging platform identifier.
 
@@ -128,4 +167,5 @@ class AccessService:
             access_service=self,
             whitelist_service=self._whitelist_service,
             command_service=self._command_service,
+            bot=bot,
         )

@@ -22,6 +22,7 @@ async def setup_middlewares(
     """Register middlewares with the router."""
     router.message.outer_middleware(MessageCacheMiddleware(message_service))
     router.message.middleware(AccessMiddleware(access_service))
+    router.callback_query.middleware(AccessMiddleware(access_service))
 
 
 def setup_handlers(commands: list[BaseCommand]) -> None:
@@ -38,3 +39,7 @@ def setup_handlers(commands: list[BaseCommand]) -> None:
             command.is_triggered,
             flags=flags,
         )
+
+        # Register callbacks if implemented
+        if hasattr(command, "register_callbacks"):
+            command.register_callbacks(router, flags=flags)

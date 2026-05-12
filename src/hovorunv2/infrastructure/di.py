@@ -19,6 +19,7 @@ from hovorunv2.application.data.system_service import SystemDataService
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.services.access_service import AccessService
+from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.message_service import MessageService
@@ -31,7 +32,7 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.config import settings as app_settings
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.bluesky import BlueskyCommand
-from hovorunv2.interface.telegram.handlers.commands_config import DisableCommand, EnableCommand
+from hovorunv2.interface.telegram.handlers.commands_config import ConfigCommandsCommand
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 from hovorunv2.interface.telegram.handlers.facebook import FacebookCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
@@ -103,6 +104,7 @@ class AppProvider(Provider):
     command_service = provide(CommandService)
     whitelist_service = provide(WhitelistService)
     access_service = provide(AccessService)
+    cleanup_service = provide(CleanupService)
     language_service = provide(LanguageService)
     translation_service = provide(TranslationService)
     media_downloader = provide(MediaDownloader)
@@ -125,8 +127,7 @@ class AppProvider(Provider):
     youtube_command = provide(YoutubeShortsCommand)
     set_language_command = provide(SetLanguageCommand)
     debug_command = provide(DebugCommand)
-    enable_cmd_command = provide(EnableCommand)
-    disable_cmd_command = provide(DisableCommand)
+    config_cmds_command = provide(ConfigCommandsCommand)
 
     @provide(scope=Scope.APP)
     def get_instagram_command(
@@ -175,6 +176,7 @@ class AppProvider(Provider):
         self,
         whitelist_service: WhitelistService,
         command_service: CommandService,
+        access_service: AccessService,
         settings: Settings,
         rich_media_commands: list[RichMediaCommand],
     ) -> AllowBotCommand:
@@ -183,6 +185,7 @@ class AppProvider(Provider):
         return AllowBotCommand(
             whitelist_service=whitelist_service,
             command_service=command_service,
+            access_service=access_service,
             settings=settings,
             commands=rich_media_commands,
         )
@@ -193,8 +196,7 @@ class AppProvider(Provider):
         help_command: HelpCommand,
         set_language_command: SetLanguageCommand,
         debug_command: DebugCommand,
-        enable_cmd_command: EnableCommand,
-        disable_cmd_command: DisableCommand,
+        config_cmds_command: ConfigCommandsCommand,
     ) -> UtilityCommands:
         """Provide list of utility/infrastructure commands."""
         return UtilityCommands(
@@ -202,8 +204,7 @@ class AppProvider(Provider):
                 help_command,
                 set_language_command,
                 debug_command,
-                enable_cmd_command,
-                disable_cmd_command,
+                config_cmds_command,
             ]
         )
 
