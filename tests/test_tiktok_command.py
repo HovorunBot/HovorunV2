@@ -52,7 +52,7 @@ async def test_is_triggered(
     tiktok_command: TikTokCommand,
     text: str | None,
     expected: bool,
-    init_container: AsyncContainer,  # noqa: ARG001
+    init_container: AsyncContainer,
 ) -> None:
     """Test the is_triggered method."""
     message = create_mock_message(text)
@@ -60,7 +60,7 @@ async def test_is_triggered(
 
 
 @pytest.mark.asyncio
-async def test_is_triggered_by_bot(tiktok_command: TikTokCommand, init_container: AsyncContainer) -> None:  # noqa: ARG001
+async def test_is_triggered_by_bot(tiktok_command: TikTokCommand, init_container: AsyncContainer) -> None:
     """Test that it's not triggered by bot messages."""
     text = "https://www.tiktok.com/@fueltothe_max/video/7397394517311212818"
     message = create_mock_message(text, is_bot=True)

@@ -53,7 +53,7 @@ async def test_is_triggered(
     instagram_command: InstagramCommand,
     text: str | None,
     expected: bool,
-    init_container: AsyncContainer,  # noqa: ARG001
+    init_container: AsyncContainer,
 ) -> None:
     """Test the is_triggered method with various inputs."""
     message = create_mock_message(text)

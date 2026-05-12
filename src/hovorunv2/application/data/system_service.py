@@ -20,7 +20,17 @@ class SystemDataService:
 
     async def set_last_notified_version(self, version: str) -> None:
         """Update last notified version in database."""
+        await self.set_value("last_notified_version", version)
+
+    async def get_value(self, key: str) -> str | None:
+        """Fetch arbitrary value from system repository."""
         async with self._session_maker() as session:
             repo = SQLAlchemySystemRepository(session)
-            await repo.set_value("last_notified_version", version)
+            return await repo.get_value(key)
+
+    async def set_value(self, key: str, value: str) -> None:
+        """Store arbitrary value in system repository."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemySystemRepository(session)
+            await repo.set_value(key, value)
             await session.commit()

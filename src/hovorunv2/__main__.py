@@ -3,13 +3,16 @@
 import asyncio
 
 from aiogram import Bot, Dispatcher
+from cryptography.fernet import Fernet
 from dishka import make_async_container
 from dishka.integrations.aiogram import setup_dishka
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.data.system_service import SystemDataService
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
+from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
@@ -38,6 +41,32 @@ async def run_bot() -> None:
 
         # Setup router middlewares and handlers
         await setup_middlewares(container, message_service, access_service)
+
+        # Bootstrap Cache Encryption
+        cache_service = await container.get(CacheService)
+        if settings.cache_encryption_key:
+            system_service = await container.get(SystemDataService)
+            config_fernet = Fernet(settings.cache_encryption_key.encode())
+
+            # Get wrapped master key from DB
+            wrapped_key = await system_service.get_value("wrapped_master_key")
+            if wrapped_key:
+                try:
+                    master_key = config_fernet.decrypt(wrapped_key.encode()).decode()
+                except Exception:
+                    logger.exception("Failed to decrypt master key from DB. Check your CACHE_ENCRYPTION_KEY.")
+                    master_key = None
+            else:
+                # Generate new master key and wrap it
+                master_key = Fernet.generate_key().decode()
+                wrapped_key = config_fernet.encrypt(master_key.encode()).decode()
+                await system_service.set_value("wrapped_master_key", wrapped_key)
+                logger.info("Generated and stored new persistent master key.")
+
+            if master_key:
+                cache_service.setup_encryption(master_key)
+                # Temporal workaround: migrate unencrypted keys to encrypted ones
+                await cache_service.migrate_to_encryption()
 
         # Resolve all registered commands and register them with the router
         commands = await container.get(list[BaseCommand])

@@ -15,7 +15,7 @@ router = Router()
 
 
 async def setup_middlewares(
-    container: AsyncContainer,  # noqa: ARG001
+    container: AsyncContainer,
     message_service: MessageService,
     access_service: AccessService,
 ) -> None:

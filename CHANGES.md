@@ -1,3 +1,10 @@
+## 0.1.1
+
+🔒 **New in Hovorun v0.1.1: Upgraded Privacy!**
+
+* 🛡️ **Encrypted Messages:** Your privacy matters. While the bot still temporarily caches chat messages for 24 hours to
+  function, all of that data is now fully encrypted.
+
 ## 0.1.0
 
 🚀 **Welcome to Hovorun v0.1.0!** Here are the core features ready to use in this chat:

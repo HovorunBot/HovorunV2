@@ -35,11 +35,12 @@ async def test_notify_updates_fresh_install(
     bot = AsyncMock(spec=Bot)
 
     # Mock changelog to return some updates for 0.1.0
-    with patch(
-        "hovorunv2.application.services.notification_service.get_current_version", return_value="0.1.0"
-    ), patch(
-        "hovorunv2.application.services.notification_service.get_changelog_updates", return_value="Initial features"
-    ) as mock_updates:
+    with (
+        patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.1.0"),
+        patch(
+            "hovorunv2.application.services.notification_service.get_changelog_updates", return_value="Initial features"
+        ) as mock_updates,
+    ):
         await notification_service.notify_updates(bot)
 
         # Should check updates from 0.0.0 to 0.1.0
@@ -83,9 +84,10 @@ async def test_notify_updates_upgrade(
 
     bot = AsyncMock(spec=Bot)
 
-    with patch(
-        "hovorunv2.application.services.notification_service.get_current_version", return_value="0.2.0"
-    ), patch("hovorunv2.application.services.notification_service.get_changelog_updates", return_value="New stuff"):
+    with (
+        patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.2.0"),
+        patch("hovorunv2.application.services.notification_service.get_changelog_updates", return_value="New stuff"),
+    ):
         await notification_service.notify_updates(bot)
 
         bot.send_message.assert_called_once()

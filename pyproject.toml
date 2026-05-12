@@ -1,6 +1,6 @@
 [project]
 name = "hovorunv2"
-version = "0.1.0"
+version = "0.1.1"
 description = "The ultimate wingman for your Telegram group chats — making them smarter, faster, and way more fun."
 readme = "README.md"
 authors = [
@@ -33,6 +33,7 @@ dependencies = [
     "DrissionPage",
     "beautifulsoup4",
     "dishka",
+    "cryptography",
 ]
 
 [project.urls]
@@ -76,7 +77,8 @@ ignore = [
     "PLR0913",
     "D104",
     "BLE001",
-    "TC"
+    "TC",
+    "ARG001",
 ]
 
 [tool.ruff.lint.mccabe]

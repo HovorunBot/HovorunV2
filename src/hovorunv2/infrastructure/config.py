@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     instagram_sessionid: str | None = None
     error_dm_enabled: bool = False
     owners: list[int] = Field(default_factory=list, validation_alias="OWNERS")
+    cache_encryption_key: str | None = None
 
     # Project Metadata
     github_url: str = "https://github.com/HovorunBot/HovorunV2"
