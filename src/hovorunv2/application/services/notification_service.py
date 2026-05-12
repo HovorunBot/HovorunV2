@@ -26,11 +26,10 @@ class NotificationService:
         current_version = get_current_version()
         last_notified = await self._system_service.get_last_notified_version()
 
-        # If fresh install, just save the current version and return
+        # If fresh install, treat as update from 0.0.0 to show initial changes
         if last_notified is None:
-            logger.info("Fresh install detected. Setting last_notified_version to %s", current_version)
-            await self._system_service.set_last_notified_version(current_version)
-            return
+            logger.info("Fresh install detected. Checking for initial version %s changes", current_version)
+            last_notified = "0.0.0"
 
         if last_notified == current_version:
             logger.debug("No new updates to notify. Current version: %s", current_version)
