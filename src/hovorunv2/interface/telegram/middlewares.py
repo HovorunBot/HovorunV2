@@ -5,11 +5,13 @@ from typing import Any
 
 from aiogram import BaseMiddleware
 from aiogram.dispatcher.flags import get_flag
+from aiogram.enums import ChatType
 from aiogram.types import Message, TelegramObject
 
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.whitelist_service import WhitelistService
+from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -54,15 +56,32 @@ class WhitelistMiddleware(BaseMiddleware):
         if not isinstance(event, Message):
             return await handler(event, data)
 
-        # Allow handlers with 'bypass_whitelist' flag
+        # Allow handlers with 'bypass_whitelist' flag (e.g., HelpCommand)
         if get_flag(data, "bypass_whitelist"):
             return await handler(event, data)
 
-        is_whitelisted = await self._whitelist_service.is_whitelisted(event.chat.id)
+        chat_id = event.chat.id
+        user_id = event.from_user.id if event.from_user else None
+
+        # 1. Handle Private Chats (Direct Messages)
+        if event.chat.type == ChatType.PRIVATE:
+            # Admins get full access to everything in DM
+            if user_id in settings.admin_ids:
+                return await handler(event, data)
+
+            # Non-admins get the landing page for ANY interaction in DM
+            from hovorunv2.interface.telegram.handlers.help import HelpCommand  # noqa: PLC0415
+
+            help_cmd = HelpCommand()
+            await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+            return None
+
+        # 2. Handle Groups/Channels
+        is_whitelisted = await self._whitelist_service.is_whitelisted(chat_id)
         if is_whitelisted:
             return await handler(event, data)
 
-        logger.info("Ignoring message in non-whitelisted chat %d", event.chat.id)
+        logger.info("Ignoring message in non-whitelisted chat %d", chat_id)
         return None
 
 

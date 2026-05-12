@@ -1,6 +1,7 @@
 """Dependency injection configuration using dishka."""
 
 from collections.abc import AsyncIterable
+from typing import NewType
 
 import aiohttp
 from dishka import Provider, Scope, provide
@@ -30,6 +31,7 @@ from hovorunv2.interface.telegram.handlers.bluesky import BlueskyCommand
 from hovorunv2.interface.telegram.handlers.commands_config import DisableCommand, EnableCommand
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 from hovorunv2.interface.telegram.handlers.facebook import FacebookCommand
+from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.instagram import InstagramCommand
 from hovorunv2.interface.telegram.handlers.set_language import SetLanguageCommand
 from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
@@ -37,6 +39,8 @@ from hovorunv2.interface.telegram.handlers.tiktok import TikTokCommand
 from hovorunv2.interface.telegram.handlers.twitter import TwitterCommand
 from hovorunv2.interface.telegram.handlers.whitelist import AllowBotCommand
 from hovorunv2.interface.telegram.handlers.youtube import YoutubeShortsCommand
+
+UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
 
 class InfrastructureProvider(Provider):
@@ -105,6 +109,7 @@ class AppProvider(Provider):
     bluesky_service = provide(BlueskyService)
 
     # Commands
+    help_command = provide(HelpCommand)
     bluesky_command = provide(BlueskyCommand)
     facebook_command = provide(FacebookCommand)
     instagram_command = provide(InstagramCommand)
@@ -177,22 +182,34 @@ class AppProvider(Provider):
         )
 
     @provide(scope=Scope.APP)
-    def get_commands(
+    def get_utility_commands(
         self,
-        allow_bot_command: AllowBotCommand,
-        rich_media_commands: list[RichMediaCommand],
+        help_command: HelpCommand,
         set_language_command: SetLanguageCommand,
         debug_command: DebugCommand,
         enable_cmd_command: EnableCommand,
         disable_cmd_command: DisableCommand,
+    ) -> UtilityCommands:
+        """Provide list of utility/infrastructure commands."""
+        return UtilityCommands([
+            help_command,
+            set_language_command,
+            debug_command,
+            enable_cmd_command,
+            disable_cmd_command,
+        ])
+
+    @provide(scope=Scope.APP)
+    def get_commands(
+        self,
+        allow_bot_command: AllowBotCommand,
+        rich_media_commands: list[RichMediaCommand],
+        utility_commands: UtilityCommands,
     ) -> list[BaseCommand]:
         """Provide list of all bot commands."""
         commands: list[BaseCommand] = [
             allow_bot_command,
             *rich_media_commands,
-            set_language_command,
-            debug_command,
-            enable_cmd_command,
-            disable_cmd_command,
+            *utility_commands,
         ]
         return commands

@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     error_dm_enabled: bool = False
     error_dm_admin_ids: list[int] = Field(default_factory=list)
 
+    # Project Metadata
+    github_url: str = "https://github.com/HovorunBot/HovorunV2"
+    issue_tracker_url: str = "https://github.com/HovorunBot/HovorunV2/issues"
+    contact_email: str = "jaden.corr42@gmail.com"
+    project_description: str = (
+        "The ultimate wingman for your Telegram group chats — making them smarter, faster, and way more fun."
+    )
+
     @field_validator("db_path", mode="after")
     @classmethod
     def make_db_path_absolute(cls, v: str) -> str:
