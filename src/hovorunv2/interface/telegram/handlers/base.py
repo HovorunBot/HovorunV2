@@ -260,10 +260,19 @@ class RichMediaCommand(ABC):
                 continue
 
             item_meta = payload.media_items[i]
-            item = InputMediaVideo(media=file) if item_meta.is_video else InputMediaPhoto(media=file)
-            if not final_group:
-                item.caption = caption
-                item.parse_mode = "HTML"
+            # Pass caption during instantiation as models are frozen in Pydantic v2
+            if item_meta.is_video:
+                item = InputMediaVideo(
+                    media=file,
+                    caption=caption if not final_group else None,
+                    parse_mode="HTML" if not final_group else None,
+                )
+            else:
+                item = InputMediaPhoto(
+                    media=file,
+                    caption=caption if not final_group else None,
+                    parse_mode="HTML" if not final_group else None,
+                )
             final_group.append(item)
 
         if not final_group:
@@ -306,10 +315,18 @@ class RichMediaCommand(ABC):
         """Construct InputMedia objects using raw URLs."""
         media_group = []
         for i, item_meta in enumerate(payload.media_items):
-            item = InputMediaVideo(media=item_meta.url) if item_meta.is_video else InputMediaPhoto(media=item_meta.url)
-
-            if i == 0:
-                item.caption = caption
-                item.parse_mode = "HTML"
+            # Pass caption during instantiation as models are frozen in Pydantic v2
+            if item_meta.is_video:
+                item = InputMediaVideo(
+                    media=item_meta.url,
+                    caption=caption if i == 0 else None,
+                    parse_mode="HTML" if i == 0 else None,
+                )
+            else:
+                item = InputMediaPhoto(
+                    media=item_meta.url,
+                    caption=caption if i == 0 else None,
+                    parse_mode="HTML" if i == 0 else None,
+                )
             media_group.append(item)
         return media_group

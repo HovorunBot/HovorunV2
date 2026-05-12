@@ -1,10 +1,8 @@
 """Tests for the FacebookCommand class."""
 
-from http import HTTPStatus
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock
 
-import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.message_service import MessageService
+from hovorunv2.application.services.notification_service import NotificationService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
@@ -43,6 +44,11 @@ async def run_bot() -> None:
         setup_handlers(commands)
 
         bot = Bot(token=settings.bot_token)
+
+        # Send update notifications if any
+        notification_service = await container.get(NotificationService)
+        await notification_service.notify_updates(bot)
+
         dp = Dispatcher()
         dp.include_router(router)
 

@@ -1,7 +1,5 @@
 """Shared test configuration and fixtures."""
 
-import asyncio
-import os
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -11,7 +9,7 @@ from dishka import AsyncContainer, Scope, make_async_container, provide
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from hovorunv2.domain.chat import Base
+from hovorunv2.domain.base import Base
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
@@ -88,6 +86,6 @@ def manage_vcr_cassettes(request: pytest.FixtureRequest) -> None:
     cassette_path = Path("tests/cassettes") / module_name / f"{test_name}.yaml"
 
     if cassette_path.exists():
-        mtime = os.path.getmtime(cassette_path)
+        mtime = cassette_path.stat().st_mtime
         if (time.time() - mtime) > (7 * 24 * 60 * 60):  # 7 days
-            os.remove(cassette_path)
+            cassette_path.unlink()

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from hovorunv2.domain import Base
+from hovorunv2.domain.base import Base
 
 if TYPE_CHECKING:
     from hovorunv2.domain.chat import ChatDB

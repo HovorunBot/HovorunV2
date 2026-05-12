@@ -41,3 +41,9 @@ class SQLAlchemyChatRepository:
         """Remove chat from whitelist."""
         stmt = delete(ChatDB).where(ChatDB.chat_id == chat_id, ChatDB.platform == platform)
         await self.session.execute(stmt)
+
+    async def get_all_whitelisted(self, platform: str = "telegram") -> list[ChatDB]:
+        """Fetch all whitelisted chats for a given platform."""
+        stmt = select(ChatDB).where(ChatDB.is_whitelisted == True, ChatDB.platform == platform)  # noqa: E712
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

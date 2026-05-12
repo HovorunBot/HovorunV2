@@ -166,10 +166,19 @@ class InstagramCommand(RichMediaCommand):
             ext = "mp4" if item_meta.is_video else "jpg"
             file = BufferedInputFile(content, filename=f"browser_{i}.{ext}")
 
-            media_item = InputMediaVideo(media=file) if item_meta.is_video else InputMediaPhoto(media=file)
-            if not final_group:
-                media_item.caption = caption
-                media_item.parse_mode = "HTML"
+            # Pass caption during instantiation as models are frozen in Pydantic v2
+            if item_meta.is_video:
+                media_item = InputMediaVideo(
+                    media=file,
+                    caption=caption if not final_group else None,
+                    parse_mode="HTML" if not final_group else None,
+                )
+            else:
+                media_item = InputMediaPhoto(
+                    media=file,
+                    caption=caption if not final_group else None,
+                    parse_mode="HTML" if not final_group else None,
+                )
             final_group.append(media_item)
 
         if final_group:

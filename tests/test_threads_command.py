@@ -1,17 +1,14 @@
 """Tests for the ThreadsCommand class."""
 
-from http import HTTPStatus
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
 from hovorunv2.application.services.whitelist_service import WhitelistService
-from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
 
 

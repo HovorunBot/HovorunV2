@@ -47,3 +47,9 @@ class ChatService:
             chat.ignored_langs = json.dumps(ignored_langs)
             await repo.save(chat)
             await session.commit()
+
+    async def get_all_whitelisted(self, platform: str) -> list[ChatDB]:
+        """Fetch all whitelisted chats from database."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemyChatRepository(session)
+            return await repo.get_all_whitelisted(platform)

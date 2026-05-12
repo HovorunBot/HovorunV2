@@ -1,7 +1,6 @@
 """Tests for the InstagramCommand class."""
 
-from http import HTTPStatus
-from typing import Any, cast
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
