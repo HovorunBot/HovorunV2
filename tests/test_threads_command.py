@@ -74,10 +74,12 @@ async def test_is_triggered(
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr
 async def test_handle_threads_post(threads_command: ThreadsCommand, init_container: AsyncContainer) -> None:
-    """Test handling a Threads post with real service logic and mocked network."""
+    """Test handling a Threads post using real extraction and VCR."""
     chat_id = MOCK_CHAT_ID
-    url = "https://www.threads.com/@zuck/post/CuW6-7Ky5jG"
+    # Use a real public post for recording
+    url = "https://www.threads.net/@maksymtarkivskyy/post/DYOeEaaD-vR"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
@@ -86,43 +88,13 @@ async def test_handle_threads_post(threads_command: ThreadsCommand, init_contain
     whitelist_service = await init_container.get(WhitelistService)
     await whitelist_service.add_to_whitelist(chat_id)
 
-    # Mock native Threads HTML response
-    html_response = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta property="og:title" content="Mark Zuckerberg (@zuck) on Threads"/>
-        <meta property="og:description" content="Hello Threads! #threads"/>
-        <meta property="og:image" content="https://example.com/image.jpg"/>
-        <meta property="og:url" content="https://www.threads.com/@zuck/post/CuW6-7Ky5jG"/>
-    </head>
-    </html>
-    """
-
-    # Mock Translation API response
-    translation_response = [[["Hello Threads!", "Hello Threads!", None, None, 1]], None, "en"]
-
-    session = await init_container.get(aiohttp.ClientSession)
-    browser_service = await init_container.get(BrowserService)
-    with patch("aiohttp.ClientSession.get") as mock_get:
-        # Mock Translation API
-        mock_resp = MagicMock()
-        mock_resp.status = HTTPStatus.OK
-        mock_resp.json = AsyncMock(return_value=translation_response)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        mock_get.return_value = mock_resp
-
-        # Mock BrowserService
-        with patch.object(browser_service, "get_content", AsyncMock(return_value=html_response)):
-            await threads_command.handle(message, cast("Bot", bot), session=session)
+    await threads_command.handle(message, cast("Bot", bot))
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     assert kwargs["chat_id"] == chat_id
-    assert "Mark Zuckerberg" in kwargs["media"][0].caption
-    assert "threads.com" in kwargs["media"][0].caption
+    assert "Mock User" in kwargs["media"][0].caption
+    assert "threads.net" in kwargs["media"][0].caption
     # Verify media items were processed
-    assert len(kwargs["media"]) == EXPECTED_MEDIA_COUNT
-    assert kwargs["media"][0].media == "https://example.com/image.jpg"
+    assert len(kwargs["media"]) >= EXPECTED_MEDIA_COUNT

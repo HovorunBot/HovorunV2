@@ -69,18 +69,25 @@ class BlueskyService:
         if not record_view:
             return None, [], ""
 
-        if record_view.get("$type") != "app.bsky.feed.post#view":
+        # Handle both post#view and record#viewRecord (common for quotes)
+        if record_view.get("$type") not in ("app.bsky.feed.post#view", "app.bsky.embed.record#viewRecord"):
             return None, [], ""
 
         quote_author = record_view.get("author", {})
-        quote_record = record_view.get("record", {})
+        # post#view has 'record', record#viewRecord has 'value'
+        quote_record = record_view.get("record") or record_view.get("value") or {}
         quote_text = html.escape(quote_record.get("text", ""))
 
         quote_trans = await self._translation_service.translate_if_needed(quote_text, chat_id, platform, session)
         if quote_trans:
             quote_text += f"\n\n{quote_trans.flag} <b>Translated:</b>\n{html.escape(quote_trans.text)}"
 
+        # Try extracting from 'embed' or 'embeds' list
         quoted_media = self._extract_media_from_embed(record_view.get("embed", {}))
+        if not quoted_media and "embeds" in record_view:
+            for emb in record_view["embeds"]:
+                quoted_media.extend(self._extract_media_from_embed(emb))
+
         info_note = "\n\nℹ️️ <i>Post includes quoted media</i>" if quoted_media else ""  # noqa: RUF001
 
         payload = RichMediaPayload(

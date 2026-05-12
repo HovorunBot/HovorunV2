@@ -67,7 +67,7 @@ class InfrastructureProvider(Provider):
     @provide(scope=Scope.APP)
     async def get_http_session(self) -> AsyncIterable[aiohttp.ClientSession]:
         """Provide aiohttp ClientSession."""
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+        async with aiohttp.ClientSession() as session:
             yield session
 
     @provide(scope=Scope.APP)

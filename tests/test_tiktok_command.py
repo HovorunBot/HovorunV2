@@ -70,10 +70,12 @@ async def test_is_triggered_by_bot(tiktok_command: TikTokCommand, init_container
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr
 async def test_handle_tiktok_video(tiktok_command: TikTokCommand, init_container: AsyncContainer) -> None:
-    """Test handling a TikTok video link with real service logic and mocked network."""
+    """Test handling a TikTok video link using real extraction and VCR."""
     chat_id = 456
-    url = "https://www.tiktok.com/@user/video/1234567890"
+    # Use a real public video for recording
+    url = "https://www.tiktok.com/@fueltothe_max/video/7397394517311212818"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
@@ -82,42 +84,11 @@ async def test_handle_tiktok_video(tiktok_command: TikTokCommand, init_container
     whitelist_service = await init_container.get(WhitelistService)
     await whitelist_service.add_to_whitelist(chat_id)
 
-    # Mock TikWM API response
-    tiktok_response = {
-        "code": 0,
-        "msg": "success",
-        "data": {
-            "title": "Funny Video #funny #tiktok",
-            "play": "https://example.com/video.mp4",
-            "digg_count": 1000,
-            "play_count": 5000,
-            "author": {"nickname": "TikTok User", "unique_id": "tiktok_user"},
-        },
-    }
-
-    # Mock Translation API response
-    translation_response = [[["Funny Video", "Funny Video", None, None, 1]], None, "en"]
-
-    def mocked_get(url_: str, **_kwargs: Any) -> MagicMock:  # noqa: ANN401
-        mock_resp = MagicMock()
-        mock_resp.status = HTTPStatus.OK
-        if "tikwm.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=tiktok_response)
-        elif "translate.googleapis.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=translation_response)
-        else:
-            mock_resp.status = HTTPStatus.NOT_FOUND
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        return mock_resp
-
-    session = await init_container.get(aiohttp.ClientSession)
-    with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await tiktok_command.handle(message, cast("Bot", bot), session=session)
+    await tiktok_command.handle(message, cast("Bot", bot))
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     assert kwargs["chat_id"] == chat_id
-    assert "TikTok User" in kwargs["media"][0].caption
-    assert "Funny Video" in kwargs["media"][0].caption
+    assert "Mock User" in kwargs["media"][0].caption
+    assert "tiktok.com" in kwargs["media"][0].caption

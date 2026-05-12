@@ -30,14 +30,16 @@ class BrowserLifecycleManager:
 
     """
 
-    def __init__(self, idle_timeout: int) -> None:
+    def __init__(self, idle_timeout: int, flags: list[str] | None = None) -> None:
         """Initialize the manager.
 
         Args:
             idle_timeout: Seconds to wait before shutting down idle browser.
+            flags: Optional list of browser arguments (e.g., --headless).
 
         """
         self._idle_timeout = idle_timeout
+        self._flags = flags or []
         self._page: ChromiumPage | None = None
         self._idle_timer: asyncio.Task | None = None
         self._active_requests = 0
@@ -89,6 +91,11 @@ class BrowserLifecycleManager:
         options.set_argument("--headless")
         options.set_argument("--no-sandbox")
         options.set_argument("--disable-gpu")
+        options.set_argument("--disable-dev-shm-usage")
+        options.set_argument("--disable-software-rasterizer")
+
+        for flag in self._flags:
+            options.set_argument(flag)
 
         if browser_path := find_browser_executable():
             logger.info("Using browser at: %s", browser_path)
@@ -149,15 +156,16 @@ class BrowserService:
     SELECTOR_TIMEOUT_S = 10
     MAX_RETRIES = 2
 
-    def __init__(self, max_tabs: int, idle_timeout: int) -> None:
+    def __init__(self, max_tabs: int, idle_timeout: int, flags: list[str] | None = None) -> None:
         """Initialize the service.
 
         Args:
             max_tabs: Maximum concurrent tabs (controlled by semaphore).
             idle_timeout: Seconds to wait before shutting down idle browser.
+            flags: Optional list of browser arguments.
 
         """
-        self._manager = BrowserLifecycleManager(idle_timeout)
+        self._manager = BrowserLifecycleManager(idle_timeout, flags)
         self._semaphore = asyncio.Semaphore(max_tabs)
 
     @property

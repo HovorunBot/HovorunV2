@@ -1,7 +1,10 @@
 """Shared test configuration and fixtures."""
 
 import asyncio
+import os
+import time
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 from dishka import AsyncContainer, Scope, make_async_container, provide
@@ -9,25 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from sqlalchemy.pool import StaticPool
 
 from hovorunv2.domain.chat import Base
+from hovorunv2.infrastructure.browser import BrowserService
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> asyncio.AbstractEventLoop:
-    """Create an instance of the default event loop for each test case."""
-    try:
-        return asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop
+from tests.utils.browser_cache import TestBrowserService
 
 
 @pytest.fixture
 async def test_engine() -> AsyncGenerator[AsyncEngine]:
     """Create a test database engine."""
-    # Use unique name for each test if using shared cache, or just use pure memory
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         poolclass=StaticPool,
@@ -51,6 +45,16 @@ class TestInfrastructureProvider(InfrastructureProvider):
         """Provide test engine."""
         return self._engine
 
+    @provide(scope=Scope.APP)
+    async def get_browser_service(self, config: Settings) -> AsyncGenerator[BrowserService]:
+        """Provide TestBrowserService (DrissionPage) with caching."""
+        service = TestBrowserService(
+            max_tabs=config.browser_max_tabs,
+            idle_timeout=config.browser_idle_timeout,
+        )
+        yield service
+        await service.close()
+
 
 @pytest.fixture
 async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[AsyncContainer]:
@@ -69,3 +73,21 @@ async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[AsyncContai
 async def init_container(test_container: AsyncContainer) -> AsyncContainer:
     """Alias for test_container to keep existing tests working."""
     return test_container
+
+
+@pytest.fixture(autouse=True)
+def manage_vcr_cassettes(request: pytest.FixtureRequest) -> None:
+    """Delete cassettes older than 7 days to force re-recording."""
+    # VCR cassettes with pytest-recording are stored in tests/cassettes/test_module/test_name.yaml
+    vcr_marker = request.node.get_closest_marker("vcr")
+    if not vcr_marker:
+        return
+
+    module_name = request.node.fspath.purebasename
+    test_name = request.node.name
+    cassette_path = Path("tests/cassettes") / module_name / f"{test_name}.yaml"
+
+    if cassette_path.exists():
+        mtime = os.path.getmtime(cassette_path)
+        if (time.time() - mtime) > (7 * 24 * 60 * 60):  # 7 days
+            os.remove(cassette_path)

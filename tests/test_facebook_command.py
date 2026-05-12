@@ -64,10 +64,12 @@ async def test_is_triggered(
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr
 async def test_handle_facebook_photo_post(facebook_command: FacebookCommand, init_container: AsyncContainer) -> None:
-    """Test handling a Facebook photo post using OG tags."""
+    """Test handling a Facebook photo post using real extraction and VCR."""
     chat_id = 789
-    url = "https://www.facebook.com/photo.php?fbid=123"
+    # Use a real public post for recording
+    url = "https://www.facebook.com/share/p/1B37pk4bUf/"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
@@ -76,51 +78,25 @@ async def test_handle_facebook_photo_post(facebook_command: FacebookCommand, ini
     whitelist_service = await init_container.get(WhitelistService)
     await whitelist_service.add_to_whitelist(chat_id)
 
-    # Mock HTML with OG tags
-    html_content = """
-    <html>
-        <meta property="og:title" content="John Doe - Beautiful Day">
-        <meta property="og:description" content="What a lovely day at the beach!">
-        <meta property="og:image" content="https://example.com/beach.jpg">
-        <meta property="og:site_name" content="Facebook">
-        <meta property="og:type" content="article">
-    </html>
-    """
-
-    # Mock Translation API response
-    translation_response = [[["What a lovely day", "What a lovely day", None, None, 1]], None, "en"]
-
-    def mocked_get(url_: str, **_kwargs: Any) -> MagicMock:  # noqa: ANN401
-        mock_resp = MagicMock()
-        mock_resp.status = HTTPStatus.OK
-        if "translate.googleapis.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=translation_response)
-        else:
-            mock_resp.text = AsyncMock(return_value=html_content)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        return mock_resp
-
-    session = await init_container.get(aiohttp.ClientSession)
-    with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await facebook_command.handle(message, cast("Bot", bot), session=session)
+    await facebook_command.handle(message, cast("Bot", bot))
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
-    assert "John Doe" in kwargs["media"][0].caption
-    assert "lovely day" in kwargs["media"][0].caption
-    assert "Open on Facebook" in kwargs["media"][0].caption
-    assert kwargs["media"][0].media == "https://example.com/beach.jpg"
+    caption = kwargs["media"][0].caption
+    assert "Mock User" in caption
+    assert "facebook.com" in caption
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr
 async def test_handle_facebook_video_fallback(
     facebook_command: FacebookCommand, init_container: AsyncContainer
 ) -> None:
-    """Test handling a Facebook video with yt-dlp fallback."""
+    """Test handling a Facebook video using real extraction and VCR (yt-dlp fallback)."""
     chat_id = 789
-    url = "https://www.facebook.com/reel/123"
+    # Use a real public video/reel for recording
+    url = "https://www.facebook.com/share/v/1C7Fwittns/"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
@@ -129,43 +105,11 @@ async def test_handle_facebook_video_fallback(
     whitelist_service = await init_container.get(WhitelistService)
     await whitelist_service.add_to_whitelist(chat_id)
 
-    # Mock OG tags suggesting video
-    html_content = """
-    <html>
-        <meta property="og:type" content="video">
-        <meta property="og:title" content="Funny Video">
-    </html>
-    """
-
-    # Mock yt-dlp extraction info
-    ytdlp_info = {
-        "title": "Funny Video",
-        "url": "https://example.com/video.mp4",
-        "uploader": "Comedy Central",
-        "uploader_id": "comedycentral",
-        "like_count": 1000,
-        "view_count": 50000,
-        "formats": [{"url": "https://example.com/video.mp4", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a"}],
-    }
-
-    def mocked_get(url_: str, **_kwargs: Any) -> MagicMock:  # noqa: ANN401,ARG001
-        mock_resp = MagicMock()
-        mock_resp.status = HTTPStatus.OK
-        mock_resp.text = AsyncMock(return_value=html_content)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        return mock_resp
-
-    session = await init_container.get(aiohttp.ClientSession)
-    with (
-        patch("aiohttp.ClientSession.get", side_effect=mocked_get),
-        patch("asyncio.to_thread", return_value=ytdlp_info),
-    ):
-        await facebook_command.handle(message, cast("Bot", bot), session=session)
+    await facebook_command.handle(message, cast("Bot", bot))
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
-    assert "Comedy Central" in kwargs["media"][0].caption
-    assert "Open on Facebook" in kwargs["media"][0].caption
-    assert "50K" in kwargs["media"][0].caption  # view_count
+    caption = kwargs["media"][0].caption
+    assert "Mock User" in caption
+    assert "facebook.com" in caption

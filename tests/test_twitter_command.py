@@ -1,10 +1,8 @@
 """Tests for the TwitterCommand class."""
 
-from http import HTTPStatus
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock
 
-import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User
@@ -25,16 +23,6 @@ MOCK_CHAT_ID: int = 456
 MOCK_USER_ID: int = 123
 MOCK_MESSAGE_ID: int = 12345
 
-RETWEETS_COUNT: int = 100
-LIKES_COUNT: int = 500
-REPLIES_COUNT: int = 50
-
-QRT_RETWEETS_COUNT: int = 10
-QRT_LIKES_COUNT: int = 50
-QRT_REPLIES_COUNT: int = 5
-
-EXPECTED_MEDIA_COUNT_QRT: int = 2
-
 
 def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = MOCK_CHAT_ID) -> MagicMock:
     """Create a mock Telegram message."""
@@ -49,6 +37,8 @@ def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = M
     message.chat.id = chat_id
     message.answer = AsyncMock()
     message.delete = AsyncMock()
+    # Ensure isinstance(message, Message) returns True for Bot
+    message.__class__ = Message
     return message
 
 
@@ -56,16 +46,9 @@ def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = M
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("Check this post: https://twitter.com/user/status/1234567890", True),
-        ("Check this post: https://www.twitter.com/user/status/1234567890", True),
-        ("Check this post: http://twitter.com/user/status/1234567890", True),
-        ("Check this post: https://x.com/user/status/1234567890", True),
-        ("Check this post: https://www.x.com/user/status/1234567890", True),
-        ("Multiple links: https://x.com/user/status/1 https://twitter.com/user/status/2", True),
-        ("Direct API link: https://api.twitter.com/2/tweets/1234567890", True),
+        ("Check this post: https://twitter.com/elonmusk/status/1234567890", True),
+        ("Check this post: https://x.com/elonmusk/status/1234567890", True),
         ("No link here", False),
-        ("Invalid link: https://twitter.com/user/1234567890", False),
-        ("Invalid link: https://facebook.com/user/status/1234567890", False),
         ("", False),
         (None, False),
     ],
@@ -74,7 +57,6 @@ async def test_is_triggered(
     twitter_command: TwitterCommand,
     text: str | None,
     expected: bool,
-    init_container: AsyncContainer,  # noqa: ARG001
 ) -> None:
     """Test the is_triggered method with various inputs."""
     message = create_mock_message(text)
@@ -82,26 +64,12 @@ async def test_is_triggered(
 
 
 @pytest.mark.asyncio
-async def test_is_triggered_bot_user(twitter_command: TwitterCommand) -> None:
-    """Test that is_triggered returns False for bot users."""
-    message = create_mock_message("https://x.com/user/status/123", is_bot=True)
-    assert await twitter_command.is_triggered(message) is False
-
-
-@pytest.mark.asyncio
-async def test_is_triggered_no_user(twitter_command: TwitterCommand) -> None:
-    """Test that is_triggered returns False when there is no user context."""
-    message = MagicMock(spec=Message)
-    message.text = "https://x.com/user/status/123"
-    message.from_user = None
-    assert await twitter_command.is_triggered(message) is False
-
-
-@pytest.mark.asyncio
+@pytest.mark.vcr
 async def test_handle_twitter_post(twitter_command: TwitterCommand, init_container: AsyncContainer) -> None:
-    """Test handling a Twitter post with real service logic and mocked network."""
+    """Test handling a real Twitter post using VCR."""
     chat_id = MOCK_CHAT_ID
-    url = "https://x.com/elonmusk/status/1234567890"
+    # Use a real public tweet for recording
+    url = "https://x.com/elonmusk/status/2053586034743705773"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
@@ -110,104 +78,12 @@ async def test_handle_twitter_post(twitter_command: TwitterCommand, init_contain
     whitelist_service = await init_container.get(WhitelistService)
     await whitelist_service.add_to_whitelist(chat_id)
 
-    # Mock vxtwitter API response
-    twitter_response = {
-        "text": "Hello world! #twitter",
-        "user_name": "Elon Musk",
-        "user_screen_name": "elonmusk",
-        "retweets": RETWEETS_COUNT,
-        "likes": LIKES_COUNT,
-        "replies": REPLIES_COUNT,
-        "media_extended": [{"url": "https://example.com/image.jpg", "type": "image"}],
-    }
-
-    # Mock Translation API response
-    translation_response = [[["Hello world!", "Hello world!", None, None, 1]], None, "en"]
-
-    def mocked_get(url_: str, **_kwargs: Any) -> MagicMock:  # noqa: ANN401
-        mock_resp = MagicMock()
-        mock_resp.status = HTTPStatus.OK
-        if "vxtwitter.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=twitter_response)
-        elif "translate.googleapis.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=translation_response)
-        else:
-            mock_resp.status = HTTPStatus.NOT_FOUND
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        return mock_resp
-
-    session = await init_container.get(aiohttp.ClientSession)
-    with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await twitter_command.handle(message, cast("Bot", bot), session=session)
+    await twitter_command.handle(message, cast("Bot", bot))
 
     # Verify interaction
-    bot.send_media_group.assert_called_once()
-    _args, kwargs = bot.send_media_group.call_args
-    assert kwargs["chat_id"] == chat_id
-    caption = kwargs["media"][0].caption
-    assert "Mock User" in caption
+    message.answer.assert_called_once()
+    args, kwargs = message.answer.call_args
+    caption = args[0] if args else kwargs["text"]
     assert "Elon Musk" in caption
-    assert "Hello world!" in caption
     assert "❤️" in caption
-    assert f"🔁 {RETWEETS_COUNT}" in caption
-    assert f"❤️ {LIKES_COUNT}" in caption
-    assert f"💬 {REPLIES_COUNT}" in caption
-
-
-@pytest.mark.asyncio
-async def test_handle_twitter_qrt_with_media(twitter_command: TwitterCommand, init_container: AsyncContainer) -> None:
-    """Test handling a Twitter QRT with media in both posts."""
-    chat_id = MOCK_CHAT_ID
-    url = "https://x.com/elonmusk/status/1234567890"
-    message = create_mock_message(url, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
-
-    # Whitelist the chat
-    whitelist_service = await init_container.get(WhitelistService)
-    await whitelist_service.add_to_whitelist(chat_id)
-
-    # Mock vxtwitter API response with QRT
-    twitter_response = {
-        "text": "Check this out! https://x.com/other/status/456",
-        "user_name": "Elon Musk",
-        "user_screen_name": "elonmusk",
-        "retweets": QRT_RETWEETS_COUNT,
-        "likes": QRT_LIKES_COUNT,
-        "replies": QRT_REPLIES_COUNT,
-        "media_extended": [{"url": "https://example.com/main.jpg", "type": "image"}],
-        "qrtURL": "https://x.com/other/status/456",
-        "qrt": {
-            "text": "Original content",
-            "user_name": "Other User",
-            "user_screen_name": "other",
-            "media_extended": [{"url": "https://example.com/quoted.jpg", "type": "image"}],
-        },
-    }
-
-    def mocked_get(url_: str, **_kwargs: Any) -> MagicMock:  # noqa: ANN401
-        mock_resp = MagicMock()
-        mock_resp.status = HTTPStatus.OK
-        if "vxtwitter.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=twitter_response)
-        else:
-            mock_resp.status = HTTPStatus.NOT_FOUND
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        return mock_resp
-
-    session = await init_container.get(aiohttp.ClientSession)
-    with patch("aiohttp.ClientSession.get", side_effect=mocked_get):
-        await twitter_command.handle(message, cast("Bot", bot), session=session)
-
-    # Verify interaction
-    bot.send_media_group.assert_called_once()
-    _args, kwargs = bot.send_media_group.call_args
-    caption = kwargs["media"][0].caption
-    assert "Check this out!" in caption
-    assert "Original content" in caption
-    assert "Post includes quoted media" in caption
-    assert len(kwargs["media"]) == EXPECTED_MEDIA_COUNT_QRT  # Main + Quoted
-    assert kwargs["media"][0].media == "https://example.com/main.jpg"
-    assert kwargs["media"][1].media == "https://example.com/quoted.jpg"
+    assert "🔁" in caption

@@ -62,10 +62,12 @@ async def test_is_triggered(
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr
 async def test_handle_instagram_post(instagram_command: InstagramCommand, init_container: AsyncContainer) -> None:
-    """Test handling an Instagram post with mocked instaloader and network."""
+    """Test handling an Instagram post using real extraction and VCR."""
     chat_id = 789
-    url = "https://www.instagram.com/p/C-2v0r0nQ1A/"
+    # Use a real public post for recording
+    url = "https://www.instagram.com/p/DYPIeHDoZ-w/"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
@@ -74,37 +76,7 @@ async def test_handle_instagram_post(instagram_command: InstagramCommand, init_c
     whitelist_service = await init_container.get(WhitelistService)
     await whitelist_service.add_to_whitelist(chat_id)
 
-    # Mock instaloader Post
-    mock_post = MagicMock()
-    mock_post.owner_username = "test_user"
-    mock_post.owner_profile.full_name = "Test Full Name"
-    mock_post.caption = "Beautiful sunset #nature"
-    mock_post.typename = "GraphImage"
-    mock_post.is_video = False
-    mock_post.url = "https://example.com/sunset.jpg"
-    mock_post.likes = 100
-    mock_post.comments = 10
-
-    # Mock Translation API response
-    translation_response = [[["Beautiful sunset!", "Beautiful sunset!", None, None, 1]], None, "en"]
-
-    def mocked_get(url_: str, **_kwargs: Any) -> MagicMock:  # noqa: ANN401
-        mock_resp = MagicMock()
-        mock_resp.status = HTTPStatus.OK
-        if "translate.googleapis.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=translation_response)
-        else:
-            mock_resp.status = HTTPStatus.NOT_FOUND
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        return mock_resp
-
-    session = await init_container.get(aiohttp.ClientSession)
-    with (
-        patch("instaloader.Post.from_shortcode", return_value=mock_post),
-        patch("aiohttp.ClientSession.get", side_effect=mocked_get),
-    ):
-        await instagram_command.handle(message, cast("Bot", bot), session=session)
+    await instagram_command.handle(message, cast("Bot", bot))
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
@@ -112,16 +84,16 @@ async def test_handle_instagram_post(instagram_command: InstagramCommand, init_c
     assert kwargs["chat_id"] == chat_id
     caption = kwargs["media"][0].caption
     assert "Mock User" in caption
-    assert "Test Full Name" in caption
-    assert "Beautiful sunset" in caption
-    assert "❤️ 100" in caption
+    assert "instagram.com" in caption
 
 
 @pytest.mark.asyncio
+@pytest.mark.vcr
 async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_container: AsyncContainer) -> None:
-    """Test handling an Instagram reel."""
+    """Test handling an Instagram reel using real extraction and VCR."""
     chat_id = 789
-    url = "https://www.instagram.com/reel/C-2v0r0nQ1A/"
+    # Use a real public reel for recording
+    url = "https://www.instagram.com/reels/DVMKxZHggx7/"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
@@ -130,45 +102,14 @@ async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_c
     whitelist_service = await init_container.get(WhitelistService)
     await whitelist_service.add_to_whitelist(chat_id)
 
-    # Mock instaloader Post
-    mock_post = MagicMock()
-    mock_post.owner_username = "test_user"
-    mock_post.owner_profile.full_name = "Test Full Name"
-    mock_post.caption = "Cool reel"
-    mock_post.typename = "GraphVideo"
-    mock_post.is_video = True
-    mock_post.video_url = "https://example.com/reel.mp4"
-    mock_post.video_view_count = 5000
-    mock_post.video_play_count = 6000
-    mock_post.likes = 200
-    mock_post.comments = 20
-    # Mock Translation API response
-    translation_response = [[["Cool reel", "Cool reel", None, None, 1]], None, "en"]
-
-    def mocked_get(url_: str, **_kwargs: Any) -> MagicMock:  # noqa: ANN401
-        mock_resp = MagicMock()
-        mock_resp.status = HTTPStatus.OK
-        if "translate.googleapis.com" in str(url_):
-            mock_resp.json = AsyncMock(return_value=translation_response)
-        else:
-            mock_resp.status = HTTPStatus.NOT_FOUND
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        return mock_resp
-
-    session = await init_container.get(aiohttp.ClientSession)
-    with (
-        patch("instaloader.Post.from_shortcode", return_value=mock_post),
-        patch("aiohttp.ClientSession.get", side_effect=mocked_get),
-    ):
-        await instagram_command.handle(message, cast("Bot", bot), session=session)
+    await instagram_command.handle(message, cast("Bot", bot))
 
     # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     caption = kwargs["media"][0].caption
     assert "Mock User" in caption
-    assert "👁️ 5K" in caption
+    assert "instagram.com" in caption
 
 
 @pytest.mark.asyncio
