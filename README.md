@@ -9,110 +9,97 @@ translations, and seamless media integrations.
 
 ## 🚀 Project Status: Alpha
 
-HovorunV2 is currently in its **Alpha** stage. The core features are actively being built and refined.
+HovorunV2 is currently in its **Alpha** stage.
 
-> **Current Hosting Model:** At this stage, HovorunV2 is **self-hosted only**. To use the bot, you must run your own
-> instance using Docker. A public server may be available in the future.
+### How to use Hovorun:
+
+1. **Public Instance**: You can add the bot to your group and use `/allow_chat` to join our **waiting list**. Bot owners
+   will review and approve requests based on current capacity.
+2. **Self-Hosting**: If you don't want to wait or prefer full control over your data, you can host your own instance
+   using Docker.
 
 ---
 
 ## ✨ Features for Users
 
-* **🐦 Twitter (X) Integration**: Automatically detects links and provides rich previews (full text, media, quoted
-  tweets) and engagement metrics.
-* **🎬 TikTok Integration**: Seamlessly share TikTok videos and image slideshows natively in chat.
-* **📸 Instagram Reels & 📺 YouTube Shorts**: Automatic extraction and native video previews.
-* **🧵 Threads Integration**: Rich previews for Threads posts.
-* **🌍 Dynamic Translation**: Automatically translates shared foreign-language content into the chat's target language (
-  default: Ukrainian).
-* **🛡️ Chat Whitelisting**: Secure your instance. Admins can restrict bot access to allowed groups only.
-* **⚙️ Granular Control**: Enable or disable specific features (e.g., tiktok, twitter) on a per-chat basis.
+### 📼 Universal Media Extraction
+
+Stop clicking links! Hovorun automatically detects and expands content from major platforms:
+
+* **Twitter (X)**: Rich previews with full text, media carousels, quoted posts, and engagement metrics.
+* **Instagram**: Native support for Reels and **mixed-media carousels** (Photos + Videos).
+* **TikTok**: High-quality video previews and image slideshows.
+* **Threads, Bluesky, Facebook**: Clean, descriptive previews for posts.
+* **YouTube**: Seamless YouTube Shorts expansion.
+
+### 🌍 Dynamic Translation
+
+Keep the conversation flowing regardless of the language. Hovorun automatically translates foreign-language content into
+the chat's target language (default: Ukrainian).
+
+* **Ignore List**: Configure specific languages to be left as-is.
+
+### ⚙️ Interactive Configuration
+
+* **`/config_cmds`**: A visual grid to toggle features (TikTok, Twitter, etc.) on or off for your chat.
+* **`/config_lang`**: Easily set your target language and manage the ignore list.
+* **⌛ Self-Cleaning UI**: Configuration windows automatically self-destruct after 30 seconds of inactivity to keep your
+  chat history clean.
+
+### 🚀 Auto-Update Notifications
+
+Stay in the loop! Approved groups automatically receive "What's New" alerts whenever we deploy new features.
 
 ---
 
 ## 🛠️ Getting Started (Self-Hosting)
 
-Deploying your own instance of HovorunV2 is fully automated using `Make` and `Docker`.
+If you choose to self-host, deployment is fully automated via `Make` and `Docker`.
 
 ### Prerequisites
 
-* `docker` (with `docker compose` included)
+* `docker` & `docker compose`
 * `make`
 
 ### Quick Start
 
-1. **Setup Environment**:
-   ```bash
-   make setup
-   ```
-
-*This command prepares the data directory, builds Docker images, and generates an `example.env` file.*
-
-2. **Configure Secrets**:
-   Rename the generated file (or create a `.env` file) and provide your credentials:
+1. **Prepare**: `make setup` (initializes repo and builds optimized images).
+2. **Configure**: Edit the `.env` file created during setup:
    ```env
-   BOT_TOKEN=your_telegram_bot_token_here
-   ADMIN_IDS=[123,456]
-   OPENROUTER_API_KEY=your_api_key
+   BOT_TOKEN=...
+   ADMIN_IDS=[123, 456]    # Global Admins
+   OWNERS=[123]            # Owners (for approval requests)
+   OPENROUTER_API_KEY=...  # For smart features
    ```
-
-3. **Launch the Bot**:
-   ```bash
-   make deploy
-   ```
-
-### Available Chat Commands
-
-* `/allow_chat` - Whitelist the current chat (Admin only).
-* `/set_lang` - Configure target and ignored languages (Admin only).
-* `/enable_cmd` / `/disable_cmd` - Toggle specific features for the chat.
-* `/debug` - Show instance debug information.
+3. **Launch**: `make run`
 
 ---
 
-## 💻 For Developers: Architecture & Codebase
+## 💻 For Developers
 
-The second half of this project is built with strict engineering standards in mind. HovorunV2 relies on a clean,
-functional-based architecture.
+### Tech Stack
 
-### Tech Stack & Dependencies
+* **Runtime**: Python 3.14+ (latest features)
+* **Framework**: [aiogram 3.x](https://github.com/aiogram/aiogram)
+* **DI Container**: [dishka](https://github.com/reagento/dishka) for constructor injection
+* **Persistence**: SQLAlchemy 2.0 (Async) + SQLite
+* **Caching**: Valkey (Async) for session state and TTLs
+* **Automation**: [DrissionPage](https://github.com/g1879/DrissionPage) for advanced scraping
 
-* **Core**: Python 3.14+, Aiogram 3.x
-* **Infrastructure**: PostgreSQL (SQLAlchemy 2.0 + Alembic), Valkey (Async Caching).
-* **Development & Tooling**:
-    * `uv` (Strictly used for package and dependency management)
-    * `Ruff` (Linting and formatting)
-    * `pytest` (Testing framework)
+### Key Principles
 
-### Architectural Principles
+* **Strict Typing**: Zero `ty:ignore` policy.
+* **Domain-Driven**: Business logic is isolated from infrastructure.
 
-* **Functional Approach**: pure business logic separated from side effects.
-* **Strict Typing**: All code must be strictly typed.
-* **Dependency Injection**: Centralized DI container for injecting repositories and external clients.
-* **Isolation**: Clear separation between Domain (entities), Application (use cases/services), Infrastructure (DB,
-  Valkey), and Interface (Telegram handlers).
+### Development Commands
 
-### Development CLI Commands
-
-* `make run-dev`: Starts Valkey in Docker and runs the Bot locally (ideal for fast iterations).
-* `make stop`: Stops all running Docker services.
-* `make update`: Pulls the latest changes and rebuilds images.
+* `make run-dev`: Local bot execution with Valkey in Docker.
+* `uv run ty check src`: Strict type verification.
+* `uv run ruff check .`: Linting and formatting.
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome, provided they adhere to the project's strict engineering culture.
-
-### Contribution Rules
-
-1. **Tooling**: You must use `uv` for dependency management. Do not use standard `pip` for syncing.
-2. **Code Quality**: All code must pass strict type checking (`uv run ty check src`) and linting (
-   `uv run ruff check .`).
-3. **Testing**: Test-Driven Development (TDD) is highly encouraged. All new features must be covered by `pytest`. Run
-   `PYTHONPATH=src uv run pytest` before committing.
-
-### 🤖 AI Assistance Policy
+## 🤝 AI Assistance Policy
 
 Using AI tools (Copilot, ChatGPT, Claude, Cursor, etc.) for writing code is allowed. However:
 **The commit author takes full and absolute responsibility for the code.** You must review, understand, and test every
@@ -123,6 +110,6 @@ pipelines. Treat AI as an assistant, but *you* are the engineer.
 
 ## 📄 License
 
-HovorunV2 is released under the **BSD 3-Clause License**. See the `LICENSE` file for details.
+Released under the **BSD 3-Clause License**. See `LICENSE` for details.
 
 Developed with ❤️ by TwilightSparkle42
