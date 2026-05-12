@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from aiogram import Bot, Router
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -125,6 +126,11 @@ class AllowBotCommand(BaseCommand):
                     text=request_text,
                     reply_markup=builder.as_markup(),
                     parse_mode="HTML",
+                )
+            except TelegramForbiddenError:
+                logger.warning(
+                    "Cannot send whitelist request to owner %d: Bot is blocked or conversation not initiated.",
+                    owner_id,
                 )
             except Exception:
                 logger.exception("Failed to send whitelist request to owner %d", owner_id)
