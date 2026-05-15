@@ -120,7 +120,6 @@ class CacheService:
                     except Exception:
                         # Not encrypted or encrypted with different key
                         logger.warning("Key %s is not encrypted with current master key.", key)
-                        continue
 
                     # 2. Try to see if it's unencrypted JSON
                     try:
