@@ -35,6 +35,7 @@ dependencies = [
     "cryptography",
     "pycountry",
     "pycountry-convert",
+    "openai",
 ]
 
 [project.urls]

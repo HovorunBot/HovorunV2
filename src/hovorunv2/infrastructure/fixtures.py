@@ -22,6 +22,7 @@ INITIAL_COMMANDS = [
     {"name": CommandName.THREADS, "description": "Process Threads links"},
     {"name": CommandName.BLUESKY, "description": "Process Bluesky links"},
     {"name": CommandName.YOUTUBE, "description": "Process YouTube links"},
+    {"name": CommandName.VISION, "description": "AI Image Recognition"},
 ]
 
 

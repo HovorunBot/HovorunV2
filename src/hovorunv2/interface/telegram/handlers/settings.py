@@ -8,7 +8,11 @@ from aiogram import Bot, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from hovorunv2.application.data.constants import TOGGLEABLE_COMMANDS, CommandName
+from hovorunv2.application.data.constants import (
+    HIDDEN_TOGGLEABLE_COMMANDS,
+    TOGGLEABLE_COMMANDS,
+    CommandName,
+)
 from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.cleanup_service import CleanupService
@@ -207,9 +211,15 @@ class SettingsCommand(BaseCommand):
             return
 
         chat_id = msg.chat.id
+        user_id = query.from_user.id
         builder = InlineKeyboardBuilder()
 
-        for cmd_name in TOGGLEABLE_COMMANDS:
+        # Build list of commands to show
+        commands_to_show = list(TOGGLEABLE_COMMANDS)
+        if await self._access_service.is_admin(user_id):
+            commands_to_show.extend(HIDDEN_TOGGLEABLE_COMMANDS)
+
+        for cmd_name in commands_to_show:
             is_enabled = await self._command_service.is_command_allowed(chat_id, cmd_name)
             prefix = "✅ " if is_enabled else "❌ "
             builder.row(

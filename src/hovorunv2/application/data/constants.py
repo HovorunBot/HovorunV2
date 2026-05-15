@@ -19,6 +19,7 @@ class CommandName(StrEnum):
     BLUESKY = "bluesky"
     FACEBOOK = "facebook"
     YOUTUBE = "youtube"
+    VISION = "vision"
 
 
 class ChatStatus(StrEnum):
@@ -51,3 +52,6 @@ TOGGLEABLE_COMMANDS: Final[tuple[CommandName, ...]] = (
     CommandName.FACEBOOK,
     CommandName.YOUTUBE,
 )
+
+# Commands that are hidden from regular settings and not auto-enabled.
+HIDDEN_TOGGLEABLE_COMMANDS: Final[tuple[CommandName, ...]] = (CommandName.VISION,)

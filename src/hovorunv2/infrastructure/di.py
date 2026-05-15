@@ -5,6 +5,7 @@ from typing import NewType
 
 import aiohttp
 from dishka import Provider, Scope, provide
+from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from hovorunv2.application.clients.bluesky import BlueskyService
@@ -30,6 +31,7 @@ from hovorunv2.application.services.translation_providers import (
     GoogleTranslationService,
 )
 from hovorunv2.application.services.translation_service import TranslationService
+from hovorunv2.application.services.vision_service import VisionService
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
@@ -46,6 +48,7 @@ from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
 from hovorunv2.interface.telegram.handlers.tiktok import TikTokCommand
 from hovorunv2.interface.telegram.handlers.twitter import TwitterCommand
+from hovorunv2.interface.telegram.handlers.vision import VisionCommand
 from hovorunv2.interface.telegram.handlers.youtube import YoutubeShortsCommand
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
@@ -94,6 +97,14 @@ class InfrastructureProvider(Provider):
         yield service
         await service.close()
 
+    @provide(scope=Scope.APP)
+    def get_openai_client(self, config: Settings) -> AsyncOpenAI:
+        """Provide AsyncOpenAI client configured for OpenRouter."""
+        return AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=config.openrouter_api_key,
+        )
+
 
 class AppProvider(Provider):
     """Provider for application business logic services."""
@@ -120,6 +131,7 @@ class AppProvider(Provider):
     instagram_service = provide(InstagramService)
     facebook_service = provide(FacebookService)
     bluesky_service = provide(BlueskyService)
+    vision_service = provide(VisionService)
 
     # Commands
     help_command = provide(HelpCommand)
@@ -134,6 +146,7 @@ class AppProvider(Provider):
     youtube_command = provide(YoutubeShortsCommand)
     debug_command = provide(DebugCommand)
     access_command = provide(AccessCommand)
+    vision_command = provide(VisionCommand)
 
     @provide(scope=Scope.APP)
     def get_instagram_command(
@@ -201,6 +214,7 @@ class AppProvider(Provider):
         help_command: HelpCommand,
         settings_command: SettingsCommand,
         debug_command: DebugCommand,
+        vision_command: VisionCommand,
     ) -> UtilityCommands:
         """Provide list of utility/infrastructure commands."""
         return UtilityCommands(
@@ -208,6 +222,7 @@ class AppProvider(Provider):
                 help_command,
                 settings_command,
                 debug_command,
+                vision_command,
             ]
         )
 
