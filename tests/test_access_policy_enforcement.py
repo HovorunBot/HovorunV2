@@ -7,6 +7,7 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.whitelist_service import WhitelistService
@@ -51,7 +52,7 @@ async def test_youtube_disabled_for_regular_user(init_container: AsyncContainer)
 
     # Verify youtube is disabled
     allowed = await command_service.get_allowed_commands(chat_id, platform)
-    assert "youtube" not in allowed
+    assert CommandName.YOUTUBE not in allowed
 
     # 3. Check access using the policy
     bot = MagicMock(spec=Bot)
@@ -86,7 +87,7 @@ async def test_youtube_admin_blocked_if_disabled(init_container: AsyncContainer)
 
     # 2. Whitelist chat and DISABLE youtube
     await whitelist_service.add_to_whitelist(chat_id, platform)
-    await command_service.disable_command(chat_id, "youtube", platform)
+    await command_service.disable_command(chat_id, CommandName.YOUTUBE, platform)
 
     # 3. Check access
     bot = MagicMock(spec=Bot)
@@ -127,7 +128,7 @@ async def test_youtube_auto_enable_on_whitelist(init_container: AsyncContainer) 
 
     # 3. Check if YouTube is enabled
     allowed = await command_service.get_allowed_commands(chat_id, platform)
-    assert "youtube" in allowed, "YouTube should be auto-enabled by AllowBotCommand"
+    assert CommandName.YOUTUBE in allowed, "YouTube should be auto-enabled by AllowBotCommand"
 
 
 @pytest.mark.asyncio

@@ -24,6 +24,10 @@ from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
+from hovorunv2.application.services.translation_providers import (
+    BaseTranslationService,
+    GoogleTranslationService,
+)
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.browser import BrowserService
@@ -32,12 +36,12 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.config import settings as app_settings
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.bluesky import BlueskyCommand
-from hovorunv2.interface.telegram.handlers.commands_config import ConfigCommandsCommand
+from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 from hovorunv2.interface.telegram.handlers.facebook import FacebookCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.instagram import InstagramCommand
-from hovorunv2.interface.telegram.handlers.set_language import SetLanguageCommand
+from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
 from hovorunv2.interface.telegram.handlers.tiktok import TikTokCommand
 from hovorunv2.interface.telegram.handlers.twitter import TwitterCommand
@@ -106,6 +110,7 @@ class AppProvider(Provider):
     access_service = provide(AccessService)
     cleanup_service = provide(CleanupService)
     language_service = provide(LanguageService)
+    translation_provider = provide(GoogleTranslationService, provides=BaseTranslationService)
     translation_service = provide(TranslationService)
     media_downloader = provide(MediaDownloader)
     media_extractor = provide(MediaExtractor)
@@ -118,6 +123,8 @@ class AppProvider(Provider):
 
     # Commands
     help_command = provide(HelpCommand)
+    settings_command = provide(SettingsCommand)
+    bot_join_handler = provide(BotJoinHandler)
     bluesky_command = provide(BlueskyCommand)
     facebook_command = provide(FacebookCommand)
     instagram_command = provide(InstagramCommand)
@@ -125,9 +132,7 @@ class AppProvider(Provider):
     tiktok_command = provide(TikTokCommand)
     twitter_command = provide(TwitterCommand)
     youtube_command = provide(YoutubeShortsCommand)
-    set_language_command = provide(SetLanguageCommand)
     debug_command = provide(DebugCommand)
-    config_cmds_command = provide(ConfigCommandsCommand)
 
     @provide(scope=Scope.APP)
     def get_instagram_command(
@@ -194,17 +199,15 @@ class AppProvider(Provider):
     def get_utility_commands(
         self,
         help_command: HelpCommand,
-        set_language_command: SetLanguageCommand,
+        settings_command: SettingsCommand,
         debug_command: DebugCommand,
-        config_cmds_command: ConfigCommandsCommand,
     ) -> UtilityCommands:
         """Provide list of utility/infrastructure commands."""
         return UtilityCommands(
             [
                 help_command,
-                set_language_command,
+                settings_command,
                 debug_command,
-                config_cmds_command,
             ]
         )
 

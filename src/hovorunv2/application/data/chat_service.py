@@ -53,3 +53,28 @@ class ChatService:
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
             return await repo.get_all_whitelisted(platform)
+
+    async def get_or_create_chat(self, chat_id: int, platform: str = "telegram") -> ChatDB:
+        """Fetch chat from database or create it if not exists."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemyChatRepository(session)
+            chat = await repo.get_by_id(chat_id, platform)
+            if not chat:
+                chat = ChatDB(chat_id=chat_id, platform=platform)
+                await repo.save(chat)
+                await session.commit()
+            return chat
+
+    async def update_chat(self, chat_id: int, platform: str = "telegram", **kwargs: str | bool | None) -> None:
+        """Update arbitrary chat attributes."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemyChatRepository(session)
+            chat = await repo.get_by_id(chat_id, platform)
+            if not chat:
+                chat = ChatDB(chat_id=chat_id, platform=platform)
+
+            for key, value in kwargs.items():
+                setattr(chat, key, value)
+
+            await repo.save(chat)
+            await session.commit()

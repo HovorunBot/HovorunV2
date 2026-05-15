@@ -49,6 +49,30 @@ class CacheService:
         else:
             return value
 
+    async def delete(self, key: str) -> None:
+        """Delete a key from the cache."""
+        await self._cache.delete(key)
+
+    async def zadd(self, name: str, mapping: dict[str, float]) -> None:
+        """Add members to a sorted set."""
+        await self._cache.zadd(name, mapping)
+
+    async def zrangebyscore(self, name: str, min_score: float, max_score: float) -> list[str]:
+        """Return a range of members in a sorted set by their score."""
+        results = await self._cache.zrangebyscore(name, min_score, max_score)
+        return [r.decode("utf-8") if isinstance(r, bytes) else r for r in results]
+
+    async def zrem(self, name: str, *values: str) -> None:
+        """Remove members from a sorted set."""
+        await self._cache.zrem(name, *values)
+
+    async def zrange(self, name: str, start: int, end: int, *, withscores: bool = False) -> list[Any]:
+        """Return a range of members in a sorted set by their index."""
+        results = await self._cache.zrange(name, start, end, withscores=withscores)
+        if withscores:
+            return [(r[0].decode("utf-8") if isinstance(r[0], bytes) else r[0], r[1]) for r in results]
+        return [r.decode("utf-8") if isinstance(r, bytes) else r for r in results]
+
     async def close(self) -> None:
         """Close cache connection."""
         await self._cache.aclose()

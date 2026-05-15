@@ -5,6 +5,7 @@ from typing import Any
 from aiogram import Bot
 from aiogram.types import Message
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -19,7 +20,7 @@ class DebugCommand(BaseCommand):
     @property
     def name(self) -> str:
         """Command name."""
-        return "debug"
+        return CommandName.DEBUG
 
     @property
     def policy(self) -> CommandPolicy:

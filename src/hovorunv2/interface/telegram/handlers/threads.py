@@ -5,6 +5,7 @@ import re
 import aiohttp
 
 from hovorunv2.application.clients.threads import ThreadsService
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
@@ -17,6 +18,11 @@ logger = get_logger(__name__)
 
 class ThreadsCommand(RichMediaCommand):
     """Command for interacting with Threads and processing thread links."""
+
+    @property
+    def name(self) -> str:
+        """Command name."""
+        return CommandName.THREADS
 
     def __init__(
         self,

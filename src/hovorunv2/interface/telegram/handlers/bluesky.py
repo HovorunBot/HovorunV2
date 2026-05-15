@@ -5,6 +5,7 @@ import re
 import aiohttp
 
 from hovorunv2.application.clients.bluesky import BlueskyService
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
@@ -16,7 +17,12 @@ logger = get_logger(__name__)
 
 
 class BlueskyCommand(RichMediaCommand):
-    """Command for interacting with Bluesky and processing links."""
+    """Command for interacting with Bluesky and processing post links."""
+
+    @property
+    def name(self) -> str:
+        """Command name."""
+        return CommandName.BLUESKY
 
     def __init__(
         self,

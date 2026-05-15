@@ -6,15 +6,16 @@ from typing import Any, cast
 
 from aiogram import Bot, Router
 from aiogram.exceptions import TelegramForbiddenError
-from aiogram.types import InlineKeyboardButton, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger
-from hovorunv2.interface.telegram.callbacks import WhitelistCallback
+from hovorunv2.interface.telegram.callbacks import WhitelistAction, WhitelistCallback
 
 from .base import BaseCommand
 
@@ -42,7 +43,7 @@ class AllowBotCommand(BaseCommand):
     @property
     def name(self) -> str:
         """Command name."""
-        return "allow_chat"
+        return CommandName.ALLOW_CHAT
 
     @property
     def policy(self) -> CommandPolicy:
@@ -81,7 +82,7 @@ class AllowBotCommand(BaseCommand):
         await message.answer("✅ Bot is now allowed in this chat by administrator.")
         logger.info("Bot allowed in chat %d by admin %s", chat_id, message.from_user.id if message.from_user else "0")
 
-    async def _send_whitelist_request(self, message: Message, bot: Bot) -> None:
+    async def _send_whitelist_request(self, message: Message, bot: Bot, *, silent: bool = False) -> None:
         """Send whitelist request to bot owners."""
         chat = message.chat
         user = message.from_user
@@ -95,7 +96,8 @@ class AllowBotCommand(BaseCommand):
             return
 
         # Notify group
-        await message.answer("⏳ <i>Request sent to bot owners for approval.</i>", parse_mode="HTML")
+        if not silent:
+            await message.answer("⏳ <i>Request sent to bot owners for approval.</i>", parse_mode="HTML")
 
         # Build request message for owners
         request_text = (
@@ -111,10 +113,11 @@ class AllowBotCommand(BaseCommand):
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(
-                text="✅ Approve", callback_data=WhitelistCallback(chat_id=chat_id, action="approve").pack()
+                text="✅ Approve",
+                callback_data=WhitelistCallback(chat_id=chat_id, action=WhitelistAction.APPROVE).pack(),
             ),
             InlineKeyboardButton(
-                text="❌ Reject", callback_data=WhitelistCallback(chat_id=chat_id, action="reject").pack()
+                text="❌ Reject", callback_data=WhitelistCallback(chat_id=chat_id, action=WhitelistAction.REJECT).pack()
             ),
         )
 
@@ -136,16 +139,18 @@ class AllowBotCommand(BaseCommand):
                 logger.exception("Failed to send whitelist request to owner %d", owner_id)
 
     async def handle_callback(self, query: Any, callback_data: WhitelistCallback, bot: Bot) -> None:
-        """Process owner's decision from callback query."""
-        from aiogram.types import CallbackQuery  # noqa: PLC0415
-
+        """Process owner's decision or join request from callback query."""
         query = cast(CallbackQuery, query)
-
         chat_id = callback_data.chat_id
         action = callback_data.action
+
+        if action == WhitelistAction.REQUEST:
+            await self._handle_request_callback(query, bot)
+            return
+
         owner = query.from_user
 
-        if action == "approve":
+        if action == WhitelistAction.APPROVE:
             await self._whitelist_service.add_to_whitelist(chat_id)
             # Auto-allow commands
             for command in (c for c in self._commands if c.policy.auto_enable):
@@ -168,6 +173,30 @@ class AllowBotCommand(BaseCommand):
         new_text = f"{curr_text}\n\n<b>Status:</b> {status_text}" if curr_text else status_text
         await query.message.edit_text(text=new_text, parse_mode="HTML", reply_markup=None)
         await query.answer(f"Chat {action}ed.")
+
+    async def _handle_request_callback(self, query: CallbackQuery, bot: Bot) -> None:
+        """Handle request for whitelist from inline button."""
+        if not query.message or not isinstance(query.message, Message):
+            return
+
+        # Check if user is admin in the chat
+        chat_id = query.message.chat.id
+        user_id = query.from_user.id
+        member = await bot.get_chat_member(chat_id, user_id)
+        if member.status not in ("creator", "administrator") and not await self._access_service.is_admin(user_id):
+            await query.answer("❌ Only administrators can request approval.", show_alert=True)
+            return
+
+        # Send request to owners
+        await self._send_whitelist_request(query.message, bot, silent=True)
+
+        # Update message in group
+        await query.message.edit_text(
+            text="⏳ <b>Request sent to bot owners for approval.</b>",
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+        await query.answer("Request sent.")
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:  # noqa: ARG002
         """Register callback handlers with router."""

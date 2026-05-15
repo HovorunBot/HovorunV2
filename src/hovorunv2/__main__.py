@@ -3,22 +3,21 @@
 import asyncio
 
 from aiogram import Bot, Dispatcher
-from cryptography.fernet import Fernet
 from dishka import make_async_container
 from dishka.integrations.aiogram import setup_dishka
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.data.system_service import SystemDataService
 from hovorunv2.application.services.access_service import AccessService
+from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
-from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.infrastructure.logger import get_logger, setup_logging
 from hovorunv2.interface.telegram.bot import router, setup_handlers, setup_middlewares
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
+from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 
 logger = get_logger(__name__)
 
@@ -41,12 +40,18 @@ async def run_bot() -> None:
 
         # Setup router middlewares and handlers
         await setup_middlewares(container, message_service, access_service)
-
         # Resolve all registered commands and register them with the router
         commands = await container.get(list[BaseCommand])
-        setup_handlers(commands)
+        bot_join_handler = await container.get(BotJoinHandler)
+        setup_handlers(commands, bot_join_handler)
 
         bot = Bot(token=settings.bot_token)
+
+        # Start persistent cleanup loop
+        cleanup_service = await container.get(CleanupService)
+        await cleanup_service.start_cleanup_loop(bot)
+
+        # Start polling
 
         # Send update notifications if any
         notification_service = await container.get(NotificationService)

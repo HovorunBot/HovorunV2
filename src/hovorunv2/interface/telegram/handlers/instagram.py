@@ -10,6 +10,7 @@ from aiogram import Bot
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, Message
 
 from hovorunv2.application.clients.instagram import InstagramService
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
@@ -24,6 +25,11 @@ logger = get_logger(__name__)
 
 class InstagramCommand(RichMediaCommand):
     """Command for interacting with Instagram and processing links."""
+
+    @property
+    def name(self) -> str:
+        """Command name."""
+        return CommandName.INSTAGRAM
 
     # Selectors and JS as constants for maintainability and to fix line length issues
     WAIT_SELECTOR = "meta[property='og:image'], article, main"

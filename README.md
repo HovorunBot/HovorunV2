@@ -41,8 +41,7 @@ the chat's target language (default: Ukrainian).
 
 ### ⚙️ Interactive Configuration
 
-* **`/config_cmds`**: A visual grid to toggle features (TikTok, Twitter, etc.) on or off for your chat.
-* **`/config_lang`**: Easily set your target language and manage the ignore list.
+* **`/settings`**: A unified interactive menu to toggle features (TikTok, Twitter, etc.) and configure language settings for your chat.
 * **⌛ Self-Cleaning UI**: Configuration windows automatically self-destruct after 30 seconds of inactivity to keep your
   chat history clean.
 

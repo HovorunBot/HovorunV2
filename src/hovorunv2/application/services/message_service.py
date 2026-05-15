@@ -42,10 +42,7 @@ class MessageService:
 
             # Encrypt if possible
             fernet = await self._get_fernet_for_chat(chat_id)
-            if fernet:
-                payload = encrypt_payload(json_data, fernet)
-            else:
-                payload = json_data
+            payload = encrypt_payload(json_data, fernet) if fernet else json_data
 
             await self.cache.set(key, payload, expire=self.ttl)
         except Exception:
@@ -64,7 +61,7 @@ class MessageService:
             if fernet:
                 decrypted_data = decrypt_payload(data, fernet)
                 return types.Message.model_validate_json(decrypted_data)
-            
+
             # If encryption disabled, return as plain JSON
             return types.Message.model_validate_json(data)
         except Exception:
@@ -85,7 +82,11 @@ class MessageService:
                 chat.encryption_salt = salt_hex
                 logger.info("Generated new encryption salt for chat %d", chat_id)
 
-            return get_fernet_for_chat(self.settings.cache_encryption_key, chat.encryption_salt)
+            salt = chat.encryption_salt
+            if not salt:
+                return None
+
+            return get_fernet_for_chat(self.settings.cache_encryption_key, salt)
         except Exception:
             logger.exception("Failed to derive encryption key for chat %d", chat_id)
             return None

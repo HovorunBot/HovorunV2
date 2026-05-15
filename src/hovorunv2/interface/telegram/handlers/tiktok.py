@@ -5,6 +5,7 @@ import re
 import aiohttp
 
 from hovorunv2.application.clients.tiktok import TikTokService
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
@@ -17,6 +18,11 @@ logger = get_logger(__name__)
 
 class TikTokCommand(RichMediaCommand):
     """Command for interacting with TikTok and processing video links."""
+
+    @property
+    def name(self) -> str:
+        """Command name."""
+        return CommandName.TIKTOK
 
     def __init__(
         self,

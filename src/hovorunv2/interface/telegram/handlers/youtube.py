@@ -4,6 +4,7 @@ import re
 
 import aiohttp
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
@@ -30,7 +31,7 @@ class YoutubeShortsCommand(RichMediaCommand):
     @property
     def name(self) -> str:
         """Command name."""
-        return "youtube"
+        return CommandName.YOUTUBE
 
     @property
     def pattern(self) -> re.Pattern:

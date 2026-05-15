@@ -8,6 +8,7 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import settings
@@ -68,5 +69,5 @@ async def test_handle_authorized(whitelist_command: AllowBotCommand, init_contai
 
     # Check that AUTO_ALLOW commands are enabled
     command_service = await init_container.get(CommandService)
-    is_tiktok_allowed = await command_service.is_command_allowed(chat_id, "tiktok")
+    is_tiktok_allowed = await command_service.is_command_allowed(chat_id, CommandName.TIKTOK)
     assert is_tiktok_allowed is True

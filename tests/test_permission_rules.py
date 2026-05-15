@@ -8,6 +8,7 @@ from aiogram.enums import ChatType
 from aiogram.types import Chat, ChatMemberAdministrator, ChatMemberMember, Message, User
 from dishka import AsyncContainer
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.whitelist_service import WhitelistService
@@ -214,7 +215,7 @@ async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
     whitelist_service = await test_container.get(WhitelistService)
 
     policy = CommandPolicy(is_toggleable=True, requires_whitelist=True)
-    command_name = "tiktok"
+    command_name = CommandName.TIKTOK
 
     user_id = 999
     chat_id = 123

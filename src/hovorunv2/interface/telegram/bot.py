@@ -6,6 +6,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
+from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import (
     AccessMiddleware,
     MessageCacheMiddleware,
@@ -25,8 +26,11 @@ async def setup_middlewares(
     router.callback_query.middleware(AccessMiddleware(access_service))
 
 
-def setup_handlers(commands: list[BaseCommand]) -> None:
-    """Register all command handlers with the router."""
+def setup_handlers(commands: list[BaseCommand], bot_join_handler: BotJoinHandler | None = None) -> None:
+    """Register all command handlers and system events with the router."""
+    if bot_join_handler:
+        bot_join_handler.register(router)
+
     for command in commands:
         flags = {
             "command_name": command.name,

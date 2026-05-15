@@ -5,6 +5,7 @@ import re
 import aiohttp
 
 from hovorunv2.application.clients.facebook import FacebookService
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
@@ -16,7 +17,12 @@ logger = get_logger(__name__)
 
 
 class FacebookCommand(RichMediaCommand):
-    """Command for interacting with Facebook and processing links."""
+    """Command for interacting with Facebook and processing post links."""
+
+    @property
+    def name(self) -> str:
+        """Command name."""
+        return CommandName.FACEBOOK
 
     def __init__(
         self,

@@ -5,6 +5,7 @@ from typing import Any
 from aiogram import Bot
 from aiogram.types import Message
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.logger import get_logger
@@ -22,7 +23,7 @@ class HelpCommand(BaseCommand):
     @property
     def name(self) -> str:
         """Command name."""
-        return "help"
+        return CommandName.HELP
 
     @property
     def policy(self) -> CommandPolicy:
@@ -51,9 +52,8 @@ class HelpCommand(BaseCommand):
             "Bot only works in whitelisted chats. Group admins can request access:\n"
             "• /allow_chat — Request bot approval from owners.\n\n"
             "<b>⚙️ Configuration (Group Admins only)</b>\n"
-            "• /config_cmds — Interactive feature toggle.\n"
-            "• /config_lang — Interactive translation setup.\n"
-            "• /set_lang &lt;code&gt; [ignores] — Manual language setup.\n\n"
+            "• /settings — Interactive menu for Modules and Languages.\n"
+            "• <i>Configuration windows self-destruct after 30s of inactivity.</i>\n\n"
             "<b>🚀 Supported Platforms</b>\n"
             "Send links from: Twitter/X, Instagram, TikTok, Threads, Bluesky, Facebook, YouTube Shorts.\n\n"
             "<b>Project Links:</b>\n"

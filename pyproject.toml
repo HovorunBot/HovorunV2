@@ -27,13 +27,14 @@ dependencies = [
     "aiosqlite",
     "greenlet",
     "alembic",
-    "emoji-country-flag",
     "yt-dlp",
     "instaloader",
     "DrissionPage",
     "beautifulsoup4",
     "dishka",
     "cryptography",
+    "pycountry",
+    "pycountry-convert",
 ]
 
 [project.urls]

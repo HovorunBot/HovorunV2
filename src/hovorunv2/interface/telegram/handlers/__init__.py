@@ -2,11 +2,10 @@
 
 from . import (
     bluesky,
-    commands_config,
     debug,
     facebook,
     instagram,
-    set_language,
+    settings,
     threads,
     tiktok,
     twitter,
@@ -16,11 +15,10 @@ from . import (
 
 __all__ = [
     "bluesky",
-    "commands_config",
     "debug",
     "facebook",
     "instagram",
-    "set_language",
+    "settings",
     "threads",
     "tiktok",
     "twitter",

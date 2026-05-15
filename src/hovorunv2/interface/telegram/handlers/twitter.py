@@ -5,6 +5,7 @@ import re
 import aiohttp
 
 from hovorunv2.application.clients.twitter import TwitterService
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
@@ -17,6 +18,11 @@ logger = get_logger(__name__)
 
 class TwitterCommand(RichMediaCommand):
     """Command for interacting with Twitter and processing tweet links."""
+
+    @property
+    def name(self) -> str:
+        """Command name."""
+        return CommandName.TWITTER
 
     def __init__(
         self,

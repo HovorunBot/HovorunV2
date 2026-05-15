@@ -3,23 +3,25 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
 
 INITIAL_COMMANDS = [
-    {"name": "debug", "description": "Debug information"},
-    {"name": "allow_chat", "description": "Whitelist a chat"},
-    {"name": "enable_cmd", "description": "Enable a specific command"},
-    {"name": "disable_cmd", "description": "Disable a specific command"},
-    {"name": "tiktok", "description": "Process TikTok links"},
-    {"name": "twitter", "description": "Process Twitter links"},
-    {"name": "instagram", "description": "Process Instagram links"},
-    {"name": "facebook", "description": "Process Facebook links"},
-    {"name": "threads", "description": "Process Threads links"},
-    {"name": "bluesky", "description": "Process Bluesky links"},
-    {"name": "youtube", "description": "Process YouTube links"},
+    {"name": CommandName.DEBUG, "description": "Debug information"},
+    {"name": CommandName.ALLOW_CHAT, "description": "Whitelist a chat"},
+    {"name": CommandName.SETTINGS, "description": "Bot configuration"},
+    {"name": CommandName.HELP, "description": "Help information"},
+    {"name": CommandName.START, "description": "Start the bot"},
+    {"name": CommandName.TIKTOK, "description": "Process TikTok links"},
+    {"name": CommandName.TWITTER, "description": "Process Twitter links"},
+    {"name": CommandName.INSTAGRAM, "description": "Process Instagram links"},
+    {"name": CommandName.FACEBOOK, "description": "Process Facebook links"},
+    {"name": CommandName.THREADS, "description": "Process Threads links"},
+    {"name": CommandName.BLUESKY, "description": "Process Bluesky links"},
+    {"name": CommandName.YOUTUBE, "description": "Process YouTube links"},
 ]
 
 

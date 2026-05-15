@@ -8,6 +8,7 @@ from aiogram.dispatcher.flags import get_flag
 from aiogram.enums import ChatType
 from aiogram.types import Message, TelegramObject
 
+from hovorunv2.application.data.constants import TOGGLEABLE_COMMANDS
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.infrastructure.logger import get_logger
@@ -69,7 +70,7 @@ class AccessMiddleware(BaseMiddleware):
         # However, for toggleable commands we MUST have a policy to evaluate access
         if not policy or not isinstance(policy, CommandPolicy):
             # If it's a known toggleable command but has no policy, DENY by default
-            if command_name in ("twitter", "instagram", "tiktok", "threads", "bluesky", "facebook", "youtube"):
+            if command_name in TOGGLEABLE_COMMANDS:
                 logger.error("Toggleable command %s missing policy in middleware!", command_name)
                 return None
             return await handler(event, data)

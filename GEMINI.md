@@ -9,6 +9,7 @@ Telegram helper bot, Python 3.14+, Onion Architecture, SOLID.
     - **Domain:** Pure DB models, modern SQLAlchemy `Mapped` types.
     - **Infrastructure:** Async Valkey cache, config, DB repos.
         - **Repositories:** Pure data access. Query/persist objects. No transaction management. Accept `session` in constructor.
+        - **Ephemeral State:** Message cleanup and UI session tracking MUST use Valkey (Sorted Sets), not SQL.
     - **Application:** Two layers:
         - **Data Services:** Intermediary. Encapsulate `session_maker`, manage transactions (`commit`/`rollback`). Use Repos for ops. High-level data primitives.
         - **Business Services:** High-level logic. Focus on "what". Use Data Services, no direct Repo/session touch.
@@ -36,6 +37,7 @@ Automated via `Makefile`.
 ### Code Style & Quality
 
 - **Magic Numbers:** FORBIDDEN. Define as named constants/enums. `noqa: PLR2004` only if structural.
+- **Commands:** All bot command names MUST be referenced via `CommandName` StrEnum from `application/data/constants.py`.
 - **Errors:** Use semantic exceptions (e.g. `ValueError`, `AttributeError`, `TypeError`). NEVER raise generic `RuntimeError`.
 - **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) (`ALL`).
 - **Type Hints:** Mandatory. Checked with `ty`. Python 3.14+ deferred eval default; no strings for forward refs.
