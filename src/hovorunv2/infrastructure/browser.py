@@ -275,7 +275,7 @@ class BrowserService:
         finally:
             tab.close()
 
-    def _extract_content_from_response(self, resp: Any) -> bytes | None:  # noqa: ANN401
+    def _extract_content_from_response(self, resp: Any) -> bytes | None:
         """Extract raw bytes from various response types using pattern matching."""
         match resp:
             case _ if hasattr(resp, "content"):
@@ -349,7 +349,7 @@ class BrowserService:
             # Closing the tab ensures we don't leak resources
             tab.close()
 
-    def _wait_for_selector_sync(self, tab: Any, url: str, selector: str) -> None:  # noqa: ANN401
+    def _wait_for_selector_sync(self, tab: Any, url: str, selector: str) -> None:
         """Wait for selector synchronously.
 
         Args:

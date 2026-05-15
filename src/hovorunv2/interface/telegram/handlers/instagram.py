@@ -188,7 +188,7 @@ class InstagramCommand(RichMediaCommand):
                 reply_to_message_id=message.message_id,
             )
 
-    def _extract_from_html(self, tab: Any, url: str) -> RichMediaPayload | None:  # noqa: ANN401
+    def _extract_from_html(self, tab: Any, url: str) -> RichMediaPayload | None:
         """Surgically extract OG metadata from tab using JS and HTML."""
         self._bypass_gates(tab)
 
@@ -208,7 +208,7 @@ class InstagramCommand(RichMediaCommand):
         # 3. Fallback to pure HTML regex
         return self._extract_via_regex(tab.html, url)
 
-    def _bypass_gates(self, tab: Any) -> None:  # noqa: ANN401
+    def _bypass_gates(self, tab: Any) -> None:
         """Click bypass buttons for age/login walls."""
         try:
             for btn_text in self.GATE_BUTTONS:
@@ -250,7 +250,7 @@ class InstagramCommand(RichMediaCommand):
             logger.debug("Failed to parse individual JSON blob")
         return None
 
-    def _find_key_in_json(self, d: Any, key: str) -> Any:  # noqa: ANN401
+    def _find_key_in_json(self, d: Any, key: str) -> Any:
         """Recursively find a key in a dictionary or list."""
         # Determine what we need to iterate over
         match d:

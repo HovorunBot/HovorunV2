@@ -39,7 +39,7 @@ class BaseCommand(Protocol):
         """Check if the command should be triggered by the given message."""
         ...
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle the triggered command."""
         ...
 
@@ -104,7 +104,7 @@ class RichMediaCommand(ABC):
         self,
         message: Message,
         bot: Bot,
-        **kwargs: Any,  # noqa: ARG002,ANN401
+        **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Standardized handling of rich media links."""
         if not message.text or not message.from_user:

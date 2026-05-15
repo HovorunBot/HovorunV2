@@ -32,7 +32,7 @@ class DebugCommand(BaseCommand):
             return False
         return message.text.strip().startswith(("/debug", "/force_error"))
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ARG002
         """Handle debug commands."""
         if message.text and message.text.startswith("/force_error"):
             logger.info("Forcing error for testing purposes")

@@ -39,6 +39,7 @@ Automated via `Makefile`.
 - **Errors:** Use semantic exceptions (e.g. `ValueError`, `AttributeError`, `TypeError`). NEVER raise generic `RuntimeError`.
 - **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) (`ALL`).
 - **Type Hints:** Mandatory. Checked with `ty`. Python 3.14+ deferred eval default; no strings for forward refs.
+- **Local Imports:** NEVER use local imports in functions UNLESS it is absolutely necessary (e.g. to break circular dependencies).
 - **Path Handling:** MANDATORY `pathlib.Path`. Avoid `os.path`.
 - **Async:** Mandatory for I/O (DB, Cache, Network).
 - **JSON Serialization:** Use `model_dump(mode="json")` for Pydantic/Aiogram objects before stringify. Avoid `model_dump_json()` on complex Aiogram types.

@@ -71,7 +71,7 @@ class SetLanguageCommand(BaseCommand):
         text = message.text.strip()
         return text.startswith(("/config_lang", "/set_lang"))
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ARG002
         """Handle the configuration command."""
         if not message.text:
             return
@@ -149,7 +149,7 @@ class SetLanguageCommand(BaseCommand):
         builder.adjust(2)  # Name+Target on left, Toggle Ignore on right
         return builder
 
-    async def handle_callback(self, query: Any, callback_data: LangConfigCallback) -> None:  # noqa: ANN401
+    async def handle_callback(self, query: Any, callback_data: LangConfigCallback) -> None:
         """Process language configuration changes."""
         query = cast(CallbackQuery, query)
         if not query.message or not isinstance(query.message, Message):

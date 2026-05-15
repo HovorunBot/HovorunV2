@@ -40,7 +40,7 @@ async def test_cache_migration() -> None:
             # Just return everything in one go for the test
             if cursor != 0:
                 return 0, []
-            keys = [k.encode() if isinstance(k, str) else k for k in storage.keys()]
+            keys = [k.encode() if isinstance(k, str) else k for k in storage]
             return 0, keys
 
         mock_redis.set.side_effect = mock_set

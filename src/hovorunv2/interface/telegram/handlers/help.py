@@ -35,7 +35,7 @@ class HelpCommand(BaseCommand):
             return False
         return message.text.strip().startswith(("/help", "/start"))
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ARG002
         """Handle help command."""
         logger.info("Providing help info to user %s", message.from_user.id if message.from_user else "unknown")
         await message.answer(self.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)

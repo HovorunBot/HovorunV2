@@ -28,7 +28,7 @@ async def test_cache_encryption_roundtrip() -> None:
         # 1. Test SET (should encrypt)
         stored_value = None
 
-        async def mock_set(_k: str, v: str, **_kwargs: Any) -> None:  # noqa: ANN401
+        async def mock_set(_k: str, v: str, **_kwargs: Any) -> None:
             nonlocal stored_value
             stored_value = v
 
@@ -62,7 +62,7 @@ async def test_cache_persistence_across_restarts() -> None:
 
         stored_value = None
 
-        async def mock_set(_k: str, v: str, **_kwargs: Any) -> None:  # noqa: ANN401
+        async def mock_set(_k: str, v: str, **_kwargs: Any) -> None:
             nonlocal stored_value
             stored_value = v
 
@@ -96,7 +96,7 @@ async def test_cache_invalid_key_on_restart() -> None:
 
         stored_value = None
 
-        async def mock_set(_k: str, v: str, **_kwargs: Any) -> None:  # noqa: ANN401
+        async def mock_set(_k: str, v: str, **_kwargs: Any) -> None:
             nonlocal stored_value
             stored_value = v
 

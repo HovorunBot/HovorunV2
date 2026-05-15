@@ -49,7 +49,7 @@ class ConfigCommandsCommand(BaseCommand):
         """Check if message starts with /config_cmds."""
         return bool(message.text and message.text.startswith("/config_cmds"))
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401, ARG002
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ARG002
         """Open command configuration keyboard."""
         chat_id = message.chat.id
         allowed = await self._command_service.get_allowed_commands(chat_id)
@@ -74,7 +74,7 @@ class ConfigCommandsCommand(BaseCommand):
         builder.adjust(2)  # 2 buttons per row
         return builder
 
-    async def handle_callback(self, query: Any, callback_data: CmdConfigCallback) -> None:  # noqa: ANN401
+    async def handle_callback(self, query: Any, callback_data: CmdConfigCallback) -> None:
         """Process command toggle from callback query."""
         query = cast(CallbackQuery, query)
         if not query.message or not isinstance(query.message, Message):

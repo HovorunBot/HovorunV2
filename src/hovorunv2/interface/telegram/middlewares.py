@@ -28,7 +28,7 @@ class MessageCacheMiddleware(BaseMiddleware):
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
         data: dict[str, Any],
-    ) -> Any:  # noqa: ANN401
+    ) -> Any:
         """Cache message before any filters run."""
         if isinstance(event, Message):
             await self._message_service.cache_message(event)
@@ -43,20 +43,35 @@ class AccessMiddleware(BaseMiddleware):
         super().__init__()
         self._access_service = access_service
 
-    async def __call__(
+    async def __call__(  # noqa: PLR0911
         self,
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
         data: dict[str, Any],
-    ) -> Any:  # noqa: ANN401
+    ) -> Any:
         """Check authorization before executing handler."""
         from aiogram.types import CallbackQuery  # noqa: PLC0415
 
-        policy = get_flag(data, "policy")
-        command_name = get_flag(data, "command_name")
+        # Extract flags using more robust method
+        handler_obj = data.get("handler")
+        policy = (
+            get_flag(data, "policy")
+            or data.get("policy")
+            or (getattr(handler_obj, "flags", {}).get("policy") if handler_obj else None)
+        )
+        command_name = (
+            get_flag(data, "command_name")
+            or data.get("command_name")
+            or (getattr(handler_obj, "flags", {}).get("command_name") if handler_obj else None)
+        )
 
-        # If no policy is attached, continue
+        # If no policy is attached, it might be a default command
+        # However, for toggleable commands we MUST have a policy to evaluate access
         if not policy or not isinstance(policy, CommandPolicy):
+            # If it's a known toggleable command but has no policy, DENY by default
+            if command_name in ("twitter", "instagram", "tiktok", "threads", "bluesky", "facebook", "youtube"):
+                logger.error("Toggleable command %s missing policy in middleware!", command_name)
+                return None
             return await handler(event, data)
 
         user_id: int | None = None

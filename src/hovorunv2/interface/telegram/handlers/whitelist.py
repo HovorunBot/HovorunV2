@@ -57,7 +57,7 @@ class AllowBotCommand(BaseCommand):
         self,
         message: Message,
         bot: Bot,
-        **kwargs: Any,  # noqa: ANN401, ARG002
+        **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Handle allow bot command."""
         user_id = message.from_user.id if message.from_user else 0
@@ -135,7 +135,7 @@ class AllowBotCommand(BaseCommand):
             except Exception:
                 logger.exception("Failed to send whitelist request to owner %d", owner_id)
 
-    async def handle_callback(self, query: Any, callback_data: WhitelistCallback, bot: Bot) -> None:  # noqa: ANN401
+    async def handle_callback(self, query: Any, callback_data: WhitelistCallback, bot: Bot) -> None:
         """Process owner's decision from callback query."""
         from aiogram.types import CallbackQuery  # noqa: PLC0415
 

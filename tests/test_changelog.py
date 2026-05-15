@@ -18,11 +18,11 @@ def test_parse_version() -> None:
 class MockPath:
     """Mock for pathlib.Path to simulate filesystem state in tests."""
 
-    def __init__(self, *args: Any, content: str = "") -> None:  # noqa: ARG002,ANN401
+    def __init__(self, *args: Any, content: str = "") -> None:  # noqa: ARG002
         """Initialize with content."""
         self._content = content
 
-    def __truediv__(self, other: Any) -> MockPath:  # noqa: ANN401
+    def __truediv__(self, other: Any) -> MockPath:
         """Return self for any path joining."""
         return self
 

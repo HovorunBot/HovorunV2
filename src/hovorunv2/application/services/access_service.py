@@ -48,17 +48,26 @@ class CommandPolicy:
 
         Admins/Owners bypass all checks unless specific policy says otherwise.
         """
+        # 1. Feature toggles apply to everyone, including admins.
+        # If a command is explicitly disabled in this chat, nobody can use it.
+        if (
+            self.is_toggleable
+            and command_name
+            and not await command_service.is_command_allowed(chat_id, command_name, platform)
+        ):
+            return False
+
         is_admin = user_id and await access_service.is_admin(user_id, platform)
 
-        # 1. Global Admin always has full access
+        # 2. Global Admin always has full access
         if is_admin:
             return True
 
-        # 2. Check if global admin is required
+        # 3. Check if global admin is required
         if self.requires_admin:
             return False
 
-        # 3. Group Admin check
+        # 4. Group Admin check
         if self.requires_group_admin:
             if not user_id or not bot:
                 return False
@@ -66,16 +75,8 @@ class CommandPolicy:
             if not await access_service.is_group_admin(bot, chat_id, user_id, platform):
                 return False
 
-        # 4. Whitelist check
-        if self.requires_whitelist and not await whitelist_service.is_whitelisted(chat_id, platform):
-            return False
-
-        # 5. Command configuration check
-        return not (
-            self.is_toggleable
-            and command_name
-            and not await command_service.is_command_allowed(chat_id, command_name, platform)
-        )
+        # 5. Whitelist check
+        return not (self.requires_whitelist and not await whitelist_service.is_whitelisted(chat_id, platform))
 
 
 class AccessService:

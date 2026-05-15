@@ -79,13 +79,14 @@ ignore = [
     "BLE001",
     "TC",
     "ARG001",
+    "ANN401"
 ]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["FBT"]
+"tests/*" = ["FBT", "PLR2004"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -39,7 +39,7 @@ class CacheService:
         except Exception:
             logger.exception("Failed to initialize cache encryption with provided key.")
 
-    async def set(self, key: str, value: Any, expire: int | None = None) -> None:  # noqa: ANN401
+    async def set(self, key: str, value: Any, expire: int | None = None) -> None:
         """Store a value in the cache with an optional expiration time in seconds."""
         logger.debug("Caching key: %s (expire: %s)", key, expire)
 
@@ -54,7 +54,7 @@ class CacheService:
         final_value = payload.decode() if isinstance(payload, bytes) else payload
         await self._cache.set(key, final_value, ex=expire)
 
-    async def get(self, key: str, default: Any = None) -> Any:  # noqa: ANN401
+    async def get(self, key: str, default: Any = None) -> Any:
         """Retrieve a value from the cache by key."""
         raw_value = await self._cache.get(key)
         if raw_value is None:
@@ -119,7 +119,8 @@ class CacheService:
                         continue
                     except Exception:
                         # Not encrypted or encrypted with different key
-                        pass
+                        logger.warning("Key %s is not encrypted with current master key.", key)
+                        continue
 
                     # 2. Try to see if it's unencrypted JSON
                     try:
@@ -139,7 +140,7 @@ class CacheService:
 
                         migrated_count += 1
                         logger.debug("Migrated key to encryption: %s", key)
-                    except (UnicodeDecodeError, json.JSONDecodeError):
+                    except UnicodeDecodeError, json.JSONDecodeError:
                         # Not valid JSON, skip (might be binary data or something else)
                         continue
 
