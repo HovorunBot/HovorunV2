@@ -26,6 +26,7 @@ class ChatDB(Base):
     platform: Mapped[str] = mapped_column(String, default="telegram")
     target_lang: Mapped[str | None] = mapped_column(String, nullable=True)
     ignored_langs: Mapped[str | None] = mapped_column(String, nullable=True)  # Comma-separated or JSON
+    encryption_salt: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # M2M Relationship
     commands: Mapped[list[CommandDB]] = relationship(secondary=chat_commands, back_populates="chats")
