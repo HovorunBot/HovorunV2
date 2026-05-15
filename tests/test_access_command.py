@@ -1,4 +1,4 @@
-"""Tests for the AllowBotCommand class."""
+"""Tests for the AccessCommand class."""
 
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
@@ -9,16 +9,16 @@ from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
 from hovorunv2.application.data.constants import CommandName
+from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import settings
-from hovorunv2.interface.telegram.handlers.whitelist import AllowBotCommand
+from hovorunv2.interface.telegram.handlers.access import AccessCommand
 
 
 @pytest.fixture
-async def whitelist_command(init_container: AsyncContainer) -> AllowBotCommand:
-    """Fixture to provide an AllowBotCommand instance."""
-    return await init_container.get(AllowBotCommand)
+async def access_command(init_container: AsyncContainer) -> AccessCommand:
+    """Fixture to provide an AccessCommand instance."""
+    return await init_container.get(AccessCommand)
 
 
 def create_mock_message(text: str | None, user_id: int = 123, chat_id: int = 456) -> MagicMock:
@@ -45,27 +45,27 @@ def create_mock_message(text: str | None, user_id: int = 123, chat_id: int = 456
         (None, False),
     ],
 )
-async def test_is_triggered(whitelist_command: AllowBotCommand, text: str | None, expected: bool) -> None:
+async def test_is_triggered(access_command: AccessCommand, text: str | None, expected: bool) -> None:
     """Test the is_triggered method."""
     message = create_mock_message(text)
-    assert await whitelist_command.is_triggered(message) == expected
+    assert await access_command.is_triggered(message) == expected
 
 
 @pytest.mark.asyncio
-async def test_handle_authorized(whitelist_command: AllowBotCommand, init_container: AsyncContainer) -> None:
+async def test_handle_authorized(access_command: AccessCommand, init_container: AsyncContainer) -> None:
     """Test handling by an authorized user."""
     admin_id = settings.admin_ids[0]
     chat_id = 789
     message = create_mock_message("/allow_chat", user_id=admin_id, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
 
-    await whitelist_command.handle(message, cast("Bot", bot))
+    await access_command.handle(message, cast("Bot", bot))
 
     # Check database directly through service
-    whitelist_service = await init_container.get(WhitelistService)
-    is_whitelisted = await whitelist_service.is_whitelisted(chat_id)
-    assert is_whitelisted is True
-    message.answer.assert_called_once_with("✅ Bot is now allowed in this chat by administrator.")
+    chat_status_service = await init_container.get(ChatStatusService)
+    is_approved = await chat_status_service.is_approved(chat_id)
+    assert is_approved is True
+    message.answer.assert_called_once_with("✅ Bot is now approved for this chat by administrator.")
 
     # Check that AUTO_ALLOW commands are enabled
     command_service = await init_container.get(CommandService)

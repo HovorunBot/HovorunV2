@@ -7,12 +7,12 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import CommandName
+from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.application.services.access_service import AccessService
+from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.interface.telegram.handlers.whitelist import AllowBotCommand
+from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.youtube import YoutubeShortsCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 
@@ -44,11 +44,11 @@ async def test_youtube_disabled_for_regular_user(init_container: AsyncContainer)
     # 1. Setup services
     access_service = await init_container.get(AccessService)
     command_service = await init_container.get(CommandService)
-    whitelist_service = await init_container.get(WhitelistService)
+    chat_status_service = await init_container.get(ChatStatusService)
     youtube_cmd = await init_container.get(YoutubeShortsCommand)
 
-    # 2. Whitelist chat but DON'T enable youtube command
-    await whitelist_service.add_to_whitelist(chat_id, platform)
+    # 2. Access chat but DON'T enable youtube command
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED, platform)
 
     # Verify youtube is disabled
     allowed = await command_service.get_allowed_commands(chat_id, platform)
@@ -78,15 +78,15 @@ async def test_youtube_admin_blocked_if_disabled(init_container: AsyncContainer)
     # 1. Setup services
     access_service = await init_container.get(AccessService)
     command_service = await init_container.get(CommandService)
-    whitelist_service = await init_container.get(WhitelistService)
+    chat_status_service = await init_container.get(ChatStatusService)
     youtube_cmd = await init_container.get(YoutubeShortsCommand)
     settings = await init_container.get(Settings)
 
     if user_id not in settings.owners:
         settings.owners.append(user_id)
 
-    # 2. Whitelist chat and DISABLE youtube
-    await whitelist_service.add_to_whitelist(chat_id, platform)
+    # 2. Access chat and DISABLE youtube
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED, platform)
     await command_service.disable_command(chat_id, CommandName.YOUTUBE, platform)
 
     # 3. Check access
@@ -104,8 +104,8 @@ async def test_youtube_admin_blocked_if_disabled(init_container: AsyncContainer)
 
 
 @pytest.mark.asyncio
-async def test_youtube_auto_enable_on_whitelist(init_container: AsyncContainer) -> None:
-    """Test that YouTube command is automatically enabled when chat is whitelisted via AllowBotCommand."""
+async def test_youtube_auto_enable_on_access(init_container: AsyncContainer) -> None:
+    """Test that YouTube command is automatically enabled when chat is approved via AccessCommand."""
     chat_id = 999
     # Ensure owner ID is in settings
     settings = await init_container.get(Settings)
@@ -116,7 +116,7 @@ async def test_youtube_auto_enable_on_whitelist(init_container: AsyncContainer) 
     platform = "telegram"
 
     # 1. Setup services
-    allow_cmd = await init_container.get(AllowBotCommand)
+    allow_cmd = await init_container.get(AccessCommand)
     command_service = await init_container.get(CommandService)
 
     # 2. Trigger /allow_chat as admin
@@ -128,7 +128,7 @@ async def test_youtube_auto_enable_on_whitelist(init_container: AsyncContainer) 
 
     # 3. Check if YouTube is enabled
     allowed = await command_service.get_allowed_commands(chat_id, platform)
-    assert CommandName.YOUTUBE in allowed, "YouTube should be auto-enabled by AllowBotCommand"
+    assert CommandName.YOUTUBE in allowed, "YouTube should be auto-enabled by AccessCommand"
 
 
 @pytest.mark.asyncio
@@ -142,10 +142,10 @@ async def test_access_middleware_enforcement(init_container: AsyncContainer) -> 
     access_service = await init_container.get(AccessService)
     middleware = AccessMiddleware(access_service)
     youtube_cmd = await init_container.get(YoutubeShortsCommand)
-    whitelist_service = await init_container.get(WhitelistService)
+    chat_status_service = await init_container.get(ChatStatusService)
 
-    # 2. Whitelist chat (youtube stays disabled)
-    await whitelist_service.add_to_whitelist(chat_id, platform)
+    # 2. Access chat (youtube stays disabled)
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED, platform)
 
     # 3. Create mock handler and event
     handler = AsyncMock(return_value="handled")

@@ -1,9 +1,11 @@
 """Application service for low-level chat data operations."""
 
 import json
+from typing import Any
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 
@@ -21,15 +23,15 @@ class ChatService:
             repo = SQLAlchemyChatRepository(session)
             return await repo.get_by_id(chat_id, platform)
 
-    async def update_whitelist_status(self, chat_id: int, platform: str, *, is_whitelisted: bool) -> None:
-        """Update whitelist status for a chat."""
+    async def update_status(self, chat_id: int, platform: str, status: ChatStatus) -> None:
+        """Update lifecycle status for a chat."""
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
             chat = await repo.get_by_id(chat_id, platform)
             if chat:
-                chat.is_whitelisted = is_whitelisted
+                chat.status = status
             else:
-                chat = ChatDB(chat_id=chat_id, platform=platform, is_whitelisted=is_whitelisted)
+                chat = ChatDB(chat_id=chat_id, platform=platform, status=status)
             await repo.save(chat)
             await session.commit()
 
@@ -41,18 +43,18 @@ class ChatService:
             repo = SQLAlchemyChatRepository(session)
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
-                chat = ChatDB(chat_id=chat_id, platform=platform, is_whitelisted=False)
+                chat = ChatDB(chat_id=chat_id, platform=platform)
 
             chat.target_lang = target_lang
             chat.ignored_langs = json.dumps(ignored_langs)
             await repo.save(chat)
             await session.commit()
 
-    async def get_all_whitelisted(self, platform: str) -> list[ChatDB]:
-        """Fetch all whitelisted chats from database."""
+    async def get_all_by_status(self, status: ChatStatus, platform: str) -> list[ChatDB]:
+        """Fetch all chats with a specific status from database."""
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
-            return await repo.get_all_whitelisted(platform)
+            return await repo.get_all_by_status(status, platform)
 
     async def get_or_create_chat(self, chat_id: int, platform: str = "telegram") -> ChatDB:
         """Fetch chat from database or create it if not exists."""
@@ -65,7 +67,7 @@ class ChatService:
                 await session.commit()
             return chat
 
-    async def update_chat(self, chat_id: int, platform: str = "telegram", **kwargs: str | bool | None) -> None:
+    async def update_chat(self, chat_id: int, platform: str = "telegram", **kwargs: Any) -> None:
         """Update arbitrary chat attributes."""
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)

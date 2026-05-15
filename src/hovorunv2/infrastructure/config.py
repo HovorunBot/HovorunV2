@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     Attributes:
         bot_token: Telegram Bot API token.
-        admin_ids: List of admin IDs for whitelisting.
+        admin_ids: List of admin IDs for accessing.
         db_path: Path to the database file.
         openrouter_api_key: OpenRouter API key.
 

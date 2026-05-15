@@ -24,8 +24,8 @@ class DebugCommand(BaseCommand):
 
     @property
     def policy(self) -> CommandPolicy:
-        """Admin only, bypasses whitelist."""
-        return CommandPolicy(requires_admin=True, requires_whitelist=False, is_toggleable=False)
+        """Admin only, bypasses access."""
+        return CommandPolicy(requires_admin=True, requires_approval=False, is_toggleable=False)
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /debug or /force_error."""

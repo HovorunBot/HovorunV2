@@ -8,7 +8,8 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
-from hovorunv2.application.services.whitelist_service import WhitelistService
+from hovorunv2.application.data.constants import ChatStatus
+from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.interface.telegram.handlers.facebook import FacebookCommand
 
 
@@ -72,9 +73,9 @@ async def test_handle_facebook_photo_post(facebook_command: FacebookCommand, ini
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    # Whitelist the chat
-    whitelist_service = await init_container.get(WhitelistService)
-    await whitelist_service.add_to_whitelist(chat_id)
+    # Access the chat
+    chat_status_service = await init_container.get(ChatStatusService)
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     await facebook_command.handle(message, cast("Bot", bot))
 
@@ -99,9 +100,9 @@ async def test_handle_facebook_video_fallback(
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    # Whitelist the chat
-    whitelist_service = await init_container.get(WhitelistService)
-    await whitelist_service.add_to_whitelist(chat_id)
+    # Access the chat
+    chat_status_service = await init_container.get(ChatStatusService)
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     await facebook_command.handle(message, cast("Bot", bot))
 

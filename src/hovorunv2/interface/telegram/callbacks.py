@@ -5,8 +5,8 @@ from enum import StrEnum
 from aiogram.filters.callback_data import CallbackData
 
 
-class WhitelistAction(StrEnum):
-    """Actions for whitelist approval/rejection."""
+class AccessAction(StrEnum):
+    """Actions for access approval/rejection."""
 
     APPROVE = "approve"
     REJECT = "reject"
@@ -30,11 +30,11 @@ class SettingsAction(StrEnum):
     SELECT = "select"
 
 
-class WhitelistCallback(CallbackData, prefix="whitelist"):
-    """Callback for whitelist approval/rejection."""
+class AccessCallback(CallbackData, prefix="access"):
+    """Callback for access approval/rejection."""
 
     chat_id: int
-    action: WhitelistAction
+    action: AccessAction
 
 
 class CmdConfigCallback(CallbackData, prefix="config_cmd"):

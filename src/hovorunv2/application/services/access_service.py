@@ -2,8 +2,8 @@
 
 from typing import TYPE_CHECKING
 
+from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import Settings
 
 if TYPE_CHECKING:
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class CommandPolicy:
     """Strategy for validating command execution.
 
-    Allows for declarative validation rules (admin, whitelist, toggleable)
+    Allows for declarative validation rules (admin, approval, toggleable)
     while supporting complex custom logic by overriding evaluate().
     """
 
@@ -22,14 +22,14 @@ class CommandPolicy:
         *,
         requires_admin: bool = False,
         requires_group_admin: bool = False,
-        requires_whitelist: bool = True,
+        requires_approval: bool = True,
         is_toggleable: bool = True,
         auto_enable: bool = False,
     ) -> None:
         """Initialize policy with declarative rules."""
         self.requires_admin = requires_admin
         self.requires_group_admin = requires_group_admin
-        self.requires_whitelist = requires_whitelist
+        self.requires_approval = requires_approval
         self.is_toggleable = is_toggleable
         self.auto_enable = auto_enable
 
@@ -40,7 +40,7 @@ class CommandPolicy:
         command_name: str | None,
         platform: str,
         access_service: AccessService,
-        whitelist_service: WhitelistService,
+        chat_status_service: ChatStatusService,
         command_service: CommandService,
         bot: Bot | None = None,
     ) -> bool:
@@ -75,8 +75,8 @@ class CommandPolicy:
             if not await access_service.is_group_admin(bot, chat_id, user_id, platform):
                 return False
 
-        # 5. Whitelist check
-        return not (self.requires_whitelist and not await whitelist_service.is_whitelisted(chat_id, platform))
+        # 5. Approval check
+        return not (self.requires_approval and not await chat_status_service.is_approved(chat_id, platform))
 
 
 class AccessService:
@@ -89,12 +89,12 @@ class AccessService:
     def __init__(
         self,
         settings: Settings,
-        whitelist_service: WhitelistService,
+        chat_status_service: ChatStatusService,
         command_service: CommandService,
     ) -> None:
         """Initialize service with dependencies."""
         self._settings = settings
-        self._whitelist_service = whitelist_service
+        self._chat_status_service = chat_status_service
         self._command_service = command_service
 
     async def is_owner(self, user_id: int, platform: str = "telegram") -> bool:
@@ -166,7 +166,7 @@ class AccessService:
             command_name=command_name,
             platform=platform,
             access_service=self,
-            whitelist_service=self._whitelist_service,
+            chat_status_service=self._chat_status_service,
             command_service=self._command_service,
             bot=bot,
         )

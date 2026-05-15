@@ -64,8 +64,8 @@ class RichMediaCommand(ABC):
 
     @property
     def policy(self) -> CommandPolicy:
-        """Media commands require whitelist and are toggleable by default."""
-        return CommandPolicy(requires_admin=False, requires_whitelist=True, is_toggleable=True, auto_enable=True)
+        """Media commands require access and are toggleable by default."""
+        return CommandPolicy(requires_admin=False, requires_approval=True, is_toggleable=True, auto_enable=True)
 
     # Standard templates for all media responses
     HEADER_TEMPLATE: ClassVar[str] = (

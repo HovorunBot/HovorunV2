@@ -1,6 +1,7 @@
 """Bot commands package providing access to registered bot commands."""
 
 from . import (
+    access,
     bluesky,
     debug,
     facebook,
@@ -9,11 +10,11 @@ from . import (
     threads,
     tiktok,
     twitter,
-    whitelist,
     youtube,
 )
 
 __all__ = [
+    "access",
     "bluesky",
     "debug",
     "facebook",
@@ -22,6 +23,5 @@ __all__ = [
     "threads",
     "tiktok",
     "twitter",
-    "whitelist",
     "youtube",
 ]

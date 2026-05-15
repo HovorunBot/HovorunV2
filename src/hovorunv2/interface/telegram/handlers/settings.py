@@ -48,11 +48,11 @@ class SettingsCommand(BaseCommand):
 
     @property
     def policy(self) -> CommandPolicy:
-        """Admins only, whitelisted chats only."""
+        """Admins only, approved chats only."""
         return CommandPolicy(
             requires_admin=False,
             requires_group_admin=True,
-            requires_whitelist=True,
+            requires_approval=True,
             is_toggleable=False,
         )
 

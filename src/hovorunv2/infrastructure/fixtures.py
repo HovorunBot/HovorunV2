@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 
 INITIAL_COMMANDS = [
     {"name": CommandName.DEBUG, "description": "Debug information"},
-    {"name": CommandName.ALLOW_CHAT, "description": "Whitelist a chat"},
+    {"name": CommandName.ALLOW_CHAT, "description": "Request bot approval"},
     {"name": CommandName.SETTINGS, "description": "Bot configuration"},
     {"name": CommandName.HELP, "description": "Help information"},
     {"name": CommandName.START, "description": "Start the bot"},

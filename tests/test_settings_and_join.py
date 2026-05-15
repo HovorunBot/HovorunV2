@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiogram import types
 
-from hovorunv2.application.data.constants import CommandName
+from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.interface.telegram.callbacks import (
     SettingsAction,
     SettingsCallback,
@@ -46,10 +46,12 @@ def mock_command_service() -> MagicMock:
 
 
 @pytest.fixture
-def mock_whitelist_service() -> MagicMock:
-    """Create a mock whitelist service."""
+def mock_chat_status_service() -> MagicMock:
+    """Create a mock access service."""
     service = MagicMock()
-    service.is_whitelisted = AsyncMock(return_value=False)
+    service.is_approved = AsyncMock(return_value=False)
+    service.get_status = AsyncMock(return_value=ChatStatus.UNAUTHORIZED)
+    service.set_status = AsyncMock()
     return service
 
 
@@ -62,9 +64,9 @@ def mock_access_service() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_bot_join_prompt(mock_whitelist_service: MagicMock) -> None:
-    """Test that bot join sends a verification prompt if not whitelisted."""
-    handler = BotJoinHandler(mock_whitelist_service)
+async def test_bot_join_prompt(mock_chat_status_service: MagicMock) -> None:
+    """Test that bot join sends a verification prompt if not approved."""
+    handler = BotJoinHandler(mock_chat_status_service)
 
     event = MagicMock()
     event.new_chat_member.status = "member"

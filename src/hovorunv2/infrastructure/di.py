@@ -19,6 +19,7 @@ from hovorunv2.application.data.system_service import SystemDataService
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.services.access_service import AccessService
+from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.language_service import LanguageService
@@ -29,11 +30,11 @@ from hovorunv2.application.services.translation_providers import (
     GoogleTranslationService,
 )
 from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.config import settings as app_settings
+from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.bluesky import BlueskyCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
@@ -45,7 +46,6 @@ from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
 from hovorunv2.interface.telegram.handlers.tiktok import TikTokCommand
 from hovorunv2.interface.telegram.handlers.twitter import TwitterCommand
-from hovorunv2.interface.telegram.handlers.whitelist import AllowBotCommand
 from hovorunv2.interface.telegram.handlers.youtube import YoutubeShortsCommand
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
@@ -106,7 +106,7 @@ class AppProvider(Provider):
     notification_service = provide(NotificationService)
     command_data_service = provide(CommandDataService)
     command_service = provide(CommandService)
-    whitelist_service = provide(WhitelistService)
+    chat_status_service = provide(ChatStatusService)
     access_service = provide(AccessService)
     cleanup_service = provide(CleanupService)
     language_service = provide(LanguageService)
@@ -133,6 +133,7 @@ class AppProvider(Provider):
     twitter_command = provide(TwitterCommand)
     youtube_command = provide(YoutubeShortsCommand)
     debug_command = provide(DebugCommand)
+    access_command = provide(AccessCommand)
 
     @provide(scope=Scope.APP)
     def get_instagram_command(
@@ -177,18 +178,17 @@ class AppProvider(Provider):
         ]
 
     @provide(scope=Scope.APP)
-    def get_allow_bot_command(
+    def get_access_command(
         self,
-        whitelist_service: WhitelistService,
+        chat_status_service: ChatStatusService,
         command_service: CommandService,
         access_service: AccessService,
         settings: Settings,
         rich_media_commands: list[RichMediaCommand],
-    ) -> AllowBotCommand:
-        """Provide AllowBotCommand with its dependencies."""
-        # Note: we cast rich_media_commands to list[BaseCommand] because AllowBotCommand expects that
-        return AllowBotCommand(
-            whitelist_service=whitelist_service,
+    ) -> AccessCommand:
+        """Provide AccessCommand with its dependencies."""
+        return AccessCommand(
+            chat_status_service=chat_status_service,
             command_service=command_service,
             access_service=access_service,
             settings=settings,
@@ -214,13 +214,13 @@ class AppProvider(Provider):
     @provide(scope=Scope.APP)
     def get_commands(
         self,
-        allow_bot_command: AllowBotCommand,
+        access_command: AccessCommand,
         rich_media_commands: list[RichMediaCommand],
         utility_commands: UtilityCommands,
     ) -> list[BaseCommand]:
         """Provide list of all bot commands."""
         commands: list[BaseCommand] = [
-            allow_bot_command,
+            access_command,
             *rich_media_commands,
             *utility_commands,
         ]

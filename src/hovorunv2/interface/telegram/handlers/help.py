@@ -28,7 +28,7 @@ class HelpCommand(BaseCommand):
     @property
     def policy(self) -> CommandPolicy:
         """Help is always available to everyone."""
-        return CommandPolicy(requires_admin=False, requires_whitelist=False, is_toggleable=False)
+        return CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /help or /start."""
@@ -48,8 +48,8 @@ class HelpCommand(BaseCommand):
             f"{settings.project_description}\n\n"
             "I level up your group conversations with smart utilities, dynamic "
             "translations, and seamless media integrations.\n\n"
-            "<b>🛡 Whitelisting</b>\n"
-            "Bot only works in whitelisted chats. Group admins can request access:\n"
+            "<b>🛡 Access Approval</b>\n"
+            "Bot only works in approved chats. Group admins can request access:\n"
             "• /allow_chat — Request bot approval from owners.\n\n"
             "<b>⚙️ Configuration (Group Admins only)</b>\n"
             "• /settings — Interactive menu for Modules and Languages.\n"

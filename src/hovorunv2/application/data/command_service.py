@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
@@ -31,7 +32,7 @@ class CommandDataService:
             repo = SQLAlchemyChatRepository(session)
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
-                chat = ChatDB(chat_id=chat_id, platform=platform, is_whitelisted=False)
+                chat = ChatDB(chat_id=chat_id, platform=platform, status=ChatStatus.UNAUTHORIZED)
                 session.add(chat)
 
             # Check if command exists

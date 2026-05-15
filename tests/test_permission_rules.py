@@ -8,10 +8,10 @@ from aiogram.enums import ChatType
 from aiogram.types import Chat, ChatMemberAdministrator, ChatMemberMember, Message, User
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import CommandName
+from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
+from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 
@@ -84,7 +84,7 @@ async def test_access_middleware_allowed_group(test_container: AsyncContainer) -
     message = create_mock_message(chat_id, user_id, ChatType.SUPERGROUP)
 
     # Policy that allows everything
-    policy = CommandPolicy(requires_whitelist=False, is_toggleable=False)
+    policy = CommandPolicy(requires_approval=False, is_toggleable=False)
 
     handler = AsyncMock()
     data = {"handler": MagicMock(), "bot": MagicMock(), "policy": policy}
@@ -105,8 +105,8 @@ async def test_access_middleware_denied_group(test_container: AsyncContainer) ->
     chat_id = 123
     message = create_mock_message(chat_id, user_id, ChatType.SUPERGROUP)
 
-    # Policy that requires whitelist (not whitelisted by default)
-    policy = CommandPolicy(requires_whitelist=True)
+    # Policy that requires access (not approved by default)
+    policy = CommandPolicy(requires_approval=True)
 
     handler = AsyncMock()
     data = {"handler": MagicMock(), "bot": MagicMock(), "policy": policy}
@@ -144,7 +144,7 @@ async def test_policy_bypass_for_global_admin(test_container: AsyncContainer) ->
     chat_id = 123
 
     # Policy that would normally block everyone
-    policy = CommandPolicy(requires_admin=True, requires_group_admin=True, requires_whitelist=True, is_toggleable=True)
+    policy = CommandPolicy(requires_admin=True, requires_group_admin=True, requires_approval=True, is_toggleable=True)
 
     # Admin should bypass
     assert await access_service.is_allowed(admin_id, chat_id, policy) is True
@@ -166,21 +166,21 @@ async def test_policy_requires_admin(test_container: AsyncContainer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_policy_requires_whitelist(test_container: AsyncContainer) -> None:
-    """Test policy with requires_whitelist=True."""
+async def test_policy_requires_access(test_container: AsyncContainer) -> None:
+    """Test policy with requires_approval=True."""
     access_service = await test_container.get(AccessService)
-    whitelist_service = await test_container.get(WhitelistService)
+    chat_status_service = await test_container.get(ChatStatusService)
 
-    policy = CommandPolicy(requires_whitelist=True)
+    policy = CommandPolicy(requires_approval=True)
 
     user_id = 999
-    whitelisted_chat_id = 123
-    non_whitelisted_chat_id = 456
+    approved_chat_id = 123
+    non_approved_chat_id = 456
 
-    await whitelist_service.add_to_whitelist(whitelisted_chat_id)
+    await chat_status_service.set_status(approved_chat_id, ChatStatus.APPROVED)
 
-    assert await access_service.is_allowed(user_id, whitelisted_chat_id, policy) is True
-    assert await access_service.is_allowed(user_id, non_whitelisted_chat_id, policy) is False
+    assert await access_service.is_allowed(user_id, approved_chat_id, policy) is True
+    assert await access_service.is_allowed(user_id, non_approved_chat_id, policy) is False
 
 
 @pytest.mark.asyncio
@@ -189,7 +189,7 @@ async def test_policy_requires_group_admin(test_container: AsyncContainer) -> No
     access_service = await test_container.get(AccessService)
     bot = AsyncMock(spec=Bot)
 
-    policy = CommandPolicy(requires_group_admin=True, requires_whitelist=False)
+    policy = CommandPolicy(requires_group_admin=True, requires_approval=False)
 
     chat_id = 123
     admin_user_id = 111
@@ -212,15 +212,15 @@ async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
     """Test policy with is_toggleable=True."""
     access_service = await test_container.get(AccessService)
     command_service = await test_container.get(CommandService)
-    whitelist_service = await test_container.get(WhitelistService)
+    chat_status_service = await test_container.get(ChatStatusService)
 
-    policy = CommandPolicy(is_toggleable=True, requires_whitelist=True)
+    policy = CommandPolicy(is_toggleable=True, requires_approval=True)
     command_name = CommandName.TIKTOK
 
     user_id = 999
     chat_id = 123
 
-    await whitelist_service.add_to_whitelist(chat_id)
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     # Disabled by default for features
     assert await access_service.is_allowed(user_id, chat_id, policy, command_name=command_name) is False
@@ -238,7 +238,7 @@ async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
 async def test_policy_auto_enable(test_container: AsyncContainer) -> None:
     """Test that auto_enable=True policy allows command even if not explicitly enabled."""
     await test_container.get(AccessService)
-    await test_container.get(WhitelistService)
+    await test_container.get(ChatStatusService)
 
     # auto_enable is not currently used in CommandPolicy.evaluate logic in a way that overrides toggleable
     # Let's check the evaluate implementation again.

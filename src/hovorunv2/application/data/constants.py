@@ -21,6 +21,17 @@ class CommandName(StrEnum):
     YOUTUBE = "youtube"
 
 
+class ChatStatus(StrEnum):
+    """Possible lifecycle statuses for a chat."""
+
+    UNAUTHORIZED = "unauthorized"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    BANNED = "banned"
+    INACTIVE = "inactive"
+
+
 # Commands that are always available and cannot be disabled.
 DEFAULT_COMMANDS: Final[tuple[CommandName, ...]] = (
     CommandName.DEBUG,

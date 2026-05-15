@@ -6,9 +6,10 @@ import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
+from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.application.data.system_service import SystemDataService
+from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.notification_service import NotificationService
-from hovorunv2.application.services.whitelist_service import WhitelistService
 
 
 @pytest.fixture
@@ -23,14 +24,14 @@ async def test_notify_updates_fresh_install(
 ) -> None:
     """Test that fresh install (last_notified is None) triggers notification for initial version."""
     system_service = await init_container.get(SystemDataService)
-    whitelist_service = await init_container.get(WhitelistService)
+    chat_status_service = await init_container.get(ChatStatusService)
 
     # Ensure last_notified is None
     assert await system_service.get_last_notified_version() is None
 
-    # Mock a whitelisted chat
+    # Mock a approved chat
     chat_id = 12345
-    await whitelist_service.add_to_whitelist(chat_id)
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     bot = AsyncMock(spec=Bot)
 
@@ -46,7 +47,7 @@ async def test_notify_updates_fresh_install(
         # Should check updates from 0.0.0 to 0.1.0
         mock_updates.assert_called_once_with("0.0.0", "0.1.0")
 
-        # Should send message to whitelisted chat
+        # Should send message to approved chat
         bot.send_message.assert_called_once()
         _, kwargs = bot.send_message.call_args
         assert kwargs["chat_id"] == chat_id
@@ -78,9 +79,9 @@ async def test_notify_updates_upgrade(
 ) -> None:
     """Test notification on version upgrade."""
     system_service = await init_container.get(SystemDataService)
-    whitelist_service = await init_container.get(WhitelistService)
+    chat_status_service = await init_container.get(ChatStatusService)
     await system_service.set_last_notified_version("0.1.0")
-    await whitelist_service.add_to_whitelist(555)
+    await chat_status_service.set_status(555, ChatStatus.APPROVED)
 
     bot = AsyncMock(spec=Bot)
 

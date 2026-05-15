@@ -1,9 +1,10 @@
 """Implementation of Chat repository using SQLAlchemy."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.domain.chat import ChatDB
 
 
@@ -33,17 +34,12 @@ class SQLAlchemyChatRepository:
         db_chat = result.scalar_one_or_none()
 
         if db_chat:
-            db_chat.is_whitelisted = chat.is_whitelisted
+            db_chat.status = chat.status
         else:
             self.session.add(chat)
 
-    async def remove_from_whitelist(self, chat_id: int, platform: str = "telegram") -> None:
-        """Remove chat from whitelist."""
-        stmt = delete(ChatDB).where(ChatDB.chat_id == chat_id, ChatDB.platform == platform)
-        await self.session.execute(stmt)
-
-    async def get_all_whitelisted(self, platform: str = "telegram") -> list[ChatDB]:
-        """Fetch all whitelisted chats for a given platform."""
-        stmt = select(ChatDB).where(ChatDB.is_whitelisted == True, ChatDB.platform == platform)  # noqa: E712
+    async def get_all_by_status(self, status: ChatStatus, platform: str = "telegram") -> list[ChatDB]:
+        """Fetch all chats with a specific status for a given platform."""
+        stmt = select(ChatDB).where(ChatDB.status == status, ChatDB.platform == platform)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

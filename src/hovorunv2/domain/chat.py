@@ -3,6 +3,7 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.command import CommandDB
 
@@ -22,7 +23,7 @@ class ChatDB(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     chat_id: Mapped[int] = mapped_column(nullable=False)
-    is_whitelisted: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[str] = mapped_column(String, default=ChatStatus.UNAUTHORIZED)
     platform: Mapped[str] = mapped_column(String, default="telegram")
     target_lang: Mapped[str | None] = mapped_column(String, nullable=True)
     ignored_langs: Mapped[str | None] = mapped_column(String, nullable=True)  # Comma-separated or JSON
