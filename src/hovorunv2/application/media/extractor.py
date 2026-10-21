@@ -3,13 +3,14 @@
 import asyncio
 import html
 import re
+from typing import Any
 
 import aiohttp
 import yt_dlp
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.utils import format_number
+from hovorunv2.application.utils import clean_caption_text, format_number
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -47,7 +48,7 @@ class MediaExtractor:
             logger.exception("Failed to extract media from %s using yt-dlp", url)
             return None
 
-    def _extract_info(self, url: str, cookies: dict[str, str] | None = None) -> dict | None:
+    def _extract_info(self, url: str, cookies: dict[str, str] | None = None) -> dict[str, Any] | None:
         """Sync extraction using yt-dlp."""
         ydl_opts = {
             "quiet": True,
@@ -63,7 +64,7 @@ class MediaExtractor:
             return ydl.extract_info(url, download=False)
 
     async def _process_info(
-        self, info: dict, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
+        self, info: dict[str, Any], session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
     ) -> RichMediaPayload:
         """Process yt-dlp info into RichMediaPayload."""
         title = info.get("title", "No Title")
@@ -72,35 +73,11 @@ class MediaExtractor:
         author_handle = info.get("uploader_id") or "unknown"
         author_url = info.get("uploader_url") or ""
 
-        # Clean description
-        clean_desc = re.sub(r"#\w+", "", description)
-        clean_desc = re.sub(r"\s+", " ", clean_desc).strip()
-
-        # Use title if description is short or missing
+        clean_desc = clean_caption_text(description, strip_hashtags=True)
         display_text = clean_desc if len(clean_desc) > self.MIN_DESCRIPTION_LENGTH else title
-        content = html.escape(display_text)
+        content = await self._translation_service.escape_and_translate(display_text, chat_id, platform, session)
 
-        trans_res = await self._translation_service.translate_if_needed(content, chat_id, platform, session)
-        if trans_res:
-            content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
-
-        # Find best media URL
-        media_url = info.get("url")
-        if not media_url and "formats" in info:
-            # Try to find best mp4 format with both video and audio
-            suitable_formats = [
-                f
-                for f in info["formats"]
-                if f.get("vcodec") != "none" and f.get("acodec") != "none" and f.get("ext") == "mp4"
-            ]
-            if suitable_formats:
-                # Sort by quality (height)
-                suitable_formats.sort(key=lambda x: x.get("height") or 0, reverse=True)
-                media_url = suitable_formats[0].get("url")
-            elif info["formats"]:
-                media_url = info["formats"][-1].get("url")
-
-        media_items = [MediaItem(url=media_url, is_video=True)] if media_url else []
+        media_items = self._extract_media_items(info)
         logger.info("Extracted %d media item(s) for %s", len(media_items), url)
         if media_items:
             logger.debug("Media URL: %s", media_items[0].url)
@@ -126,3 +103,35 @@ class MediaExtractor:
             original_url=url,
             media_items=media_items,
         )
+
+    def _extract_media_items(self, info: dict[str, Any]) -> list[MediaItem]:
+        """Extract media items from yt-dlp info dict."""
+        if entries := info.get("entries"):
+            items: list[MediaItem] = []
+            for entry in entries:
+                if isinstance(entry, dict):
+                    items.extend(self._extract_media_items(entry))
+            if items:
+                return items
+
+        media_url = info.get("url")
+        is_video = info.get("vcodec") != "none"
+
+        if not media_url and "formats" in info:
+            suitable_formats = [
+                f
+                for f in info["formats"]
+                if f.get("vcodec") != "none" and f.get("acodec") != "none" and f.get("ext") == "mp4"
+            ]
+            if suitable_formats:
+                suitable_formats.sort(key=lambda x: x.get("height") or 0, reverse=True)
+                media_url = suitable_formats[0].get("url")
+                is_video = True
+            elif info["formats"]:
+                last_format = info["formats"][-1]
+                media_url = last_format.get("url")
+                is_video = last_format.get("vcodec") != "none"
+
+        if media_url:
+            return [MediaItem(url=str(media_url), is_video=is_video)]
+        return []

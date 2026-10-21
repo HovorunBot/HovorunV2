@@ -9,8 +9,8 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.data.constants import (
-    HIDDEN_TOGGLEABLE_COMMANDS,
-    TOGGLEABLE_COMMANDS,
+    MEDIA_PROVIDER_COMMANDS,
+    PROVIDER_SPLIT_COMMANDS,
     CommandName,
 )
 from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
@@ -64,7 +64,7 @@ class SettingsCommand(BaseCommand):
         """Check if message is /settings."""
         return bool(message.text and message.text.strip().startswith("/settings"))
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ARG002
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle /settings command."""
         await self._show_main_menu(message, bot)
 
@@ -205,35 +205,38 @@ class SettingsCommand(BaseCommand):
         )
 
     async def _show_modules_menu(self, query: CallbackQuery) -> None:
-        """Show modules (commands) configuration menu."""
+        """Show modules (commands) configuration menu with split Video and Post toggles."""
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
 
         chat_id = msg.chat.id
-        user_id = query.from_user.id
         builder = InlineKeyboardBuilder()
 
-        # Build list of commands to show
-        commands_to_show = list(TOGGLEABLE_COMMANDS)
-        if await self._access_service.is_admin(user_id):
-            commands_to_show.extend(HIDDEN_TOGGLEABLE_COMMANDS)
+        for provider_cmd in MEDIA_PROVIDER_COMMANDS:
+            video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[provider_cmd]
+            video_enabled = await self._command_service.is_command_allowed(chat_id, video_cmd)
+            post_enabled = await self._command_service.is_command_allowed(chat_id, post_cmd)
+            provider_label = provider_cmd.capitalize()
 
-        for cmd_name in commands_to_show:
-            is_enabled = await self._command_service.is_command_allowed(chat_id, cmd_name)
-            prefix = "✅ " if is_enabled else "❌ "
             builder.row(
                 InlineKeyboardButton(
-                    text=f"{prefix}{cmd_name.capitalize()}",
+                    text=f"{'✅' if video_enabled else '❌'} 🎬 {provider_label}",
                     callback_data=SettingsCallback(
-                        menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=cmd_name
+                        menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=video_cmd
                     ).pack(),
-                )
+                ),
+                InlineKeyboardButton(
+                    text=f"{'✅' if post_enabled else '❌'} 🖼️ {provider_label}",
+                    callback_data=SettingsCallback(
+                        menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=post_cmd
+                    ).pack(),
+                ),
             )
 
         builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
 
-        text = "⚙️ <b>Modules Settings</b>\n\nEnable or disable specific bot features:"
+        text = "⚙️ <b>Modules Settings</b>\n\nToggle Video (🎬) and Image/Text (🖼️) capture per platform:"
         await msg.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
         await self._cleanup_service.reset_ttl(
             chat_id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
@@ -323,7 +326,7 @@ class SettingsCommand(BaseCommand):
         await self._cleanup_service.unregister_window(msg.chat.id, msg.message_id)
         await query.answer()
 
-    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:  # noqa: ARG002
+    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
         """Register settings callbacks."""
-        router.callback_query.register(self.handle_callback, SettingsCallback.filter())
-        router.callback_query.register(self.handle_close, lambda c: c.data == "config_close")
+        router.callback_query.register(self.handle_callback, SettingsCallback.filter(), flags=flags)
+        router.callback_query.register(self.handle_close, lambda c: c.data == "config_close", flags=flags)

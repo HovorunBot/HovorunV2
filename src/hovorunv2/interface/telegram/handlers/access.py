@@ -58,7 +58,7 @@ class AccessCommand(BaseCommand):
         self,
         message: Message,
         bot: Bot,
-        **kwargs: Any,  # noqa: ARG002
+        **kwargs: Any,
     ) -> None:
         """Handle access command."""
         user_id = message.from_user.id if message.from_user else 0
@@ -212,6 +212,6 @@ class AccessCommand(BaseCommand):
         )
         await query.answer("Request sent.")
 
-    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:  # noqa: ARG002
+    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
         """Register callback handlers with router."""
         router.callback_query.register(self.handle_callback, AccessCallback.filter())

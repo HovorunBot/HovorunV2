@@ -1,5 +1,6 @@
 """Application service for text translation."""
 
+import html
 from typing import NamedTuple
 
 import aiohttp
@@ -77,3 +78,17 @@ class TranslationService:
             return TranslationResult(text=result.text, target_lang=target_lang, flag=self.get_flag(result.source_lang))
 
         return None
+
+    async def escape_and_translate(
+        self,
+        raw_text: str,
+        chat_id: int,
+        platform: str = "telegram",
+        session: aiohttp.ClientSession | None = None,
+    ) -> str:
+        """HTML-escape raw text and append translation block if needed."""
+        content = html.escape(raw_text)
+        trans_res = await self.translate_if_needed(content, chat_id, platform, session)
+        if trans_res:
+            content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
+        return content

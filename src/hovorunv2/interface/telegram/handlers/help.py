@@ -36,7 +36,7 @@ class HelpCommand(BaseCommand):
             return False
         return message.text.strip().startswith(("/help", "/start"))
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:  # noqa: ARG002
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle help command."""
         logger.info("Providing help info to user %s", message.from_user.id if message.from_user else "unknown")
         await message.answer(self.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
@@ -55,7 +55,7 @@ class HelpCommand(BaseCommand):
             "• /settings — Interactive menu for Modules and Languages.\n"
             "• <i>Configuration windows self-destruct after 30s of inactivity.</i>\n\n"
             "<b>🚀 Supported Platforms</b>\n"
-            "Send links from: Twitter/X, Instagram, TikTok, Threads, Bluesky, Facebook, YouTube Shorts.\n\n"
+            "Send links from: Twitter/X, Instagram, TikTok, Threads, Bluesky, Facebook, YouTube, Reddit.\n\n"
             "<b>Project Links:</b>\n"
             f"• <a href='{settings.github_url}'>GitHub Repository</a>\n"
             f"• <a href='{settings.issue_tracker_url}'>Issue Tracker</a>\n\n"

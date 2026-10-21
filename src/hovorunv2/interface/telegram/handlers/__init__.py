@@ -1,27 +1,11 @@
 """Bot commands package providing access to registered bot commands."""
 
-from . import (
-    access,
-    bluesky,
-    debug,
-    facebook,
-    instagram,
-    settings,
-    threads,
-    tiktok,
-    twitter,
-    youtube,
-)
+from . import access, base, bot_join, debug, settings
 
 __all__ = [
     "access",
-    "bluesky",
+    "base",
+    "bot_join",
     "debug",
-    "facebook",
-    "instagram",
     "settings",
-    "threads",
-    "tiktok",
-    "twitter",
-    "youtube",
 ]

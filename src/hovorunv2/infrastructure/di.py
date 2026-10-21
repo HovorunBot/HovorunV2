@@ -5,15 +5,16 @@ from typing import NewType
 
 import aiohttp
 from dishka import Provider, Scope, provide
-from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
+from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
 from hovorunv2.application.clients.bluesky import BlueskyService
-from hovorunv2.application.clients.facebook import FacebookService
 from hovorunv2.application.clients.instagram import InstagramService
+from hovorunv2.application.clients.reddit import RedditService
 from hovorunv2.application.clients.threads import ThreadsService
 from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
+from hovorunv2.application.clients.youtube import YoutubeService
 from hovorunv2.application.data.chat_service import ChatService
 from hovorunv2.application.data.command_service import CommandDataService
 from hovorunv2.application.data.system_service import SystemDataService
@@ -31,25 +32,16 @@ from hovorunv2.application.services.translation_providers import (
     GoogleTranslationService,
 )
 from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.services.vision_service import VisionService
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.config import settings as app_settings
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
-from hovorunv2.interface.telegram.handlers.bluesky import BlueskyCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
-from hovorunv2.interface.telegram.handlers.facebook import FacebookCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
-from hovorunv2.interface.telegram.handlers.instagram import InstagramCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
-from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
-from hovorunv2.interface.telegram.handlers.tiktok import TikTokCommand
-from hovorunv2.interface.telegram.handlers.twitter import TwitterCommand
-from hovorunv2.interface.telegram.handlers.vision import VisionCommand
-from hovorunv2.interface.telegram.handlers.youtube import YoutubeShortsCommand
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
@@ -97,14 +89,6 @@ class InfrastructureProvider(Provider):
         yield service
         await service.close()
 
-    @provide(scope=Scope.APP)
-    def get_openai_client(self, config: Settings) -> AsyncOpenAI:
-        """Provide AsyncOpenAI client configured for OpenRouter."""
-        return AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=config.openrouter_api_key,
-        )
-
 
 class AppProvider(Provider):
     """Provider for application business logic services."""
@@ -129,65 +113,60 @@ class AppProvider(Provider):
     twitter_service = provide(TwitterService)
     threads_service = provide(ThreadsService)
     instagram_service = provide(InstagramService)
-    facebook_service = provide(FacebookService)
     bluesky_service = provide(BlueskyService)
-    vision_service = provide(VisionService)
+    youtube_service = provide(YoutubeService)
+    reddit_service = provide(RedditService)
 
-    # Commands
+    # Utility Commands & Handlers
     help_command = provide(HelpCommand)
     settings_command = provide(SettingsCommand)
     bot_join_handler = provide(BotJoinHandler)
-    bluesky_command = provide(BlueskyCommand)
-    facebook_command = provide(FacebookCommand)
-    instagram_command = provide(InstagramCommand)
-    threads_command = provide(ThreadsCommand)
-    tiktok_command = provide(TikTokCommand)
-    twitter_command = provide(TwitterCommand)
-    youtube_command = provide(YoutubeShortsCommand)
     debug_command = provide(DebugCommand)
     access_command = provide(AccessCommand)
-    vision_command = provide(VisionCommand)
 
     @provide(scope=Scope.APP)
-    def get_instagram_command(
+    def get_media_clients(
         self,
+        translation_service: TranslationService,
+        bluesky_service: BlueskyService,
         instagram_service: InstagramService,
-        media_downloader: MediaDownloader,
-        media_extractor: MediaExtractor,
-        browser_service: BrowserService,
-        session: aiohttp.ClientSession,
-        config: Settings,
-    ) -> InstagramCommand:
-        """Provide InstagramCommand with its dependencies."""
-        return InstagramCommand(
-            instagram_service=instagram_service,
-            media_downloader=media_downloader,
-            media_extractor=media_extractor,
-            browser_service=browser_service,
-            session=session,
-            settings=config,
-        )
+        threads_service: ThreadsService,
+        tiktok_service: TikTokService,
+        twitter_service: TwitterService,
+        youtube_service: YoutubeService,
+        reddit_service: RedditService,
+    ) -> list[BaseMediaClient]:
+        """Provide all registered media provider clients."""
+        return [
+            bluesky_service,
+            BaseMediaClient(translation_service).with_config(FACEBOOK_CONFIG),
+            instagram_service,
+            threads_service,
+            tiktok_service,
+            twitter_service,
+            youtube_service,
+            reddit_service,
+        ]
 
     @provide(scope=Scope.APP)
     def get_rich_media_commands(
         self,
-        bluesky_command: BlueskyCommand,
-        facebook_command: FacebookCommand,
-        instagram_command: InstagramCommand,
-        threads_command: ThreadsCommand,
-        tiktok_command: TikTokCommand,
-        twitter_command: TwitterCommand,
-        youtube_command: YoutubeShortsCommand,
+        media_clients: list[BaseMediaClient],
+        media_downloader: MediaDownloader,
+        media_extractor: MediaExtractor,
+        session: aiohttp.ClientSession,
+        command_service: CommandService,
     ) -> list[RichMediaCommand]:
-        """Provide list of rich media commands."""
+        """Wrap all registered media clients into generalized RichMediaCommand handlers."""
         return [
-            bluesky_command,
-            facebook_command,
-            instagram_command,
-            threads_command,
-            tiktok_command,
-            twitter_command,
-            youtube_command,
+            RichMediaCommand(
+                primary_client=client,
+                media_downloader=media_downloader,
+                media_extractor=media_extractor,
+                session=session,
+                command_service=command_service,
+            )
+            for client in media_clients
         ]
 
     @provide(scope=Scope.APP)
@@ -214,7 +193,6 @@ class AppProvider(Provider):
         help_command: HelpCommand,
         settings_command: SettingsCommand,
         debug_command: DebugCommand,
-        vision_command: VisionCommand,
     ) -> UtilityCommands:
         """Provide list of utility/infrastructure commands."""
         return UtilityCommands(
@@ -222,7 +200,6 @@ class AppProvider(Provider):
                 help_command,
                 settings_command,
                 debug_command,
-                vision_command,
             ]
         )
 
@@ -234,9 +211,8 @@ class AppProvider(Provider):
         utility_commands: UtilityCommands,
     ) -> list[BaseCommand]:
         """Provide list of all bot commands."""
-        commands: list[BaseCommand] = [
+        return [
             access_command,
             *rich_media_commands,
             *utility_commands,
         ]
-        return commands

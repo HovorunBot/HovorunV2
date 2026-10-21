@@ -174,6 +174,12 @@ def format_number(num: int) -> str:
     return str(num)
 
 
+def clean_caption_text(raw_text: str, *, strip_hashtags: bool = True) -> str:
+    """Normalize whitespace and optionally strip hashtags from caption text."""
+    cleaned = re.sub(r"#\w+", "", raw_text) if strip_hashtags else raw_text
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def extract_og_metadata(html_content: str) -> dict[str, str]:
     """Robustly extract OG and Twitter metadata from HTML."""
     metadata = {}

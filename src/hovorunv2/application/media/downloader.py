@@ -77,7 +77,7 @@ class MediaDownloader:
             ) as resp:
                 if resp.status != HTTPStatus.OK:
                     logger.error("Failed to download %s: HTTP %d", url, resp.status)
-                    return await self._handle_video_fallback(url, filename, is_video)
+                    return await self._handle_video_fallback(url, filename, is_video=is_video)
 
                 content = await resp.read()
                 if is_video and self._is_hls_manifest(content):
@@ -88,7 +88,7 @@ class MediaDownloader:
         except Exception:
             logger.exception("Exception during media download: %s", url)
 
-        return await self._handle_video_fallback(url, filename, is_video)
+        return await self._handle_video_fallback(url, filename, is_video=is_video)
 
     def _is_hls_manifest(self, content: bytes) -> bool:
         """Check if content looks like an HLS manifest."""
@@ -97,7 +97,7 @@ class MediaDownloader:
         text_content = content.decode("utf-8", errors="ignore")
         return "#EXTM3U" in text_content
 
-    async def _handle_video_fallback(self, url: str, filename: str, is_video: bool) -> BufferedInputFile | None:  # noqa: FBT001
+    async def _handle_video_fallback(self, url: str, filename: str, *, is_video: bool) -> BufferedInputFile | None:
         """Fallback to yt-dlp for video downloads."""
         if not is_video:
             return None
