@@ -20,8 +20,9 @@ class FacebookService:
     # Broad pattern to catch various Facebook link formats
     PATTERN = re.compile(
         r"https?://(?:[\w-]+\.)?facebook\.com/(?:[^/]+/posts/\d+|groups/[^/]+/posts/\d+|"
-        r"permalink\.php|photo\.php|reel/[\w-]+|watch/|videos/[\w-]+|share/[vp]/[\w-]+|story\.php|(?P<id>\w+))"
+        r"permalink\.php|photo\.php|reel/[\w-]+|watch/|videos/[\w-]+|share/[vpr]/[\w-]+|story\.php|(?P<id>\w+))"
     )
+    VIDEO_URL_PATTERN = re.compile(r"facebook\.com/(?:reel/|watch/|videos/|share/[vr]/|[^/]+/videos/)")
 
     def __init__(self, translation_service: TranslationService) -> None:
         """Initialize with required services."""
@@ -49,24 +50,33 @@ class FacebookService:
             return None
 
         # 2. Extract info from metadata
-        is_video = metadata.get("type") == "video" or "video" in metadata
+        og_url = metadata.get("url", "")
+        is_video = (
+            metadata.get("type") == "video"
+            or "video" in metadata
+            or bool(self.VIDEO_URL_PATTERN.search(url))
+            or bool(self.VIDEO_URL_PATTERN.search(og_url))
+        )
+        if is_video:
+            # If it's a video, OG tags often provide a player URL or thumbnail, not a direct video file.
+            # Return None to let Command level fallback to yt-dlp which is better at Facebook video.
+            return None
+
         content = metadata.get("description") or metadata.get("title") or ""
         content = html.escape(content)
+
+        # 3. Handle Media
+        media_items = []
+        if "image" in metadata:
+            media_items.append(MediaItem(url=metadata["image"], is_video=False))
+
+        if not content and not media_items:
+            return None
 
         # Translation
         trans_res = await self._translation_service.translate_if_needed(content, chat_id, platform, session)
         if trans_res:
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
-
-        # 3. Handle Media
-        media_items = []
-        if is_video:
-            # If it's a video, OG tags often provide a player URL, not a direct file.
-            # Return None to let Command level fallback to yt-dlp which is better at Facebook video.
-            return None
-
-        if not media_items and "image" in metadata:
-            media_items.append(MediaItem(url=metadata["image"], is_video=False))
 
         # 4. Author and Footer
         title = metadata.get("title", "")

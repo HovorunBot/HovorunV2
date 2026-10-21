@@ -21,7 +21,6 @@ class TestBrowserService(BrowserService):
         super().__init__(
             max_tabs=max_tabs,
             idle_timeout=idle_timeout,
-            flags=["--remote-debugging-port=0"],
         )
 
     async def get_content(self, url: str, wait_selector: str | None = None) -> str:

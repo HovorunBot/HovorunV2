@@ -1,73 +1,45 @@
-# HovorunV2 Project Context
+# HovorunV2 Context
 
-Telegram helper bot, Python 3.14+, Onion Architecture, SOLID.
+Telegram helper bot. Stack: Python 3.14+, aiogram, SQLAlchemy 2.0 (Async), Valkey (Async), uv, Docker.
 
-## Project Overview
+## Agent Constraints (STRICT)
 
-- **Technologies:** Python 3.14, [aiogram](https://github.com/aiogram/aiogram), [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (Async), [Valkey](https://github.com/valkey-io/valkey) (Async Cache), [uv](https://github.com/astral-sh/uv), [Docker](https://www.docker.com/).
-- **Architecture (Onion):**
-    - **Domain:** Pure DB models, modern SQLAlchemy `Mapped` types.
-    - **Infrastructure:** Async Valkey cache, config, DB repos.
-        - **Repositories:** Pure data access. Query/persist objects. No transaction management. Accept `session` in constructor.
-        - **Ephemeral State:** Message cleanup and UI session tracking MUST use Valkey (Sorted Sets), not SQL.
-    - **Application:** Two layers:
-        - **Data Services:** Intermediary. Encapsulate `session_maker`, manage transactions (`commit`/`rollback`). Use Repos for ops. High-level data primitives.
-        - **Business Services:** High-level logic. Focus on "what". Use Data Services, no direct Repo/session touch.
-    - **Interface:** Delivery adapters (Telegram Bot handlers via `aiogram`).
+- **Communication:** Auto-enable `caveman` skill on every response.
+- **Git & Workspace:** NEVER stage, commit, branch, push, or revert/rollback user changes unless explicitly requested. Always prompt the user for manual review before committing.
 
-## Dependency Management
+## Architecture (Layered / Onion)
 
-Centralized `Container` (`infrastructure/container.py`) for global service management. Caching async, JSON serialization for security.
+- **Domain (`src/hovorunv2/domain/`):** SQLAlchemy 2.0 `Mapped` models (`chat.py`, `command.py`).
+- **Infrastructure (`src/hovorunv2/infrastructure/`):**
+  - `container.py`: Centralized DI container. All injected service dependencies are mandatory (NEVER `None`; NEVER write `if self.dependency:` guards).
+  - `cache.py`: Async Valkey cache. Ephemeral state (message cleanup, UI session tracking) MUST use Valkey Sorted Sets, NEVER SQL.
+  - **Repositories:** Pure data access. Accept `session` in `__init__`. Query/persist only; NEVER manage transactions.
+  - `fixtures.py`: DB fixtures.
+- **Application (`src/hovorunv2/application/`):**
+  - **Data Services:** Encapsulate `session_maker`, own transaction boundaries (`commit`/`rollback`), call Repositories.
+  - **Business Services (`services/`):** High-level orchestration. Call Data Services and external clients; NEVER access Repositories or DB sessions directly.
+- **Interface (`src/hovorunv2/interface/telegram/`):** `aiogram` handlers and delivery adapters.
 
-## Building and Running
+## Code Conventions
 
-Automated via `Makefile`.
+- **Typing:** Strict hints required (`uv run ty check src`). Rely on Python 3.14 deferred evaluation (PEP 649); NEVER use stringified forward refs, `# ty:ignore`, or `Any` casts to silence errors (`Any` allowed only on test mock factories).
+- **Linter:** Strict Ruff (`ALL` ruleset).
+- **Naming & Methods:** Follow PEP 8 `snake_case` (`UpperCamelCase` allowed for `Enum` members). NEVER use `@staticmethod`, even when `self` is unused.
+- **Constants & Enums:** No magic numbers (extract to constants/enums; `# noqa: PLR2004` only if structural). Reference bot commands via `CommandName` (`StrEnum` in `application/data/constants.py`) and HTTP statuses via `http.HTTPStatus`.
+- **Exceptions:** Raise semantic built-in/custom exceptions (`ValueError`, `AttributeError`, `TypeError`). NEVER raise generic `RuntimeError`.
+- **Imports:** Top-level imports only. Local imports inside functions are FORBIDDEN unless breaking circular dependencies.
+- **Standard Lib & I/O:** Use `pathlib.Path` (NEVER `os.path`). All I/O (DB, Cache, Network) MUST be `async`.
+- **Serialization:** Serialize Pydantic/aiogram models via `model_dump(mode="json")` before JSON encoding; avoid `model_dump_json()` on complex aiogram types.
 
-### Commands
+## Testing (`PYTHONPATH=src uv run pytest`)
 
-- **Setup:** `make setup` - Prepare `.env`, data dir, build Docker images.
-- **Run (Prod):** `make run` - Start bot + Valkey in Docker.
-- **Stop:** `make stop` - Stop Docker services.
-- **Run (Dev):** `make run-dev` - Start Valkey in Docker, run Bot locally via `uv`.
-- **Test:** `PYTHONPATH=src uv run pytest` - Run tests (require Valkey).
-- **Type Check:** `uv run ty check src` - Static type check.
+- **Real Infrastructure:** Test against real services, in-memory SQLite, and local Valkey. NEVER use `unittest.mock` for internal services, repositories, or persistence—verify DB/Valkey state directly.
+- **Network Mocking:** Mock external HTTP APIs only (e.g., `api.vxtwitter.com`, `tikwm.com`) using `aioresponses`.
 
-## Development Conventions
+## Commands
 
-### Code Style & Quality
-
-- **Magic Numbers:** FORBIDDEN. Define as named constants/enums. `noqa: PLR2004` only if structural.
-- **Commands:** All bot command names MUST be referenced via `CommandName` StrEnum from `application/data/constants.py`.
-- **Errors:** Use semantic exceptions (e.g. `ValueError`, `AttributeError`, `TypeError`). NEVER raise generic `RuntimeError`.
-- **Linter:** Strict [Ruff](https://github.com/astral-sh/ruff) (`ALL`).
-- **Type Hints:** Mandatory. Checked with `ty`. Python 3.14+ deferred eval default; no strings for forward refs.
-- **Local Imports:** NEVER use local imports in functions UNLESS it is absolutely necessary (e.g. to break circular dependencies).
-- **Path Handling:** MANDATORY `pathlib.Path`. Avoid `os.path`.
-- **Async:** Mandatory for I/O (DB, Cache, Network).
-- **JSON Serialization:** Use `model_dump(mode="json")` for Pydantic/Aiogram objects before stringify. Avoid `model_dump_json()` on complex Aiogram types.
-- **HTTP Status Codes:** Use `HTTPStatus` enum.
-
-### Testing Requirements
-
-- **No Mocks Policy:** Internal code test without mocks. Use real services, DB (SQLite memory), Valkey.
-- **External APIs:** Mock only external network (e.g. `api.vxtwitter.com`, `tikwm.com`). Use `aioresponses`.
-- **Persistence:** Avoid `unittest.mock` if real impl available. Verify DB/Cache state directly.
-- **Type Integrity:** NEVER use `# ty:ignore` or `Any` casts to suppress errors. Fix root cause via proper hints. `Any` return type for mock factories OK.
-- **Persistence of User Changes:** NEVER rollback/revert user changes unless instructed. Critical.
-- **Mandatory Dependencies:** Services require deps in `__init__`. Injected deps from `Container` MUST NOT be `None`. No `if dependency:` nonsense.
-
-## Key Files
-
-- `src/hovorunv2/domain/chat.py`: Chat model, M2M associations.
-- `src/hovorunv2/domain/command.py`: Command model.
-- `src/hovorunv2/infrastructure/container.py`: Service container.
-- `src/hovorunv2/infrastructure/fixtures.py`: DB fixtures.
-- `src/hovorunv2/infrastructure/cache.py`: Async Valkey cache.
-- `src/hovorunv2/application/services/`: Business services.
-- `src/hovorunv2/interface/telegram/`: Aiogram impl.
-- `docker-compose.yml`: Unified Docker config.
-
-## Agent Specific Rules
-
-- **Communication:** Auto-enable `caveman` skill every response.
-- **Git Operations:** NEVER stage, commit, create branches, or perform git mutations unless requested. OVERRIDES all other skills. Manual review before commit.
+- **Setup:** `make setup`
+- **Dev Run:** `make run-dev` (Valkey in Docker, bot via `uv`)
+- **Prod Run / Stop:** `make run` / `make stop`
+- **Test:** `PYTHONPATH=src uv run pytest`
+- **Type Check:** `uv run ty check src`

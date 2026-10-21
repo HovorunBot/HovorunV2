@@ -142,6 +142,8 @@ async def test_settings_language_menu(
     callback_data = SettingsCallback(menu=SettingsMenu.LANG)
 
     query = MagicMock(spec=types.CallbackQuery)
+    query.from_user = MagicMock()
+    query.from_user.id = 456
     query.message = MagicMock(spec=types.Message)
     query.message.chat = MagicMock()
     query.message.chat.id = 123
@@ -180,6 +182,8 @@ async def test_settings_modules_toggle(
     callback_data = SettingsCallback(menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=cmd_name)
 
     query = MagicMock(spec=types.CallbackQuery)
+    query.from_user = MagicMock()
+    query.from_user.id = 456
     query.message = MagicMock(spec=types.Message)
     query.message.chat = MagicMock()
     query.message.chat.id = chat_id
@@ -218,6 +222,8 @@ async def test_settings_language_target_selection(
     callback_data = SettingsCallback(menu=SettingsMenu.LANG_TARGET, action=SettingsAction.SELECT, value=lang_code)
 
     query = MagicMock(spec=types.CallbackQuery)
+    query.from_user = MagicMock()
+    query.from_user.id = 456
     query.message = MagicMock(spec=types.Message)
     query.message.chat = MagicMock()
     query.message.chat.id = chat_id
@@ -254,6 +260,8 @@ async def test_settings_language_ignored_toggle(
     callback_data = SettingsCallback(menu=SettingsMenu.LANG_IGNORED, action=SettingsAction.TOGGLE, value=lang_code)
 
     query = MagicMock(spec=types.CallbackQuery)
+    query.from_user = MagicMock()
+    query.from_user.id = 456
     query.message = MagicMock(spec=types.Message)
     query.message.chat = MagicMock()
     query.message.chat.id = chat_id

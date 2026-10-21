@@ -3,6 +3,7 @@
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from dishka import AsyncContainer, Scope, make_async_container, provide
@@ -71,6 +72,12 @@ async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[AsyncContai
 async def init_container(test_container: AsyncContainer) -> AsyncContainer:
     """Alias for test_container to keep existing tests working."""
     return test_container
+
+
+@pytest.fixture(scope="module")
+def vcr_config() -> dict[str, Any]:
+    """Configure pytest-recording to record once when cassette is missing."""
+    return {"record_mode": "once"}
 
 
 @pytest.fixture(autouse=True)

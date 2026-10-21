@@ -95,7 +95,7 @@ async def test_handle_facebook_video_fallback(
     """Test handling a Facebook video using real extraction and VCR (yt-dlp fallback)."""
     chat_id = 789
     # Use a real public video/reel for recording
-    url = "https://www.facebook.com/share/v/1C7Fwittns/"
+    url = "https://www.facebook.com/share/v/1NBDyTuecs/"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()

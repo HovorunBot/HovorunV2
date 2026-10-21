@@ -85,6 +85,7 @@ def find_browser_executable() -> str | None:
         "chromium",
         "chromium-browser",
         "brave-browser",
+        "brave",
         "microsoft-edge",
         "microsoft-edge-stable",
         "vivaldi",
