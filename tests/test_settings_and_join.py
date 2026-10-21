@@ -201,6 +201,13 @@ async def test_settings_modules_toggle(
     query.answer.assert_called_once()
     assert "disabled" in query.answer.call_args[0][0]
 
+    # Verify dual buttons per provider row in Modules menu
+    reply_markup = query.message.edit_text.call_args[1]["reply_markup"]
+    first_provider_row = reply_markup.inline_keyboard[0]
+    assert len(first_provider_row) == 2
+    assert "🎬" in first_provider_row[0].text
+    assert "🖼️" in first_provider_row[1].text
+
 
 @pytest.mark.asyncio
 async def test_settings_language_target_selection(

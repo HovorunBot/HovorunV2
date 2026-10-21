@@ -59,20 +59,20 @@ async def test_state_machine_flow(
     assert await chat_status_service.get_status(chat_id) == ChatStatus.UNAUTHORIZED
     bot.send_message.assert_called()
 
-    # 2. Request Approval -> PENDING
+    # 2. Request Approval -> PENDING (non-admin user ID)
     message = MagicMock()
     message.chat.id = chat_id
-    message.from_user.id = 123
+    message.from_user.id = 999999
     message.from_user.full_name = "User"
     message.from_user.username = "user"
     message.answer = AsyncMock()
 
-    await access_command._send_access_request(message, bot)  # noqa: SLF001
+    await access_command.handle(message, bot)
     assert await chat_status_service.get_status(chat_id) == ChatStatus.PENDING
 
     # 3. Duplicate request should be handled
     message.answer.reset_mock()
-    await access_command._send_access_request(message, bot)  # noqa: SLF001
+    await access_command.handle(message, bot)
     message.answer.assert_called_with("⏳ Approval is already pending. Owners have been notified.")
 
     # 4. Kick -> INACTIVE

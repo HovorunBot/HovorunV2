@@ -1,4 +1,4 @@
-"""Tests for the InstagramCommand class."""
+"""Tests for Instagram rich media command."""
 
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -6,35 +6,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 from aiogram import Bot
-from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import ChatStatus
+from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.interface.telegram.handlers.instagram import InstagramCommand
+from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
+from tests.conftest import create_mock_message, get_media_command
 
 
 @pytest.fixture
-async def instagram_command(init_container: AsyncContainer) -> InstagramCommand:
-    """Fixture to provide an InstagramCommand instance."""
-    return await init_container.get(InstagramCommand)
-
-
-def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = 456) -> MagicMock:
-    """Create a mock Telegram message."""
-    message = MagicMock(spec=Message)
-    message.text = text
-    message.message_id = 12345
-    message.from_user = MagicMock(spec=User)
-    message.from_user.id = 123
-    message.from_user.is_bot = is_bot
-    message.from_user.full_name = "Mock User"
-    message.chat = MagicMock(spec=Chat)
-    message.chat.id = chat_id
-    message.answer = AsyncMock()
-    message.delete = AsyncMock()
-    return message
+async def instagram_command(init_container: AsyncContainer) -> RichMediaCommand:
+    """Fixture to provide the Instagram RichMediaCommand instance."""
+    return await get_media_command(init_container, CommandName.INSTAGRAM)
 
 
 @pytest.mark.asyncio
@@ -51,10 +35,9 @@ def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = 4
     ],
 )
 async def test_is_triggered(
-    instagram_command: InstagramCommand,
+    instagram_command: RichMediaCommand,
     text: str | None,
     expected: bool,
-    init_container: AsyncContainer,
 ) -> None:
     """Test the is_triggered method with various inputs."""
     message = create_mock_message(text)
@@ -63,22 +46,19 @@ async def test_is_triggered(
 
 @pytest.mark.asyncio
 @pytest.mark.vcr
-async def test_handle_instagram_post(instagram_command: InstagramCommand, init_container: AsyncContainer) -> None:
+async def test_handle_instagram_post(instagram_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling an Instagram post using real extraction and VCR."""
     chat_id = 789
-    # Use a real public post for recording
     url = "https://www.instagram.com/p/DYPIeHDoZ-w/"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    # Access the chat
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     await instagram_command.handle(message, cast("Bot", bot))
 
-    # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     assert kwargs["chat_id"] == chat_id
@@ -89,22 +69,19 @@ async def test_handle_instagram_post(instagram_command: InstagramCommand, init_c
 
 @pytest.mark.asyncio
 @pytest.mark.vcr
-async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_container: AsyncContainer) -> None:
+async def test_handle_instagram_reel(instagram_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling an Instagram reel using real extraction and VCR."""
     chat_id = 789
-    # Use a real public reel for recording
     url = "https://www.instagram.com/reels/DVMKxZHggx7/"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    # Access the chat
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     await instagram_command.handle(message, cast("Bot", bot))
 
-    # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     caption = kwargs["media"][0].caption
@@ -114,7 +91,7 @@ async def test_handle_instagram_reel(instagram_command: InstagramCommand, init_c
 
 @pytest.mark.asyncio
 async def test_handle_instagram_browser_fallback(
-    instagram_command: InstagramCommand, init_container: AsyncContainer
+    instagram_command: RichMediaCommand, init_container: AsyncContainer
 ) -> None:
     """Test handling an Instagram post using browser fallback when other services fail."""
     chat_id = 789
@@ -123,11 +100,8 @@ async def test_handle_instagram_browser_fallback(
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    # Access the chat
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
-
-    # Mock HTML content with OG tags
 
     session = await init_container.get(aiohttp.ClientSession)
 
@@ -141,7 +115,6 @@ async def test_handle_instagram_browser_fallback(
         media_items=[MediaItem(url="https://example.com/fallback.jpg", is_video=False)],
     )
 
-    # Mock services to fail
     with (
         patch("instaloader.Post.from_shortcode", side_effect=Exception("Instaloader failed")),
         patch("hovorunv2.application.media.extractor.MediaExtractor.extract_payload", return_value=None),
@@ -152,7 +125,6 @@ async def test_handle_instagram_browser_fallback(
     ):
         await instagram_command.handle(message, cast("Bot", bot), session=session)
 
-    # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     caption = kwargs["media"][0].caption

@@ -1,6 +1,6 @@
 # HovorunV2 Context
 
-Telegram helper bot. Stack: Python 3.14+, aiogram, SQLAlchemy 2.0 (Async), Valkey (Async), uv, Docker.
+Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Valkey (Async), uv, Docker.
 
 ## Agent Constraints (STRICT)
 
@@ -9,23 +9,26 @@ Telegram helper bot. Stack: Python 3.14+, aiogram, SQLAlchemy 2.0 (Async), Valke
 
 ## Architecture (Layered / Onion)
 
-- **Domain (`src/hovorunv2/domain/`):** SQLAlchemy 2.0 `Mapped` models (`chat.py`, `command.py`).
+- **Domain (`src/hovorunv2/domain/`):** SQLAlchemy 2.0 `Mapped` models (`chat.py`, `command.py`, `system.py`, `base.py`).
 - **Infrastructure (`src/hovorunv2/infrastructure/`):**
-  - `container.py`: Centralized DI container. All injected service dependencies are mandatory (NEVER `None`; NEVER write `if self.dependency:` guards).
-  - `cache.py`: Async Valkey cache. Ephemeral state (message cleanup, UI session tracking) MUST use Valkey Sorted Sets, NEVER SQL.
+  - `di.py`: Centralized Dishka DI container. All injected service dependencies are mandatory (NEVER `None`; NEVER write `if self.dependency:` guards).
+  - `cache.py`: Async Valkey cache. Ephemeral state (message cleanup, UI session tracking, encrypted message cache) MUST use Valkey, NEVER SQL.
   - **Repositories:** Pure data access. Accept `session` in `__init__`. Query/persist only; NEVER manage transactions.
-  - `fixtures.py`: DB fixtures.
+  - `fixtures.py`: Auto-generated DB fixtures for providers and split `<provider>_video` / `<provider>_post` commands.
 - **Application (`src/hovorunv2/application/`):**
-  - **Data Services:** Encapsulate `session_maker`, own transaction boundaries (`commit`/`rollback`), call Repositories.
-  - **Business Services (`services/`):** High-level orchestration. Call Data Services and external clients; NEVER access Repositories or DB sessions directly.
-- **Interface (`src/hovorunv2/interface/telegram/`):** `aiogram` handlers and delivery adapters.
+  - **Data Services (`data/`):** Encapsulate `session_maker`, own transaction boundaries (`commit`/`rollback`), call Repositories.
+  - **Business Services (`services/`):** High-level orchestration (`AccessService`, `ChatStatusService`, `CommandService`, `MessageService` with per-chat Fernet encryption, `TranslationService`). Call Data Services and external clients; NEVER access Repositories or DB sessions directly.
+  - **Media Clients (`clients/`):** Config-driven via `ProviderConfig` (`OGConfig`, `BrowserFallbackConfig`) and `BaseMediaClient` (`clients/base.py`). `BaseMediaClient` centralizes redirect resolution, OG/browser fallbacks, HTML escaping, translation, and quoted media merging (`_finalize_payload`). Subclass `BaseMediaClient` (`_extract_raw_payload`) ONLY when custom API/DOM parsing is needed; pure config/OG providers instantiate `BaseMediaClient` directly in `di.py`.
+- **Interface (`src/hovorunv2/interface/telegram/`):**
+  - `aiogram` handlers, middlewares (`MessageCacheMiddleware`, `AccessMiddleware`), and delivery adapters.
+  - `handlers/base.py`: Generalized `RichMediaCommand` wraps any `BaseMediaClient`, runs the 4-tier pipeline (`primary_client.extract_payload` -> `MediaExtractor` (`yt-dlp`) -> `primary_client.extract_fallback` -> `primary_client.extract_metadata_payload`), and enforces split `<provider>_video` / `<provider>_post` capture modes (`PROVIDER_SPLIT_COMMANDS`). NEVER create per-provider `RichMediaCommand` subclasses.
 
 ## Code Conventions
 
-- **Typing:** Strict hints required (`uv run ty check src`). Rely on Python 3.14 deferred evaluation (PEP 649); NEVER use stringified forward refs, `# ty:ignore`, or `Any` casts to silence errors (`Any` allowed only on test mock factories).
-- **Linter:** Strict Ruff (`ALL` ruleset).
+- **Typing:** Strict hints required (`uv run ty check src`). Rely on Python 3.15+ deferred evaluation (PEP 649); NEVER use stringified forward refs, `# ty:ignore`, or `Any` casts to silence errors (`Any` allowed only on test mock factories).
+- **Linter:** Strict Ruff (`ALL` ruleset, `uv run ruff check .`).
 - **Naming & Methods:** Follow PEP 8 `snake_case` (`UpperCamelCase` allowed for `Enum` members). NEVER use `@staticmethod`, even when `self` is unused.
-- **Constants & Enums:** No magic numbers (extract to constants/enums; `# noqa: PLR2004` only if structural). Reference bot commands via `CommandName` (`StrEnum` in `application/data/constants.py`) and HTTP statuses via `http.HTTPStatus`.
+- **Constants & Enums:** No magic numbers (extract to constants/enums; `# noqa: PLR2004` only if structural). Reference bot commands via `CommandName` and chat lifecycle states via `ChatStatus` (`StrEnum`s in `application/data/constants.py`), and HTTP statuses via `http.HTTPStatus`.
 - **Exceptions:** Raise semantic built-in/custom exceptions (`ValueError`, `AttributeError`, `TypeError`). NEVER raise generic `RuntimeError`.
 - **Imports:** Top-level imports only. Local imports inside functions are FORBIDDEN unless breaking circular dependencies.
 - **Standard Lib & I/O:** Use `pathlib.Path` (NEVER `os.path`). All I/O (DB, Cache, Network) MUST be `async`.
@@ -43,3 +46,4 @@ Telegram helper bot. Stack: Python 3.14+, aiogram, SQLAlchemy 2.0 (Async), Valke
 - **Prod Run / Stop:** `make run` / `make stop`
 - **Test:** `PYTHONPATH=src uv run pytest`
 - **Type Check:** `uv run ty check src`
+- **Lint:** `uv run ruff check .`

@@ -1,45 +1,24 @@
-"""Tests for the ThreadsCommand class."""
+"""Tests for Threads rich media command."""
 
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import Bot
-from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import ChatStatus
+from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.interface.telegram.handlers.threads import ThreadsCommand
+from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
+from tests.conftest import create_mock_message, get_media_command
 
-
-@pytest.fixture
-async def threads_command(init_container: AsyncContainer) -> ThreadsCommand:
-    """Fixture to provide a ThreadsCommand instance."""
-    return await init_container.get(ThreadsCommand)
-
-
-# Test Constants
-MOCK_CHAT_ID: int = 456
-MOCK_USER_ID: int = 123
-MOCK_MESSAGE_ID: int = 12345
 EXPECTED_MEDIA_COUNT: int = 1
 
 
-def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = MOCK_CHAT_ID) -> MagicMock:
-    """Create a mock Telegram message."""
-    message = MagicMock(spec=Message)
-    message.text = text
-    message.message_id = MOCK_MESSAGE_ID
-    message.from_user = MagicMock(spec=User)
-    message.from_user.id = MOCK_USER_ID
-    message.from_user.is_bot = is_bot
-    message.from_user.full_name = "Mock User"
-    message.chat = MagicMock(spec=Chat)
-    message.chat.id = chat_id
-    message.answer = AsyncMock()
-    message.delete = AsyncMock()
-    return message
+@pytest.fixture
+async def threads_command(init_container: AsyncContainer) -> RichMediaCommand:
+    """Fixture to provide the Threads RichMediaCommand instance."""
+    return await get_media_command(init_container, CommandName.THREADS)
 
 
 @pytest.mark.asyncio
@@ -61,10 +40,9 @@ def create_mock_message(text: str | None, is_bot: bool = False, chat_id: int = M
     ],
 )
 async def test_is_triggered(
-    threads_command: ThreadsCommand,
+    threads_command: RichMediaCommand,
     text: str | None,
     expected: bool,
-    init_container: AsyncContainer,
 ) -> None:
     """Test the is_triggered method with various inputs."""
     message = create_mock_message(text)
@@ -73,26 +51,22 @@ async def test_is_triggered(
 
 @pytest.mark.asyncio
 @pytest.mark.vcr
-async def test_handle_threads_post(threads_command: ThreadsCommand, init_container: AsyncContainer) -> None:
+async def test_handle_threads_post(threads_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a Threads post using real extraction and VCR."""
-    chat_id = MOCK_CHAT_ID
-    # Use a real public post for recording
+    chat_id = 456
     url = "https://www.threads.net/@maksymtarkivskyy/post/DYOeEaaD-vR"
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    # Access the chat first (real DB)
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     await threads_command.handle(message, cast("Bot", bot))
 
-    # Verify interaction
     bot.send_media_group.assert_called_once()
     _args, kwargs = bot.send_media_group.call_args
     assert kwargs["chat_id"] == chat_id
     assert "Mock User" in kwargs["media"][0].caption
     assert "threads.net" in kwargs["media"][0].caption
-    # Verify media items were processed
     assert len(kwargs["media"]) >= EXPECTED_MEDIA_COUNT

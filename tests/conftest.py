@@ -4,18 +4,52 @@ import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer, Scope, make_async_container, provide
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from hovorunv2.application.data.constants import CommandName
 from hovorunv2.domain.base import Base
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
+from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.utils.browser_cache import TestBrowserService
+
+
+async def get_media_command(container: AsyncContainer, name: CommandName) -> RichMediaCommand:
+    """Resolve a RichMediaCommand instance for a specific provider from the DI container."""
+    commands = await container.get(list[RichMediaCommand])
+    for cmd in commands:
+        if cmd.name == str(name):
+            return cmd
+    msg = f"RichMediaCommand for {name} not found in container"
+    raise LookupError(msg)
+
+
+def create_mock_message(text: str | None, *, is_bot: bool = False, chat_id: int = 456, user_id: int = 123) -> MagicMock:
+    """Create a standardized mock Telegram message for command tests."""
+    message = MagicMock(spec=Message)
+    message.text = text
+    message.message_id = 12345
+    message.from_user = MagicMock(spec=User)
+    message.from_user.id = user_id
+    message.from_user.is_bot = is_bot
+    message.from_user.full_name = "Mock User"
+    message.from_user.username = "mockuser"
+    message.chat = MagicMock(spec=Chat)
+    message.chat.id = chat_id
+    message.chat.type = "group"
+    message.chat.title = "Mock Group"
+    message.answer = AsyncMock()
+    message.delete = AsyncMock()
+    message.__class__ = Message
+    return message
 
 
 @pytest.fixture

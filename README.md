@@ -29,8 +29,9 @@ Stop clicking links! Hovorun automatically detects and expands content from majo
 * **Twitter (X)**: Rich previews with full text, media carousels, quoted posts, and engagement metrics.
 * **Instagram**: Native support for Reels and **mixed-media carousels** (Photos + Videos).
 * **TikTok**: High-quality video previews and image slideshows.
-* **Threads, Bluesky, Facebook**: Clean, descriptive previews for posts.
-* **YouTube**: Seamless YouTube Shorts expansion.
+* **Reddit**: Full support for text posts, images, multi-image galleries, videos, crossposts, and shortlinks (`/s/`, `redd.it`).
+* **YouTube**: Seamless expansion for videos (`/watch`, `youtu.be`), Shorts, and **Community Posts** (text and multi-image attachments).
+* **Threads, Bluesky, Facebook**: Clean, descriptive previews for posts, videos, and quoted threads.
 
 ### 🌍 Dynamic Translation
 
@@ -39,11 +40,12 @@ the chat's target language (default: Ukrainian).
 
 * **Ignore List**: Configure specific languages to be left as-is.
 
-### ⚙️ Interactive Configuration
+### ⚙️ Interactive Configuration & Privacy
 
-* **`/settings`**: A unified interactive menu to toggle features (TikTok, Twitter, etc.) and configure language settings for your chat.
+* **`/settings`**: A unified interactive menu to configure language settings and independently toggle **Video (`🎬`)** vs. **Post/Image (`🖼️`)** capture for every media provider in your chat.
 * **⌛ Self-Cleaning UI**: Configuration windows automatically self-destruct after 30 seconds of inactivity to keep your
   chat history clean.
+* **🔐 Encrypted Message Cache**: Ephemeral cached messages in Valkey are encrypted per chat using unique salts and Fernet symmetric encryption.
 
 ### 🚀 Auto-Update Notifications
 
@@ -68,7 +70,6 @@ If you choose to self-host, deployment is fully automated via `Make` and `Docker
    BOT_TOKEN=...
    ADMIN_IDS=[123, 456]    # Global Admins
    OWNERS=[123]            # Owners (for approval requests)
-   OPENROUTER_API_KEY=...  # For smart features
    ```
 3. **Launch**: `make run`
 
@@ -78,11 +79,11 @@ If you choose to self-host, deployment is fully automated via `Make` and `Docker
 
 ### Tech Stack
 
-* **Runtime**: Python 3.14+ (latest features)
+* **Runtime**: Python 3.15+ (latest features)
 * **Framework**: [aiogram 3.x](https://github.com/aiogram/aiogram)
 * **DI Container**: [dishka](https://github.com/reagento/dishka) for constructor injection
 * **Persistence**: SQLAlchemy 2.0 (Async) + SQLite
-* **Caching**: Valkey (Async) for session state and TTLs
+* **Caching**: Valkey (Async) for session state, TTLs, and encrypted message cache
 * **Automation**: [DrissionPage](https://github.com/g1879/DrissionPage) for advanced scraping
 
 ### Key Principles

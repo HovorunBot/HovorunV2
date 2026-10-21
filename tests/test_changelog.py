@@ -18,7 +18,7 @@ def test_parse_version() -> None:
 class MockPath:
     """Mock for pathlib.Path to simulate filesystem state in tests."""
 
-    def __init__(self, *args: Any, content: str = "") -> None:  # noqa: ARG002
+    def __init__(self, *args: Any, content: str = "") -> None:
         """Initialize with content."""
         self._content = content
 
@@ -35,7 +35,7 @@ class MockPath:
         """Return True for these tests."""
         return True
 
-    def read_text(self, encoding: str | None = None) -> str:  # noqa: ARG002
+    def read_text(self, encoding: str | None = None) -> str:
         """Return the pre-defined content."""
         return self._content
 
