@@ -89,6 +89,16 @@ class CleanupService:
         self._loop_task = asyncio.create_task(self._run_loop(bot))
         logger.info("Valkey cleanup loop started")
 
+    async def stop_cleanup_loop(self) -> None:
+        """Stop the background loop if running."""
+        if not self._loop_task or self._loop_task.done():
+            return
+        self._loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._loop_task
+        self._loop_task = None
+        logger.info("Valkey cleanup loop stopped")
+
     async def _run_loop(self, bot: Bot) -> None:
         """Background loop that periodically checks and deletes expired messages."""
         while True:
@@ -126,6 +136,8 @@ class CleanupService:
                 except TimeoutError:
                     pass
 
+            except asyncio.CancelledError:
+                break
             except Exception:
                 logger.exception("Error in Valkey cleanup loop")
                 await asyncio.sleep(60)

@@ -19,14 +19,12 @@ class Settings(BaseSettings):
         bot_token: Telegram Bot API token.
         admin_ids: List of admin IDs for accessing.
         db_path: Path to the database file.
-        openrouter_api_key: OpenRouter API key.
 
     """
 
     bot_token: str
     admin_ids: list[int]
     db_path: str = "data/bot.db"
-    openrouter_api_key: str
     valkey_url: str = "redis://localhost:6379/0"
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]

@@ -35,7 +35,6 @@ dependencies = [
     "cryptography",
     "pycountry",
     "pycountry-convert",
-    "openai",
 ]
 
 [project.urls]
@@ -77,11 +76,14 @@ ignore = [
     "ISC001",
     "S101", # Use of assertions allowed by user intent not for business logic
     "PLR0913",
+    "PLR0917",
     "D104",
     "BLE001",
     "TC",
     "ARG001",
-    "ANN401"
+    "ARG002",
+    "ANN401",
+    "CPY001",
 ]
 
 [tool.ruff.lint.mccabe]

@@ -60,7 +60,7 @@ class CacheService:
     async def zrangebyscore(self, name: str, min_score: float, max_score: float) -> list[str]:
         """Return a range of members in a sorted set by their score."""
         results = await self._cache.zrangebyscore(name, min_score, max_score)
-        return [r.decode("utf-8") if isinstance(r, bytes) else r for r in results]
+        return [r.decode("utf-8") if isinstance(r, bytes) else str(r) for r in results]
 
     async def zrem(self, name: str, *values: str) -> None:
         """Remove members from a sorted set."""

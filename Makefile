@@ -88,7 +88,7 @@ build-prod: $(BUILD_SENTINEL)
 
 $(BUILD_SENTINEL):
 	@echo "Building Docker images..."
-	$(DOCKER_PROD) build --pull
+	$(DOCKER_PROD) build
 	@touch $(BUILD_SENTINEL)
 
 clean-build:
@@ -106,5 +106,7 @@ dev:
 run-dev: dev env-init
 	@echo "Starting HovorunV2 locally..."
 	uv sync
-	@set -a; [ -f .env ] && . ./.env; set +a; uv run hovorunv2
 	@$(MAKE) clean-build
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+		trap 'kill -TERM 0 2>/dev/null; exit 0' INT TERM TSTP; \
+		uv run alembic upgrade head && exec uv run hovorunv2

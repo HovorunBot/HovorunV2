@@ -1,16 +1,19 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
 # 1. Install system dependencies first (Heavy & Stable)
 # This layer rarely changes unless we add new system packages.
-# We combine apt and chromium install to minimize layers.
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y --no-install-recommends nala \
-    && nala install -y --no-install-recommends --raw-dpkg \
+# Keep downloaded .deb packages in BuildKit cache mount across builds.
+RUN rm -f /etc/apt/apt.conf.d/docker-clean \
+    && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update \
+    && apt-get -o Acquire::Queue-Mode=access -o Acquire::Retries=3 install -y --no-install-recommends \
     chromium \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    gcc \
+    libc6-dev
 
 # 2. Install uv (Small & Frequent)
 # Moving this after heavy deps ensures that a uv update doesn't trigger chromium re-download.
