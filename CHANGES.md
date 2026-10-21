@@ -1,3 +1,15 @@
+## 0.2.0
+
+✨ **New in Hovorun v0.2.0: Reddit, YouTube & Granular Media Controls!**
+
+* 🤖 **Reddit & YouTube Support:** Automatically extracts posts, image galleries, and videos from Reddit as well as
+  YouTube videos, Shorts, and Community posts.
+* 🎛️ **Unified Settings & Split Media Toggles:** Use `/settings` to independently toggle video vs. image/text post
+  capture for every supported platform and easily configure translation languages.
+* ⚡ **Faster Meta & Reel Extraction:** Rebuilt media pipeline prioritizing `yt-dlp` and multi-stage fallbacks for
+  smoother Instagram, Facebook, and Threads previews.
+* 🔐 **Per-Chat Encryption:** Upgraded temporary message caching with unique per-chat encryption keys.
+
 ## 0.1.1
 
 🔒 **New in Hovorun v0.1.1: Upgraded Privacy!**

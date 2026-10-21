@@ -1,6 +1,6 @@
 [project]
 name = "hovorunv2"
-version = "0.1.1"
+version = "0.2.0"
 description = "The ultimate wingman for your Telegram group chats — making them smarter, faster, and way more fun."
 readme = "README.md"
 authors = [
