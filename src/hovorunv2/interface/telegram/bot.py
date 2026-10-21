@@ -9,6 +9,7 @@ from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import (
     AccessMiddleware,
+    LogContextMiddleware,
     MessageCacheMiddleware,
 )
 
@@ -21,6 +22,11 @@ async def setup_middlewares(
     access_service: AccessService,
 ) -> None:
     """Register middlewares with the router."""
+    log_context_middleware = LogContextMiddleware()
+    router.message.outer_middleware(log_context_middleware)
+    router.callback_query.outer_middleware(log_context_middleware)
+    router.my_chat_member.outer_middleware(log_context_middleware)
+
     router.message.outer_middleware(MessageCacheMiddleware(message_service))
     router.message.middleware(AccessMiddleware(access_service))
     router.callback_query.middleware(AccessMiddleware(access_service))

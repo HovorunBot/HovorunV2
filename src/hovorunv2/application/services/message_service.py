@@ -32,8 +32,10 @@ class MessageService:
         """Cache a Telegram message with per-chat encryption."""
         chat_id = message.chat.id
         message_id = message.message_id
+        from_user = getattr(message, "from_user", None)
+        user_id = from_user.id if from_user else None
         key = self._generate_key(chat_id, message_id)
-        logger.debug("Caching message %d from chat %d", message_id, chat_id)
+        logger.debug("Caching message %d from user %s in chat %d", message_id, user_id, chat_id)
 
         try:
             # Use model_dump(mode="json") to handle non-serializable types

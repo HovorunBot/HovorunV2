@@ -100,10 +100,14 @@ async def test_get_message_decryption(
     chat.encryption_salt = "0123456789abcdef" * 2
     mock_chat_service.get_or_create_chat.return_value = chat
 
-    # Pre-encrypt manually using the SAME logic
-    fernet = await service._get_fernet_for_chat(chat_id)  # noqa: SLF001
-    assert fernet is not None
-    encrypted_payload = fernet.encrypt(json.dumps(original_data).encode()).decode()
+    message = MagicMock(spec=types.Message)
+    message.chat = MagicMock()
+    message.chat.id = chat_id
+    message.message_id = message_id
+    message.model_dump.return_value = original_data
+
+    await service.cache_message(message)
+    encrypted_payload = mock_cache_service.set.call_args[0][1]
 
     mock_cache_service.get.return_value = encrypted_payload
 

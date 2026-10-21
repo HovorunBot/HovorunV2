@@ -5,15 +5,55 @@ from typing import Any
 
 from aiogram import BaseMiddleware
 from aiogram.dispatcher.flags import get_flag
+from aiogram.dispatcher.middlewares.user_context import EVENT_CONTEXT_KEY, EventContext, UserContextMiddleware
 from aiogram.enums import ChatType
-from aiogram.types import Message, TelegramObject
+from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObject, Update
 
 from hovorunv2.application.data.constants import TOGGLEABLE_COMMANDS
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.infrastructure.logger import get_logger, set_log_context
+from hovorunv2.interface.telegram.handlers.help import HelpCommand
 
 logger = get_logger(__name__)
+
+
+class LogContextMiddleware(BaseMiddleware):
+    """Outer middleware to bind user_id and chat_id into logging ContextVars."""
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        """Bind event user and chat IDs to logging context for the current update task."""
+        user_id, chat_id = self._extract_ids(event, data)
+        set_log_context(user_id=user_id, chat_id=chat_id)
+        return await handler(event, data)
+
+    def _extract_ids(self, event: TelegramObject, data: dict[str, Any]) -> tuple[int | None, int | None]:
+        """Extract user_id and chat_id from Telegram events or aiogram EventContext."""
+        event_context = data.get(EVENT_CONTEXT_KEY)
+        if isinstance(event_context, EventContext):
+            return event_context.user_id, event_context.chat_id
+        if isinstance(event, Update):
+            resolved = UserContextMiddleware.resolve_event_context(event)
+            return resolved.user_id, resolved.chat_id
+        if isinstance(event, (Message, ChatMemberUpdated)):
+            from_user = getattr(event, "from_user", None)
+            user_id = from_user.id if from_user else None
+            chat = getattr(event, "chat", None)
+            chat_id = chat.id if chat else None
+            return user_id, chat_id
+        if isinstance(event, CallbackQuery):
+            from_user = getattr(event, "from_user", None)
+            user_id = from_user.id if from_user else None
+            msg = getattr(event, "message", None)
+            chat = getattr(msg, "chat", None) if msg else None
+            chat_id = chat.id if chat else None
+            return user_id, chat_id
+        return None, None
 
 
 class MessageCacheMiddleware(BaseMiddleware):
@@ -44,16 +84,13 @@ class AccessMiddleware(BaseMiddleware):
         super().__init__()
         self._access_service = access_service
 
-    async def __call__(  # noqa: PLR0911
+    async def __call__(
         self,
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
         """Check authorization before executing handler."""
-        from aiogram.types import CallbackQuery  # noqa: PLC0415
-
-        # Extract flags using more robust method
         handler_obj = data.get("handler")
         policy = (
             get_flag(data, "policy")
@@ -75,37 +112,13 @@ class AccessMiddleware(BaseMiddleware):
                 return None
             return await handler(event, data)
 
-        user_id: int | None = None
-        chat_id: int = 0
-        is_private = False
-
-        if isinstance(event, Message):
-            user_id = event.from_user.id if event.from_user else None
-            chat_id = event.chat.id
-            is_private = event.chat.type == ChatType.PRIVATE
-        elif isinstance(event, CallbackQuery):
-            user_id = event.from_user.id
-            if event.message and isinstance(event.message, Message):
-                chat_id = event.message.chat.id
-                is_private = event.message.chat.type == ChatType.PRIVATE
-
-        if not chat_id:
+        user_id, chat_id, is_private = self._extract_event_context(event)
+        if not chat_id or (is_private and user_id and await self._access_service.is_admin(user_id)):
             return await handler(event, data)
 
         # 1. Handle Private Chats (Direct Messages)
         if is_private:
-            # Owners/Admins get full access to everything in DM
-            if user_id and await self._access_service.is_admin(user_id):
-                return await handler(event, data)
-
-            # Non-admins get the landing page for ANY interaction in DM
-            if isinstance(event, Message):
-                from hovorunv2.interface.telegram.handlers.help import HelpCommand  # noqa: PLC0415
-
-                help_cmd = HelpCommand()
-                await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
-            elif isinstance(event, CallbackQuery):
-                await event.answer("🚫 Access denied.", show_alert=True)
+            await self._deny_private_chat(event)
             return None
 
         # 2. Evaluate Policy
@@ -126,3 +139,23 @@ class AccessMiddleware(BaseMiddleware):
             await event.answer("🚫 You don't have permission to do this.", show_alert=True)
 
         return None
+
+    def _extract_event_context(self, event: TelegramObject) -> tuple[int | None, int, bool]:
+        """Extract user_id, chat_id, and private chat flag from a Telegram event."""
+        if isinstance(event, Message):
+            user_id = event.from_user.id if event.from_user else None
+            return user_id, event.chat.id, event.chat.type == ChatType.PRIVATE
+        if isinstance(event, CallbackQuery):
+            user_id = event.from_user.id
+            if event.message and isinstance(event.message, Message):
+                return user_id, event.message.chat.id, event.message.chat.type == ChatType.PRIVATE
+            return user_id, 0, False
+        return None, 0, False
+
+    async def _deny_private_chat(self, event: TelegramObject) -> None:
+        """Send landing page or access denied alert to non-admin private chat users."""
+        if isinstance(event, Message):
+            help_cmd = HelpCommand()
+            await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+        elif isinstance(event, CallbackQuery):
+            await event.answer("🚫 Access denied.", show_alert=True)

@@ -1,6 +1,8 @@
 """Main application entry point."""
 
 import asyncio
+import signal
+from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
 from dishka import make_async_container
@@ -18,16 +20,20 @@ from hovorunv2.infrastructure.logger import get_logger, setup_logging
 from hovorunv2.interface.telegram.bot import router, setup_handlers, setup_middlewares
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
+from hovorunv2.interface.telegram.middlewares import LogContextMiddleware
 
 logger = get_logger(__name__)
 
 
 async def run_bot() -> None:
     """Initialize app and start polling."""
+    setup_logging()
     logger.info("Starting application...")
 
     # Initialize DI container
     container = make_async_container(InfrastructureProvider(), AppProvider())
+    bot: Bot | None = None
+    cleanup_service: CleanupService | None = None
 
     try:
         # Populate fixtures
@@ -58,6 +64,7 @@ async def run_bot() -> None:
         await notification_service.notify_updates(bot)
 
         dp = Dispatcher()
+        dp.update.outer_middleware(LogContextMiddleware())
         dp.include_router(router)
 
         # Wire dishka with aiogram
@@ -68,15 +75,29 @@ async def run_bot() -> None:
             logger.info("Enabling Error DM logging to owners: %s", settings.owners)
             setup_logging(bot=bot, owner_ids=settings.owners)
 
+        # Handle SIGTSTP (Ctrl+Z) as graceful termination alongside SIGINT/SIGTERM
+        loop = asyncio.get_running_loop()
+        current_task = asyncio.current_task()
+        if current_task and hasattr(signal, "SIGTSTP"):
+            with suppress(NotImplementedError, RuntimeError):
+                loop.add_signal_handler(signal.SIGTSTP, current_task.cancel)
+
         logger.info("Bot started and polling...")
         await dp.start_polling(bot)
+    except asyncio.CancelledError:
+        logger.info("Bot shutdown requested via signal.")
     finally:
+        if cleanup_service:
+            await cleanup_service.stop_cleanup_loop()
+        if bot:
+            await bot.session.close()
         await container.close()
 
 
 def main() -> None:
     """Entry point for the application."""
-    asyncio.run(run_bot())
+    with suppress(KeyboardInterrupt):
+        asyncio.run(run_bot())
 
 
 if __name__ == "__main__":

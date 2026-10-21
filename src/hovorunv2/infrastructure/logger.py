@@ -5,6 +5,7 @@ import html
 import logging
 import sys
 import traceback
+from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
@@ -12,6 +13,36 @@ if TYPE_CHECKING:
 
 MAX_TB_LINES: Final = 8
 MAX_TELEGRAM_MESSAGE_LENGTH: Final = 4096
+
+current_user_id: ContextVar[int | None] = ContextVar("current_user_id", default=None)
+current_chat_id: ContextVar[int | None] = ContextVar("current_chat_id", default=None)
+
+
+def set_log_context(
+    user_id: int | None = None,
+    chat_id: int | None = None,
+) -> tuple[Token[int | None], Token[int | None]]:
+    """Set logging context variables for the current execution task."""
+    return current_user_id.set(user_id), current_chat_id.set(chat_id)
+
+
+def reset_log_context(tokens: tuple[Token[int | None], Token[int | None]]) -> None:
+    """Reset logging context variables using saved tokens."""
+    user_token, chat_token = tokens
+    current_user_id.reset(user_token)
+    current_chat_id.reset(chat_token)
+
+
+class LogContextFilter(logging.Filter):
+    """Logging filter that injects user_id and chat_id from ContextVars into log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Attach user_id and chat_id attributes to the log record."""
+        user_id = current_user_id.get()
+        chat_id = current_chat_id.get()
+        record.user_id = str(user_id) if user_id is not None else "-"
+        record.chat_id = str(chat_id) if chat_id is not None else "-"
+        return True
 
 
 class AsyncTelegramHandler(logging.Handler):
@@ -45,7 +76,12 @@ class AsyncTelegramHandler(logging.Handler):
     def _condense_exception_log(self, record: logging.LogRecord) -> str:
         """Extract key info from exception to fit in Telegram message."""
         # Basic record info
-        header = f"{record.levelname} in {record.name}:{record.funcName}:{record.lineno}"
+        user_id = getattr(record, "user_id", "-")
+        chat_id = getattr(record, "chat_id", "-")
+        header = (
+            f"{record.levelname} in {record.name}:{record.funcName}:{record.lineno} "
+            f"[user={user_id} chat={chat_id}]"
+        )
         main_msg = record.getMessage()
 
         if not record.exc_info:
@@ -90,10 +126,15 @@ def setup_logging(level: int = logging.INFO, bot: Bot | None = None, owner_ids: 
     # Clear existing handlers
     root_logger.handlers = []
 
+    context_filter = LogContextFilter()
+
     # Console handler
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - [user=%(user_id)s chat=%(chat_id)s] - %(message)s"
+    )
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(context_filter)
     root_logger.addHandler(console_handler)
 
     # Telegram Error handler
@@ -101,6 +142,7 @@ def setup_logging(level: int = logging.INFO, bot: Bot | None = None, owner_ids: 
         tg_handler = AsyncTelegramHandler(bot, owner_ids)
         tg_handler.setLevel(logging.ERROR)
         tg_handler.setFormatter(formatter)
+        tg_handler.addFilter(context_filter)
         root_logger.addHandler(tg_handler)
 
 
