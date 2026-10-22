@@ -178,12 +178,17 @@ class RichMediaCommand:
         if payload := await self._primary_client.extract_payload(session, url, chat_id, platform):
             return payload
 
-        # 2. Generic MediaExtractor (yt-dlp)
-        logger.info("%s direct API returned None for %s, trying yt-dlp", self.name, url)
-        if payload := await self._media_extractor.extract_payload(
-            session, url, chat_id, platform, cookies=self._primary_client.get_ytdlp_cookies()
-        ):
-            return payload
+        # 2. Generic MediaExtractor (yt-dlp) - skip for explicit post/text URLs
+        is_post_url = bool(
+            self._primary_client.config.post_url_pattern
+            and self._primary_client.config.post_url_pattern.search(url)
+        )
+        if not is_post_url:
+            logger.info("%s direct API returned None for %s, trying yt-dlp", self.name, url)
+            if payload := await self._media_extractor.extract_payload(
+                session, url, chat_id, platform, cookies=self._primary_client.get_ytdlp_cookies()
+            ):
+                return payload
 
         # 3. Browser Fallback (if configured on provider)
         if payload := await self._primary_client.extract_fallback(url, chat_id, platform, session):

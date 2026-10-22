@@ -7,6 +7,7 @@ from typing import Any
 
 import aiohttp
 import yt_dlp
+from yt_dlp.utils import DownloadError
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.services.translation_service import TranslationService
@@ -44,6 +45,9 @@ class MediaExtractor:
                 logger.error("yt-dlp failed to extract info for %s (returned None)", url)
                 return None
             return await self._process_info(info, session, url, chat_id, platform)
+        except DownloadError as exc:
+            logger.warning("yt-dlp failed to extract media from %s: %s", url, exc)
+            return None
         except Exception:
             logger.exception("Failed to extract media from %s using yt-dlp", url)
             return None

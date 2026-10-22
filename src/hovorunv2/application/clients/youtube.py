@@ -18,18 +18,21 @@ YOUTUBE_CONFIG = ProviderConfig(
         r"youtube\.com/(?:"
         r"shorts/(?P<short_id>[\w-]+)|"
         r"watch\?(?:[^\s#]*&)?v=(?P<video_id>[\w-]+)|"
-        r"post/(?P<post_id>[\w-]+)|"
-        r"channel/[\w-]+/community\?(?:[^\s#]*&)?lb=(?P<community_id>[\w-]+)"
+        r"(?:(?:channel|c|user)/[\w-]+/|@[\w.-]+/)?post/(?P<post_id>[\w-]+)|"
+        r"(?:(?:channel|c|user)/[\w-]+|@[\w.-]+)/community\?(?:[^\s#]*&)?lb=(?P<community_id>[\w-]+)"
         r")|"
         r"youtu\.be/(?P<youtu_be_id>[\w-]+)"
         r")"
     ),
     post_url_pattern=re.compile(
         r"https?://(?:(?:www|m)\.)?youtube\.com/(?:"
-        r"post/(?P<post_id>[\w-]+)|"
-        r"channel/[\w-]+/community\?(?:[^\s#]*&)?lb=(?P<community_id>[\w-]+)"
+        r"(?:(?:channel|c|user)/[\w-]+/|@[\w.-]+/)?post/(?P<post_id>[\w-]+)|"
+        r"(?:(?:channel|c|user)/[\w-]+|@[\w.-]+)/community\?(?:[^\s#]*&)?lb=(?P<community_id>[\w-]+)"
         r")"
     ),
+    headers={
+        "Cookie": "SOCS=CAESEwgDEgk2MTQ1NzU1MDQaAmVuIAEaBgiA_LyaBg",
+    },
     og_config=OGConfig(
         default_author="YouTube Channel",
         author_handle="youtube",
@@ -51,29 +54,39 @@ class YoutubeService(BaseMediaClient):
         match: re.Match[str],
     ) -> RichMediaPayload | None:
         """Extract YouTube Community post from ytInitialData or fall back to OG config."""
-        html_content = await self._fetch_html(session, url)
+        post_id = match.groupdict().get("post_id") or match.groupdict().get("community_id")
+        fetch_url = f"https://www.youtube.com/post/{post_id}" if post_id else url
+        html_content = await self._fetch_html(session, fetch_url)
         if not html_content:
             return None
 
         if renderer := self._extract_post_renderer(html_content):
-            return self._build_payload_from_renderer(renderer, url)
+            return self._build_payload_from_renderer(renderer, fetch_url)
 
         assert self._config.og_config is not None
-        return self._parse_og_html(html_content, url, self._config.og_config)
+        return self._parse_og_html(html_content, fetch_url, self._config.og_config)
 
     def _extract_post_renderer(self, html_content: str) -> dict[str, Any] | None:
-        """Extract backstagePostRenderer from ytInitialData in page HTML."""
-        match = re.search(r"(?:var\s+ytInitialData|window\[['\"]ytInitialData['\"]\])\s*=\s*(\{.*?\});", html_content)
-        if not match:
+        """Extract backstagePostRenderer or sharedPostRenderer from ytInitialData in page HTML."""
+        marker = "ytInitialData"
+        idx = html_content.find(marker)
+        brace_idx = html_content.find("{", idx) if idx != -1 else -1
+        if brace_idx == -1:
             return None
 
         try:
-            data = json.loads(match.group(1))
+            data, _ = json.JSONDecoder().raw_decode(html_content[brace_idx:])
         except Exception:
             return None
 
-        found = self._find_key_in_json(data, "backstagePostRenderer")
-        return found if isinstance(found, dict) else None
+        if isinstance(found := self._find_key_in_json(data, "backstagePostRenderer"), dict):
+            return found
+
+        if isinstance(shared := self._find_key_in_json(data, "sharedPostRenderer"), dict):
+            found_shared = self._find_key_in_json(shared, "backstagePostRenderer")
+            return found_shared if isinstance(found_shared, dict) else shared
+
+        return None
 
     def _build_payload_from_renderer(self, renderer: dict[str, Any], url: str) -> RichMediaPayload | None:
         """Construct raw RichMediaPayload from YouTube backstagePostRenderer."""
