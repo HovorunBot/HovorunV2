@@ -14,6 +14,7 @@ INITIAL_COMMANDS: list[dict[str, str]] = [
     {"name": CommandName.ALLOW_CHAT, "description": "Request bot approval"},
     {"name": CommandName.SETTINGS, "description": "Bot configuration"},
     {"name": CommandName.HELP, "description": "Help information"},
+    {"name": CommandName.FEEDBACK, "description": "Send feedback to bot developers"},
     {"name": CommandName.START, "description": "Start the bot"},
     *[
         entry

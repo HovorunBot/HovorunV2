@@ -13,10 +13,12 @@ from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
+from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.infrastructure.logger import get_logger, setup_logging
+from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.bot import router, setup_handlers, setup_middlewares
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
@@ -34,6 +36,7 @@ async def run_bot() -> None:
     container = make_async_container(InfrastructureProvider(), AppProvider())
     bot: Bot | None = None
     cleanup_service: CleanupService | None = None
+    task_queue_service: TaskQueueService | None = None
 
     try:
         # Populate fixtures
@@ -56,6 +59,16 @@ async def run_bot() -> None:
         # Start persistent cleanup loop
         cleanup_service = await container.get(CleanupService)
         await cleanup_service.start_cleanup_loop(bot)
+
+        # Start generic background task queue worker
+        task_queue_service = await container.get(TaskQueueService)
+        reminder_service = await container.get(ChatReminderService)
+        await task_queue_service.start_worker(
+            context={
+                "bot": bot,
+                "reminder_service": reminder_service,
+            }
+        )
 
         # Start polling
 
@@ -87,6 +100,8 @@ async def run_bot() -> None:
     except asyncio.CancelledError:
         logger.info("Bot shutdown requested via signal.")
     finally:
+        if task_queue_service:
+            await task_queue_service.stop_worker()
         if cleanup_service:
             await cleanup_service.stop_cleanup_loop()
         if bot:

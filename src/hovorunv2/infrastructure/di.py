@@ -24,9 +24,11 @@ from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
+from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.application.services.translation_providers import (
     BaseTranslationService,
     GoogleTranslationService,
@@ -36,10 +38,12 @@ from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.config import settings as app_settings
+from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
+from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 
@@ -89,6 +93,13 @@ class InfrastructureProvider(Provider):
         yield service
         await service.close()
 
+    @provide(scope=Scope.APP)
+    async def get_task_queue_service(self, config: Settings) -> AsyncIterable[TaskQueueService]:
+        """Provide TaskQueueService (SAQ)."""
+        service = TaskQueueService(config)
+        yield service
+        await service.stop_worker()
+
 
 class AppProvider(Provider):
     """Provider for application business logic services."""
@@ -99,6 +110,8 @@ class AppProvider(Provider):
     chat_service = provide(ChatService)
     system_service = provide(SystemDataService)
     notification_service = provide(NotificationService)
+    reminder_service = provide(ChatReminderService)
+    feedback_service = provide(FeedbackService)
     command_data_service = provide(CommandDataService)
     command_service = provide(CommandService)
     chat_status_service = provide(ChatStatusService)
@@ -119,6 +132,7 @@ class AppProvider(Provider):
 
     # Utility Commands & Handlers
     help_command = provide(HelpCommand)
+    feedback_command = provide(FeedbackCommand)
     settings_command = provide(SettingsCommand)
     bot_join_handler = provide(BotJoinHandler)
     debug_command = provide(DebugCommand)
@@ -191,6 +205,7 @@ class AppProvider(Provider):
     def get_utility_commands(
         self,
         help_command: HelpCommand,
+        feedback_command: FeedbackCommand,
         settings_command: SettingsCommand,
         debug_command: DebugCommand,
     ) -> UtilityCommands:
@@ -198,6 +213,7 @@ class AppProvider(Provider):
         return UtilityCommands(
             [
                 help_command,
+                feedback_command,
                 settings_command,
                 debug_command,
             ]

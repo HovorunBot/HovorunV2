@@ -11,6 +11,7 @@ class CommandName(StrEnum):
     ALLOW_CHAT = "allow_chat"
     SETTINGS = "settings"
     HELP = "help"
+    FEEDBACK = "feedback"
     START = "start"
     TWITTER = "twitter"
     TWITTER_VIDEO = "twitter_video"

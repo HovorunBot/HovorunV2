@@ -56,6 +56,14 @@ def mock_chat_status_service() -> MagicMock:
 
 
 @pytest.fixture
+def mock_reminder_service() -> MagicMock:
+    """Create a mock reminder service."""
+    service = MagicMock()
+    service.send_unauthorized_prompt = AsyncMock()
+    return service
+
+
+@pytest.fixture
 def mock_access_service() -> MagicMock:
     """Create a mock access service."""
     service = MagicMock()
@@ -64,9 +72,12 @@ def mock_access_service() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_bot_join_prompt(mock_chat_status_service: MagicMock) -> None:
+async def test_bot_join_prompt(
+    mock_chat_status_service: MagicMock,
+    mock_reminder_service: MagicMock,
+) -> None:
     """Test that bot join sends a verification prompt if not approved."""
-    handler = BotJoinHandler(mock_chat_status_service)
+    handler = BotJoinHandler(mock_chat_status_service, mock_reminder_service)
 
     event = MagicMock()
     event.new_chat_member.status = "member"
@@ -77,9 +88,8 @@ async def test_bot_join_prompt(mock_chat_status_service: MagicMock) -> None:
 
     await handler.handle_my_chat_member_update(event, bot)
 
-    bot.send_message.assert_called_once()
-    assert "hello" in bot.send_message.call_args[1]["text"].lower()
-    assert "reply_markup" in bot.send_message.call_args[1]
+    mock_chat_status_service.set_status.assert_called_with(123, ChatStatus.UNAUTHORIZED)
+    mock_reminder_service.send_unauthorized_prompt.assert_called_once_with(bot, 123, force=True)
 
 
 @pytest.mark.asyncio
