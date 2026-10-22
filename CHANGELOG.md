@@ -1,10 +1,9 @@
-## Unreleased
+## v0.2.1 (2026-10-23)
 
 ### Feat
 
-- **notification**: add direct GitHub release tag link and filter internal scopes
 - **queue**: implement SAQ task queue, periodic chat reminders, and /feedback command
-- **ci**: add Git pre-commit hooks, ruff formatting, and classify post-tag commits as unpublished
+- **ci**: add Git pre-commit hooks, Commitizen check, and code quality formatting
 - **versioning**: automate Git tag releases, build verification, and group update notifications
 - **youtube**: improve community posts handling, canonicalization, and yt-dlp skip logic
 
