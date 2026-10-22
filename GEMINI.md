@@ -39,9 +39,28 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Valke
 - **Real Infrastructure:** Test against real services, in-memory SQLite, and local Valkey. NEVER use `unittest.mock` for internal services, repositories, or persistence—verify DB/Valkey state directly.
 - **Network Mocking:** Mock external HTTP APIs only (e.g., `api.vxtwitter.com`, `tikwm.com`) using `aioresponses`.
 
+## Commit Messages & Versioning
+
+- **Conventional Commits:** Use standard format `<type>(<scope>): <description>`.
+- **User-Facing Types (Auto-included in release notes & Telegram broadcasts):**
+  - `feat`: New user-facing features or capabilities (e.g. `feat(youtube): support community posts`). Tagged with ✨ in notifications.
+  - `perf`: Noticeable performance and extraction speed improvements (e.g. `perf(media): stream downloads directly`). Tagged with ⚡ in notifications.
+  - `!` / `BREAKING CHANGE`: Breaking architectural or user changes (e.g. `feat(settings)!: migrate config schema`). Tagged with 🚨 in notifications.
+- **Internal Churn Types (Filtered out from user release notes):**
+  - `chore`, `test`, `ci`, `docs`, `refactor`, `style`, `build`.
+- **Description Quality:**
+  - Use imperative present tense (`feat(media): add...`, NOT `added...`).
+  - Keep descriptions clear, concise, and user-centric (users read these in Telegram update alerts).
+  - Scope should be lowercase module or feature name (`youtube`, `reddit`, `settings`, `encryption`).
+- **Releases & Tags:**
+  - Create annotated Git tags for releases: `make tag-release VERSION=vX.Y.Z [MESSAGE="..."]`.
+  - Annotated tag messages override commit logs as curated human release notes.
+
 ## Commands
 
-- **Setup:** `make setup`
+- **Setup:** `make setup` (or `make setup VERSION=vX.Y.Z`)
+- **Release Tag:** `make tag-release VERSION=vX.Y.Z`
+- **Install Hooks:** `make install-hooks` (Git pre-commit hooks for versioning and checks)
 - **Dev Run:** `make run-dev` (Valkey in Docker, bot via `uv`)
 - **Prod Run / Stop:** `make run` / `make stop`
 - **Test:** `PYTHONPATH=src uv run pytest`

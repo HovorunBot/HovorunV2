@@ -53,6 +53,7 @@ packages = ["src/hovorunv2"]
 
 [dependency-groups]
 dev = [
+    "commitizen>=4.19.2",
     "pytest",
     "pytest-alembic",
     "pytest-asyncio",
@@ -95,6 +96,19 @@ max-complexity = 15
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_scheme = "semver"
+version_provider = "pep621"
+update_changelog_on_bump = true
+major_version_zero = true
+annotated_tag = true
+bump_message = "chore(release): bump version to $new_version"
+version_files = [
+    "uv.lock:version = \"$current_version\"",
+]
 
 
 

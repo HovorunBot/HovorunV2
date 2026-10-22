@@ -28,6 +28,5 @@ docs/
 tests/
 Makefile
 GEMINI.md
-CHANGES.md
 LICENSE
 example.env

@@ -12,6 +12,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-}
     container_name: hovorun-bot
     restart: always
     profiles:
@@ -23,6 +25,7 @@ services:
     environment:
       - VALKEY_URL=redis://valkey:6379/0
       - DB_PATH=/app/data/bot.db
+      - APP_VERSION=${APP_VERSION:-}
     volumes:
       - ./data:/app/data
 

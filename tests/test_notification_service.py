@@ -19,78 +19,91 @@ async def notification_service(init_container: AsyncContainer) -> NotificationSe
 
 
 @pytest.mark.asyncio
-async def test_notify_updates_fresh_install(
+async def test_notify_updates_fresh_install_silent(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
-    """Test that fresh install (last_notified is None) triggers notification for initial version."""
+    """Test that fresh install (last_notified is None) records version silently without messages."""
     system_service = await init_container.get(SystemDataService)
     chat_status_service = await init_container.get(ChatStatusService)
 
-    # Ensure last_notified is None
+    # Ensure last_notified is None initially
     assert await system_service.get_last_notified_version() is None
 
-    # Mock a approved chat
-    chat_id = 12345
-    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+    # Mock an approved group chat
+    group_chat_id = -10012345
+    await chat_status_service.set_status(group_chat_id, ChatStatus.APPROVED)
 
     bot = AsyncMock(spec=Bot)
 
-    # Mock changelog to return some updates for 0.1.0
     with (
         patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.1.0"),
-        patch(
-            "hovorunv2.application.services.notification_service.get_changelog_updates", return_value="Initial features"
-        ) as mock_updates,
+        patch("hovorunv2.application.services.notification_service.get_changelog_updates") as mock_updates,
     ):
         await notification_service.notify_updates(bot)
 
-        # Should check updates from 0.0.0 to 0.1.0
-        mock_updates.assert_called_once_with("0.0.0", "0.1.0")
+        # Must not fetch changelog or send any message on fresh install
+        mock_updates.assert_not_called()
+        bot.send_message.assert_not_called()
 
-        # Should send message to approved chat
+        # Must update last_notified_version in DB
+        assert await system_service.get_last_notified_version() == "0.1.0"
+
+
+@pytest.mark.asyncio
+async def test_notify_updates_group_chats_only(
+    notification_service: NotificationService, init_container: AsyncContainer
+) -> None:
+    """Test that only group/supergroup chats (chat_id < 0) are notified upon upgrade."""
+    system_service = await init_container.get(SystemDataService)
+    chat_status_service = await init_container.get(ChatStatusService)
+
+    await system_service.set_last_notified_version("0.1.0")
+
+    # Set up one private chat (> 0) and one group chat (< 0)
+    private_chat_id = 99999
+    group_chat_id = -10088888
+    await chat_status_service.set_status(private_chat_id, ChatStatus.APPROVED)
+    await chat_status_service.set_status(group_chat_id, ChatStatus.APPROVED)
+
+    bot = AsyncMock(spec=Bot)
+
+    with (
+        patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.2.0"),
+        patch(
+            "hovorunv2.application.services.notification_service.get_changelog_updates",
+            return_value="✨ **Media**: New feature",
+        ),
+    ):
+        await notification_service.notify_updates(bot)
+
+        # Only group chat receives message
         bot.send_message.assert_called_once()
         _, kwargs = bot.send_message.call_args
-        assert kwargs["chat_id"] == chat_id
-        assert "v0.1.0" in kwargs["text"]
-        assert "Initial features" in kwargs["text"]
-
-        # Should update last_notified_version in DB
-        assert await system_service.get_last_notified_version() == "0.1.0"
+        assert kwargs["chat_id"] == group_chat_id
+        assert "v0.2.0" in kwargs["text"]
+        assert "New feature" in kwargs["text"]
+        assert await system_service.get_last_notified_version() == "0.2.0"
 
 
 @pytest.mark.asyncio
 async def test_notify_updates_no_new_version(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
-    """Test that no notification is sent if version hasn't changed."""
+    """Test that no notification is sent if version hasn't increased."""
     system_service = await init_container.get(SystemDataService)
-    await system_service.set_last_notified_version("0.1.0")
+    chat_status_service = await init_container.get(ChatStatusService)
+
+    await system_service.set_last_notified_version("0.2.0")
+    await chat_status_service.set_status(-100111, ChatStatus.APPROVED)
 
     bot = AsyncMock(spec=Bot)
 
-    with patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.1.0"):
+    # Identical version
+    with patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.2.0"):
         await notification_service.notify_updates(bot)
         bot.send_message.assert_not_called()
 
-
-@pytest.mark.asyncio
-async def test_notify_updates_upgrade(
-    notification_service: NotificationService, init_container: AsyncContainer
-) -> None:
-    """Test notification on version upgrade."""
-    system_service = await init_container.get(SystemDataService)
-    chat_status_service = await init_container.get(ChatStatusService)
-    await system_service.set_last_notified_version("0.1.0")
-    await chat_status_service.set_status(555, ChatStatus.APPROVED)
-
-    bot = AsyncMock(spec=Bot)
-
-    with (
-        patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.2.0"),
-        patch("hovorunv2.application.services.notification_service.get_changelog_updates", return_value="New stuff"),
-    ):
+    # Downgrade
+    with patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.1.9"):
         await notification_service.notify_updates(bot)
-
-        bot.send_message.assert_called_once()
-        assert "v0.2.0" in bot.send_message.call_args[1]["text"]
-        assert await system_service.get_last_notified_version() == "0.2.0"
+        bot.send_message.assert_not_called()

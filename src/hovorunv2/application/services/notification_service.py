@@ -5,7 +5,7 @@ import asyncio
 from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
 
-from hovorunv2.application.changelog import get_changelog_updates, get_current_version
+from hovorunv2.application.changelog import get_changelog_updates, get_current_version, parse_version
 from hovorunv2.application.data.chat_service import ChatService
 from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.application.data.system_service import SystemDataService
@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 
 class NotificationService:
-    """Service to handle broadcasting update notifications to users."""
+    """Service to handle broadcasting update notifications to group chats."""
 
     def __init__(self, chat_service: ChatService, system_service: SystemDataService) -> None:
         """Initialize with its dependencies."""
@@ -23,41 +23,57 @@ class NotificationService:
         self._system_service = system_service
 
     async def notify_updates(self, bot: Bot) -> None:
-        """Check for version updates and notify approved chats."""
+        """Check for version updates and notify approved group chats."""
         current_version = get_current_version()
         last_notified = await self._system_service.get_last_notified_version()
 
-        # If fresh install, treat as update from 0.0.0 to show initial changes
+        # 1. Fresh database: record current version silently without notification
         if last_notified is None:
-            logger.info("Fresh install detected. Checking for initial version %s changes", current_version)
-            last_notified = "0.0.0"
-
-        if last_notified == current_version:
-            logger.debug("No new updates to notify. Current version: %s", current_version)
+            logger.info("Fresh database detected. Initializing version %s silently", current_version)
+            await self._system_service.set_last_notified_version(current_version)
             return
 
+        # 2. Only notify if version has strictly increased
+        if parse_version(current_version) <= parse_version(last_notified):
+            logger.debug(
+                "No version upgrade detected (last notified: %s, current: %s). Skipping notification.",
+                last_notified,
+                current_version,
+            )
+            return
+
+        # 3. Retrieve user-facing changes between last_notified and current_version
         updates_text = get_changelog_updates(last_notified, current_version)
         if not updates_text:
-            logger.info("No changelog entries found between %s and %s", last_notified, current_version)
+            logger.info("No user-facing changelog entries found between %s and %s", last_notified, current_version)
             await self._system_service.set_last_notified_version(current_version)
             return
 
-        message = f"🚀 *Hovorun Updated to v{current_version}*\n\n{updates_text}\n\n_Enjoy the new features!_"
-
+        # 4. Filter strictly to approved group/supergroup chats (chat_id < 0)
         approved_chats = await self._chat_service.get_all_by_status(ChatStatus.APPROVED, "telegram")
-        if not approved_chats:
-            logger.info("No approved chats to notify.")
+        group_chats = [chat for chat in approved_chats if chat.chat_id < 0]
+        if not group_chats:
+            logger.info("No approved group chats found to notify.")
             await self._system_service.set_last_notified_version(current_version)
             return
 
-        logger.info("Broadcasting update notification to %d chats...", len(approved_chats))
+        tag_name = f"v{current_version.lstrip('v')}"
+        tag_url = f"https://github.com/HovorunBot/HovorunV2/releases/tag/{tag_name}"
+        message = (
+            f"🚀 <b>Hovorun Updated to {tag_name}</b>\n\n"
+            f"{updates_text}\n\n"
+            f'📖 <a href="{tag_url}">Read full release notes on GitHub</a>'
+        )
 
-        for chat in approved_chats:
+        logger.info("Broadcasting update notification to %d group chat(s)...", len(group_chats))
+
+        for chat in group_chats:
             try:
                 await bot.send_message(
                     chat_id=chat.chat_id,
                     text=message,
-                    parse_mode="Markdown",  # Simplified markdown for compatibility
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
                 )
                 # Respect rate limits (Telegram approx 30 msg/sec overall)
                 await asyncio.sleep(0.05)
@@ -67,7 +83,7 @@ class NotificationService:
                 # Retry once
                 await bot.send_message(chat_id=chat.chat_id, text=message, parse_mode="Markdown")
             except Exception:
-                logger.exception("Failed to send update notification to chat %d", chat.chat_id)
+                logger.exception("Failed to send update notification to group chat %d", chat.chat_id)
 
         await self._system_service.set_last_notified_version(current_version)
         logger.info("Update notification broadcast complete.")

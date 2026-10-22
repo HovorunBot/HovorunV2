@@ -37,9 +37,11 @@ COPY src ./src
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 COPY entrypoint.sh ./entrypoint.sh
-COPY README.md ./README.md
+COPY README.md CHANGES.md* CHANGELOG.md* ./
 
 # Final sync to install the project itself
+ARG APP_VERSION=""
+ENV APP_VERSION=${APP_VERSION}
 RUN chmod +x entrypoint.sh && uv sync --frozen --no-dev
 
 ENTRYPOINT ["./entrypoint.sh"]
