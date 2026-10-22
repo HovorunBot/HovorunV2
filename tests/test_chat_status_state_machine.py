@@ -7,7 +7,8 @@ from aiogram import Bot
 from aiogram.types import Chat, ChatMemberUpdated
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import ChatStatus
+from hovorunv2.application.data.constants import ChatStatus, UserTier
+from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
@@ -31,6 +32,12 @@ async def access_command(init_container: AsyncContainer) -> AccessCommand:
     return await init_container.get(AccessCommand)
 
 
+@pytest.fixture
+async def access_service(init_container: AsyncContainer) -> AccessService:
+    """Provide AccessService."""
+    return await init_container.get(AccessService)
+
+
 def create_mock_event(chat_id: int, status: str) -> MagicMock:
     """Create mock ChatMemberUpdated event."""
     event = MagicMock(spec=ChatMemberUpdated)
@@ -46,6 +53,7 @@ async def test_state_machine_flow(
     chat_status_service: ChatStatusService,
     bot_join_handler: BotJoinHandler,
     access_command: AccessCommand,
+    access_service: AccessService,
 ) -> None:
     """Test full access state machine lifecycle."""
     chat_id = 111
@@ -73,7 +81,7 @@ async def test_state_machine_flow(
     # 3. Duplicate request should be handled
     message.answer.reset_mock()
     await access_command.handle(message, bot)
-    message.answer.assert_called_with("⏳ Approval is already pending. Owners have been notified.")
+    message.answer.assert_called_with("⏳ Approval is already pending. Administrators have been notified.")
 
     # 4. Kick -> INACTIVE
     event_kick = create_mock_event(chat_id, "kicked")
@@ -87,6 +95,7 @@ async def test_state_machine_flow(
 
     # 6. Approve -> APPROVED
     # Mocking callback_data for Approve
+    await access_service.set_user_tier(999, UserTier.ADMIN)
     callback_data = MagicMock()
     callback_data.chat_id = chat_id
     callback_data.action = "approve"

@@ -50,7 +50,7 @@ class HelpCommand(BaseCommand):
             "translations, and seamless media integrations.\n\n"
             "<b>🛡 Access Approval</b>\n"
             "Bot only works in approved chats. Group admins can request access:\n"
-            "• /allow_chat — Request bot approval from owners.\n\n"
+            "• /allow_chat — Request bot approval from administrators.\n\n"
             "<b>⚙️ Configuration (Group Admins only)</b>\n"
             "• /settings — Interactive menu for Modules and Languages.\n"
             "• <i>Configuration windows self-destruct after 30s of inactivity.</i>\n\n"

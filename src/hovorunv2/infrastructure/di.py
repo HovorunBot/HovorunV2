@@ -18,6 +18,7 @@ from hovorunv2.application.clients.youtube import YoutubeService
 from hovorunv2.application.data.chat_service import ChatService
 from hovorunv2.application.data.command_service import CommandDataService
 from hovorunv2.application.data.system_service import SystemDataService
+from hovorunv2.application.data.user_service import UserDataService
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.services.access_service import AccessService
@@ -42,6 +43,7 @@ from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from hovorunv2.interface.telegram.handlers.user_management import UserManagementCommand
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
@@ -97,6 +99,7 @@ class AppProvider(Provider):
 
     message_service = provide(MessageService)
     chat_service = provide(ChatService)
+    user_data_service = provide(UserDataService)
     system_service = provide(SystemDataService)
     notification_service = provide(NotificationService)
     command_data_service = provide(CommandDataService)
@@ -123,6 +126,7 @@ class AppProvider(Provider):
     bot_join_handler = provide(BotJoinHandler)
     debug_command = provide(DebugCommand)
     access_command = provide(AccessCommand)
+    user_management_command = provide(UserManagementCommand)
 
     @provide(scope=Scope.APP)
     def get_media_clients(
@@ -175,7 +179,6 @@ class AppProvider(Provider):
         chat_status_service: ChatStatusService,
         command_service: CommandService,
         access_service: AccessService,
-        settings: Settings,
         rich_media_commands: list[RichMediaCommand],
     ) -> AccessCommand:
         """Provide AccessCommand with its dependencies."""
@@ -183,7 +186,6 @@ class AppProvider(Provider):
             chat_status_service=chat_status_service,
             command_service=command_service,
             access_service=access_service,
-            settings=settings,
             commands=rich_media_commands,
         )
 
@@ -193,6 +195,7 @@ class AppProvider(Provider):
         help_command: HelpCommand,
         settings_command: SettingsCommand,
         debug_command: DebugCommand,
+        user_management_command: UserManagementCommand,
     ) -> UtilityCommands:
         """Provide list of utility/infrastructure commands."""
         return UtilityCommands(
@@ -200,6 +203,7 @@ class AppProvider(Provider):
                 help_command,
                 settings_command,
                 debug_command,
+                user_management_command,
             ]
         )
 

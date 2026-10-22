@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 from hovorunv2.application.data.constants import CommandName
 from hovorunv2.domain.base import Base
 from hovorunv2.infrastructure.browser import BrowserService
+from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.fixtures import setup_fixtures
@@ -98,7 +99,13 @@ async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[AsyncContai
     session_maker = await container.get(async_sessionmaker)
     await setup_fixtures(session_maker)
 
+    # Clean cache before test
+    cache_service = await container.get(CacheService)
+    await cache_service.clear()
+
     yield container
+
+    await cache_service.clear()
     await container.close()
 
 

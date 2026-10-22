@@ -1,6 +1,7 @@
 """Tests for the DebugCommand class and logging context tracking."""
 
 import logging
+from datetime import UTC, datetime
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -76,7 +77,7 @@ async def test_log_context_middleware_tracks_user_and_chat_id() -> None:
             update_id=1,
             message=Message(
                 message_id=10,
-                date=123456789,
+                date=datetime.fromtimestamp(123456789, tz=UTC),
                 chat=Chat(id=54321, type="group", title="Test"),
                 from_user=User(id=98765, is_bot=False, first_name="Test"),
                 text="unhandled text",

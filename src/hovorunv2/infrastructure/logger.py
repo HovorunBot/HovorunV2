@@ -46,13 +46,13 @@ class LogContextFilter(logging.Filter):
 
 
 class AsyncTelegramHandler(logging.Handler):
-    """Logging handler that sends messages to Telegram owners asynchronously."""
+    """Logging handler that sends messages to Telegram administrators asynchronously."""
 
-    def __init__(self, bot: Bot, owner_ids: list[int]) -> None:
-        """Initialize with bot and owner IDs."""
+    def __init__(self, bot: Bot, admin_ids: list[int]) -> None:
+        """Initialize with bot and admin IDs."""
         super().__init__()
         self.bot = bot
-        self.owner_ids = owner_ids
+        self.admin_ids = admin_ids
         self._tasks: set[asyncio.Task] = set()
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -66,8 +66,8 @@ class AsyncTelegramHandler(logging.Handler):
         # Create tasks in the running loop
         try:
             loop = asyncio.get_running_loop()
-            for owner_id in self.owner_ids:
-                task = loop.create_task(self._send_to_telegram(msg, owner_id))
+            for admin_id in self.admin_ids:
+                task = loop.create_task(self._send_to_telegram(msg, admin_id))
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
         except RuntimeError:
@@ -107,18 +107,18 @@ class AsyncTelegramHandler(logging.Handler):
             f"<pre>{html.escape(condensed_tb)}</pre>"
         )
 
-    async def _send_to_telegram(self, message: str, owner_id: int) -> None:
+    async def _send_to_telegram(self, message: str, admin_id: int) -> None:
         """Actually send the message via Bot."""
         try:
             # We don't escape everything because _condense_exception_log provides HTML tags
             # but we ensure the message isn't insanely large
             safe_msg = message[:MAX_TELEGRAM_MESSAGE_LENGTH]
-            await self.bot.send_message(owner_id, f"🚨 <b>Log Alert</b>\n\n{safe_msg}", parse_mode="HTML")
+            await self.bot.send_message(admin_id, f"🚨 <b>Log Alert</b>\n\n{safe_msg}", parse_mode="HTML")
         except Exception as e:
-            print(f"[AsyncTelegramHandler Error] Failed to send to {owner_id}: {e}", file=sys.stderr)  # noqa: T201
+            print(f"[AsyncTelegramHandler Error] Failed to send to {admin_id}: {e}", file=sys.stderr)  # noqa: T201
 
 
-def setup_logging(level: int = logging.INFO, bot: Bot | None = None, owner_ids: list[int] | None = None) -> None:
+def setup_logging(level: int = logging.INFO, bot: Bot | None = None, admin_ids: list[int] | None = None) -> None:
     """Initialize logging with optional Telegram handler."""
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
@@ -138,8 +138,8 @@ def setup_logging(level: int = logging.INFO, bot: Bot | None = None, owner_ids: 
     root_logger.addHandler(console_handler)
 
     # Telegram Error handler
-    if bot and owner_ids:
-        tg_handler = AsyncTelegramHandler(bot, owner_ids)
+    if bot and admin_ids:
+        tg_handler = AsyncTelegramHandler(bot, admin_ids)
         tg_handler.setLevel(logging.ERROR)
         tg_handler.setFormatter(formatter)
         tg_handler.addFilter(context_filter)

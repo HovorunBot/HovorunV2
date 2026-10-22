@@ -16,6 +16,7 @@ from hovorunv2.domain.base import Base
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.system import SystemStateDB
+from hovorunv2.domain.user import UserDB
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

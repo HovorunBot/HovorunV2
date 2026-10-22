@@ -53,6 +53,10 @@ class CacheService:
         """Delete a key from the cache."""
         await self._cache.delete(key)
 
+    async def clear(self) -> None:
+        """Flush all cache entries."""
+        await self._cache.flushdb()
+
     async def zadd(self, name: str, mapping: dict[str, float]) -> None:
         """Add members to a sorted set."""
         await self._cache.zadd(name, mapping)

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from hovorunv2.infrastructure.logger import get_logger
@@ -17,13 +17,11 @@ class Settings(BaseSettings):
 
     Attributes:
         bot_token: Telegram Bot API token.
-        admin_ids: List of admin IDs for accessing.
         db_path: Path to the database file.
 
     """
 
     bot_token: str
-    admin_ids: list[int]
     db_path: str = "data/bot.db"
     valkey_url: str = "redis://localhost:6379/0"
     translation_target_lang: str = "uk"
@@ -32,7 +30,6 @@ class Settings(BaseSettings):
     browser_idle_timeout: int = 600  # 10 minutes
     instagram_sessionid: str | None = None
     error_dm_enabled: bool = False
-    owners: list[int] = Field(default_factory=list, validation_alias="OWNERS")
     cache_encryption_key: str | None = None
 
     # Project Metadata

@@ -1,6 +1,6 @@
 """Global application constants."""
 
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from typing import Final
 
 
@@ -36,6 +36,8 @@ class CommandName(StrEnum):
     REDDIT = "reddit"
     REDDIT_VIDEO = "reddit_video"
     REDDIT_POST = "reddit_post"
+    SET_TIER = "set_tier"
+    USER_INFO = "user_info"
 
 
 class ChatStatus(StrEnum):
@@ -47,6 +49,16 @@ class ChatStatus(StrEnum):
     REJECTED = "rejected"
     BANNED = "banned"
     INACTIVE = "inactive"
+
+
+class UserTier(IntEnum):
+    """User authorization tiers ordered by privilege level."""
+
+    BANNED = 0
+    USER = 10
+    BETA = 15
+    VIP = 20
+    ADMIN = 100
 
 
 # Mapping of provider base command to its (video, post) split sub-commands.
@@ -75,6 +87,8 @@ DEFAULT_COMMANDS: Final[tuple[CommandName, ...]] = (
     CommandName.SETTINGS,
     CommandName.HELP,
     CommandName.START,
+    CommandName.SET_TIER,
+    CommandName.USER_INFO,
 )
 
 # Provider commands that can be toggled per chat.

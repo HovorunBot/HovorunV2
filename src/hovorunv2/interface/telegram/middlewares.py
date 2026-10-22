@@ -37,23 +37,26 @@ class LogContextMiddleware(BaseMiddleware):
         event_context = data.get(EVENT_CONTEXT_KEY)
         if isinstance(event_context, EventContext):
             return event_context.user_id, event_context.chat_id
-        if isinstance(event, Update):
-            resolved = UserContextMiddleware.resolve_event_context(event)
-            return resolved.user_id, resolved.chat_id
-        if isinstance(event, (Message, ChatMemberUpdated)):
-            from_user = getattr(event, "from_user", None)
-            user_id = from_user.id if from_user else None
-            chat = getattr(event, "chat", None)
-            chat_id = chat.id if chat else None
-            return user_id, chat_id
-        if isinstance(event, CallbackQuery):
-            from_user = getattr(event, "from_user", None)
-            user_id = from_user.id if from_user else None
-            msg = getattr(event, "message", None)
-            chat = getattr(msg, "chat", None) if msg else None
-            chat_id = chat.id if chat else None
-            return user_id, chat_id
-        return None, None
+
+        match event:
+            case Update():
+                resolved = UserContextMiddleware.resolve_event_context(event)
+                return resolved.user_id, resolved.chat_id
+            case Message() | ChatMemberUpdated():
+                from_user = getattr(event, "from_user", None)
+                user_id = from_user.id if from_user else None
+                chat = getattr(event, "chat", None)
+                chat_id = chat.id if chat else None
+                return user_id, chat_id
+            case CallbackQuery():
+                from_user = getattr(event, "from_user", None)
+                user_id = from_user.id if from_user else None
+                msg = getattr(event, "message", None)
+                chat = getattr(msg, "chat", None) if msg else None
+                chat_id = chat.id if chat else None
+                return user_id, chat_id
+            case _:
+                return None, None
 
 
 class MessageCacheMiddleware(BaseMiddleware):
@@ -91,6 +94,15 @@ class AccessMiddleware(BaseMiddleware):
         data: dict[str, Any],
     ) -> Any:
         """Check authorization before executing handler."""
+        user_id, chat_id, is_private = self._extract_event_context(event)
+
+        # 1. Banned users are rejected immediately across all chats
+        if user_id and await self._access_service.is_banned(user_id):
+            logger.info("Access denied: user %d is BANNED", user_id)
+            if isinstance(event, CallbackQuery):
+                await event.answer("🚫 You are banned from using this bot.", show_alert=True)
+            return None
+
         handler_obj = data.get("handler")
         policy = (
             get_flag(data, "policy")
@@ -103,26 +115,49 @@ class AccessMiddleware(BaseMiddleware):
             or (getattr(handler_obj, "flags", {}).get("command_name") if handler_obj else None)
         )
 
-        # If no policy is attached, it might be a default command
-        # However, for toggleable commands we MUST have a policy to evaluate access
-        if not policy or not isinstance(policy, CommandPolicy):
-            # If it's a known toggleable command but has no policy, DENY by default
+        policy_obj = policy if isinstance(policy, CommandPolicy) else None
+        if await self._is_authorized(
+            event,
+            data,
+            user_id,
+            chat_id,
+            is_private=is_private,
+            policy=policy_obj,
+            command_name=command_name,
+        ):
+            return await handler(event, data)
+
+        logger.info("Access denied for %s in chat %d by user %s", command_name or "callback", chat_id, user_id)
+        if isinstance(event, CallbackQuery):
+            await event.answer("🚫 You don't have permission to do this.", show_alert=True)
+        return None
+
+    async def _is_authorized(
+        self,
+        event: TelegramObject,
+        data: dict[str, Any],
+        user_id: int | None,
+        chat_id: int,
+        *,
+        is_private: bool,
+        policy: CommandPolicy | None,
+        command_name: str | None,
+    ) -> bool:
+        """Check if request is authorized to proceed to handler."""
+        if not policy:
             if command_name in TOGGLEABLE_COMMANDS:
                 logger.error("Toggleable command %s missing policy in middleware!", command_name)
-                return None
-            return await handler(event, data)
+                return False
+            return True
 
-        user_id, chat_id, is_private = self._extract_event_context(event)
         if not chat_id or (is_private and user_id and await self._access_service.is_admin(user_id)):
-            return await handler(event, data)
+            return True
 
-        # 1. Handle Private Chats (Direct Messages)
         if is_private:
             await self._deny_private_chat(event)
-            return None
+            return False
 
-        # 2. Evaluate Policy
-        is_allowed = await self._access_service.is_allowed(
+        return await self._access_service.is_allowed(
             user_id=user_id,
             chat_id=chat_id,
             policy=policy,
@@ -130,32 +165,27 @@ class AccessMiddleware(BaseMiddleware):
             command_name=command_name,
         )
 
-        if is_allowed:
-            return await handler(event, data)
-
-        logger.info("Access denied for %s in chat %d by user %s", command_name or "callback", chat_id, user_id)
-
-        if isinstance(event, CallbackQuery):
-            await event.answer("🚫 You don't have permission to do this.", show_alert=True)
-
-        return None
-
     def _extract_event_context(self, event: TelegramObject) -> tuple[int | None, int, bool]:
         """Extract user_id, chat_id, and private chat flag from a Telegram event."""
-        if isinstance(event, Message):
-            user_id = event.from_user.id if event.from_user else None
-            return user_id, event.chat.id, event.chat.type == ChatType.PRIVATE
-        if isinstance(event, CallbackQuery):
-            user_id = event.from_user.id
-            if event.message and isinstance(event.message, Message):
-                return user_id, event.message.chat.id, event.message.chat.type == ChatType.PRIVATE
-            return user_id, 0, False
-        return None, 0, False
+        match event:
+            case Message():
+                user_id = event.from_user.id if event.from_user else None
+                return user_id, event.chat.id, event.chat.type == ChatType.PRIVATE
+            case CallbackQuery():
+                user_id = event.from_user.id
+                if event.message and isinstance(event.message, Message):
+                    return user_id, event.message.chat.id, event.message.chat.type == ChatType.PRIVATE
+                return user_id, 0, False
+            case _:
+                return None, 0, False
 
     async def _deny_private_chat(self, event: TelegramObject) -> None:
         """Send landing page or access denied alert to non-admin private chat users."""
-        if isinstance(event, Message):
-            help_cmd = HelpCommand()
-            await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
-        elif isinstance(event, CallbackQuery):
-            await event.answer("🚫 Access denied.", show_alert=True)
+        match event:
+            case Message():
+                help_cmd = HelpCommand()
+                await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+            case CallbackQuery():
+                await event.answer("🚫 Access denied.", show_alert=True)
+            case _:
+                pass

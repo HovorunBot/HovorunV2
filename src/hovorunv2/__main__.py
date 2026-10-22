@@ -71,9 +71,11 @@ async def run_bot() -> None:
         setup_dishka(container=container, router=dp)
 
         # Initialize improved logging with Telegram DM handler
-        if settings.error_dm_enabled and settings.owners:
-            logger.info("Enabling Error DM logging to owners: %s", settings.owners)
-            setup_logging(bot=bot, owner_ids=settings.owners)
+        if settings.error_dm_enabled:
+            admin_ids = await access_service.get_admin_ids()
+            if admin_ids:
+                logger.info("Enabling Error DM logging to admins: %s", admin_ids)
+                setup_logging(bot=bot, admin_ids=admin_ids)
 
         # Handle SIGTSTP (Ctrl+Z) as graceful termination alongside SIGINT/SIGTERM
         loop = asyncio.get_running_loop()

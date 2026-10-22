@@ -6,11 +6,10 @@ import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import ChatStatus, CommandName
+from hovorunv2.application.data.constants import ChatStatus, CommandName, UserTier
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import create_mock_message, get_media_command
@@ -62,10 +61,7 @@ async def test_youtube_admin_blocked_if_disabled(init_container: AsyncContainer)
     command_service = await init_container.get(CommandService)
     chat_status_service = await init_container.get(ChatStatusService)
     youtube_cmd = await get_media_command(init_container, CommandName.YOUTUBE)
-    settings = await init_container.get(Settings)
-
-    if user_id not in settings.owners:
-        settings.owners.append(user_id)
+    await access_service.set_user_tier(user_id, UserTier.ADMIN)
 
     # 2. Access chat and DISABLE youtube
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED, platform)
@@ -89,11 +85,10 @@ async def test_youtube_admin_blocked_if_disabled(init_container: AsyncContainer)
 async def test_youtube_auto_enable_on_access(init_container: AsyncContainer) -> None:
     """Test that YouTube command is automatically enabled when chat is approved via AccessCommand."""
     chat_id = 999
-    # Ensure owner ID is in settings
-    settings = await init_container.get(Settings)
     user_id = 1
-    if user_id not in settings.owners:
-        settings.owners.append(user_id)
+    # Ensure user has owner tier in database
+    access_service = await init_container.get(AccessService)
+    await access_service.set_user_tier(user_id, UserTier.ADMIN)
 
     platform = "telegram"
 

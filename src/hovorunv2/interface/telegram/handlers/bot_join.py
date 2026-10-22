@@ -22,35 +22,36 @@ class BotJoinHandler:
     async def handle_my_chat_member_update(self, event: ChatMemberUpdated, bot: Bot) -> None:
         """Handle status change of the bot in a chat."""
         chat_id = event.chat.id
-        new_status = event.new_chat_member.status
+        match event.new_chat_member.status:
+            case "kicked" | "left":
+                await self._handle_bot_removed(chat_id)
+            case "member" | "administrator":
+                await self._handle_bot_added(chat_id, bot)
+            case _:
+                return
 
-        # Bot was removed from chat
-        if new_status in ("kicked", "left"):
-            logger.info("Bot removed from chat %d. Setting status to INACTIVE.", chat_id)
-            await self._chat_status_service.set_status(chat_id, ChatStatus.INACTIVE)
-            return
+    async def _handle_bot_removed(self, chat_id: int) -> None:
+        """Update chat status when bot is kicked or leaves."""
+        logger.info("Bot removed from chat %d. Setting status to INACTIVE.", chat_id)
+        await self._chat_status_service.set_status(chat_id, ChatStatus.INACTIVE)
 
-        if new_status not in ("member", "administrator"):
-            return
-
-        # Bot was added to a chat
+    async def _handle_bot_added(self, chat_id: int, bot: Bot) -> None:
+        """Evaluate chat lifecycle status when bot is added to chat."""
         current_status = await self._chat_status_service.get_status(chat_id)
+        match current_status:
+            case ChatStatus.APPROVED:
+                logger.info("Bot added to already approved chat %d", chat_id)
+            case ChatStatus.BANNED:
+                logger.warning("Bot added to BANNED chat %d. Leaving immediately.", chat_id)
+                await bot.leave_chat(chat_id)
+            case ChatStatus.PENDING | ChatStatus.REJECTED:
+                logger.info("Bot added to chat %d with status %s. Staying silent.", chat_id, current_status)
+            case _:
+                await self._send_join_prompt(chat_id, bot, current_status)
 
-        if current_status == ChatStatus.APPROVED:
-            logger.info("Bot added to already approved chat %d", chat_id)
-            return
-
-        if current_status == ChatStatus.BANNED:
-            logger.warning("Bot added to BANNED chat %d. Leaving immediately.", chat_id)
-            await bot.leave_chat(chat_id)
-            return
-
-        if current_status in (ChatStatus.PENDING, ChatStatus.REJECTED):
-            logger.info("Bot added to chat %d with status %s. Staying silent.", chat_id, current_status)
-            return
-
+    async def _send_join_prompt(self, chat_id: int, bot: Bot, current_status: ChatStatus) -> None:
+        """Send verification prompt with Request Approval button."""
         logger.info("Bot added to unauthorized chat %d (status: %s). Sending prompt.", chat_id, current_status)
-
         builder = InlineKeyboardBuilder()
         builder.add(
             InlineKeyboardButton(
@@ -58,12 +59,11 @@ class BotJoinHandler:
                 callback_data=AccessCallback(chat_id=chat_id, action=AccessAction.REQUEST).pack(),
             )
         )
-
         await bot.send_message(
             chat_id=chat_id,
             text=(
                 "👋 <b>Hello! I am Hovorun.</b>\n\n"
-                "I need to be approved by my owners before I can start working in this chat.\n"
+                "I need to be approved by administrators before I can start working in this chat.\n"
                 "Please press the button below to request approval."
             ),
             parse_mode="HTML",
