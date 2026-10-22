@@ -12,9 +12,7 @@ from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 BLUESKY_CONFIG = ProviderConfig(
     name=CommandName.BLUESKY,
     redirect_pattern=re.compile(r"go\.bsky\.app"),
-    pattern=re.compile(
-        r"https?://(?:www\.|go\.)?bsky\.app/(?:profile/(?P<handle>[\w.-]+)/post/)?(?P<rkey>[\w.-]+)"
-    ),
+    pattern=re.compile(r"https?://(?:www\.|go\.)?bsky\.app/(?:profile/(?P<handle>[\w.-]+)/post/)?(?P<rkey>[\w.-]+)"),
 )
 
 

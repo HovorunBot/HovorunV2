@@ -58,11 +58,7 @@ class CommandService:
             parent_cmd = SPLIT_TO_PROVIDER_COMMAND[cmd_enum]
             video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[parent_cmd]
             # Legacy fallback: if parent is enabled and neither split command is explicitly set
-            return (
-                str(parent_cmd) in allowed
-                and str(video_cmd) not in allowed
-                and str(post_cmd) not in allowed
-            )
+            return str(parent_cmd) in allowed and str(video_cmd) not in allowed and str(post_cmd) not in allowed
 
         return cmd_str in allowed
 
@@ -133,11 +129,7 @@ class CommandService:
 
             allowed = set(await self._command_data_service.get_allowed_commands(chat_id, platform))
             # If legacy parent was enabled without explicit split commands, preserve sibling
-            if (
-                str(parent_cmd) in allowed
-                and str(video_cmd) not in allowed
-                and str(post_cmd) not in allowed
-            ):
+            if str(parent_cmd) in allowed and str(video_cmd) not in allowed and str(post_cmd) not in allowed:
                 await self._command_data_service.enable_command(chat_id, platform, str(sibling_cmd))
 
             res = await self._command_data_service.disable_command(chat_id, platform, cmd_str)

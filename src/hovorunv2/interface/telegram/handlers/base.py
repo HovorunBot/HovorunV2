@@ -180,8 +180,7 @@ class RichMediaCommand:
 
         # 2. Generic MediaExtractor (yt-dlp) - skip for explicit post/text URLs
         is_post_url = bool(
-            self._primary_client.config.post_url_pattern
-            and self._primary_client.config.post_url_pattern.search(url)
+            self._primary_client.config.post_url_pattern and self._primary_client.config.post_url_pattern.search(url)
         )
         if not is_post_url:
             logger.info("%s direct API returned None for %s, trying yt-dlp", self.name, url)

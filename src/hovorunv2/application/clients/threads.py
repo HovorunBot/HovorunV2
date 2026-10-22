@@ -21,9 +21,7 @@ THREADS_CONFIG = ProviderConfig(
     name=CommandName.THREADS,
     merge_quoted_media=False,
     translate_quoted=False,
-    pattern=re.compile(
-        r"https?://(?:www\.)?threads\.(?P<tld>net|com)/(?:@[\w.-]+/)?(?:post|t)/(?P<post_id>[\w-]+)"
-    ),
+    pattern=re.compile(r"https?://(?:www\.)?threads\.(?P<tld>net|com)/(?:@[\w.-]+/)?(?:post|t)/(?P<post_id>[\w-]+)"),
     og_config=OGConfig(
         default_author="Threads User",
         author_handle="threads",
@@ -160,9 +158,7 @@ class ThreadsService(BaseMediaClient):
             return self._extract_text_from_meta(soup)
 
         quoted_container = self._find_quoted_container(main_container)
-        quoted_elements = (
-            set(quoted_container.find_all(["div", "span"], dir="auto")) if quoted_container else set()
-        )
+        quoted_elements = set(quoted_container.find_all(["div", "span"], dir="auto")) if quoted_container else set()
         noise_elements = self._get_noise_elements(main_container)
 
         for el in main_container.find_all(["div", "span"], dir="auto"):
@@ -187,8 +183,10 @@ class ThreadsService(BaseMediaClient):
 
     def _is_excluded_element(self, el: Tag, quoted: set[Tag], noise: set[Tag], quoted_container: Tag | None) -> bool:
         """Check if element should be excluded from text extraction."""
-        return el in quoted or el in noise or any(
-            parent in quoted or parent in noise or parent == quoted_container for parent in el.parents
+        return (
+            el in quoted
+            or el in noise
+            or any(parent in quoted or parent in noise or parent == quoted_container for parent in el.parents)
         )
 
     def _extract_text_from_meta(self, soup: BeautifulSoup) -> str:

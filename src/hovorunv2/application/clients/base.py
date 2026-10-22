@@ -255,9 +255,7 @@ class BaseMediaClient:
             logger.exception("Browser fallback failed for %s", url)
         return None
 
-    def _extract_from_browser_tab(
-        self, tab: Any, url: str, b_cfg: BrowserFallbackConfig
-    ) -> RichMediaPayload | None:
+    def _extract_from_browser_tab(self, tab: Any, url: str, b_cfg: BrowserFallbackConfig) -> RichMediaPayload | None:
         """Extract metadata from browser tab via JS, JSON scripts, or OG tags."""
         for btn_text in b_cfg.gate_buttons:
             try:

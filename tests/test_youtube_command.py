@@ -64,9 +64,7 @@ async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, 
                 "post": {
                     "backstagePostRenderer": {
                         "authorText": {"runs": [{"text": "Tech Channel"}]},
-                        "authorEndpoint": {
-                            "commandMetadata": {"webCommandMetadata": {"url": "/@TechChannel"}}
-                        },
+                        "authorEndpoint": {"commandMetadata": {"webCommandMetadata": {"url": "/@TechChannel"}}},
                         "contentText": {"runs": [{"text": "New community update with photo!"}]},
                         "voteCount": {"simpleText": "4.2K"},
                         "backstageAttachment": {

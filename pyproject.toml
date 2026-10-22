@@ -54,6 +54,7 @@ packages = ["src/hovorunv2"]
 [dependency-groups]
 dev = [
     "commitizen>=4.19.2",
+    "pre-commit>=4.7.0",
     "pytest",
     "pytest-alembic",
     "pytest-asyncio",

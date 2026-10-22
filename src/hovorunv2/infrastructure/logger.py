@@ -79,8 +79,7 @@ class AsyncTelegramHandler(logging.Handler):
         user_id = getattr(record, "user_id", "-")
         chat_id = getattr(record, "chat_id", "-")
         header = (
-            f"{record.levelname} in {record.name}:{record.funcName}:{record.lineno} "
-            f"[user={user_id} chat={chat_id}]"
+            f"{record.levelname} in {record.name}:{record.funcName}:{record.lineno} [user={user_id} chat={chat_id}]"
         )
         main_msg = record.getMessage()
 

@@ -153,9 +153,7 @@ async def test_handle_reddit_video_post_respects_split_toggle(
 
 @pytest.mark.asyncio
 @pytest.mark.vcr
-async def test_handle_reddit_post_vcr(
-    reddit_command: RichMediaCommand, init_container: AsyncContainer
-) -> None:
+async def test_handle_reddit_post_vcr(reddit_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a real Reddit post via vxReddit using VCR."""
     chat_id = 456
     url = "https://www.reddit.com/r/DotA2/comments/1xbq3id/please_bring_back_blood_mist_aghs_for_seeker_and/"

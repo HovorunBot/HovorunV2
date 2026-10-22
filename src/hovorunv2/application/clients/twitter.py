@@ -53,10 +53,7 @@ class TwitterService(BaseMediaClient):
 
     def _extract_media(self, data: dict[str, Any]) -> list[MediaItem]:
         """Extract MediaItem list from vxtwitter media_extended."""
-        return [
-            MediaItem(url=m["url"], is_video=m["type"] in ("video", "gif"))
-            for m in data.get("media_extended", [])
-        ]
+        return [MediaItem(url=m["url"], is_video=m["type"] in ("video", "gif")) for m in data.get("media_extended", [])]
 
     def _extract_quote(self, tweet_data: dict[str, Any]) -> RichMediaPayload | None:
         """Extract quoted tweet payload if present."""

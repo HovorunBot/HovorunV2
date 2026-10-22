@@ -63,9 +63,7 @@ PROVIDER_SPLIT_COMMANDS: Final[dict[CommandName, tuple[CommandName, CommandName]
 
 # Reverse lookup from split sub-command to its parent provider command.
 SPLIT_TO_PROVIDER_COMMAND: Final[dict[CommandName, CommandName]] = {
-    sub_cmd: provider
-    for provider, sub_cmds in PROVIDER_SPLIT_COMMANDS.items()
-    for sub_cmd in sub_cmds
+    sub_cmd: provider for provider, sub_cmds in PROVIDER_SPLIT_COMMANDS.items() for sub_cmd in sub_cmds
 }
 
 # Commands that are always available and cannot be disabled.

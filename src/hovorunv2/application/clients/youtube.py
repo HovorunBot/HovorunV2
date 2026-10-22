@@ -94,10 +94,7 @@ class YoutubeService(BaseMediaClient):
         author_name = "".join(r.get("text", "") for r in author_runs).strip() or "YouTube Channel"
 
         author_path = (
-            renderer.get("authorEndpoint", {})
-            .get("commandMetadata", {})
-            .get("webCommandMetadata", {})
-            .get("url", "")
+            renderer.get("authorEndpoint", {}).get("commandMetadata", {}).get("webCommandMetadata", {}).get("url", "")
         )
         author_handle = author_path.lstrip("/@") if author_path else author_name
         author_url = f"https://www.youtube.com{author_path}" if author_path else "https://www.youtube.com"
@@ -134,9 +131,7 @@ class YoutubeService(BaseMediaClient):
         if single_img := attachment.get("backstageImageRenderer"):
             renderers.append(single_img)
         if multi_img := attachment.get("postMultiImageRenderer"):
-            renderers.extend(
-                entry.get("backstageImageRenderer", {}) for entry in multi_img.get("images", [])
-            )
+            renderers.extend(entry.get("backstageImageRenderer", {}) for entry in multi_img.get("images", []))
 
         for img_renderer in renderers:
             thumbnails = img_renderer.get("image", {}).get("thumbnails", [])
