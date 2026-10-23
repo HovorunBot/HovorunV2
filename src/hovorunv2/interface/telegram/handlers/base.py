@@ -1,26 +1,23 @@
 """Base classes and unified rich media command handler."""
 
-import html
 import re
 from collections.abc import Callable
-from contextlib import suppress
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import aiohttp
 from aiogram import Bot, F
-from aiogram.exceptions import TelegramBadRequest, TelegramEntityTooLarge
 from aiogram.filters import Filter
-from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, MediaUnion, Message
+from aiogram.types import Message
 from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 
 if TYPE_CHECKING:
     from aiogram import Router
@@ -62,33 +59,20 @@ class BaseCommand(Protocol):
 class RichMediaCommand:
     """Unified command handler for all rich media providers."""
 
-    HEADER_TEMPLATE: ClassVar[str] = (
-        "🗣 <b>{tg_user_name}</b> shared a post by <b>{author_name}</b> "
-        '(<a href="{author_url}">@{author_handle}</a>)\n\n'
-    )
-    QUOTE_TEMPLATE: ClassVar[str] = (
-        '<blockquote>🔄 <b>{author_name}</b> (<a href="{author_url}">@{author_handle}</a>)\n{content}</blockquote>\n'
-    )
-    METRICS_TEMPLATE: ClassVar[str] = "{metrics}\n"
-    FOOTER_TEMPLATE: ClassVar[str] = '🔗 <a href="{url}">Open on {platform}</a>'
-
-    API_TIMEOUT_SECONDS: int = 30
-    CAPTION_LIMIT: int = 1024
-
     def __init__(
         self,
         primary_client: BaseMediaClient,
-        media_downloader: MediaDownloader,
         media_extractor: MediaExtractor,
         session: aiohttp.ClientSession,
         command_service: CommandService,
+        media_delivery: TelegramMediaDelivery,
     ) -> None:
         """Initialize command with its provider client and shared media services."""
         self._primary_client = primary_client
-        self._media_downloader = media_downloader
         self._media_extractor = media_extractor
         self._session = session
         self._command_service = command_service
+        self._delivery = media_delivery
 
     @property
     def name(self) -> str:
@@ -166,7 +150,7 @@ class RichMediaCommand:
                     )
                     continue
 
-                await self._send_rich_media(bot, message, payload, self._session)
+                await self._delivery.deliver(bot, message, payload, self.platform_name)
             except Exception:
                 logger.exception("Failed to process link: %s", match.group(0))
 
@@ -209,203 +193,3 @@ class RichMediaCommand:
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
         """Rich media commands do not have callbacks by default."""
-
-    def _build_caption(self, payload: RichMediaPayload, tg_user_name: str) -> str:
-        """Build caption from payload using standardized format."""
-        header = self.HEADER_TEMPLATE.format(
-            tg_user_name=html.escape(tg_user_name),
-            author_name=payload.author_name,
-            author_handle=payload.author_handle,
-            author_url=payload.author_url,
-        )
-
-        content = payload.content + "\n\n" if payload.content else ""
-
-        quote = ""
-        if payload.quoted_payload:
-            quote = self.QUOTE_TEMPLATE.format(
-                author_name=payload.quoted_payload.author_name,
-                author_handle=payload.quoted_payload.author_handle,
-                author_url=payload.quoted_payload.author_url,
-                content=payload.quoted_payload.content,
-            )
-
-        metrics = ""
-        if payload.footer_text and payload.footer_text.strip():
-            metrics = self.METRICS_TEMPLATE.format(metrics=payload.footer_text.strip().replace("\n", " "))
-
-        footer = self.FOOTER_TEMPLATE.format(url=payload.original_url, platform=self.platform_name)
-
-        return f"{header}{content}{quote}{metrics}{footer}".strip()
-
-    def _build_input_media(
-        self, media: str | BufferedInputFile, *, is_video: bool, caption: str | None
-    ) -> InputMediaVideo | InputMediaPhoto:
-        """Create InputMediaVideo or InputMediaPhoto with optional HTML caption."""
-        parse_mode = "HTML" if caption else None
-        if is_video:
-            return InputMediaVideo(media=media, caption=caption, parse_mode=parse_mode)
-        return InputMediaPhoto(media=media, caption=caption, parse_mode=parse_mode)
-
-    async def _send_rich_media(
-        self, bot: Bot, message: Message, payload: RichMediaPayload, session: aiohttp.ClientSession
-    ) -> None:
-        """Execute the standardized media delivery lifecycle."""
-        if not message.from_user:
-            return
-
-        tg_user_name = message.from_user.full_name
-        total_text = self._build_caption(payload, tg_user_name)
-
-        if not payload.media_items:
-            await message.answer(
-                total_text,
-                parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-            return
-
-        caption = await self._handle_caption_limits(message, payload, total_text, tg_user_name)
-
-        # 0. Pre-downloaded bytes (e.g., from headless browser session)
-        if any(item.data is not None for item in payload.media_items):
-            await self._send_predownloaded_bytes(bot, message, payload, caption)
-            return
-
-        # 1. Optimistic URL approach
-        if await self._try_url_delivery(bot, message, payload, caption):
-            return
-
-        # 2. Fallback RAM approach
-        await self._perform_ram_delivery(bot, message, payload, caption, session)
-
-    async def _send_predownloaded_bytes(
-        self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str
-    ) -> None:
-        """Send media items using pre-downloaded byte buffers."""
-        final_group: list[Any] = []
-        for i, item_meta in enumerate(payload.media_items):
-            if item_meta.data is None:
-                continue
-            ext = "mp4" if item_meta.is_video else "jpg"
-            file = BufferedInputFile(item_meta.data, filename=f"browser_{i}.{ext}")
-            final_group.append(
-                self._build_input_media(file, is_video=item_meta.is_video, caption=caption if not final_group else None)
-            )
-
-        if final_group:
-            await bot.send_media_group(
-                chat_id=message.chat.id,
-                media=final_group,
-                reply_to_message_id=message.message_id,
-            )
-
-    async def _handle_caption_limits(
-        self, message: Message, payload: RichMediaPayload, total_text: str, tg_user_name: str
-    ) -> str:
-        """Send long captions separately if needed and return appropriate caption for media."""
-        if len(total_text) <= self.CAPTION_LIMIT:
-            return total_text
-
-        await message.answer(
-            total_text,
-            parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(is_disabled=True),
-        )
-
-        header_text = self.HEADER_TEMPLATE.format(
-            tg_user_name=html.escape(tg_user_name),
-            author_name=payload.author_name,
-            author_handle=payload.author_handle,
-            author_url=payload.author_url,
-        )
-        footer_text = self.FOOTER_TEMPLATE.format(url=payload.original_url, platform=self.platform_name)
-        caption = f"{header_text}{footer_text}".strip()
-
-        return footer_text if len(caption) > self.CAPTION_LIMIT else caption
-
-    async def _try_url_delivery(self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str) -> bool:
-        """Attempt delivery using optimistic URL approach."""
-        media_group: list[MediaUnion] = [
-            self._build_input_media(item.url, is_video=item.is_video, caption=caption if i == 0 else None)
-            for i, item in enumerate(payload.media_items)
-        ]
-        try:
-            await bot.send_media_group(
-                chat_id=message.chat.id, media=media_group, reply_to_message_id=message.message_id
-            )
-        except TelegramEntityTooLarge:
-            logger.warning("Media too large even for URL delivery")
-            await message.answer(
-                text=caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>",
-                parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-            return True
-        except TelegramBadRequest as e:
-            err_msg = str(e).upper()
-            if not any(item in err_msg for item in ("WEBPAGE_CURL_FAILED", "FAILED TO GET")):
-                logger.exception("Unexpected Telegram API error during optimistic URL fetch")
-                raise
-        else:
-            return True
-        return False
-
-    async def _perform_ram_delivery(
-        self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str, session: aiohttp.ClientSession
-    ) -> None:
-        """Perform fallback delivery by downloading media to RAM first."""
-        placeholder_msg = await message.answer(
-            text=caption + "\n\n⏳ <i>Downloading media...</i>",
-            parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(is_disabled=True),
-        )
-
-        downloaded_files = await self._media_downloader.download_batch(
-            payload.media_items,
-            prefix="media",
-            session=session,
-        )
-
-        final_group: list[Any] = [
-            self._build_input_media(
-                file, is_video=payload.media_items[i].is_video, caption=caption if idx == 0 else None
-            )
-            for idx, (i, file) in enumerate((i, f) for i, f in enumerate(downloaded_files) if f is not None)
-        ]
-
-        if not final_group:
-            await self._edit_placeholder_error(bot, message.chat.id, placeholder_msg.message_id, caption, "download")
-            return
-
-        try:
-            await bot.send_media_group(
-                chat_id=message.chat.id, media=final_group, reply_to_message_id=message.message_id
-            )
-            with suppress(TelegramBadRequest):
-                await placeholder_msg.delete()
-        except TelegramEntityTooLarge:
-            logger.warning("Media too large for Telegram upload")
-            await self._edit_placeholder_error(bot, message.chat.id, placeholder_msg.message_id, caption, "too_large")
-        except Exception:
-            logger.exception("Failed to upload media from RAM")
-            await self._edit_placeholder_error(bot, message.chat.id, placeholder_msg.message_id, caption, "upload")
-
-    async def _edit_placeholder_error(
-        self, bot: Bot, chat_id: int, message_id: int, caption: str, error_type: str
-    ) -> None:
-        """Update placeholder message with specific error text."""
-        error_texts = {
-            "download": "⚠️ <i>Failed to download media.</i>",
-            "too_large": "⚠️ <i>Media is too large, view on original resource.</i>",
-            "upload": "⚠️ <i>Failed to upload media.</i>",
-        }
-        text = f"{caption}\n\n{error_texts.get(error_type, error_texts['upload'])}"
-        with suppress(TelegramBadRequest):
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=text,
-                parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )

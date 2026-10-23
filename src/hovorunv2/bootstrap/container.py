@@ -50,6 +50,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemySystemStore,
 )
 from hovorunv2.infrastructure.queue import TaskQueueService
+from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
@@ -187,22 +188,31 @@ class AppProvider(Provider):
         ]
 
     @provide(scope=Scope.APP)
+    def get_telegram_media_delivery(
+        self,
+        media_downloader: MediaDownloader,
+        session: aiohttp.ClientSession,
+    ) -> TelegramMediaDelivery:
+        """Provide Telegram media delivery adapter."""
+        return TelegramMediaDelivery(media_downloader=media_downloader, session=session)
+
+    @provide(scope=Scope.APP)
     def get_rich_media_commands(
         self,
         media_clients: list[BaseMediaClient],
-        media_downloader: MediaDownloader,
         media_extractor: MediaExtractor,
         session: aiohttp.ClientSession,
         command_service: CommandService,
+        media_delivery: TelegramMediaDelivery,
     ) -> list[RichMediaCommand]:
         """Wrap all registered media clients into generalized RichMediaCommand handlers."""
         return [
             RichMediaCommand(
                 primary_client=client,
-                media_downloader=media_downloader,
                 media_extractor=media_extractor,
                 session=session,
                 command_service=command_service,
+                media_delivery=media_delivery,
             )
             for client in media_clients
         ]
