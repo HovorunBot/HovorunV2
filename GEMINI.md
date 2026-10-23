@@ -9,19 +9,21 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Valke
 
 ## Architecture (Layered / Onion)
 
-- **Domain (`src/hovorunv2/domain/`):** SQLAlchemy 2.0 `Mapped` models (`chat.py`, `command.py`, `system.py`, `base.py`).
-- **Infrastructure (`src/hovorunv2/infrastructure/`):**
-  - `di.py`: Centralized Dishka DI container. All injected service dependencies are mandatory (NEVER `None`; NEVER write `if self.dependency:` guards).
-  - `cache.py`: Async Valkey cache. Ephemeral state (message cleanup, UI session tracking, encrypted message cache) MUST use Valkey, NEVER SQL.
-  - **Repositories:** Pure data access. Accept `session` in `__init__`. Query/persist only; NEVER manage transactions.
-  - `fixtures.py`: Auto-generated DB fixtures for providers and split `<provider>_video` / `<provider>_post` commands.
+- **Domain (`src/hovorunv2/domain/`):** SQLAlchemy 2.0 `Mapped` models (`chat.py`, `command.py`, `system.py`, `base.py`) and domain enums (`enums.py`).
 - **Application (`src/hovorunv2/application/`):**
-  - **Data Services (`data/`):** Encapsulate `session_maker`, own transaction boundaries (`commit`/`rollback`), call Repositories.
-  - **Business Services (`services/`):** High-level orchestration (`AccessService`, `ChatStatusService`, `CommandService`, `MessageService` with per-chat Fernet encryption, `TranslationService`). Call Data Services and external clients; NEVER access Repositories or DB sessions directly.
-  - **Media Clients (`clients/`):** Config-driven via `ProviderConfig` (`OGConfig`, `BrowserFallbackConfig`) and `BaseMediaClient` (`clients/base.py`). `BaseMediaClient` centralizes redirect resolution, OG/browser fallbacks, HTML escaping, translation, and quoted media merging (`_finalize_payload`). Subclass `BaseMediaClient` (`_extract_raw_payload`) ONLY when custom API/DOM parsing is needed; pure config/OG providers instantiate `BaseMediaClient` directly in `di.py`.
+  - **Ports (`ports.py`):** Protocol contracts defining persistence, caching, browser, task queue, and prompt sender boundaries (`ChatStore`, `CommandStore`, `SystemStore`, `CachePort`, `BrowserPort`, `TaskQueuePort`, `UnauthorizedPromptSender`, `AppSettings`). The application layer imports only `domain`, stdlib, and 3rd party libraries—NEVER infrastructure or interface.
+  - **Services (`services/`):** High-level orchestration (`AccessService` with frozen `CommandPolicy`, `ChatStatusService`, `CommandService` with split toggles, `OwnerNotifier`, `MessageService` with per-chat Fernet encryption, `TranslationService`).
+  - **Media Pipeline (`media/pipeline.py`):** Centralizes 4-tier resilience extraction (API -> yt-dlp -> browser fallback -> OG metadata), permission checks (`is_capture_allowed`), HTML escaping, translation, and quoted media merging.
+  - **Media Clients (`clients/`):** Pure extraction clients (`BaseMediaClient` and subclasses) receiving injected `aiohttp.ClientSession` and `BrowserPort`. Free of presentation, chat ID, or translation coupling.
+- **Infrastructure (`src/hovorunv2/infrastructure/`):**
+  - **Persistence (`persistence/`):** Repositories and store implementations (`SQLAlchemyChatStore`, etc.) implementing application ports. Repositories accept `session` in `__init__`, query/persist only; stores encapsulate `session_maker` and own transaction boundaries (`commit`/`rollback`).
+  - **Adapters & Services:** `CacheService` (Async Valkey for ephemeral state: message cleanup, UI sessions, message cache), `BrowserService` (DrissionPage), `TaskQueueService` (SAQ).
+  - `fixtures.py`: Database fixtures for split `<provider>_video` / `<provider>_post` commands.
 - **Interface (`src/hovorunv2/interface/telegram/`):**
-  - `aiogram` handlers, middlewares (`MessageCacheMiddleware`, `AccessMiddleware`), and delivery adapters.
-  - `handlers/base.py`: Generalized `RichMediaCommand` wraps any `BaseMediaClient`, runs the 4-tier pipeline (`primary_client.extract_payload` -> `MediaExtractor` (`yt-dlp`) -> `primary_client.extract_fallback` -> `primary_client.extract_metadata_payload`), and enforces split `<provider>_video` / `<provider>_post` capture modes (`PROVIDER_SPLIT_COMMANDS`). NEVER create per-provider `RichMediaCommand` subclasses.
+  - `aiogram` handlers, middlewares (`MessageCacheMiddleware`, `AccessMiddleware`), and delivery adapters (`TelegramMediaDelivery`).
+  - `handlers/base.py`: `BaseCommand(ABC)` base class with `POLICY: ClassVar[CommandPolicy]` and default `register_callbacks`. Generalized `RichMediaCommand` connects media clients to `MediaPipeline` and delivers via `TelegramMediaDelivery`.
+- **Bootstrap (`src/hovorunv2/bootstrap/`):**
+  - `container.py`: Centralized Dishka DI container (composition root). All injected service dependencies are mandatory (NEVER `None`; NEVER write `if self.dependency:` guards).
 
 ## Code Conventions
 
@@ -66,3 +68,4 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Valke
 - **Test:** `PYTHONPATH=src uv run pytest`
 - **Type Check:** `uv run ty check src`
 - **Lint:** `uv run ruff check .`
+- **Import Lint:** `uv run lint-imports`

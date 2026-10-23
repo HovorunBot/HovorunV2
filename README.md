@@ -88,14 +88,22 @@ If you choose to self-host, deployment is fully automated via `Make` and `Docker
 
 ### Key Principles
 
-* **Strict Typing**: Zero `ty:ignore` policy.
-* **Domain-Driven**: Business logic is isolated from infrastructure.
+* **Strict Typing**: Zero `ty:ignore` policy with Python 3.15+ deferred evaluation.
+* **Layered Onion Architecture**: Strict Ports & Adapters enforced via `import-linter`.
+  * `domain`: Pure SQLAlchemy models and enums.
+  * `application`: Protocols (`ports.py`), orchestration services (`services/`), resilient 4-tier media processing (`media/pipeline.py`), and extraction clients (`clients/`).
+  * `infrastructure`: Adapters and stores (`persistence/`, Valkey `CacheService`, `BrowserService`, `TaskQueueService`).
+  * `interface`: Telegram delivery adapter (`TelegramMediaDelivery`), declarative commands (`BaseCommand(ABC)`), and handlers.
+  * `bootstrap`: Centralized composition root (`bootstrap/container.py`).
+* **Zero Runtime Leaks**: Mandatory dependency injection; pure queries without scattered transaction logic.
 
 ### Development Commands
 
 * `make run-dev`: Local bot execution with Valkey in Docker.
 * `uv run ty check src`: Strict type verification.
 * `uv run ruff check .`: Linting and formatting.
+* `uv run lint-imports`: Enforce onion architecture layer contracts.
+* `PYTHONPATH=src uv run pytest`: Run unit and integration test suite.
 
 ---
 
