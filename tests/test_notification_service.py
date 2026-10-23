@@ -1,9 +1,10 @@
 """Tests for the NotificationService."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiogram import Bot
+from aiogram.exceptions import TelegramRetryAfter
 from dishka import AsyncContainer
 
 from hovorunv2.application.data.constants import ChatStatus
@@ -107,3 +108,36 @@ async def test_notify_updates_no_new_version(
     with patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.1.9"):
         await notification_service.notify_updates(bot)
         bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_updates_retry_uses_html_and_recovers(
+    notification_service: NotificationService, init_container: AsyncContainer
+) -> None:
+    """Test that retry after rate limit sends HTML formatted message and catches errors."""
+    system_service = await init_container.get(SystemDataService)
+    chat_status_service = await init_container.get(ChatStatusService)
+
+    await system_service.set_last_notified_version("0.1.0")
+    group_chat_id = -100999
+    await chat_status_service.set_status(group_chat_id, ChatStatus.APPROVED)
+
+    bot = MagicMock(spec=Bot)
+    bot.send_message = AsyncMock(
+        side_effect=[
+            TelegramRetryAfter(method=MagicMock(), message="Rate limit", retry_after=0),
+            Exception("Retry failed"),
+        ]
+    )
+
+    with (
+        patch("hovorunv2.application.services.notification_service.get_current_version", return_value="0.2.0"),
+        patch("hovorunv2.application.services.notification_service.get_changelog_updates", return_value="New features"),
+        patch("asyncio.sleep", AsyncMock()),
+    ):
+        await notification_service.notify_updates(bot)
+
+    assert bot.send_message.call_count == 2
+    for call in bot.send_message.call_args_list:
+        assert call.kwargs["parse_mode"] == "HTML"
+        assert call.kwargs["disable_web_page_preview"] is True

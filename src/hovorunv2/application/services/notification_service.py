@@ -69,21 +69,28 @@ class NotificationService:
 
         for chat in group_chats:
             try:
-                await bot.send_message(
-                    chat_id=chat.chat_id,
-                    text=message,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
+                await self._send_notification(bot, chat.chat_id, message)
                 # Respect rate limits (Telegram approx 30 msg/sec overall)
                 await asyncio.sleep(0.05)
             except TelegramRetryAfter as e:
                 logger.warning("Rate limit hit, sleeping for %d seconds", e.retry_after)
                 await asyncio.sleep(e.retry_after)
                 # Retry once
-                await bot.send_message(chat_id=chat.chat_id, text=message, parse_mode="Markdown")
+                try:
+                    await self._send_notification(bot, chat.chat_id, message)
+                except Exception:
+                    logger.exception("Failed to retry update notification to group chat %d", chat.chat_id)
             except Exception:
                 logger.exception("Failed to send update notification to group chat %d", chat.chat_id)
 
         await self._system_service.set_last_notified_version(current_version)
         logger.info("Update notification broadcast complete.")
+
+    async def _send_notification(self, bot: Bot, chat_id: int, text: str) -> None:
+        """Send formatted HTML update message with link preview disabled."""
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
