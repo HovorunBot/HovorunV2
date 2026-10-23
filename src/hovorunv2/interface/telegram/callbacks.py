@@ -37,26 +37,6 @@ class AccessCallback(CallbackData, prefix="access"):
     action: AccessAction
 
 
-class CmdConfigCallback(CallbackData, prefix="config_cmd"):
-    """Callback for command configuration toggles."""
-
-    cmd_name: str
-
-
-class LangConfigAction(StrEnum):
-    """Actions for language configuration."""
-
-    TARGET = "target"
-    IGNORE = "ignore"
-
-
-class LangConfigCallback(CallbackData, prefix="config_lang"):
-    """Callback for language configuration."""
-
-    action: LangConfigAction
-    lang_code: str
-
-
 class SettingsCallback(CallbackData, prefix="settings"):
     """Callback for unified settings menu."""
 

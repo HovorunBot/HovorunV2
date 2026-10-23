@@ -114,12 +114,6 @@ class AccessService:
         else:
             return member.status in ("administrator", "creator")
 
-    async def ensure_admin(self, user_id: int) -> None:
-        """Verify user is admin or raise an error."""
-        if not await self.is_admin(user_id):
-            msg = f"User {user_id} does not have admin privileges"
-            raise PermissionError(msg)
-
     async def is_allowed(
         self,
         user_id: int | None,

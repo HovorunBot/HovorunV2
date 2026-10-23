@@ -7,7 +7,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
 
 from hovorunv2.application.changelog import get_changelog_updates, get_current_version, parse_version
-from hovorunv2.application.ports import ChatStore, SystemStore
+from hovorunv2.application.ports import AppSettings, ChatStore, SystemStore
 from hovorunv2.domain.enums import ChatStatus
 
 logger = logging.getLogger(__name__)
@@ -16,10 +16,11 @@ logger = logging.getLogger(__name__)
 class NotificationService:
     """Service to handle broadcasting update notifications to group chats."""
 
-    def __init__(self, chat_service: ChatStore, system_service: SystemStore) -> None:
+    def __init__(self, chat_service: ChatStore, system_service: SystemStore, settings: AppSettings) -> None:
         """Initialize with its dependencies."""
         self._chat_service = chat_service
         self._system_service = system_service
+        self._settings = settings
 
     async def notify_updates(self, bot: Bot) -> None:
         """Check for version updates and notify approved group chats."""
@@ -57,7 +58,7 @@ class NotificationService:
             return
 
         tag_name = f"v{current_version.lstrip('v')}"
-        tag_url = f"https://github.com/HovorunBot/HovorunV2/releases/tag/{tag_name}"
+        tag_url = f"{self._settings.github_url.rstrip('/')}/releases/tag/{tag_name}"
         message = (
             f"🚀 <b>Hovorun Updated to {tag_name}</b>\n\n"
             f"{updates_text}\n\n"

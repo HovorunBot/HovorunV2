@@ -121,23 +121,6 @@ async def test_access_middleware_denied_group(test_container: AsyncContainer) ->
 
 
 @pytest.mark.asyncio
-async def test_access_service_ensure_admin(test_container: AsyncContainer) -> None:
-    """Test ensure_admin raises PermissionError for non-admins."""
-    access_service = await test_container.get(AccessService)
-    settings = await test_container.get(Settings)
-
-    admin_id = settings.admin_ids[0]
-    non_admin_id = 999
-
-    # Should not raise
-    await access_service.ensure_admin(admin_id)
-
-    # Should raise
-    with pytest.raises(PermissionError, match="does not have admin privileges"):
-        await access_service.ensure_admin(non_admin_id)
-
-
-@pytest.mark.asyncio
 async def test_policy_bypass_for_global_admin(test_container: AsyncContainer) -> None:
     """Test that global admins bypass all policy restrictions."""
     access_service = await test_container.get(AccessService)
