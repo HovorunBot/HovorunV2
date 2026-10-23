@@ -31,16 +31,16 @@ class LanguageService:
         """Get target language and ignored languages for a chat."""
         chat = await self._chat_service.get_chat(chat_id, platform)
         if not chat:
-            return self._default_target_lang, self._default_ignored_langs
+            return self._default_target_lang, list(self._default_ignored_langs)
 
         target_lang = chat.target_lang or self._default_target_lang
-        ignored_langs = self._default_ignored_langs
+        ignored_langs = list(self._default_ignored_langs)
 
         match chat.ignored_langs:
-            case list() as langs:
-                ignored_langs = langs
-            case str() as raw_langs:
-                ignored_langs = self._parse_ignored_langs(raw_langs) or ignored_langs
+            case list(langs):
+                ignored_langs = list(langs)
+            case str(raw_langs):
+                ignored_langs = self._parse_ignored_langs(raw_langs) or list(self._default_ignored_langs)
 
         return target_lang, ignored_langs
 
