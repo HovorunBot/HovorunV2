@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.ports import CommandStore
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import ChatStatus
+from hovorunv2.domain.enums import ChatStatus, Platform
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 from hovorunv2.infrastructure.repositories.command_repository import SQLAlchemyCommandRepository
 
@@ -34,7 +34,7 @@ class SQLAlchemyCommandStore(CommandStore):
 
             chat = await chat_repo.get_by_id(chat_id, platform)
             if not chat:
-                chat = ChatDB(chat_id=chat_id, platform=platform, status=ChatStatus.UNAUTHORIZED)
+                chat = ChatDB(chat_id=chat_id, platform=Platform(platform), status=ChatStatus.UNAUTHORIZED)
                 session.add(chat)
 
             command = await cmd_repo.get_by_name(command_name)

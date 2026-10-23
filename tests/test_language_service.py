@@ -27,3 +27,16 @@ async def test_toggling_ignored_langs_does_not_mutate_settings(init_container: A
     _target2, ignored2 = await language_service.get_chat_settings(chat_id=98765)
     assert ignored2 == original_defaults
     assert settings.translation_ignored_langs == original_defaults
+
+
+@pytest.mark.asyncio
+async def test_update_and_get_chat_settings(init_container: AsyncContainer) -> None:
+    """Verify updating and retrieving chat-specific language settings."""
+    language_service = await init_container.get(LanguageService)
+
+    chat_id = 555123
+    await language_service.update_settings(chat_id=chat_id, target_lang="es", ignored_langs=["es", "it"])
+
+    target, ignored = await language_service.get_chat_settings(chat_id=chat_id)
+    assert target == "es"
+    assert ignored == ["es", "it"]

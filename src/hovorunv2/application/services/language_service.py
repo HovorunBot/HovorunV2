@@ -1,7 +1,5 @@
 """Application service for managing language preferences."""
 
-import json
-
 from hovorunv2.application.ports import AppSettings, ChatStore
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -34,25 +32,11 @@ class LanguageService:
             return self._default_target_lang, list(self._default_ignored_langs)
 
         target_lang = chat.target_lang or self._default_target_lang
-        ignored_langs = list(self._default_ignored_langs)
-
-        match chat.ignored_langs:
-            case list(langs):
-                ignored_langs = list(langs)
-            case str(raw_langs):
-                ignored_langs = self._parse_ignored_langs(raw_langs) or list(self._default_ignored_langs)
+        ignored_langs = (
+            list(chat.ignored_langs) if chat.ignored_langs is not None else list(self._default_ignored_langs)
+        )
 
         return target_lang, ignored_langs
-
-    def _parse_ignored_langs(self, raw_langs: str) -> list[str] | None:
-        """Safely parse ignored languages from JSON string."""
-        try:
-            parsed = json.loads(raw_langs)
-            if isinstance(parsed, list):
-                return parsed
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.warning("Failed to decode ignored_langs: %s", e)
-        return None
 
     async def update_settings(
         self, chat_id: int, target_lang: str, ignored_langs: list[str], platform: str = "telegram"

@@ -1,12 +1,10 @@
 """Persistence adapter for chat storage operations."""
 
-import json
-
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.ports import ChatStore
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import ChatStatus
+from hovorunv2.domain.enums import ChatStatus, Platform
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 
 
@@ -31,7 +29,7 @@ class SQLAlchemyChatStore(ChatStore):
             if chat:
                 chat.status = status
             else:
-                chat = ChatDB(chat_id=chat_id, platform=platform, status=status)
+                chat = ChatDB(chat_id=chat_id, platform=Platform(platform), status=status)
                 repo.add(chat)
             await session.commit()
 
@@ -43,11 +41,11 @@ class SQLAlchemyChatStore(ChatStore):
             repo = SQLAlchemyChatRepository(session)
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
-                chat = ChatDB(chat_id=chat_id, platform=platform)
+                chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
                 repo.add(chat)
 
             chat.target_lang = target_lang
-            chat.ignored_langs = json.dumps(ignored_langs)
+            chat.ignored_langs = ignored_langs
             await session.commit()
 
     async def get_all_by_status(self, status: ChatStatus, platform: str) -> list[ChatDB]:
@@ -62,7 +60,7 @@ class SQLAlchemyChatStore(ChatStore):
             repo = SQLAlchemyChatRepository(session)
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
-                chat = ChatDB(chat_id=chat_id, platform=platform)
+                chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
                 repo.add(chat)
                 await session.commit()
             return chat
@@ -73,7 +71,7 @@ class SQLAlchemyChatStore(ChatStore):
             repo = SQLAlchemyChatRepository(session)
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
-                chat = ChatDB(chat_id=chat_id, platform=platform)
+                chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
                 repo.add(chat)
             chat.encryption_salt = salt
             await session.commit()
