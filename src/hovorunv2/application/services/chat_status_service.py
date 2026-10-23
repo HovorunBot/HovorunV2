@@ -1,6 +1,7 @@
 """Application service for managing chat access status."""
 
 from hovorunv2.application.ports import ChatStore
+from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import ChatStatus
 
 
@@ -11,14 +12,16 @@ class ChatStatusService:
     extended functionality (APPROVED) via ChatStatus state machine.
     """
 
-    def __init__(self, chat_service: ChatStore) -> None:
+    def __init__(self, chat_service: ChatStore, command_service: CommandService) -> None:
         """Initialize the service.
 
         Args:
             chat_service: Data service for chat persistence.
+            command_service: Application service for command configuration.
 
         """
         self._chat_service = chat_service
+        self._command_service = command_service
 
     async def get_status(self, chat_id: int) -> ChatStatus:
         """Get the current lifecycle status of a chat."""
@@ -30,6 +33,11 @@ class ChatStatusService:
     async def set_status(self, chat_id: int, status: ChatStatus) -> None:
         """Update the lifecycle status of a chat."""
         await self._chat_service.update_status(chat_id, status)
+
+    async def approve(self, chat_id: int) -> None:
+        """Approve a chat and enable its default command set."""
+        await self.set_status(chat_id, ChatStatus.APPROVED)
+        await self._command_service.enable_defaults(chat_id)
 
     async def is_approved(self, chat_id: int) -> bool:
         """Check if chat is approved (APPROVED).

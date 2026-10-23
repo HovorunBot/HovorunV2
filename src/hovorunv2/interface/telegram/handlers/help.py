@@ -1,6 +1,6 @@
 """Handler for the /help command and landing page for non-admins."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from aiogram import Bot
 from aiogram.filters import Command
@@ -21,6 +21,8 @@ class HelpCommand(BaseCommand):
     Provides bot information and contact details.
     """
 
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
+
     def __init__(self, settings: AppSettings) -> None:
         """Initialize help command."""
         self._settings = settings
@@ -29,11 +31,6 @@ class HelpCommand(BaseCommand):
     def name(self) -> str:
         """Command name."""
         return CommandName.HELP
-
-    @property
-    def policy(self) -> CommandPolicy:
-        """Help is always available to everyone."""
-        return CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
     @property
     def trigger(self) -> Command:

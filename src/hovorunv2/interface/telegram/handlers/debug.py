@@ -1,6 +1,6 @@
 """Debug command module."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from aiogram import Bot
 from aiogram.filters import Command
@@ -18,15 +18,12 @@ logger = get_logger(__name__)
 class DebugCommand(BaseCommand):
     """Command for debugging purposes."""
 
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=True, requires_approval=False, is_toggleable=False)
+
     @property
     def name(self) -> str:
         """Command name."""
         return CommandName.DEBUG
-
-    @property
-    def policy(self) -> CommandPolicy:
-        """Admin only, bypasses access."""
-        return CommandPolicy(requires_admin=True, requires_approval=False, is_toggleable=False)
 
     @property
     def trigger(self) -> Command:

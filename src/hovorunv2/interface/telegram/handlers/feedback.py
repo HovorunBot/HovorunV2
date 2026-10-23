@@ -1,6 +1,6 @@
 """Handler for the /feedback command."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from aiogram import Bot
 from aiogram.filters import Command
@@ -21,6 +21,8 @@ class FeedbackCommand(BaseCommand):
     Delegates user feedback submission to FeedbackService.
     """
 
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
+
     def __init__(self, feedback_service: FeedbackService) -> None:
         """Initialize command with its application service."""
         self._feedback_service = feedback_service
@@ -29,11 +31,6 @@ class FeedbackCommand(BaseCommand):
     def name(self) -> str:
         """Command name."""
         return CommandName.FEEDBACK
-
-    @property
-    def policy(self) -> CommandPolicy:
-        """Feedback is available to everyone without approval."""
-        return CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
     @property
     def trigger(self) -> Command:

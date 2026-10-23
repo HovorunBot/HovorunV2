@@ -218,23 +218,7 @@ class AppProvider(Provider):
             for client in media_clients
         ]
 
-    @provide(scope=Scope.APP)
-    def get_access_command(
-        self,
-        chat_status_service: ChatStatusService,
-        command_service: CommandService,
-        access_service: AccessService,
-        owner_notifier: OwnerNotifier,
-        rich_media_commands: list[RichMediaCommand],
-    ) -> AccessCommand:
-        """Provide AccessCommand with its dependencies."""
-        return AccessCommand(
-            chat_status_service=chat_status_service,
-            command_service=command_service,
-            access_service=access_service,
-            owner_notifier=owner_notifier,
-            commands=rich_media_commands,
-        )
+    access_command = provide(AccessCommand)
 
     @provide(scope=Scope.APP)
     def get_utility_commands(

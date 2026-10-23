@@ -1,8 +1,9 @@
 """Base classes and unified rich media command handler."""
 
 import re
+from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from aiogram import Bot, F
 from aiogram.filters import Filter
@@ -22,36 +23,39 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-@runtime_checkable
-class BaseCommand(Protocol):
-    """Protocol defining interface for bot command handlers."""
+class BaseCommand(ABC):
+    """Abstract base class defining interface for bot command handlers."""
+
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy()
 
     @property
+    @abstractmethod
     def name(self) -> str:
         """Unique command name/identifier."""
-        ...
 
     @property
     def policy(self) -> CommandPolicy:
         """Permission and lifecycle policy enforced on this command."""
-        ...
+        return self.POLICY
 
     @property
+    @abstractmethod
     def trigger(self) -> Filter | MagicFilter | Callable[..., Any]:
         """Aiogram filter triggering this command."""
-        ...
 
+    @abstractmethod
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle the triggered command."""
-        ...
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
         """Register any callback query handlers associated with this command."""
         return
 
 
-class RichMediaCommand:
+class RichMediaCommand(BaseCommand):
     """Unified command handler for all rich media providers."""
+
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=True, is_toggleable=True)
 
     def __init__(
         self,
@@ -80,11 +84,6 @@ class RichMediaCommand:
         """Sub-command name for image/text post capture configuration."""
         cmd_enum = CommandName(self.name)
         return str(PROVIDER_SPLIT_COMMANDS[cmd_enum][1])
-
-    @property
-    def policy(self) -> CommandPolicy:
-        """Media commands require access and are toggleable by default."""
-        return CommandPolicy(requires_admin=False, requires_approval=True, is_toggleable=True, auto_enable=True)
 
     @property
     def pattern(self) -> re.Pattern[str]:
@@ -132,6 +131,3 @@ class RichMediaCommand:
                 await self._delivery.deliver(bot, message, payload, self.platform_name)
             except Exception:
                 logger.exception("Failed to process link: %s", match.group(0))
-
-    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
-        """Rich media commands do not have callbacks by default."""

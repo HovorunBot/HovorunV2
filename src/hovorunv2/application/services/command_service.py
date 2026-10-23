@@ -82,6 +82,18 @@ class CommandService:
         target_cmd = video_cmd if is_video else post_cmd
         return await self.is_command_allowed(chat_id, target_cmd)
 
+    async def enable_defaults(self, chat_id: int) -> None:
+        """Enable all default media commands for an approved chat.
+
+        Args:
+            chat_id: The ID of the chat.
+
+        """
+        for provider, (video_cmd, post_cmd) in PROVIDER_SPLIT_COMMANDS.items():
+            await self._command_data_service.enable_command(chat_id, str(provider))
+            await self._command_data_service.enable_command(chat_id, str(video_cmd))
+            await self._command_data_service.enable_command(chat_id, str(post_cmd))
+
     async def enable_command(self, chat_id: int, command_name: CommandName | str) -> bool:
         """Enable specific command for a chat.
 

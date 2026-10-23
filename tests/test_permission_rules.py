@@ -221,15 +221,18 @@ async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_policy_auto_enable(test_container: AsyncContainer) -> None:
-    """Test that auto_enable=True policy allows command even if not explicitly enabled."""
-    await test_container.get(AccessService)
-    await test_container.get(ChatStatusService)
+async def test_chat_status_service_approve(test_container: AsyncContainer) -> None:
+    """Test that chat_status_service.approve sets APPROVED and enables default commands."""
+    chat_status_service = await test_container.get(ChatStatusService)
+    command_service = await test_container.get(CommandService)
+    chat_id = 12345
 
-    # auto_enable is not currently used in CommandPolicy.evaluate logic in a way that overrides toggleable
-    # Let's check the evaluate implementation again.
-    # It says: return not (self.is_toggleable and command_name and not await command_service.is_command_allowed(...))
-    # So auto_enable is NOT used in evaluate. It's likely used during registration or elsewhere.
+    await chat_status_service.approve(chat_id)
+
+    assert await chat_status_service.is_approved(chat_id) is True
+    allowed = await command_service.get_allowed_commands(chat_id)
+    assert CommandName.YOUTUBE in allowed
+    assert CommandName.TIKTOK in allowed
 
 
 @pytest.mark.asyncio

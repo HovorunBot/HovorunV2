@@ -1,5 +1,6 @@
 """Application service for unified access control and permissions."""
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from hovorunv2.application.ports import AppSettings
@@ -10,75 +11,20 @@ if TYPE_CHECKING:
     from aiogram import Bot
 
 
+@dataclass(frozen=True, slots=True)
 class CommandPolicy:
-    """Strategy for validating command execution.
+    """Declarative policy configuration for command authorization."""
 
-    Allows for declarative validation rules (admin, approval, toggleable)
-    while supporting complex custom logic by overriding evaluate().
-    """
-
-    def __init__(
-        self,
-        *,
-        requires_admin: bool = False,
-        requires_group_admin: bool = False,
-        requires_approval: bool = True,
-        is_toggleable: bool = True,
-        auto_enable: bool = False,
-    ) -> None:
-        """Initialize policy with declarative rules."""
-        self.requires_admin = requires_admin
-        self.requires_group_admin = requires_group_admin
-        self.requires_approval = requires_approval
-        self.is_toggleable = is_toggleable
-        self.auto_enable = auto_enable
-
-    async def evaluate(
-        self,
-        user_id: int | None,
-        chat_id: int,
-        command_name: str | None,
-        access_service: AccessService,
-        chat_status_service: ChatStatusService,
-        command_service: CommandService,
-        bot: Bot | None = None,
-    ) -> bool:
-        """Evaluate access rules.
-
-        Admins/Owners bypass all checks unless specific policy says otherwise.
-        """
-        # 1. Feature toggles apply to everyone, including admins.
-        # If a command is explicitly disabled in this chat, nobody can use it.
-        if self.is_toggleable and command_name and not await command_service.is_command_allowed(chat_id, command_name):
-            return False
-
-        is_admin = user_id and await access_service.is_admin(user_id)
-
-        # 2. Global Admin always has full access
-        if is_admin:
-            return True
-
-        # 3. Check if global admin is required
-        if self.requires_admin:
-            return False
-
-        # 4. Group Admin check
-        if self.requires_group_admin:
-            if not user_id or not bot:
-                return False
-            # Check if user is admin in this specific group
-            if not await access_service.is_group_admin(bot, chat_id, user_id):
-                return False
-
-        # 5. Approval check
-        return not (self.requires_approval and not await chat_status_service.is_approved(chat_id))
+    requires_admin: bool = False
+    requires_group_admin: bool = False
+    requires_approval: bool = True
+    is_toggleable: bool = True
 
 
 class AccessService:
     """Service to handle cross-platform access control logic.
 
     Centralizes rules for 'Who can do what' across different messaging platforms.
-    Delegates specific validation logic to CommandPolicy objects.
     """
 
     def __init__(
@@ -135,12 +81,30 @@ class AccessService:
             True if allowed, False otherwise.
 
         """
-        return await policy.evaluate(
-            user_id=user_id,
-            chat_id=chat_id,
-            command_name=command_name,
-            access_service=self,
-            chat_status_service=self._chat_status_service,
-            command_service=self._command_service,
-            bot=bot,
-        )
+        # 1. Feature toggles apply to everyone, including admins.
+        if (
+            policy.is_toggleable
+            and command_name
+            and not await self._command_service.is_command_allowed(chat_id, command_name)
+        ):
+            return False
+
+        is_admin = user_id is not None and await self.is_admin(user_id)
+
+        # 2. Global Admin always has full access
+        if is_admin:
+            return True
+
+        # 3. Check if global admin is required
+        if policy.requires_admin:
+            return False
+
+        # 4. Group Admin check
+        if policy.requires_group_admin:
+            if not user_id or not bot:
+                return False
+            if not await self.is_group_admin(bot, chat_id, user_id):
+                return False
+
+        # 5. Approval check
+        return not (policy.requires_approval and not await self._chat_status_service.is_approved(chat_id))

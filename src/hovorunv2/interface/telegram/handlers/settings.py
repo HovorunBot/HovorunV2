@@ -2,7 +2,7 @@
 
 import contextlib
 import math
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 
 from aiogram import Bot, Router
 from aiogram.filters import Command
@@ -33,6 +33,13 @@ LANGS_PER_PAGE: Final = 10
 class SettingsCommand(BaseCommand):
     """Unified settings command replacing legacy configuration commands."""
 
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(
+        requires_admin=False,
+        requires_group_admin=True,
+        requires_approval=True,
+        is_toggleable=False,
+    )
+
     def __init__(
         self,
         language_service: LanguageService,
@@ -50,16 +57,6 @@ class SettingsCommand(BaseCommand):
     def name(self) -> str:
         """Command name."""
         return CommandName.SETTINGS
-
-    @property
-    def policy(self) -> CommandPolicy:
-        """Admins only, approved chats only."""
-        return CommandPolicy(
-            requires_admin=False,
-            requires_group_admin=True,
-            requires_approval=True,
-            is_toggleable=False,
-        )
 
     @property
     def trigger(self) -> Command:

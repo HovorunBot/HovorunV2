@@ -53,7 +53,6 @@ def build_router(
             flags=flags,
         )
 
-        if hasattr(command, "register_callbacks"):
-            command.register_callbacks(router, flags=flags)
+        command.register_callbacks(router, flags=flags)
 
     return router

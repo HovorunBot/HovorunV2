@@ -1,8 +1,7 @@
 """Access management command module."""
 
 import html
-from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from aiogram import Bot, Router
 from aiogram.filters import Command
@@ -11,7 +10,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.infrastructure.logger import get_logger
@@ -25,30 +23,23 @@ logger = get_logger(__name__)
 class AccessCommand(BaseCommand):
     """Command to handle chat access requests and approvals."""
 
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
+
     def __init__(
         self,
         chat_status_service: ChatStatusService,
-        command_service: CommandService,
         access_service: AccessService,
         owner_notifier: OwnerNotifier,
-        commands: Sequence[BaseCommand],
     ) -> None:
         """Initialize command with its dependencies."""
         self._chat_status_service = chat_status_service
-        self._command_service = command_service
         self._access_service = access_service
         self._owner_notifier = owner_notifier
-        self._commands = commands
 
     @property
     def name(self) -> str:
         """Command name."""
         return CommandName.ALLOW_CHAT
-
-    @property
-    def policy(self) -> CommandPolicy:
-        """Everyone can trigger it (it will send a request if not admin)."""
-        return CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
     @property
     def trigger(self) -> Command:
@@ -84,11 +75,7 @@ class AccessCommand(BaseCommand):
     async def _approve_immediately(self, message: Message) -> None:
         """Approve the chat immediately for admins."""
         chat_id = message.chat.id
-        await self._chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
-
-        # Auto-allow commands
-        for command in (c for c in self._commands if c.policy.auto_enable):
-            await self._command_service.enable_command(chat_id, command.name)
+        await self._chat_status_service.approve(chat_id)
 
         await message.answer("✅ Bot is now approved for this chat by administrator.")
         logger.info("Bot approved in chat %d by admin %s", chat_id, message.from_user.id if message.from_user else "0")
@@ -165,10 +152,7 @@ class AccessCommand(BaseCommand):
         owner = query.from_user
 
         if action == AccessAction.APPROVE:
-            await self._chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
-            # Auto-allow commands
-            for command in (c for c in self._commands if c.policy.auto_enable):
-                await self._command_service.enable_command(chat_id, command.name)
+            await self._chat_status_service.approve(chat_id)
 
             status_text = f"✅ Approved by {owner.full_name}"
             logger.info("Chat %d APPROVED by owner %d", chat_id, owner.id)
