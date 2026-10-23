@@ -268,7 +268,7 @@ class RichMediaCommand:
         caption = await self._handle_caption_limits(message, payload, total_text, tg_user_name)
 
         # 0. Pre-downloaded bytes (e.g., from headless browser session)
-        if payload.downloaded_bytes:
+        if any(item.data is not None for item in payload.media_items):
             await self._send_predownloaded_bytes(bot, message, payload, caption)
             return
 
@@ -283,16 +283,12 @@ class RichMediaCommand:
         self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str
     ) -> None:
         """Send media items using pre-downloaded byte buffers."""
-        if not payload.downloaded_bytes:
-            return
-
         final_group: list[Any] = []
-        for i, content in enumerate(payload.downloaded_bytes):
-            if i >= len(payload.media_items):
-                break
-            item_meta = payload.media_items[i]
+        for i, item_meta in enumerate(payload.media_items):
+            if item_meta.data is None:
+                continue
             ext = "mp4" if item_meta.is_video else "jpg"
-            file = BufferedInputFile(content, filename=f"browser_{i}.{ext}")
+            file = BufferedInputFile(item_meta.data, filename=f"browser_{i}.{ext}")
             final_group.append(
                 self._build_input_media(file, is_video=item_meta.is_video, caption=caption if not final_group else None)
             )

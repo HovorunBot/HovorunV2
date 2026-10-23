@@ -249,7 +249,9 @@ class BaseMediaClient:
                 cookies=self.get_browser_cookies(),
             )
             if payload:
-                payload.downloaded_bytes = media_bytes
+                if media_bytes:
+                    for item, b in zip(payload.media_items, media_bytes, strict=False):
+                        item.data = b
                 return payload
         except Exception:
             logger.exception("Browser fallback failed for %s", url)

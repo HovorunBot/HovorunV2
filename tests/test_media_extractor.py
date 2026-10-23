@@ -35,7 +35,7 @@ async def test_extract_payload_youtube_shorts(init_container: AsyncContainer) ->
         assert payload.is_video is True
         # description "Short desc" is len 10, so it should use title "Short Video Title"
         assert "Short Video Title" in payload.content
-        assert "https://video.url/file.mp4" in payload.media_urls
+        assert any(item.url == "https://video.url/file.mp4" for item in payload.media_items)
 
 
 @pytest.mark.asyncio
