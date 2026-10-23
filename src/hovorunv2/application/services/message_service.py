@@ -1,5 +1,6 @@
 """Message service for handling Telegram messages and caching."""
 
+import asyncio
 import json
 import secrets
 
@@ -26,6 +27,7 @@ class MessageService:
         self.chat_service = chat_service
         self.settings = settings
         self.ttl = self.CACHE_TTL_SECONDS
+        self._fernet_cache: dict[int, Fernet] = {}
         logger.debug("MessageService initialized with TTL: %d seconds", self.ttl)
 
     async def cache_message(self, message: types.Message) -> None:
@@ -75,6 +77,9 @@ class MessageService:
         if not self.settings.cache_encryption_key:
             return None
 
+        if chat_id in self._fernet_cache:
+            return self._fernet_cache[chat_id]
+
         try:
             chat = await self.chat_service.get_or_create_chat(chat_id)
             if not chat.encryption_salt:
@@ -88,10 +93,13 @@ class MessageService:
             if not salt:
                 return None
 
-            return get_fernet_for_chat(self.settings.cache_encryption_key, salt)
+            fernet = await asyncio.to_thread(get_fernet_for_chat, self.settings.cache_encryption_key, salt)
+            self._fernet_cache[chat_id] = fernet
         except Exception:
             logger.exception("Failed to derive encryption key for chat %d", chat_id)
             return None
+        else:
+            return fernet
 
     def _generate_key(self, chat_id: int, message_id: int) -> str:
         """Generate a cache key for a specific message."""

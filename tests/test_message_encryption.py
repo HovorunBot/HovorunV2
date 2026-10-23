@@ -1,7 +1,7 @@
 """Tests for MessageService per-chat encryption."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiogram import types
@@ -146,3 +146,28 @@ async def test_get_message_no_encryption_fails_when_enabled(
     retrieved = await service.get_message(chat_id, message_id)
 
     assert retrieved is None
+
+
+@pytest.mark.asyncio
+async def test_fernet_derivation_cached_per_chat(
+    mock_cache_service: MagicMock,
+    mock_chat_service: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """Verify PBKDF2 Fernet derivation is cached per chat in-memory."""
+    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
+    chat_id = 999
+    chat = MagicMock(encryption_salt="0123456789abcdef" * 2)
+    mock_chat_service.get_or_create_chat.return_value = chat
+
+    with patch("hovorunv2.application.services.message_service.get_fernet_for_chat") as mock_kdf:
+        mock_kdf.side_effect = lambda _key, _salt: MagicMock()
+
+        f1 = await service._get_fernet_for_chat(chat_id)  # noqa: SLF001
+        f2 = await service._get_fernet_for_chat(chat_id)  # noqa: SLF001
+        f3 = await service._get_fernet_for_chat(chat_id)  # noqa: SLF001
+
+        assert f1 is not None
+        assert f1 is f2
+        assert f2 is f3
+        assert mock_kdf.call_count == 1
