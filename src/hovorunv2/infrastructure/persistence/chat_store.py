@@ -32,7 +32,7 @@ class SQLAlchemyChatStore(ChatStore):
                 chat.status = status
             else:
                 chat = ChatDB(chat_id=chat_id, platform=platform, status=status)
-            await repo.save(chat)
+                repo.add(chat)
             await session.commit()
 
     async def update_translation_settings(
@@ -44,10 +44,10 @@ class SQLAlchemyChatStore(ChatStore):
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
                 chat = ChatDB(chat_id=chat_id, platform=platform)
+                repo.add(chat)
 
             chat.target_lang = target_lang
             chat.ignored_langs = json.dumps(ignored_langs)
-            await repo.save(chat)
             await session.commit()
 
     async def get_all_by_status(self, status: ChatStatus, platform: str) -> list[ChatDB]:
@@ -63,7 +63,7 @@ class SQLAlchemyChatStore(ChatStore):
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
                 chat = ChatDB(chat_id=chat_id, platform=platform)
-                await repo.save(chat)
+                repo.add(chat)
                 await session.commit()
             return chat
 
@@ -74,6 +74,6 @@ class SQLAlchemyChatStore(ChatStore):
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
                 chat = ChatDB(chat_id=chat_id, platform=platform)
+                repo.add(chat)
             chat.encryption_salt = salt
-            await repo.save(chat)
             await session.commit()
