@@ -7,6 +7,7 @@ import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
 TIKTOK_CONFIG = ProviderConfig(
@@ -22,18 +23,20 @@ TIKTOK_CONFIG = ProviderConfig(
 class TikTokService(BaseMediaClient):
     """Service to interact with TikTok and process video/photo links."""
 
-    CONFIG: ClassVar[ProviderConfig] = TIKTOK_CONFIG
     API_URL: ClassVar[str] = "https://www.tikwm.com/api/"
     SUCCESS_CODE: ClassVar[int] = 0
 
+    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
+        """Initialize with HTTP session and browser adapter."""
+        super().__init__(config=TIKTOK_CONFIG, http=http, browser=browser)
+
     async def _extract_raw_payload(
         self,
-        session: aiohttp.ClientSession,
         url: str,
         match: re.Match[str],
     ) -> RichMediaPayload | None:
         """Fetch TikTok data and construct raw RichMediaPayload."""
-        data = await self._fetch_json(session, self.API_URL, params={"url": url})
+        data = await self._fetch_json(self.API_URL, params={"url": url})
         if not isinstance(data, dict) or data.get("code") != self.SUCCESS_CODE:
             return None
 

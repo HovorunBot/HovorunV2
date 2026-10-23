@@ -10,8 +10,6 @@ from hovorunv2.application.clients.threads import ThreadsService
 @pytest.mark.asyncio
 async def test_extract_footer_from_soup() -> None:
     """Test extracting footer statistics from Threads nested JSON payload."""
-    translation_service = MagicMock()
-    translation_service.translate_if_needed = AsyncMock(return_value=None)
     browser_service = MagicMock()
 
     post_id = "DX9HWZiiE2Q"
@@ -45,9 +43,9 @@ async def test_extract_footer_from_soup() -> None:
     </html>
     """
     browser_service.get_content = AsyncMock(return_value=html_content)
-    service = ThreadsService(translation_service, browser_service)
+    service = ThreadsService(MagicMock(), browser_service)
 
-    payload = await service.extract_fallback(url, 123, "telegram", MagicMock())
+    payload = await service.extract_fallback(url)
 
     assert payload is not None
     assert "💬 77" in payload.footer_text
@@ -59,8 +57,6 @@ async def test_extract_footer_from_soup() -> None:
 async def test_extract_payload_with_metrics() -> None:
     """Test full payload extraction including metrics for Threads."""
     # Mock dependencies
-    translation_service = MagicMock()
-    translation_service.translate_if_needed = AsyncMock(return_value=None)
     browser_service = MagicMock()
 
     post_id = "DX9HWZiiE2Q"
@@ -90,10 +86,9 @@ async def test_extract_payload_with_metrics() -> None:
     """
 
     browser_service.get_content = AsyncMock(return_value=html_content)
-    service = ThreadsService(translation_service, browser_service)
+    service = ThreadsService(MagicMock(), browser_service)
 
-    session = MagicMock()
-    payload = await service.extract_fallback(url, 123, "telegram", session)
+    payload = await service.extract_fallback(url)
 
     assert payload is not None
     assert "💬 56" in payload.footer_text

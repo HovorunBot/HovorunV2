@@ -71,6 +71,10 @@ class CommandService:
             True if capture mode is allowed for the provider in the chat.
 
         """
+        allowed = await self.get_allowed_commands(chat_id)
+        if not allowed:
+            return True
+
         if provider not in PROVIDER_SPLIT_COMMANDS:
             return await self.is_command_allowed(chat_id, provider)
 

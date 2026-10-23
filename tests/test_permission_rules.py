@@ -283,15 +283,16 @@ async def test_command_service_is_capture_allowed(test_container: AsyncContainer
     command_service = await test_container.get(CommandService)
     chat_id = 998877
 
-    # By default, not enabled
-    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is False
-    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is False
+    # When no explicit commands configured in chat, allowed by default
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is True
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is True
 
-    # Enable twitter_video only
+    # Enable twitter_post only (now chat has explicit configuration)
+    await command_service.enable_command(chat_id, CommandName.TWITTER_POST)
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is False
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is True
+
+    # Enable twitter_video
     await command_service.enable_command(chat_id, CommandName.TWITTER_VIDEO)
     assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is True
-    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is False
-
-    # Enable twitter_post
-    await command_service.enable_command(chat_id, CommandName.TWITTER_POST)
     assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is True

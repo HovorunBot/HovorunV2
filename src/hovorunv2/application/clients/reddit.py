@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
 REDDIT_CONFIG = ProviderConfig(
@@ -28,15 +29,17 @@ REDDIT_CONFIG = ProviderConfig(
 class RedditService(BaseMediaClient):
     """Service to interact with Reddit and process post links via vxReddit."""
 
-    CONFIG: ClassVar[ProviderConfig] = REDDIT_CONFIG
     VXREDDIT_BASE_URL: ClassVar[str] = "https://vxreddit.com"
     STATS_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
         r"^u/(?P<author>\S+)\s+on\s+(?P<subreddit>\S+)\s+-\s+⬆️\s*(?P<upvotes>\d+)(?:\s*\|\s*💬\s*(?P<comments>\d+))?"
     )
 
+    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
+        """Initialize with HTTP session and browser adapter."""
+        super().__init__(config=REDDIT_CONFIG, http=http, browser=browser)
+
     async def _extract_raw_payload(
         self,
-        session: aiohttp.ClientSession,
         url: str,
         match: re.Match[str],
     ) -> RichMediaPayload | None:
@@ -46,7 +49,7 @@ class RedditService(BaseMediaClient):
             self.VXREDDIT_BASE_URL,
             url.split("?", maxsplit=1)[0],
         )
-        html_content = await self._fetch_html(session, vx_url)
+        html_content = await self._fetch_html(vx_url)
         if not html_content:
             return None
 

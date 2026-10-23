@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup, Tag
 from hovorunv2.application.clients.base import BaseMediaClient, OGConfig, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import BrowserPort
-from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.domain.enums import CommandName
 
 logger = logging.getLogger(__name__)
@@ -42,31 +41,20 @@ class ThreadsService(BaseMediaClient):
     MIN_FALLBACK_QUOTE_LENGTH: ClassVar[int] = 30
     PROFILE_PATH_PARTS: ClassVar[int] = 2
 
-    def __init__(self, translation_service: TranslationService, browser_service: BrowserPort) -> None:
+    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
         """Initialize with required services."""
-        super().__init__(translation_service)
-        self._browser_service = browser_service
+        super().__init__(config=THREADS_CONFIG, http=http, browser=browser)
 
     async def extract_fallback(
         self,
         url: str,
-        chat_id: int = 0,
-        platform: str = "telegram",
-        session: aiohttp.ClientSession | None = None,
     ) -> RichMediaPayload | None:
         """Fetch Threads post via headless browser after yt-dlp is attempted."""
-        if session is None:
-            return None
-
         match = self._config.pattern.search(url)
         if not match:
             return None
 
-        payload = await self._extract_from_browser(url, match)
-        if payload is None:
-            return None
-
-        return await self._finalize_payload(payload, url, chat_id, platform, session)
+        return await self._extract_from_browser(url, match)
 
     async def _extract_from_browser(
         self,
@@ -74,14 +62,11 @@ class ThreadsService(BaseMediaClient):
         match: re.Match[str],
     ) -> RichMediaPayload | None:
         """Fetch native Threads data using BrowserService and construct raw RichMediaPayload."""
-        if not self._browser_service:
-            return None
-
         tld = match.group("tld")
         post_id = match.group("post_id")
 
         try:
-            html_content = await self._browser_service.get_content(url, wait_selector="article")
+            html_content = await self._browser.get_content(url, wait_selector="article")
         except Exception:
             logger.exception("Failed to fetch Threads URL via BrowserService: %s", url)
             return None

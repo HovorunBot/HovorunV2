@@ -1,12 +1,13 @@
 """Application service for Twitter/X media extraction."""
 
 import re
-from typing import Any, ClassVar
+from typing import Any
 
 import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
 TWITTER_CONFIG = ProviderConfig(
@@ -20,13 +21,13 @@ TWITTER_CONFIG = ProviderConfig(
 class TwitterService(BaseMediaClient):
     """Service to interact with Twitter and process tweet links."""
 
-    CONFIG: ClassVar[ProviderConfig] = TWITTER_CONFIG
+    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
+        """Initialize with HTTP session and browser adapter."""
+        super().__init__(config=TWITTER_CONFIG, http=http, browser=browser)
 
-    async def _extract_raw_payload(
-        self, session: aiohttp.ClientSession, url: str, match: re.Match[str]
-    ) -> RichMediaPayload | None:
+    async def _extract_raw_payload(self, url: str, match: re.Match[str]) -> RichMediaPayload | None:
         """Fetch tweet data from vxtwitter API and return raw RichMediaPayload."""
-        tweet_data = await self._fetch_json(session, f"https://api.vxtwitter.com/i/status/{match.group('post_id')}")
+        tweet_data = await self._fetch_json(f"https://api.vxtwitter.com/i/status/{match.group('post_id')}")
         if not isinstance(tweet_data, dict) or "text" not in tweet_data:
             return None
 

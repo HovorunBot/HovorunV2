@@ -11,7 +11,6 @@ import instaloader
 from hovorunv2.application.clients.base import BaseMediaClient, BrowserFallbackConfig, OGConfig, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import AppSettings, BrowserPort
-from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.text import clean_caption_text
 from hovorunv2.domain.enums import CommandName
 
@@ -63,19 +62,30 @@ INSTAGRAM_JS_EXTRACTOR = """
 
 INSTAGRAM_CONFIG = ProviderConfig(
     name=CommandName.INSTAGRAM,
+    strip_hashtags=True,
+    headers={
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+        )
+    },
     pattern=re.compile(
-        r"https?://(?:www\.)?instagram\.com/(?:[^/]+/)?(?:reels?|p|tv)/(?P<id>[A-Za-z0-9-_]+?)(?=[/?#\s]|$)"
+        r"https?://(?:www\.)?instagram\.com/(?:(?P<username>[\w.-]+)/)?(?P<type>p|reel|reels|tv)/(?P<id>[\w-]+)"
     ),
     browser_config=BrowserFallbackConfig(
-        wait_selector="meta[property='og:image'], article, main",
-        gate_buttons=("See Post", "Verify Age", "Переглянути допис", "Підтвердити вік"),
+        wait_selector='article, main, [role="main"]',
+        gate_buttons=(
+            "Allow all cookies",
+            "Accept All",
+            "Allow essential and optional cookies",
+            "Decline optional cookies",
+        ),
         js_extractor=INSTAGRAM_JS_EXTRACTOR,
         default_author="Instagram User",
         author_handle="instagram",
         author_url="https://www.instagram.com/",
         default_title="Instagram Post",
-        default_footer="📷 Instagram",
-        description_clean_pattern=re.compile(r'^.*?on Instagram:.*?"'),
+        description_clean_pattern=re.compile(r"^\d+ likes?, \d+ comments? - [^:]+: "),
     ),
     og_config=OGConfig(
         default_author="Instagram User",
@@ -89,18 +99,16 @@ INSTAGRAM_CONFIG = ProviderConfig(
 class InstagramService(BaseMediaClient):
     """Service to interact with Instagram using instaloader and config-driven browser fallback."""
 
-    CONFIG: ClassVar[ProviderConfig] = INSTAGRAM_CONFIG
     MIN_DESCRIPTION_LENGTH: ClassVar[int] = 5
 
     def __init__(
         self,
-        translation_service: TranslationService,
-        browser_service: BrowserPort,
+        http: aiohttp.ClientSession,
+        browser: BrowserPort,
         settings: AppSettings,
     ) -> None:
         """Initialize with required services."""
-        super().__init__(translation_service)
-        self._browser_service = browser_service
+        super().__init__(config=INSTAGRAM_CONFIG, http=http, browser=browser)
         self._settings = settings
         self._loader = instaloader.Instaloader(user_agent=self.DEFAULT_HEADERS["User-Agent"])
         self._session_initialized = False
@@ -138,20 +146,14 @@ class InstagramService(BaseMediaClient):
         except Exception:
             logger.exception("Failed to set Instaloader session cookie")
 
-    async def extract_fallback(
-        self,
-        url: str,
-        chat_id: int = 0,
-        platform: str = "telegram",
-        session: aiohttp.ClientSession | None = None,
-    ) -> RichMediaPayload | None:
+    async def extract_fallback(self, url: str) -> RichMediaPayload | None:
         """Try instaloader after yt-dlp fails, then fall back to headless browser."""
-        if session is not None and (match := self._config.pattern.search(url)):
+        if match := self._config.pattern.search(url):
             raw_payload = await self._extract_via_instaloader(url, match)
             if raw_payload is not None:
-                return await self._finalize_payload(raw_payload, url, chat_id, platform, session)
+                return raw_payload
 
-        return await super().extract_fallback(url, chat_id, platform, session)
+        return await super().extract_fallback(url)
 
     async def _extract_via_instaloader(
         self,

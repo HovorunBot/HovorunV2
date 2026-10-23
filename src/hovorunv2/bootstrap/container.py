@@ -17,6 +17,7 @@ from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.clients.youtube import YoutubeService
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.ports import (
     AppSettings,
     BrowserPort,
@@ -148,6 +149,7 @@ class AppProvider(Provider):
     translation_service = provide(TranslationService)
     media_downloader = provide(MediaDownloader)
     media_extractor = provide(MediaExtractor)
+    media_pipeline = provide(MediaPipeline)
     tiktok_service = provide(TikTokService)
     twitter_service = provide(TwitterService)
     threads_service = provide(ThreadsService)
@@ -166,7 +168,8 @@ class AppProvider(Provider):
     @provide(scope=Scope.APP)
     def get_media_clients(
         self,
-        translation_service: TranslationService,
+        session: aiohttp.ClientSession,
+        browser: BrowserPort,
         bluesky_service: BlueskyService,
         instagram_service: InstagramService,
         threads_service: ThreadsService,
@@ -178,7 +181,7 @@ class AppProvider(Provider):
         """Provide all registered media provider clients."""
         return [
             bluesky_service,
-            BaseMediaClient(translation_service).with_config(FACEBOOK_CONFIG),
+            BaseMediaClient(config=FACEBOOK_CONFIG, http=session, browser=browser),
             instagram_service,
             threads_service,
             tiktok_service,
@@ -200,18 +203,14 @@ class AppProvider(Provider):
     def get_rich_media_commands(
         self,
         media_clients: list[BaseMediaClient],
-        media_extractor: MediaExtractor,
-        session: aiohttp.ClientSession,
-        command_service: CommandService,
+        pipeline: MediaPipeline,
         media_delivery: TelegramMediaDelivery,
     ) -> list[RichMediaCommand]:
         """Wrap all registered media clients into generalized RichMediaCommand handlers."""
         return [
             RichMediaCommand(
                 primary_client=client,
-                media_extractor=media_extractor,
-                session=session,
-                command_service=command_service,
+                pipeline=pipeline,
                 media_delivery=media_delivery,
             )
             for client in media_clients

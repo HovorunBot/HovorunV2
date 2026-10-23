@@ -2,12 +2,13 @@
 
 import json
 import re
-from typing import Any, ClassVar
+from typing import Any
 
 import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, OGConfig, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
 YOUTUBE_CONFIG = ProviderConfig(
@@ -45,18 +46,19 @@ YOUTUBE_CONFIG = ProviderConfig(
 class YoutubeService(BaseMediaClient):
     """Service to interact with YouTube videos, Shorts, and Community posts."""
 
-    CONFIG: ClassVar[ProviderConfig] = YOUTUBE_CONFIG
+    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
+        """Initialize with HTTP session and browser adapter."""
+        super().__init__(config=YOUTUBE_CONFIG, http=http, browser=browser)
 
     async def _extract_raw_payload(
         self,
-        session: aiohttp.ClientSession,
         url: str,
         match: re.Match[str],
     ) -> RichMediaPayload | None:
         """Extract YouTube Community post from ytInitialData or fall back to OG config."""
         post_id = match.groupdict().get("post_id") or match.groupdict().get("community_id")
         fetch_url = f"https://www.youtube.com/post/{post_id}" if post_id else url
-        html_content = await self._fetch_html(session, fetch_url)
+        html_content = await self._fetch_html(fetch_url)
         if not html_content:
             return None
 

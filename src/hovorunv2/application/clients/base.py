@@ -1,6 +1,5 @@
 """Configuration-driven base class for all media provider clients."""
 
-import html
 import json
 import logging
 import re
@@ -14,8 +13,7 @@ import aiohttp
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import BrowserPort
-from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.text import clean_caption_text, extract_og_metadata, format_number
+from hovorunv2.application.text import extract_og_metadata, format_number
 from hovorunv2.domain.enums import CommandName
 
 logger = logging.getLogger(__name__)
@@ -92,9 +90,7 @@ FACEBOOK_CONFIG = ProviderConfig(
 class BaseMediaClient:
     """Generalized media client executing config-driven extraction, OG/browser fallbacks, and post-processing."""
 
-    CONFIG: ClassVar[ProviderConfig]
     DEFAULT_TIMEOUT_SECONDS: ClassVar[int] = 15
-    QUOTED_MEDIA_NOTE: ClassVar[str] = "\n\nℹ️️ <i>Post includes quoted media</i>"  # noqa: RUF001
     DEFAULT_HEADERS: ClassVar[Mapping[str, str]] = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -103,16 +99,16 @@ class BaseMediaClient:
         "Accept-Language": "en-US,en;q=0.9",
     }
 
-    def __init__(self, translation_service: TranslationService) -> None:
-        """Initialize client with translation service."""
-        self._translation_service = translation_service
-        self._config: ProviderConfig = getattr(self, "CONFIG", FACEBOOK_CONFIG)
-        self._browser_service: BrowserPort | None = None
-
-    def with_config(self, config: ProviderConfig) -> BaseMediaClient:
-        """Bind a specific ProviderConfig to this client instance and return self."""
+    def __init__(
+        self,
+        config: ProviderConfig,
+        http: aiohttp.ClientSession,
+        browser: BrowserPort,
+    ) -> None:
+        """Initialize client with its provider config and shared infrastructure."""
         self._config = config
-        return self
+        self._http = http
+        self._browser = browser
 
     @property
     def config(self) -> ProviderConfig:
@@ -134,14 +130,12 @@ class BaseMediaClient:
         """Human-readable platform label."""
         return self._config.label
 
-    async def extract_payload(
-        self, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
-    ) -> RichMediaPayload | None:
-        """Execute direct API extraction and post-processing."""
+    async def extract(self, url: str) -> RichMediaPayload | None:
+        """Execute direct API extraction."""
         if self._config.post_url_pattern and not self._config.post_url_pattern.search(url):
             return None
 
-        resolved_url = await self.resolve_url(session, url)
+        resolved_url = await self.resolve_url(url)
         if not resolved_url:
             return None
 
@@ -149,77 +143,32 @@ class BaseMediaClient:
         if not match:
             return None
 
-        payload = await self._extract_raw_payload(session, resolved_url, match)
-        if payload is None:
-            return None
+        return await self._extract_raw_payload(resolved_url, match)
 
-        return await self._finalize_payload(payload, url, chat_id, platform, session)
-
-    async def extract_metadata_payload(
-        self, session: aiohttp.ClientSession, url: str, chat_id: int, platform: str
-    ) -> RichMediaPayload | None:
+    async def extract_metadata(self, url: str) -> RichMediaPayload | None:
         """Execute OpenGraph / HTML metadata extraction as final fallback."""
         if self._config.og_config is None:
             return None
 
-        resolved_url = await self.resolve_url(session, url)
+        resolved_url = await self.resolve_url(url)
         if not resolved_url:
             return None
 
-        payload = await self._extract_via_og(session, resolved_url, self._config.og_config)
-        if payload is None:
-            return None
+        return await self._extract_via_og(resolved_url, self._config.og_config)
 
-        return await self._finalize_payload(payload, url, chat_id, platform, session)
-
-    async def resolve_url(self, session: aiohttp.ClientSession, url: str) -> str | None:
+    async def resolve_url(self, url: str) -> str | None:
         """Resolve redirects when configured on the provider."""
         if self._config.redirect_pattern and self._config.redirect_pattern.search(url):
-            return await self._resolve_redirect(session, url, headers=self._config.headers or None)
+            return await self._resolve_redirect(url, headers=self._config.headers or None)
         return url
 
     async def _extract_raw_payload(
         self,
-        session: aiohttp.ClientSession,
         url: str,
         match: re.Match[str],
     ) -> RichMediaPayload | None:
-        """Override in subclasses for provider-specific raw extraction (before escaping/translation)."""
+        """Override in subclasses for provider-specific raw extraction."""
         return None
-
-    async def _finalize_payload(
-        self,
-        payload: RichMediaPayload,
-        original_url: str,
-        chat_id: int,
-        platform: str,
-        session: aiohttp.ClientSession,
-    ) -> RichMediaPayload:
-        """Centrally escape, clean, translate, and merge quoted media for any extracted payload."""
-        payload.author_name = html.escape(payload.author_name)
-        payload.author_handle = html.escape(payload.author_handle)
-        payload.original_url = original_url
-        payload.content = await self._translate_text(
-            payload.content, chat_id, platform, session, strip_hashtags=self._config.strip_hashtags
-        )
-
-        if quote := payload.quoted_payload:
-            quote.author_name = html.escape(quote.author_name)
-            quote.author_handle = html.escape(quote.author_handle)
-            if self._config.translate_quoted:
-                quote.content = await self._translate_text(quote.content, chat_id, platform, session)
-            else:
-                quote.content = html.escape(quote.content)
-
-            if (
-                quote.media_items
-                and self._config.merge_quoted_media
-                and (not self._config.merge_quoted_only_when_empty or not payload.media_items)
-            ):
-                payload.media_items.extend(quote.media_items)
-                payload.content += self.QUOTED_MEDIA_NOTE
-
-        return payload
 
     def get_ytdlp_cookies(self) -> dict[str, str] | None:
         """Return optional cookies to pass to yt-dlp fallback."""
@@ -229,20 +178,14 @@ class BaseMediaClient:
         """Return optional cookies to inject into headless browser fallback."""
         return []
 
-    async def extract_fallback(
-        self,
-        url: str,
-        chat_id: int = 0,
-        platform: str = "telegram",
-        session: aiohttp.ClientSession | None = None,
-    ) -> RichMediaPayload | None:
+    async def extract_fallback(self, url: str) -> RichMediaPayload | None:
         """Perform config-driven headless browser fallback when configured."""
         b_cfg = self._config.browser_config
-        if not b_cfg or not self._browser_service:
+        if not b_cfg:
             return None
 
         try:
-            payload, media_bytes = await self._browser_service.extract_and_download(
+            payload, media_bytes = await self._browser.extract_and_download(
                 url,
                 extractor_fn=lambda tab, target_url: self._extract_from_browser_tab(tab, target_url, b_cfg),
                 wait_selector=b_cfg.wait_selector,
@@ -256,6 +199,10 @@ class BaseMediaClient:
         except Exception:
             logger.exception("Browser fallback failed for %s", url)
         return None
+
+    # Compatibility aliases
+    extract_payload = extract
+    extract_metadata_payload = extract_metadata
 
     def _extract_from_browser_tab(self, tab: Any, url: str, b_cfg: BrowserFallbackConfig) -> RichMediaPayload | None:
         """Extract metadata from browser tab via JS, JSON scripts, or OG tags."""
@@ -330,11 +277,9 @@ class BaseMediaClient:
             media_items=[MediaItem(url=str(media_url), is_video=bool(results.get("video")))],
         )
 
-    async def _extract_via_og(
-        self, session: aiohttp.ClientSession, url: str, og_cfg: OGConfig
-    ) -> RichMediaPayload | None:
+    async def _extract_via_og(self, url: str, og_cfg: OGConfig) -> RichMediaPayload | None:
         """Fetch HTML and construct raw RichMediaPayload from OpenGraph metadata."""
-        html_content = await self._fetch_html(session, url, headers=og_cfg.headers)
+        html_content = await self._fetch_html(url, headers=og_cfg.headers)
         if not html_content:
             return None
         return self._parse_og_html(html_content, url, og_cfg)
@@ -378,26 +323,8 @@ class BaseMediaClient:
             media_items=media_items,
         )
 
-    async def _translate_text(
-        self,
-        raw_text: str,
-        chat_id: int,
-        platform: str,
-        session: aiohttp.ClientSession,
-        *,
-        strip_hashtags: bool = False,
-    ) -> str:
-        """Clean, HTML-escape, and translate text if needed."""
-        text_to_escape = clean_caption_text(raw_text, strip_hashtags=True) if strip_hashtags else raw_text
-        content = html.escape(text_to_escape)
-        trans_res = await self._translation_service.translate_if_needed(content, chat_id, session=session)
-        if trans_res:
-            content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
-        return content
-
     async def _fetch_json(
         self,
-        session: aiohttp.ClientSession,
         url: str,
         *,
         params: Mapping[str, str | int] | None = None,
@@ -405,7 +332,7 @@ class BaseMediaClient:
     ) -> Any:
         """Perform GET request and return parsed JSON or None on failure."""
         try:
-            async with session.get(
+            async with self._http.get(
                 url,
                 params=params,
                 headers=headers or self._config.headers or None,
@@ -421,14 +348,13 @@ class BaseMediaClient:
 
     async def _fetch_html(
         self,
-        session: aiohttp.ClientSession,
         url: str,
         *,
         headers: Mapping[str, str] | None = None,
     ) -> str | None:
         """Perform GET request and return HTML text or None on failure."""
         try:
-            async with session.get(
+            async with self._http.get(
                 url,
                 headers=headers or self._config.headers or self.DEFAULT_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
@@ -443,14 +369,13 @@ class BaseMediaClient:
 
     async def _resolve_redirect(
         self,
-        session: aiohttp.ClientSession,
         url: str,
         *,
         headers: Mapping[str, str] | None = None,
     ) -> str | None:
         """Follow HTTP redirects and return final resolved URL."""
         try:
-            async with session.get(
+            async with self._http.get(
                 url,
                 headers=headers or self._config.headers or self.DEFAULT_HEADERS,
                 allow_redirects=True,

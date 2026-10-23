@@ -4,47 +4,41 @@ import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-import aiohttp
 from aiogram import Bot, F
 from aiogram.filters import Filter
 from aiogram.types import Message
 from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.clients.base import BaseMediaClient
-from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.services.access_service import CommandPolicy
-from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 
 if TYPE_CHECKING:
     from aiogram import Router
+
 logger = get_logger(__name__)
 
 
 @runtime_checkable
 class BaseCommand(Protocol):
-    """Protocol for all bot commands."""
+    """Protocol defining interface for bot command handlers."""
 
     @property
     def name(self) -> str:
-        """Command name for configuration purposes."""
+        """Unique command name/identifier."""
         ...
 
     @property
     def policy(self) -> CommandPolicy:
-        """Access policy for this command."""
+        """Permission and lifecycle policy enforced on this command."""
         ...
 
     @property
     def trigger(self) -> Filter | MagicFilter | Callable[..., Any]:
-        """Trigger filter for this command."""
-        ...
-
-    async def is_triggered(self, message: Message) -> bool:
-        """Check if the command should be triggered by the given message."""
+        """Aiogram filter triggering this command."""
         ...
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
@@ -62,16 +56,12 @@ class RichMediaCommand:
     def __init__(
         self,
         primary_client: BaseMediaClient,
-        media_extractor: MediaExtractor,
-        session: aiohttp.ClientSession,
-        command_service: CommandService,
+        pipeline: MediaPipeline,
         media_delivery: TelegramMediaDelivery,
     ) -> None:
-        """Initialize command with its provider client and shared media services."""
+        """Initialize command with its provider client and shared pipeline/delivery services."""
         self._primary_client = primary_client
-        self._media_extractor = media_extractor
-        self._session = session
-        self._command_service = command_service
+        self._pipeline = pipeline
         self._delivery = media_delivery
 
     @property
@@ -135,59 +125,13 @@ class RichMediaCommand:
 
         for match in matches:
             try:
-                payload = await self._extract_payload(self._session, match, message.chat.id, "telegram")
+                payload = await self._pipeline.process(self._primary_client, match.group(0), message.chat.id)
                 if not payload:
-                    logger.warning("Extraction returned empty payload for %s (%s)", match.group(0), self.name)
-                    continue
-
-                if not await self._is_payload_mode_allowed(message.chat.id, payload):
-                    logger.info(
-                        "Skipping %s link %s in chat %d (capture mode disabled for is_video=%s)",
-                        self.name,
-                        match.group(0),
-                        message.chat.id,
-                        payload.is_video,
-                    )
                     continue
 
                 await self._delivery.deliver(bot, message, payload, self.platform_name)
             except Exception:
                 logger.exception("Failed to process link: %s", match.group(0))
-
-    async def _is_payload_mode_allowed(self, chat_id: int, payload: RichMediaPayload) -> bool:
-        """Check whether the extracted payload's media mode (video vs image/text) is enabled."""
-        allowed_commands = await self._command_service.get_allowed_commands(chat_id)
-        if not allowed_commands:
-            return True
-
-        target_cmd = self.video_command_name if payload.is_video else self.post_command_name
-        return await self._command_service.is_command_allowed(chat_id, target_cmd)
-
-    async def _extract_payload(
-        self, session: aiohttp.ClientSession, match: re.Match[str], chat_id: int, platform: str
-    ) -> RichMediaPayload | None:
-        """Generalized 4-tier extraction pipeline: Direct API -> yt-dlp -> Browser Fallback -> Metadata."""
-        url = match.group(0).rstrip(".,")
-
-        # 1. Direct API (if implemented by provider)
-        if payload := await self._primary_client.extract_payload(session, url, chat_id, platform):
-            return payload
-
-        # 2. Generic MediaExtractor (yt-dlp) - skip for explicit post/text URLs
-        is_post_url = bool(
-            self._primary_client.config.post_url_pattern and self._primary_client.config.post_url_pattern.search(url)
-        )
-        if not is_post_url:
-            logger.info("%s direct API returned None for %s, trying yt-dlp", self.name, url)
-            if payload := await self._media_extractor.extract(url, cookies=self._primary_client.get_ytdlp_cookies()):
-                return payload
-
-        # 3. Browser Fallback (if configured on provider)
-        if payload := await self._primary_client.extract_fallback(url, chat_id, platform, session):
-            return payload
-
-        # 4. Metadata / OpenGraph fallback (if configured on provider)
-        return await self._primary_client.extract_metadata_payload(session, url, chat_id, platform)
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
         """Rich media commands do not have callbacks by default."""

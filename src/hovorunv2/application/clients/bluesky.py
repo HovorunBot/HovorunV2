@@ -7,6 +7,7 @@ import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
 BLUESKY_CONFIG = ProviderConfig(
@@ -19,24 +20,25 @@ BLUESKY_CONFIG = ProviderConfig(
 class BlueskyService(BaseMediaClient):
     """Service to interact with Bluesky and process posts."""
 
-    CONFIG: ClassVar[ProviderConfig] = BLUESKY_CONFIG
     API_BASE_URL: ClassVar[str] = "https://public.api.bsky.app/xrpc"
 
-    async def _extract_raw_payload(
-        self, session: aiohttp.ClientSession, url: str, match: re.Match[str]
-    ) -> RichMediaPayload | None:
+    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
+        """Initialize with HTTP session and browser adapter."""
+        super().__init__(config=BLUESKY_CONFIG, http=http, browser=browser)
+
+    async def _extract_raw_payload(self, url: str, match: re.Match[str]) -> RichMediaPayload | None:
         """Fetch Bluesky thread data and construct raw RichMediaPayload."""
         handle = match.group("handle")
         if not handle:
             return None
 
-        did = handle if handle.startswith("did:") else await self._resolve_did(session, handle)
+        did = handle if handle.startswith("did:") else await self._resolve_did(handle)
         if not did:
             return None
 
         at_uri = f"at://{did}/app.bsky.feed.post/{match.group('rkey')}"
         thread_data = await self._fetch_json(
-            session, f"{self.API_BASE_URL}/app.bsky.feed.getPostThread", params={"uri": at_uri, "depth": 0}
+            f"{self.API_BASE_URL}/app.bsky.feed.getPostThread", params={"uri": at_uri, "depth": 0}
         )
         if not isinstance(thread_data, dict) or "thread" not in thread_data:
             return None
@@ -65,11 +67,9 @@ class BlueskyService(BaseMediaClient):
             quoted_payload=self._extract_quote(embed),
         )
 
-    async def _resolve_did(self, session: aiohttp.ClientSession, handle: str) -> str | None:
+    async def _resolve_did(self, handle: str) -> str | None:
         """Resolve Bluesky handle to DID."""
-        profile = await self._fetch_json(
-            session, f"{self.API_BASE_URL}/app.bsky.actor.getProfile", params={"actor": handle}
-        )
+        profile = await self._fetch_json(f"{self.API_BASE_URL}/app.bsky.actor.getProfile", params={"actor": handle})
         return profile.get("did") if isinstance(profile, dict) else None
 
     def _get_record_view(self, embed: dict[str, Any]) -> dict[str, Any] | None:
