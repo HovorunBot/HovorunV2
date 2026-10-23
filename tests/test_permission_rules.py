@@ -56,7 +56,8 @@ async def test_access_middleware_private_chat_admin(test_container: AsyncContain
 async def test_access_middleware_private_chat_non_admin(test_container: AsyncContainer) -> None:
     """Test that non-admins are blocked in private chats and receive help text."""
     access_service = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access_service)
+    settings = await test_container.get(Settings)
+    middleware = AccessMiddleware(access_service, settings)
 
     user_id = 999
     message = create_mock_message(user_id, user_id, ChatType.PRIVATE)
@@ -77,7 +78,8 @@ async def test_access_middleware_private_chat_non_admin(test_container: AsyncCon
 async def test_access_middleware_allowed_group(test_container: AsyncContainer) -> None:
     """Test that allowed interaction in group proceeds to handler."""
     access_service = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access_service)
+    settings = await test_container.get(Settings)
+    middleware = AccessMiddleware(access_service, settings)
 
     user_id = 999
     chat_id = 123
@@ -99,7 +101,8 @@ async def test_access_middleware_allowed_group(test_container: AsyncContainer) -
 async def test_access_middleware_denied_group(test_container: AsyncContainer) -> None:
     """Test that denied interaction in group is blocked."""
     access_service = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access_service)
+    settings = await test_container.get(Settings)
+    middleware = AccessMiddleware(access_service, settings)
 
     user_id = 999
     chat_id = 123

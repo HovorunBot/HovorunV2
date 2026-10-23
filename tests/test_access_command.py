@@ -11,7 +11,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.config import settings
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 
@@ -55,6 +55,7 @@ async def test_is_triggered(access_command: AccessCommand, text: str | None, exp
 @pytest.mark.asyncio
 async def test_handle_authorized(access_command: AccessCommand, init_container: AsyncContainer) -> None:
     """Test handling by an authorized user."""
+    settings = await init_container.get(Settings)
     admin_id = settings.admin_ids[0]
     chat_id = 789
     message = create_mock_message("/allow_chat", user_id=admin_id, chat_id=chat_id)

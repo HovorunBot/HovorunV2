@@ -6,9 +6,9 @@ from aiogram import Bot
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 
@@ -20,6 +20,10 @@ class HelpCommand(BaseCommand):
 
     Provides bot information and contact details.
     """
+
+    def __init__(self, settings: AppSettings) -> None:
+        """Initialize help command."""
+        self._settings = settings
 
     @property
     def name(self) -> str:
@@ -55,7 +59,7 @@ class HelpCommand(BaseCommand):
         """Generate formatted help text."""
         return (
             f"<b>🦉 HovorunV2 — Your Telegram Media Companion</b>\n\n"
-            f"{settings.project_description}\n\n"
+            f"{self._settings.project_description}\n\n"
             "I level up your group conversations with smart utilities, dynamic "
             "translations, and seamless media integrations.\n\n"
             "<b>🛡 Access Approval</b>\n"
@@ -69,9 +73,9 @@ class HelpCommand(BaseCommand):
             "<b>🚀 Supported Platforms</b>\n"
             "Send links from: Twitter/X, Instagram, TikTok, Threads, Bluesky, Facebook, YouTube, Reddit.\n\n"
             "<b>Project Links:</b>\n"
-            f"• <a href='{settings.github_url}'>GitHub Repository</a>\n"
-            f"• <a href='{settings.issue_tracker_url}'>Issue Tracker</a>\n\n"
+            f"• <a href='{self._settings.github_url}'>GitHub Repository</a>\n"
+            f"• <a href='{self._settings.issue_tracker_url}'>Issue Tracker</a>\n\n"
             "<b>Contact:</b>\n"
-            f"• Email: {settings.contact_email}\n\n"
+            f"• Email: {self._settings.contact_email}\n\n"
             "<i>I am currently in <b>Alpha</b> stage.</i>"
         )

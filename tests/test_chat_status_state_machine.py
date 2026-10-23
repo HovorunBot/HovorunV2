@@ -9,7 +9,7 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import ChatStatus
-from hovorunv2.infrastructure.config import settings
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 
@@ -47,8 +47,10 @@ async def test_state_machine_flow(
     chat_status_service: ChatStatusService,
     bot_join_handler: BotJoinHandler,
     access_command: AccessCommand,
+    init_container: AsyncContainer,
 ) -> None:
     """Test full access state machine lifecycle."""
+    settings = await init_container.get(Settings)
     chat_id = 111
     bot = MagicMock(spec=Bot)
     bot.send_message = AsyncMock()

@@ -57,7 +57,7 @@ class CommandPolicy:
         ):
             return False
 
-        is_admin = user_id and await access_service.is_admin(user_id, platform)
+        is_admin = user_id and await access_service.is_admin(user_id)
 
         # 2. Global Admin always has full access
         if is_admin:
@@ -72,7 +72,7 @@ class CommandPolicy:
             if not user_id or not bot:
                 return False
             # Check if user is admin in this specific group
-            if not await access_service.is_group_admin(bot, chat_id, user_id, platform):
+            if not await access_service.is_group_admin(bot, chat_id, user_id):
                 return False
 
         # 5. Approval check
@@ -97,33 +97,21 @@ class AccessService:
         self._chat_status_service = chat_status_service
         self._command_service = command_service
 
-    async def is_owner(self, user_id: int, platform: str = "telegram") -> bool:
+    async def is_owner(self, user_id: int) -> bool:
         """Check if a user is an Owner (super admin)."""
-        match platform:
-            case "telegram":
-                return user_id in self._settings.owners
-            case _:
-                return False
+        return user_id in self._settings.owners
 
-    async def is_admin(self, user_id: int, platform: str = "telegram") -> bool:
-        """Check if a user has administrative privileges on a specific platform."""
-        match platform:
-            case "telegram":
-                return user_id in self._settings.admin_ids or await self.is_owner(user_id, platform)
-            case _:
-                return False
+    async def is_admin(self, user_id: int) -> bool:
+        """Check if a user has administrative privileges."""
+        return user_id in self._settings.admin_ids or await self.is_owner(user_id)
 
     async def is_group_admin(
         self,
         bot: Bot,
         chat_id: int,
         user_id: int,
-        platform: str = "telegram",
     ) -> bool:
         """Check if a user is an administrator in a specific group chat."""
-        if platform != "telegram":
-            return False
-
         try:
             member = await bot.get_chat_member(chat_id, user_id)
         except Exception:
@@ -131,10 +119,10 @@ class AccessService:
         else:
             return member.status in ("administrator", "creator")
 
-    async def ensure_admin(self, user_id: int, platform: str = "telegram") -> None:
+    async def ensure_admin(self, user_id: int) -> None:
         """Verify user is admin or raise an error."""
-        if not await self.is_admin(user_id, platform):
-            msg = f"User {user_id} on {platform} does not have admin privileges"
+        if not await self.is_admin(user_id):
+            msg = f"User {user_id} does not have admin privileges"
             raise PermissionError(msg)
 
     async def is_allowed(

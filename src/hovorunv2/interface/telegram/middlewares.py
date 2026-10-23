@@ -9,6 +9,7 @@ from aiogram.dispatcher.middlewares.user_context import EVENT_CONTEXT_KEY, Event
 from aiogram.enums import ChatType
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObject, Update
 
+from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.domain.enums import TOGGLEABLE_COMMANDS
@@ -79,10 +80,11 @@ class MessageCacheMiddleware(BaseMiddleware):
 class AccessMiddleware(BaseMiddleware):
     """Unified middleware to handle all access control via CommandPolicy."""
 
-    def __init__(self, access_service: AccessService) -> None:
+    def __init__(self, access_service: AccessService, settings: AppSettings | None = None) -> None:
         """Initialize middleware with dependencies."""
         super().__init__()
         self._access_service = access_service
+        self._settings = settings
 
     async def __call__(
         self,
@@ -155,7 +157,10 @@ class AccessMiddleware(BaseMiddleware):
     async def _deny_private_chat(self, event: TelegramObject) -> None:
         """Send landing page or access denied alert to non-admin private chat users."""
         if isinstance(event, Message):
-            help_cmd = HelpCommand()
-            await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+            if self._settings:
+                help_cmd = HelpCommand(self._settings)
+                await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+            else:
+                await event.answer("🚫 Access denied.")
         elif isinstance(event, CallbackQuery):
             await event.answer("🚫 Access denied.", show_alert=True)

@@ -14,12 +14,12 @@ from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
 from hovorunv2.application.services.reminder_service import ChatReminderService
-from hovorunv2.infrastructure.config import settings
-from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider
+from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.infrastructure.logger import get_logger, setup_logging
 from hovorunv2.infrastructure.queue import TaskQueueService
-from hovorunv2.interface.telegram.bot import router, setup_handlers, setup_middlewares
+from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import LogContextMiddleware
@@ -43,16 +43,20 @@ async def run_bot() -> None:
         session_maker = await container.get(async_sessionmaker)
         await setup_fixtures(session_maker)
 
-        # Resolve services for middlewares
+        # Resolve configuration and services
+        settings = await container.get(Settings)
         message_service = await container.get(MessageService)
         access_service = await container.get(AccessService)
-
-        # Setup router middlewares and handlers
-        await setup_middlewares(container, message_service, access_service)
-        # Resolve all registered commands and register them with the router
         commands = await container.get(list[BaseCommand])
         bot_join_handler = await container.get(BotJoinHandler)
-        setup_handlers(commands, bot_join_handler)
+
+        router = build_router(
+            commands=commands,
+            message_service=message_service,
+            access_service=access_service,
+            settings=settings,
+            bot_join_handler=bot_join_handler,
+        )
 
         bot = Bot(token=settings.bot_token)
 

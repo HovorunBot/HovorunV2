@@ -5,8 +5,6 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from hovorunv2.infrastructure.logger import get_logger
-
 # ROOT is 4 levels up from this file: src/hovorunv2/infrastructure/config.py
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 DOT_ENV_PATH = ROOT_DIR / ".env"
@@ -53,9 +51,3 @@ class Settings(BaseSettings):
         return str(path.absolute())
 
     model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore")
-
-
-logger = get_logger(__name__)
-logger.info("Loading settings from %s...", DOT_ENV_PATH)
-settings = Settings.model_validate({})
-logger.info("Settings loaded. DB Path: %s", settings.db_path)

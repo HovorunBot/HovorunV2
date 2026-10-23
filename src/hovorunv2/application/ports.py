@@ -113,6 +113,26 @@ class AppSettings(Protocol):
         """Connection URL for Valkey."""
         ...
 
+    @property
+    def project_description(self) -> str:
+        """Short project description."""
+        ...
+
+    @property
+    def github_url(self) -> str:
+        """URL to project GitHub repository."""
+        ...
+
+    @property
+    def issue_tracker_url(self) -> str:
+        """URL to project issue tracker."""
+        ...
+
+    @property
+    def contact_email(self) -> str:
+        """Contact email address."""
+        ...
+
 
 class ChatStore(Protocol):
     """Protocol for chat persistence operations."""

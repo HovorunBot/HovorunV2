@@ -44,7 +44,6 @@ from hovorunv2.application.services.translation_service import TranslationServic
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.config import settings as app_settings
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyChatStore,
     SQLAlchemyCommandStore,
@@ -69,7 +68,7 @@ class InfrastructureProvider(Provider):
     @provide(scope=Scope.APP)
     def get_settings(self) -> Settings:
         """Provide application settings."""
-        return app_settings
+        return Settings()
 
     @provide(scope=Scope.APP)
     async def get_engine(self, config: Settings) -> AsyncIterable[AsyncEngine]:
@@ -90,9 +89,9 @@ class InfrastructureProvider(Provider):
             yield session
 
     @provide(scope=Scope.APP)
-    async def get_cache_service(self) -> AsyncIterable[CacheService]:
+    async def get_cache_service(self, config: Settings) -> AsyncIterable[CacheService]:
         """Provide CacheService (Valkey)."""
-        service = CacheService()
+        service = CacheService(config.valkey_url)
         yield service
         await service.close()
 

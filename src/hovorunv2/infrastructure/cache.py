@@ -5,7 +5,6 @@ from typing import Any
 
 import redis.asyncio as redis
 
-from hovorunv2.infrastructure.config import settings
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -18,10 +17,10 @@ class CacheService:
     Only communicates with Valkey and handles low-level data structures.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, valkey_url: str) -> None:
         """Initialize cache service."""
-        logger.info("Initializing CacheService with Valkey at %s", settings.valkey_url)
-        self._cache = redis.from_url(settings.valkey_url)
+        logger.info("Initializing CacheService with Valkey at %s", valkey_url)
+        self._cache = redis.from_url(valkey_url)
 
     async def set(self, key: str, value: Any, expire: int | None = None) -> None:
         """Store a value in the cache with an optional expiration time in seconds."""
