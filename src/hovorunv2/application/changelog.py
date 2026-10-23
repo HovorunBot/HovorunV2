@@ -1,5 +1,6 @@
 """Utilities for reading project version and parsing user-facing CHANGES.md and technical CHANGELOG.md."""
 
+import logging
 import os
 import re
 from importlib.metadata import PackageNotFoundError
@@ -7,9 +8,7 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Final
 
-from hovorunv2.infrastructure.logger import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 DEFAULT_VERSION: Final[str] = "0.0.0"
 CLIENT_NOTES_FILENAME: Final[str] = "CHANGES.md"

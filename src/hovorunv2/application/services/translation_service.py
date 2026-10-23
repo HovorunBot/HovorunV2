@@ -1,6 +1,7 @@
 """Application service for text translation."""
 
 import html
+import logging
 from typing import NamedTuple
 
 import aiohttp
@@ -8,9 +9,8 @@ import aiohttp
 from hovorunv2.application.data.languages import ISO_CODE_LEN, LANGUAGES
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.translation_providers import BaseTranslationService
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class TranslationResult(NamedTuple):

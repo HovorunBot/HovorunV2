@@ -2,6 +2,7 @@
 
 import asyncio
 import html
+import logging
 import tempfile
 from collections.abc import Mapping
 from http import HTTPStatus
@@ -12,9 +13,8 @@ import yt_dlp
 from aiogram.types import BufferedInputFile
 
 from hovorunv2.application.dtos import MediaItem
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MediaDownloader:

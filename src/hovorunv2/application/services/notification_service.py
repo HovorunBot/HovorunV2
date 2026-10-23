@@ -1,6 +1,7 @@
 """Application service for post-deployment update notifications."""
 
 import asyncio
+import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
@@ -8,9 +9,8 @@ from aiogram.exceptions import TelegramRetryAfter
 from hovorunv2.application.changelog import get_changelog_updates, get_current_version, parse_version
 from hovorunv2.application.ports import ChatStore, SystemStore
 from hovorunv2.domain.enums import ChatStatus
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class NotificationService:

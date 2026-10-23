@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import secrets
 
 from aiogram import types
@@ -9,9 +10,8 @@ from cryptography.fernet import Fernet
 
 from hovorunv2.application.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
 from hovorunv2.application.ports import AppSettings, CachePort, ChatStore
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MessageService:

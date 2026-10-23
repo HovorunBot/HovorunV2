@@ -1,15 +1,14 @@
 """Translation service implementations."""
 
 import html
+import logging
 from abc import ABC, abstractmethod
 from http import HTTPStatus
 from typing import Final, NamedTuple
 
 import aiohttp
 
-from hovorunv2.infrastructure.logger import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class TranslationRawResult(NamedTuple):

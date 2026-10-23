@@ -213,7 +213,7 @@ class AppProvider(Provider):
         chat_status_service: ChatStatusService,
         command_service: CommandService,
         access_service: AccessService,
-        settings: Settings,
+        settings: AppSettings,
         rich_media_commands: list[RichMediaCommand],
     ) -> AccessCommand:
         """Provide AccessCommand with its dependencies."""

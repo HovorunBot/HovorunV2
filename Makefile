@@ -175,7 +175,10 @@ format:
 type-check:
 	@uv run ty check src
 
-check: lint type-check test
+lint-imports:
+	@PYTHONPATH=src uv run lint-imports
+
+check: lint type-check lint-imports test
 	@echo "All quality checks passed!"
 
 # 5. Internal logic (prefixed with _)

@@ -55,6 +55,7 @@ packages = ["src/hovorunv2"]
 [dependency-groups]
 dev = [
     "commitizen>=4.19.2",
+    "import-linter>=2.15",
     "pre-commit>=4.7.0",
     "pytest",
     "pytest-alembic",
@@ -116,3 +117,18 @@ version_files = [
 
 [tool.ty.src]
 exclude = ["alembic/**"]
+
+[tool.importlinter]
+root_package = "hovorunv2"
+
+[[tool.importlinter.contracts]]
+name = "Layered Architecture"
+type = "layers"
+layers = [
+    "hovorunv2.bootstrap",
+    "hovorunv2.interface",
+    "hovorunv2.infrastructure",
+    "hovorunv2.application",
+    "hovorunv2.domain",
+]
+

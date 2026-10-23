@@ -1,15 +1,15 @@
 """Application service for managing chat reminders and authorization prompts."""
 
 import asyncio
+import logging
 from typing import Any, Final
 
 from aiogram import Bot
 
 from hovorunv2.application.ports import AppSettings, CachePort, ChatStore, TaskQueuePort, UnauthorizedPromptSender
 from hovorunv2.domain.enums import ChatStatus
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 UNAUTHORIZED_PROMPT_KEY_PREFIX: Final = "periodic:unauthorized_prompt"
 DEFAULT_REMINDER_COOLDOWN_SECONDS: Final = 86400  # 24 hours

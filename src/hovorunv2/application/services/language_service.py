@@ -1,9 +1,10 @@
 """Application service for managing language preferences."""
 
-from hovorunv2.application.ports import AppSettings, ChatStore
-from hovorunv2.infrastructure.logger import get_logger
+import logging
 
-logger = get_logger(__name__)
+from hovorunv2.application.ports import AppSettings, ChatStore
+
+logger = logging.getLogger(__name__)
 
 
 class LanguageService:

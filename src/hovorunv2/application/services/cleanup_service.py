@@ -2,16 +2,16 @@
 
 import asyncio
 import contextlib
+import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from hovorunv2.application.ports import CachePort
-from hovorunv2.infrastructure.logger import get_logger
 
 if TYPE_CHECKING:
     from aiogram import Bot
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class CleanupService:

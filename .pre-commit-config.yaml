@@ -33,6 +33,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
+      - id: import-linter
+        name: Import Linter (Architecture Contracts)
+        entry: env PYTHONPATH=src uv run lint-imports
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit, pre-push]
+
       - id: pytest-check
         name: Test Suite (pytest)
         entry: env PYTHONPATH=src uv run pytest

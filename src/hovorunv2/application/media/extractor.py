@@ -2,6 +2,7 @@
 
 import asyncio
 import html
+import logging
 import re
 from typing import Any
 
@@ -12,9 +13,8 @@ from yt_dlp.utils import DownloadError
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.text import clean_caption_text, format_number
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MediaExtractor:

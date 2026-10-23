@@ -2,6 +2,7 @@
 
 import html
 import json
+import logging
 import re
 import time
 from collections.abc import Mapping
@@ -16,9 +17,8 @@ from hovorunv2.application.ports import BrowserPort
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.text import clean_caption_text, extract_og_metadata, format_number
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

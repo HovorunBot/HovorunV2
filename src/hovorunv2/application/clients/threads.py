@@ -1,6 +1,7 @@
 """Application service for Threads media extraction."""
 
 import html
+import logging
 import re
 import urllib.parse
 from typing import ClassVar
@@ -13,9 +14,8 @@ from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import BrowserPort
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 THREADS_CONFIG = ProviderConfig(
     name=CommandName.THREADS,

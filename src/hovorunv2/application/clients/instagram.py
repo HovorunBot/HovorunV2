@@ -1,6 +1,7 @@
 """Application service for Instagram media extraction using instaloader and browser fallback."""
 
 import asyncio
+import logging
 import re
 from typing import Any, ClassVar
 
@@ -13,9 +14,8 @@ from hovorunv2.application.ports import AppSettings, BrowserPort
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.text import clean_caption_text
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 INSTAGRAM_JS_EXTRACTOR = """
 () => {
