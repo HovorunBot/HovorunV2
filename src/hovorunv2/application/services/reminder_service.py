@@ -6,7 +6,8 @@ from typing import Any, Final
 
 from aiogram import Bot
 
-from hovorunv2.application.ports import AppSettings, CachePort, ChatStore, TaskQueuePort, UnauthorizedPromptSender
+from hovorunv2.application.ports import CachePort, ChatStore, TaskQueuePort, UnauthorizedPromptSender
+from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.domain.enums import ChatStatus
 
 logger = logging.getLogger(__name__)
@@ -45,14 +46,14 @@ class ChatReminderService:
         chat_service: ChatStore,
         cache_service: CachePort,
         task_queue: TaskQueuePort,
-        settings: AppSettings,
+        owner_notifier: OwnerNotifier,
         prompt_sender: UnauthorizedPromptSender,
     ) -> None:
         """Initialize chat reminder service."""
         self._chat_service = chat_service
         self._cache_service = cache_service
         self._task_queue = task_queue
-        self._settings = settings
+        self._owner_notifier = owner_notifier
         self._prompt_sender = prompt_sender
 
     def register_jobs(self) -> None:
@@ -114,18 +115,13 @@ class ChatReminderService:
             if await self._cache_service.get(pending_key):
                 continue
 
-            for owner_id in self._settings.owners:
-                try:
-                    await bot.send_message(
-                        chat_id=owner_id,
-                        text=(
-                            f"⏳ <b>Reminder: Pending Approval</b>\n\n"
-                            f"Chat ID <code>{chat.chat_id}</code> is still awaiting your approval decision."
-                        ),
-                        parse_mode="HTML",
-                    )
-                except Exception:
-                    logger.exception("Failed to ping owner %d about pending chat %d", owner_id, chat.chat_id)
+            await self._owner_notifier.broadcast(
+                bot,
+                (
+                    f"⏳ <b>Reminder: Pending Approval</b>\n\n"
+                    f"Chat ID <code>{chat.chat_id}</code> is still awaiting your approval decision."
+                ),
+            )
 
             await self._cache_service.set(pending_key, 1, expire=DEFAULT_REMINDER_COOLDOWN_SECONDS)
             await asyncio.sleep(0.5)

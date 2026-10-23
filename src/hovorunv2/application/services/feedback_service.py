@@ -1,15 +1,11 @@
-"""Application service for handling user feedback submission."""
+"""Application service for dispatching user feedback to bot administrators."""
 
 import html
 import logging
-from typing import TYPE_CHECKING
 
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram import Bot
 
-from hovorunv2.application.ports import AppSettings
-
-if TYPE_CHECKING:
-    from aiogram import Bot
+from hovorunv2.application.services.owner_notifier import OwnerNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +13,9 @@ logger = logging.getLogger(__name__)
 class FeedbackService:
     """Service to handle user feedback processing and delivery to owners."""
 
-    def __init__(self, settings: AppSettings) -> None:
-        """Initialize feedback service with application settings."""
-        self._settings = settings
+    def __init__(self, owner_notifier: OwnerNotifier) -> None:
+        """Initialize feedback service with owner notifier."""
+        self._owner_notifier = owner_notifier
 
     async def submit_feedback(
         self,
@@ -49,15 +45,6 @@ class FeedbackService:
             f"<b>Message:</b>\n{escaped_content}"
         )
 
-        sent_count = 0
-        for owner_id in self._settings.owners:
-            try:
-                await bot.send_message(chat_id=owner_id, text=admin_payload, parse_mode="HTML")
-                sent_count += 1
-            except TelegramForbiddenError:
-                logger.warning("Cannot deliver feedback to owner %d: bot is blocked or DM uninitiated", owner_id)
-            except Exception:
-                logger.exception("Failed to deliver feedback to owner %d", owner_id)
-
+        sent_count = await self._owner_notifier.broadcast(bot, admin_payload)
         logger.info("Feedback from user %d delivered to %d owner(s)", user_id, sent_count)
         return sent_count > 0

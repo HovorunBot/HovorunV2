@@ -6,6 +6,7 @@ import pytest
 from aiogram import types
 
 from hovorunv2.application.services.feedback_service import FeedbackService
+from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import (
     ChatReminderService,
     maintenance_cron_job,
@@ -32,7 +33,7 @@ def test_settings() -> Settings:
 @pytest.mark.asyncio
 async def test_feedback_service_submits_to_owners(test_settings: Settings) -> None:
     """Test feedback service properly formats and delivers feedback to all owners."""
-    service = FeedbackService(test_settings)
+    service = FeedbackService(OwnerNotifier(test_settings))
     bot = MagicMock()
     bot.send_message = AsyncMock()
 
@@ -110,7 +111,9 @@ async def test_reminder_service_send_prompt_cooldown(test_settings: Settings) ->
     task_queue = MagicMock(spec=TaskQueueService)
     prompt_sender = TelegramUnauthorizedPromptSender()
 
-    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, test_settings, prompt_sender)
+    reminder_service = ChatReminderService(
+        chat_service, cache_service, task_queue, OwnerNotifier(test_settings), prompt_sender
+    )
 
     bot = MagicMock()
     bot.send_message = AsyncMock()
@@ -151,7 +154,9 @@ async def test_reminder_service_maintenance_cycle(test_settings: Settings) -> No
     task_queue = MagicMock(spec=TaskQueueService)
     prompt_sender = TelegramUnauthorizedPromptSender()
 
-    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, test_settings, prompt_sender)
+    reminder_service = ChatReminderService(
+        chat_service, cache_service, task_queue, OwnerNotifier(test_settings), prompt_sender
+    )
 
     bot = MagicMock()
     bot.leave_chat = AsyncMock()

@@ -5,15 +5,14 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from aiogram import Bot, Router
-from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
@@ -31,14 +30,14 @@ class AccessCommand(BaseCommand):
         chat_status_service: ChatStatusService,
         command_service: CommandService,
         access_service: AccessService,
-        settings: AppSettings,
+        owner_notifier: OwnerNotifier,
         commands: Sequence[BaseCommand],
     ) -> None:
         """Initialize command with its dependencies."""
         self._chat_status_service = chat_status_service
         self._command_service = command_service
         self._access_service = access_service
-        self._settings = settings
+        self._owner_notifier = owner_notifier
         self._commands = commands
 
     @property
@@ -147,21 +146,7 @@ class AccessCommand(BaseCommand):
         )
 
         # Send to all owners
-        for owner_id in self._settings.owners:
-            try:
-                await bot.send_message(
-                    chat_id=owner_id,
-                    text=request_text,
-                    reply_markup=builder.as_markup(),
-                    parse_mode="HTML",
-                )
-            except TelegramForbiddenError:
-                logger.warning(
-                    "Cannot send access request to owner %d: Bot is blocked or conversation not initiated.",
-                    owner_id,
-                )
-            except Exception:
-                logger.exception("Failed to send access request to owner %d", owner_id)
+        await self._owner_notifier.broadcast(bot, request_text, reply_markup=builder.as_markup())
 
     async def handle_callback(self, query: Any, callback_data: AccessCallback, bot: Bot) -> None:
         """Process owner's decision or join request from callback query."""

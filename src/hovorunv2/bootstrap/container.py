@@ -36,6 +36,7 @@ from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
+from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.application.services.translation_providers import (
     BaseTranslationService,
@@ -138,6 +139,7 @@ class AppProvider(Provider):
 
     message_service = provide(MessageService)
     notification_service = provide(NotificationService)
+    owner_notifier = provide(OwnerNotifier)
     reminder_service = provide(ChatReminderService)
     feedback_service = provide(FeedbackService)
     command_service = provide(CommandService)
@@ -222,7 +224,7 @@ class AppProvider(Provider):
         chat_status_service: ChatStatusService,
         command_service: CommandService,
         access_service: AccessService,
-        settings: AppSettings,
+        owner_notifier: OwnerNotifier,
         rich_media_commands: list[RichMediaCommand],
     ) -> AccessCommand:
         """Provide AccessCommand with its dependencies."""
@@ -230,7 +232,7 @@ class AppProvider(Provider):
             chat_status_service=chat_status_service,
             command_service=command_service,
             access_service=access_service,
-            settings=settings,
+            owner_notifier=owner_notifier,
             commands=rich_media_commands,
         )
 
