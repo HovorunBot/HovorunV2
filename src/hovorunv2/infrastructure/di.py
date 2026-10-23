@@ -136,7 +136,6 @@ class AppProvider(Provider):
     settings_command = provide(SettingsCommand)
     bot_join_handler = provide(BotJoinHandler)
     debug_command = provide(DebugCommand)
-    access_command = provide(AccessCommand)
 
     @provide(scope=Scope.APP)
     def get_media_clients(
