@@ -7,10 +7,10 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.application.data.system_service import SystemDataService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.notification_service import NotificationService
+from hovorunv2.domain.enums import ChatStatus
 
 
 @pytest.fixture

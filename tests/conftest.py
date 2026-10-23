@@ -12,8 +12,8 @@ from dishka import AsyncContainer, Scope, make_async_container, provide
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from hovorunv2.application.data.constants import CommandName
 from hovorunv2.domain.base import Base
+from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.di import AppProvider, InfrastructureProvider

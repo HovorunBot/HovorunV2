@@ -7,8 +7,8 @@ from aiogram.exceptions import TelegramRetryAfter
 
 from hovorunv2.application.changelog import get_changelog_updates, get_current_version, parse_version
 from hovorunv2.application.data.chat_service import ChatService
-from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.application.data.system_service import SystemDataService
+from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)

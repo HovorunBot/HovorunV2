@@ -3,8 +3,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.data.constants import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.domain.command import CommandDB
+from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)

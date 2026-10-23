@@ -3,9 +3,9 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.command import CommandDB
+from hovorunv2.domain.enums import ChatStatus
 
 # Association table for M2M relationship between Chats and Commands
 chat_commands = Table(

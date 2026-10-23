@@ -10,10 +10,10 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback

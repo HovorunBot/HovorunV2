@@ -1,7 +1,7 @@
 """Application service for managing chat access status."""
 
 from hovorunv2.application.data.chat_service import ChatService
-from hovorunv2.application.data.constants import ChatStatus
+from hovorunv2.domain.enums import ChatStatus
 
 
 class ChatStatusService:

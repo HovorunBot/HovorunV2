@@ -5,8 +5,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 
 

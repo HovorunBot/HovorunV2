@@ -14,12 +14,12 @@ from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, L
 from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.clients.base import BaseMediaClient
-from hovorunv2.application.data.constants import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger
 
 if TYPE_CHECKING:

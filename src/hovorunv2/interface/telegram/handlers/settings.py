@@ -9,16 +9,16 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from hovorunv2.application.data.constants import (
-    MEDIA_PROVIDER_COMMANDS,
-    PROVIDER_SPLIT_COMMANDS,
-    CommandName,
-)
 from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.language_service import LanguageService
+from hovorunv2.domain.enums import (
+    MEDIA_PROVIDER_COMMANDS,
+    PROVIDER_SPLIT_COMMANDS,
+    CommandName,
+)
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 

@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.data.chat_service import ChatService
-from hovorunv2.application.data.constants import ChatStatus
+from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger

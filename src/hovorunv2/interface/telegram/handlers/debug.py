@@ -6,8 +6,8 @@ from aiogram import Bot
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.access_service import CommandPolicy
+from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 
 from .base import BaseCommand

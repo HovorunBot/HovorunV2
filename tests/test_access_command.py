@@ -8,9 +8,9 @@ from aiogram import Bot
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.config import settings
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.handlers.access import AccessCommand

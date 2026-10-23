@@ -7,7 +7,7 @@ from aiogram import Bot, types
 from aiogram.types import User
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import ChatStatus, CommandName
+from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.interface.telegram.callbacks import (
     SettingsAction,
     SettingsCallback,

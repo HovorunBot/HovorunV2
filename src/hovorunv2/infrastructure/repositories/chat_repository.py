@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.enums import ChatStatus
 
 
 class SQLAlchemyChatRepository:

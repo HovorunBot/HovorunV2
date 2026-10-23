@@ -9,9 +9,9 @@ from aiogram.dispatcher.middlewares.user_context import EVENT_CONTEXT_KEY, Event
 from aiogram.enums import ChatType
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObject, Update
 
-from hovorunv2.application.data.constants import TOGGLEABLE_COMMANDS
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
+from hovorunv2.domain.enums import TOGGLEABLE_COMMANDS
 from hovorunv2.infrastructure.logger import get_logger, set_log_context
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 

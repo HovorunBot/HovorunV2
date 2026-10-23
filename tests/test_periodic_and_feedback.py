@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiogram import types
 
-from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.reminder_service import (
     ChatReminderService,
@@ -13,6 +12,7 @@ from hovorunv2.application.services.reminder_service import (
     scheduled_unauthorized_reminder_job,
 )
 from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand

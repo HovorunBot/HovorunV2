@@ -1,7 +1,7 @@
 """Application service for managing allowed commands per chat."""
 
 from hovorunv2.application.data.command_service import CommandDataService
-from hovorunv2.application.data.constants import (
+from hovorunv2.domain.enums import (
     DEFAULT_COMMANDS,
     PROVIDER_SPLIT_COMMANDS,
     SPLIT_TO_PROVIDER_COMMAND,

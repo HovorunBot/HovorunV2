@@ -6,8 +6,8 @@ from typing import ClassVar
 import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
-from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.domain.enums import CommandName
 
 TIKTOK_CONFIG = ProviderConfig(
     name=CommandName.TIKTOK,

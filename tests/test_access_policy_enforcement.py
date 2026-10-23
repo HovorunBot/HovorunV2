@@ -6,10 +6,10 @@ import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware

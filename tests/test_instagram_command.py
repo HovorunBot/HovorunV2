@@ -8,9 +8,9 @@ import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.services.chat_status_service import ChatStatusService
+from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import create_mock_message, get_media_command
 

@@ -8,8 +8,8 @@ import aiohttp
 from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
-from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.domain.enums import CommandName
 
 REDDIT_CONFIG = ProviderConfig(
     name=CommandName.REDDIT,
