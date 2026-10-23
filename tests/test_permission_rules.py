@@ -275,3 +275,23 @@ async def test_access_service_is_admin(test_container: AsyncContainer) -> None:
     assert await access_service.is_admin(admin_id) is True
     assert await access_service.is_admin(owner_id) is True
     assert await access_service.is_admin(non_admin_id) is False
+
+
+@pytest.mark.asyncio
+async def test_command_service_is_capture_allowed(test_container: AsyncContainer) -> None:
+    """Test is_capture_allowed for video and post commands."""
+    command_service = await test_container.get(CommandService)
+    chat_id = 998877
+
+    # By default, not enabled
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is False
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is False
+
+    # Enable twitter_video only
+    await command_service.enable_command(chat_id, CommandName.TWITTER_VIDEO)
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is True
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is False
+
+    # Enable twitter_post
+    await command_service.enable_command(chat_id, CommandName.TWITTER_POST)
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is True

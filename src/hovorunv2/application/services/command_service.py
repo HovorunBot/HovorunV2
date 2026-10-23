@@ -59,6 +59,25 @@ class CommandService:
 
         return cmd_str in allowed
 
+    async def is_capture_allowed(self, chat_id: int, provider: CommandName, *, is_video: bool) -> bool:
+        """Check whether video or post capture is enabled for a provider.
+
+        Args:
+            chat_id: The ID of the chat.
+            provider: The provider CommandName.
+            is_video: True for video items, False for image/post items.
+
+        Returns:
+            True if capture mode is allowed for the provider in the chat.
+
+        """
+        if provider not in PROVIDER_SPLIT_COMMANDS:
+            return await self.is_command_allowed(chat_id, provider)
+
+        video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[provider]
+        target_cmd = video_cmd if is_video else post_cmd
+        return await self.is_command_allowed(chat_id, target_cmd)
+
     async def enable_command(self, chat_id: int, command_name: CommandName | str) -> bool:
         """Enable specific command for a chat.
 
