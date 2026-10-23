@@ -191,7 +191,7 @@ class TelegramMediaDelivery:
         except TelegramEntityTooLarge:
             logger.warning("Media too large even for URL delivery")
             await message.answer(
-                text=caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>",
+                text=f"{caption}\n\n{self.ERROR_TEXTS[DeliveryError.TOO_LARGE]}",
                 parse_mode="HTML",
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
