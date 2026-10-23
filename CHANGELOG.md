@@ -1,3 +1,29 @@
+## Unreleased
+
+### Fix
+
+- **routing**: replace substring matching with strict aiogram Command filters
+- **access**: restrict chat approval/rejection callbacks to bot owner
+- **language**: return defensive copies of ignored languages
+- **notifications**: preserve HTML parse mode and isolate retry failures
+- **di**: remove duplicate AccessCommand provider
+
+### Refactor
+
+- **services**: drop redundant platform parameter from application service APIs
+- **di**: move container to bootstrap, eliminate module-level settings and bot router
+- **domain**: type chat status and platform enums and use JSON for ignored_langs
+- **interface**: decouple reminder service from telegram prompt presentation
+- **application**: split utils into browser_discovery, crypto, and text modules
+- **infra**: replace ChatRepository.save with pure session add
+- **infra**: move data services to infrastructure persistence stores
+- **application**: introduce ports and decouple application services from infrastructure
+- **domain**: move constants and enums to domain layer
+
+### Perf
+
+- **encryption**: cache PBKDF2 Fernet keys and derive in thread pool
+
 ## v0.2.1 (2026-10-23)
 
 ### Feat
