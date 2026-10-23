@@ -38,7 +38,6 @@ class CommandPolicy:
         user_id: int | None,
         chat_id: int,
         command_name: str | None,
-        platform: str,
         access_service: AccessService,
         chat_status_service: ChatStatusService,
         command_service: CommandService,
@@ -50,11 +49,7 @@ class CommandPolicy:
         """
         # 1. Feature toggles apply to everyone, including admins.
         # If a command is explicitly disabled in this chat, nobody can use it.
-        if (
-            self.is_toggleable
-            and command_name
-            and not await command_service.is_command_allowed(chat_id, command_name, platform)
-        ):
+        if self.is_toggleable and command_name and not await command_service.is_command_allowed(chat_id, command_name):
             return False
 
         is_admin = user_id and await access_service.is_admin(user_id)
@@ -76,7 +71,7 @@ class CommandPolicy:
                 return False
 
         # 5. Approval check
-        return not (self.requires_approval and not await chat_status_service.is_approved(chat_id, platform))
+        return not (self.requires_approval and not await chat_status_service.is_approved(chat_id))
 
 
 class AccessService:
@@ -132,7 +127,6 @@ class AccessService:
         policy: CommandPolicy,
         bot: Bot | None = None,
         command_name: str | None = None,
-        platform: str = "telegram",
     ) -> bool:
         """Check if an action is allowed based on the provided policy.
 
@@ -142,7 +136,6 @@ class AccessService:
             policy: The validation strategy to apply.
             bot: The bot instance (required for group admin checks).
             command_name: Optional name of the command being executed.
-            platform: Messaging platform identifier.
 
         Returns:
             True if allowed, False otherwise.
@@ -152,7 +145,6 @@ class AccessService:
             user_id=user_id,
             chat_id=chat_id,
             command_name=command_name,
-            platform=platform,
             access_service=self,
             chat_status_service=self._chat_status_service,
             command_service=self._command_service,

@@ -21,7 +21,7 @@ class SQLAlchemyChatStore(ChatStore):
             repo = SQLAlchemyChatRepository(session)
             return await repo.get_by_id(chat_id, platform)
 
-    async def update_status(self, chat_id: int, platform: str, status: ChatStatus) -> None:
+    async def update_status(self, chat_id: int, status: ChatStatus, platform: str = "telegram") -> None:
         """Update lifecycle status for a chat."""
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
@@ -34,7 +34,7 @@ class SQLAlchemyChatStore(ChatStore):
             await session.commit()
 
     async def update_translation_settings(
-        self, chat_id: int, platform: str, target_lang: str, ignored_langs: list[str]
+        self, chat_id: int, target_lang: str, ignored_langs: list[str], platform: str = "telegram"
     ) -> None:
         """Update translation settings for a chat."""
         async with self._session_maker() as session:
@@ -48,7 +48,7 @@ class SQLAlchemyChatStore(ChatStore):
             chat.ignored_langs = ignored_langs
             await session.commit()
 
-    async def get_all_by_status(self, status: ChatStatus, platform: str) -> list[ChatDB]:
+    async def get_all_by_status(self, status: ChatStatus, platform: str = "telegram") -> list[ChatDB]:
         """Fetch all chats with a specific status from database."""
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)

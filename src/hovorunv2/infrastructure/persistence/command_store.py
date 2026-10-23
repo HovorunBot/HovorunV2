@@ -16,7 +16,7 @@ class SQLAlchemyCommandStore(CommandStore):
         """Initialize with session maker."""
         self._session_maker = session_maker
 
-    async def get_allowed_commands(self, chat_id: int, platform: str) -> list[str]:
+    async def get_allowed_commands(self, chat_id: int, platform: str = "telegram") -> list[str]:
         """Fetch allowed commands for a chat."""
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
@@ -26,7 +26,7 @@ class SQLAlchemyCommandStore(CommandStore):
             commands = await chat.awaitable_attrs.commands
             return [cmd.name for cmd in commands]
 
-    async def enable_command(self, chat_id: int, platform: str, command_name: str) -> bool:
+    async def enable_command(self, chat_id: int, command_name: str, platform: str = "telegram") -> bool:
         """Associate a command with a chat."""
         async with self._session_maker() as session:
             chat_repo = SQLAlchemyChatRepository(session)
@@ -47,7 +47,7 @@ class SQLAlchemyCommandStore(CommandStore):
                 await session.commit()
             return True
 
-    async def disable_command(self, chat_id: int, platform: str, command_name: str) -> bool:
+    async def disable_command(self, chat_id: int, command_name: str, platform: str = "telegram") -> bool:
         """Remove association of a command from a chat."""
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)

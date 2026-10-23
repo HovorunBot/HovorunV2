@@ -136,7 +136,7 @@ async def test_reminder_service_maintenance_cycle(test_settings: Settings) -> No
 
     chat_service = MagicMock()
 
-    async def mock_get_all(status: ChatStatus, platform: str) -> list[ChatDB]:
+    async def mock_get_all(status: ChatStatus, platform: str = "telegram") -> list[ChatDB]:
         if status == ChatStatus.REJECTED:
             return [rejected_chat]
         if status == ChatStatus.PENDING:

@@ -145,12 +145,12 @@ class ChatStore(Protocol):
         """Fetch chat from database or create it if not exists."""
         ...
 
-    async def update_status(self, chat_id: int, platform: str, status: ChatStatus) -> None:
+    async def update_status(self, chat_id: int, status: ChatStatus, platform: str = "telegram") -> None:
         """Update lifecycle status for a chat."""
         ...
 
     async def update_translation_settings(
-        self, chat_id: int, platform: str, target_lang: str, ignored_langs: list[str]
+        self, chat_id: int, target_lang: str, ignored_langs: list[str], platform: str = "telegram"
     ) -> None:
         """Update translation settings for a chat."""
         ...
@@ -159,7 +159,7 @@ class ChatStore(Protocol):
         """Set encryption salt for a chat."""
         ...
 
-    async def get_all_by_status(self, status: ChatStatus, platform: str) -> list[ChatDB]:
+    async def get_all_by_status(self, status: ChatStatus, platform: str = "telegram") -> list[ChatDB]:
         """Fetch all chats with a specific status."""
         ...
 
@@ -167,15 +167,15 @@ class ChatStore(Protocol):
 class CommandStore(Protocol):
     """Protocol for command allowance and association operations."""
 
-    async def get_allowed_commands(self, chat_id: int, platform: str) -> list[str]:
+    async def get_allowed_commands(self, chat_id: int, platform: str = "telegram") -> list[str]:
         """Fetch allowed commands for a chat."""
         ...
 
-    async def enable_command(self, chat_id: int, platform: str, command_name: str) -> bool:
+    async def enable_command(self, chat_id: int, command_name: str, platform: str = "telegram") -> bool:
         """Enable specific command for a chat."""
         ...
 
-    async def disable_command(self, chat_id: int, platform: str, command_name: str) -> bool:
+    async def disable_command(self, chat_id: int, command_name: str, platform: str = "telegram") -> bool:
         """Disable specific command for a chat."""
         ...
 

@@ -26,9 +26,9 @@ class LanguageService:
         self._default_target_lang = settings.translation_target_lang
         self._default_ignored_langs = settings.translation_ignored_langs
 
-    async def get_chat_settings(self, chat_id: int, platform: str = "telegram") -> tuple[str, list[str]]:
+    async def get_chat_settings(self, chat_id: int) -> tuple[str, list[str]]:
         """Get target language and ignored languages for a chat."""
-        chat = await self._chat_service.get_chat(chat_id, platform)
+        chat = await self._chat_service.get_chat(chat_id)
         if not chat:
             return self._default_target_lang, list(self._default_ignored_langs)
 
@@ -39,18 +39,15 @@ class LanguageService:
 
         return target_lang, ignored_langs
 
-    async def update_settings(
-        self, chat_id: int, target_lang: str, ignored_langs: list[str], platform: str = "telegram"
-    ) -> None:
+    async def update_settings(self, chat_id: int, target_lang: str, ignored_langs: list[str]) -> None:
         """Update language settings for a chat.
 
         Args:
             chat_id: The ID of the chat.
             target_lang: The new target language code.
             ignored_langs: List of language codes to ignore.
-            platform: Messaging platform identifier.
 
         """
         await self._chat_service.update_translation_settings(
-            chat_id=chat_id, platform=platform, target_lang=target_lang, ignored_langs=ignored_langs
+            chat_id=chat_id, target_lang=target_lang, ignored_langs=ignored_langs
         )

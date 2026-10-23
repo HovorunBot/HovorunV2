@@ -156,7 +156,7 @@ class RichMediaCommand:
                     logger.warning("Extraction returned empty payload for %s (%s)", match.group(0), self.name)
                     continue
 
-                if not await self._is_payload_mode_allowed(message.chat.id, payload, "telegram"):
+                if not await self._is_payload_mode_allowed(message.chat.id, payload):
                     logger.info(
                         "Skipping %s link %s in chat %d (capture mode disabled for is_video=%s)",
                         self.name,
@@ -170,16 +170,14 @@ class RichMediaCommand:
             except Exception:
                 logger.exception("Failed to process link: %s", match.group(0))
 
-    async def _is_payload_mode_allowed(
-        self, chat_id: int, payload: RichMediaPayload, platform: str = "telegram"
-    ) -> bool:
+    async def _is_payload_mode_allowed(self, chat_id: int, payload: RichMediaPayload) -> bool:
         """Check whether the extracted payload's media mode (video vs image/text) is enabled."""
-        allowed_commands = await self._command_service.get_allowed_commands(chat_id, platform)
+        allowed_commands = await self._command_service.get_allowed_commands(chat_id)
         if not allowed_commands:
             return True
 
         target_cmd = self.video_command_name if payload.is_video else self.post_command_name
-        return await self._command_service.is_command_allowed(chat_id, target_cmd, platform)
+        return await self._command_service.is_command_allowed(chat_id, target_cmd)
 
     async def _extract_payload(
         self, session: aiohttp.ClientSession, match: re.Match[str], chat_id: int, platform: str

@@ -79,7 +79,7 @@ class MediaExtractor:
 
         clean_desc = clean_caption_text(description, strip_hashtags=True)
         display_text = clean_desc if len(clean_desc) > self.MIN_DESCRIPTION_LENGTH else title
-        content = await self._translation_service.escape_and_translate(display_text, chat_id, platform, session)
+        content = await self._translation_service.escape_and_translate(display_text, chat_id, session=session)
 
         media_items = self._extract_media_items(info)
         logger.info("Extracted %d media item(s) for %s", len(media_items), url)

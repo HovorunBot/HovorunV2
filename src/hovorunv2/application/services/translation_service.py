@@ -55,7 +55,6 @@ class TranslationService:
         self,
         text: str,
         chat_id: int,
-        platform: str = "telegram",
         session: aiohttp.ClientSession | None = None,
     ) -> TranslationResult | None:
         """Translate text if it's not in ignored languages for the specific chat."""
@@ -63,7 +62,7 @@ class TranslationService:
             return None
 
         # Fetch chat settings from language service
-        target_lang, ignored_langs = await self._language_service.get_chat_settings(chat_id, platform)
+        target_lang, ignored_langs = await self._language_service.get_chat_settings(chat_id)
 
         # Enforce mandatory ignores and include target_lang
         all_ignored = set(ignored_langs)
@@ -83,12 +82,11 @@ class TranslationService:
         self,
         raw_text: str,
         chat_id: int,
-        platform: str = "telegram",
         session: aiohttp.ClientSession | None = None,
     ) -> str:
         """HTML-escape raw text and append translation block if needed."""
         content = html.escape(raw_text)
-        trans_res = await self.translate_if_needed(content, chat_id, platform, session)
+        trans_res = await self.translate_if_needed(content, chat_id, session)
         if trans_res:
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
         return content

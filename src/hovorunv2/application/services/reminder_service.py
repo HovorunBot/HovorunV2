@@ -91,7 +91,7 @@ class ChatReminderService:
         logger.info("Starting maintenance cycle")
 
         # 1. Leave rejected chats
-        rejected_chats = await self._chat_service.get_all_by_status(ChatStatus.REJECTED, platform="telegram")
+        rejected_chats = await self._chat_service.get_all_by_status(ChatStatus.REJECTED)
         for chat in rejected_chats:
             try:
                 logger.info("Leaving rejected chat %d", chat.chat_id)
@@ -100,7 +100,7 @@ class ChatReminderService:
                 logger.exception("Failed to leave rejected chat %d", chat.chat_id)
 
         # 2. Check unauthorized group chats
-        unauthorized_chats = await self._chat_service.get_all_by_status(ChatStatus.UNAUTHORIZED, platform="telegram")
+        unauthorized_chats = await self._chat_service.get_all_by_status(ChatStatus.UNAUTHORIZED)
         for chat in unauthorized_chats:
             if chat.chat_id >= 0:
                 continue
@@ -108,7 +108,7 @@ class ChatReminderService:
             await asyncio.sleep(0.5)
 
         # 3. Check pending chats to remind owners
-        pending_chats = await self._chat_service.get_all_by_status(ChatStatus.PENDING, platform="telegram")
+        pending_chats = await self._chat_service.get_all_by_status(ChatStatus.PENDING)
         for chat in pending_chats:
             pending_key = f"periodic:pending_ping:{chat.chat_id}"
             if await self._cache_service.get(pending_key):

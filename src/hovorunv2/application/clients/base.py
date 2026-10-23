@@ -388,7 +388,7 @@ class BaseMediaClient:
         """Clean, HTML-escape, and translate text if needed."""
         text_to_escape = clean_caption_text(raw_text, strip_hashtags=True) if strip_hashtags else raw_text
         content = html.escape(text_to_escape)
-        trans_res = await self._translation_service.translate_if_needed(content, chat_id, platform, session)
+        trans_res = await self._translation_service.translate_if_needed(content, chat_id, session=session)
         if trans_res:
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
         return content
