@@ -15,9 +15,6 @@ from hovorunv2.application.clients.threads import ThreadsService
 from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.clients.youtube import YoutubeService
-from hovorunv2.application.data.chat_service import ChatService
-from hovorunv2.application.data.command_service import CommandDataService
-from hovorunv2.application.data.system_service import SystemDataService
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.ports import (
@@ -47,6 +44,11 @@ from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.config import settings as app_settings
+from hovorunv2.infrastructure.persistence import (
+    SQLAlchemyChatStore,
+    SQLAlchemyCommandStore,
+    SQLAlchemySystemStore,
+)
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
@@ -120,17 +122,18 @@ class AppProvider(Provider):
 
     scope = Scope.APP
 
-    chat_store = alias(source=ChatService, provides=ChatStore)
-    command_store = alias(source=CommandDataService, provides=CommandStore)
-    system_store = alias(source=SystemDataService, provides=SystemStore)
+    chat_store_impl = provide(SQLAlchemyChatStore)
+    command_store_impl = provide(SQLAlchemyCommandStore)
+    system_store_impl = provide(SQLAlchemySystemStore)
+
+    chat_store = alias(source=SQLAlchemyChatStore, provides=ChatStore)
+    command_store = alias(source=SQLAlchemyCommandStore, provides=CommandStore)
+    system_store = alias(source=SQLAlchemySystemStore, provides=SystemStore)
 
     message_service = provide(MessageService)
-    chat_service = provide(ChatService)
-    system_service = provide(SystemDataService)
     notification_service = provide(NotificationService)
     reminder_service = provide(ChatReminderService)
     feedback_service = provide(FeedbackService)
-    command_data_service = provide(CommandDataService)
     command_service = provide(CommandService)
     chat_status_service = provide(ChatStatusService)
     access_service = provide(AccessService)

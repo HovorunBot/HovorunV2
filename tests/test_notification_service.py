@@ -7,7 +7,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
 from dishka import AsyncContainer
 
-from hovorunv2.application.data.system_service import SystemDataService
+from hovorunv2.application.ports import SystemStore
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.notification_service import NotificationService
 from hovorunv2.domain.enums import ChatStatus
@@ -24,7 +24,7 @@ async def test_notify_updates_fresh_install_silent(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
     """Test that fresh install (last_notified is None) records version silently without messages."""
-    system_service = await init_container.get(SystemDataService)
+    system_service = await init_container.get(SystemStore)
     chat_status_service = await init_container.get(ChatStatusService)
 
     # Ensure last_notified is None initially
@@ -55,7 +55,7 @@ async def test_notify_updates_group_chats_only(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
     """Test that only group/supergroup chats (chat_id < 0) are notified upon upgrade."""
-    system_service = await init_container.get(SystemDataService)
+    system_service = await init_container.get(SystemStore)
     chat_status_service = await init_container.get(ChatStatusService)
 
     await system_service.set_last_notified_version("0.1.0")
@@ -91,7 +91,7 @@ async def test_notify_updates_no_new_version(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
     """Test that no notification is sent if version hasn't increased."""
-    system_service = await init_container.get(SystemDataService)
+    system_service = await init_container.get(SystemStore)
     chat_status_service = await init_container.get(ChatStatusService)
 
     await system_service.set_last_notified_version("0.2.0")
@@ -115,7 +115,7 @@ async def test_notify_updates_retry_uses_html_and_recovers(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
     """Test that retry after rate limit sends HTML formatted message and catches errors."""
-    system_service = await init_container.get(SystemDataService)
+    system_service = await init_container.get(SystemStore)
     chat_status_service = await init_container.get(ChatStatusService)
 
     await system_service.set_last_notified_version("0.1.0")

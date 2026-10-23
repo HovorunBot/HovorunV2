@@ -1,16 +1,16 @@
-"""Application service for low-level command data operations."""
+"""Persistence adapter for command association operations."""
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.ports import CommandStore
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
+from hovorunv2.infrastructure.repositories.command_repository import SQLAlchemyCommandRepository
 
 
-class CommandDataService:
-    """Service to handle database transactions for commands and their relations to chats."""
+class SQLAlchemyCommandStore(CommandStore):
+    """SQLAlchemy persistence store for commands and chat associations."""
 
     def __init__(self, session_maker: async_sessionmaker) -> None:
         """Initialize with session maker."""
@@ -29,16 +29,15 @@ class CommandDataService:
     async def enable_command(self, chat_id: int, platform: str, command_name: str) -> bool:
         """Associate a command with a chat."""
         async with self._session_maker() as session:
-            repo = SQLAlchemyChatRepository(session)
-            chat = await repo.get_by_id(chat_id, platform)
+            chat_repo = SQLAlchemyChatRepository(session)
+            cmd_repo = SQLAlchemyCommandRepository(session)
+
+            chat = await chat_repo.get_by_id(chat_id, platform)
             if not chat:
                 chat = ChatDB(chat_id=chat_id, platform=platform, status=ChatStatus.UNAUTHORIZED)
                 session.add(chat)
 
-            # Check if command exists
-            stmt = select(CommandDB).where(CommandDB.name == command_name)
-            result = await session.execute(stmt)
-            command = result.scalar_one_or_none()
+            command = await cmd_repo.get_by_name(command_name)
             if not command:
                 return False
 
@@ -58,7 +57,7 @@ class CommandDataService:
 
             chat_commands = await chat.awaitable_attrs.commands
             found = False
-            for cmd in chat_commands:
+            for cmd in list(chat_commands):
                 if cmd.name == command_name:
                     chat_commands.remove(cmd)
                     found = True

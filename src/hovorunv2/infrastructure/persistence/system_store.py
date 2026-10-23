@@ -1,12 +1,13 @@
-"""Application service for system-wide state operations."""
+"""Persistence adapter for system state operations."""
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.ports import SystemStore
 from hovorunv2.infrastructure.repositories.system_repository import SQLAlchemySystemRepository
 
 
-class SystemDataService:
-    """Service to handle database transactions for system state."""
+class SQLAlchemySystemStore(SystemStore):
+    """SQLAlchemy persistence store for system state."""
 
     def __init__(self, session_maker: async_sessionmaker) -> None:
         """Initialize with session maker."""
