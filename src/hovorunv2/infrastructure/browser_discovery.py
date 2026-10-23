@@ -1,74 +1,9 @@
-"""Utility functions for the application."""
+"""Browser executable discovery across platforms."""
 
-import base64
-import html
 import os
 import platform
-import re
 import shutil
 from pathlib import Path
-from typing import Final
-
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
-BILLION: Final = 1_000_000_000
-MILLION: Final = 1_000_000
-THOUSAND: Final = 1_000
-
-# Encryption constants
-PBKDF2_ITERATIONS: Final = 100_000
-
-
-def get_fernet_for_chat(encryption_key: str, salt_hex: str) -> Fernet:
-    """Derive a unique Fernet key for a chat using PBKDF2 and DB salt.
-
-    Args:
-        encryption_key: Global encryption key from settings.
-        salt_hex: Per-chat hex-encoded salt from database.
-
-    Returns:
-        Fernet: Initialized Fernet instance.
-
-    """
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=bytes.fromhex(salt_hex),
-        iterations=PBKDF2_ITERATIONS,
-    )
-    derived_key = kdf.derive(encryption_key.encode())
-    fernet_key = base64.urlsafe_b64encode(derived_key)
-    return Fernet(fernet_key)
-
-
-def encrypt_payload(data: str, fernet: Fernet) -> str:
-    """Encrypt string payload using Fernet.
-
-    Args:
-        data: Plaintext string.
-        fernet: Fernet instance.
-
-    Returns:
-        str: Encrypted base64 string.
-
-    """
-    return fernet.encrypt(data.encode()).decode()
-
-
-def decrypt_payload(encrypted_data: str, fernet: Fernet) -> str:
-    """Decrypt Fernet-encrypted payload.
-
-    Args:
-        encrypted_data: Encrypted base64 string.
-        fernet: Fernet instance.
-
-    Returns:
-        str: Decrypted plaintext string.
-
-    """
-    return fernet.decrypt(encrypted_data.encode()).decode()
 
 
 def find_browser_executable() -> str | None:
@@ -157,42 +92,3 @@ def _get_windows_browser_paths() -> list[str]:
         rf"{local_app_data}\Programs\Opera\opera.exe",
         rf"{program_files}\Opera\opera.exe",
     ]
-
-
-def format_number(num: int) -> str:
-    """Format large numbers into readable text (e.g. 1.2K, 3.4M)."""
-    billion_threshold = 1_000_000_000
-    million_threshold = 1_000_000
-    thousand_threshold = 1_000
-
-    if num >= billion_threshold:
-        return f"{num / billion_threshold:.1f}B".replace(".0B", "B")
-    if num >= million_threshold:
-        return f"{num / million_threshold:.1f}M".replace(".0M", "M")
-    if num >= thousand_threshold:
-        return f"{num / thousand_threshold:.1f}K".replace(".0K", "K")
-    return str(num)
-
-
-def clean_caption_text(raw_text: str, *, strip_hashtags: bool = True) -> str:
-    """Normalize whitespace and optionally strip hashtags from caption text."""
-    cleaned = re.sub(r"#\w+", "", raw_text) if strip_hashtags else raw_text
-    return re.sub(r"\s+", " ", cleaned).strip()
-
-
-def extract_og_metadata(html_content: str) -> dict[str, str]:
-    """Robustly extract OG and Twitter metadata from HTML."""
-    metadata = {}
-    # Match meta tags and extract key-value pairs
-    for meta in re.finditer(r"<meta\s+([^>]+)>", html_content, re.IGNORECASE):
-        body = meta.group(1)
-        # Find property="og:..." or name="twitter:..." etc.
-        key_m = re.search(r'(?:property|name)=["\'](?:og:|twitter:)?([^"\']+)["\']', body, re.IGNORECASE)
-        val_m = re.search(r'content=["\']([^"\']+)["\']', body, re.IGNORECASE)
-
-        if key_m and val_m:
-            key = key_m.group(1).lower()
-            val = html.unescape(val_m.group(1))
-            if key not in metadata:
-                metadata[key] = val
-    return metadata

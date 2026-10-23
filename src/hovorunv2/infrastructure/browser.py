@@ -8,7 +8,7 @@ from typing import Any
 from DrissionPage import ChromiumOptions, ChromiumPage
 from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
-from hovorunv2.application.utils import find_browser_executable
+from hovorunv2.infrastructure.browser_discovery import find_browser_executable
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
