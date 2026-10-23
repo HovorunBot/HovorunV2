@@ -161,6 +161,10 @@ class AccessCommand(BaseCommand):
             await self._handle_request_callback(query, bot)
             return
 
+        if not await self._access_service.is_owner(query.from_user.id):
+            await query.answer("🚫 Owners only.", show_alert=True)
+            return
+
         owner = query.from_user
 
         if action == AccessAction.APPROVE:
@@ -214,4 +218,4 @@ class AccessCommand(BaseCommand):
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
         """Register callback handlers with router."""
-        router.callback_query.register(self.handle_callback, AccessCallback.filter())
+        router.callback_query.register(self.handle_callback, AccessCallback.filter(), flags=flags)

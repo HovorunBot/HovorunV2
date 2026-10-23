@@ -9,6 +9,7 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.data.constants import ChatStatus
 from hovorunv2.application.services.chat_status_service import ChatStatusService
+from hovorunv2.infrastructure.config import settings
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 
@@ -86,17 +87,12 @@ async def test_state_machine_flow(
     bot.send_message.assert_called()
 
     # 6. Approve -> APPROVED
-    # Mocking callback_data for Approve
-    callback_data = MagicMock()
-    callback_data.chat_id = chat_id
-    callback_data.action = "approve"
-
-    query = MagicMock()
-    query.from_user.full_name = "Owner"
-    query.from_user.id = 999
-    query.message.text = "Request"
-    query.message.edit_text = AsyncMock()
-    query.answer = AsyncMock()
+    callback_data = MagicMock(chat_id=chat_id, action="approve")
+    query = MagicMock(
+        from_user=MagicMock(full_name="Owner", id=settings.owners[0]),
+        message=MagicMock(text="Request", edit_text=AsyncMock()),
+        answer=AsyncMock(),
+    )
 
     await access_command.handle_callback(query, callback_data, bot)
     assert await chat_status_service.get_status(chat_id) == ChatStatus.APPROVED

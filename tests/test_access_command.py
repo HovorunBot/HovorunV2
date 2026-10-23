@@ -12,6 +12,7 @@ from hovorunv2.application.data.constants import CommandName
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.infrastructure.config import settings
+from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 
 
@@ -71,3 +72,24 @@ async def test_handle_authorized(access_command: AccessCommand, init_container: 
     command_service = await init_container.get(CommandService)
     is_tiktok_allowed = await command_service.is_command_allowed(chat_id, CommandName.TIKTOK)
     assert is_tiktok_allowed is True
+
+
+@pytest.mark.asyncio
+async def test_forged_approve_from_non_owner_rejected(access_command: AccessCommand) -> None:
+    """Verify non-owner cannot approve or reject chat via callback forgery."""
+    bot = MagicMock(spec=Bot)
+    bot.send_message = AsyncMock()
+
+    callback_data = AccessCallback(chat_id=12345, action=AccessAction.APPROVE)
+    query = MagicMock()
+    query.from_user = User(id=999999, is_bot=False, first_name="Attacker")
+    query.answer = AsyncMock()
+    query.message = MagicMock(spec=Message)
+    query.message.text = "Request text"
+    query.message.edit_text = AsyncMock()
+
+    await access_command.handle_callback(query, callback_data, bot)
+
+    query.answer.assert_called_once_with("🚫 Owners only.", show_alert=True)
+    bot.send_message.assert_not_called()
+    query.message.edit_text.assert_not_called()
