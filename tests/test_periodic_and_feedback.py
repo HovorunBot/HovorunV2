@@ -16,6 +16,7 @@ from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
+from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
 
 
 @pytest.fixture
@@ -107,8 +108,9 @@ async def test_reminder_service_send_prompt_cooldown(test_settings: Settings) ->
     cache_service.get = AsyncMock(return_value=None)
     cache_service.set = AsyncMock()
     task_queue = MagicMock(spec=TaskQueueService)
+    prompt_sender = TelegramUnauthorizedPromptSender()
 
-    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, test_settings)
+    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, test_settings, prompt_sender)
 
     bot = MagicMock()
     bot.send_message = AsyncMock()
@@ -147,8 +149,9 @@ async def test_reminder_service_maintenance_cycle(test_settings: Settings) -> No
     cache_service.get = AsyncMock(return_value=None)
     cache_service.set = AsyncMock()
     task_queue = MagicMock(spec=TaskQueueService)
+    prompt_sender = TelegramUnauthorizedPromptSender()
 
-    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, test_settings)
+    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, test_settings, prompt_sender)
 
     bot = MagicMock()
     bot.leave_chat = AsyncMock()

@@ -63,6 +63,7 @@ async def run_bot() -> None:
         # Start generic background task queue worker
         task_queue_service = await container.get(TaskQueueService)
         reminder_service = await container.get(ChatReminderService)
+        reminder_service.register_jobs()
         await task_queue_service.start_worker(
             context={
                 "bot": bot,

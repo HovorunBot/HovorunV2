@@ -183,6 +183,6 @@ class SystemStore(Protocol):
 class UnauthorizedPromptSender(Protocol):
     """Protocol for sending unauthorized guidance and approval prompts."""
 
-    async def send(self, bot: Bot, chat_id: int) -> None:
-        """Send prompt to chat."""
+    async def send(self, bot: Bot, chat_id: int) -> bool:
+        """Send prompt to chat. Returns True if sent, False otherwise."""
         ...

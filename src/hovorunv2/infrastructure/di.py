@@ -25,6 +25,7 @@ from hovorunv2.application.ports import (
     CommandStore,
     SystemStore,
     TaskQueuePort,
+    UnauthorizedPromptSender,
 )
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
@@ -57,6 +58,7 @@ from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
@@ -129,6 +131,9 @@ class AppProvider(Provider):
     chat_store = alias(source=SQLAlchemyChatStore, provides=ChatStore)
     command_store = alias(source=SQLAlchemyCommandStore, provides=CommandStore)
     system_store = alias(source=SQLAlchemySystemStore, provides=SystemStore)
+
+    prompt_sender_impl = provide(TelegramUnauthorizedPromptSender)
+    prompt_sender = alias(source=TelegramUnauthorizedPromptSender, provides=UnauthorizedPromptSender)
 
     message_service = provide(MessageService)
     notification_service = provide(NotificationService)
