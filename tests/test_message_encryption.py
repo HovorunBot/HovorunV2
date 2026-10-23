@@ -23,6 +23,7 @@ def mock_chat_service() -> MagicMock:
     """Create a mock chat service."""
     service = MagicMock()
     service.get_or_create_chat = AsyncMock()
+    service.set_encryption_salt = AsyncMock()
     service.update_chat = AsyncMock()
     return service
 
@@ -68,7 +69,7 @@ async def test_cache_message_encryption(
     await service.cache_message(message)
 
     # Verify salt was generated
-    mock_chat_service.update_chat.assert_called_once()
+    mock_chat_service.set_encryption_salt.assert_called_once()
     assert chat.encryption_salt is not None
 
     # Verify encrypted data was sent to cache

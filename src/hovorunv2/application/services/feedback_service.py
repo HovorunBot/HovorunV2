@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from aiogram.exceptions import TelegramForbiddenError
 
-from hovorunv2.infrastructure.config import Settings
+from hovorunv2.application.ports import AppSettings
 from hovorunv2.infrastructure.logger import get_logger
 
 if TYPE_CHECKING:
@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 class FeedbackService:
     """Service to handle user feedback processing and delivery to owners."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: AppSettings) -> None:
         """Initialize feedback service with application settings."""
         self._settings = settings
 

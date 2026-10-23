@@ -6,8 +6,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
 
 from hovorunv2.application.changelog import get_changelog_updates, get_current_version, parse_version
-from hovorunv2.application.data.chat_service import ChatService
-from hovorunv2.application.data.system_service import SystemDataService
+from hovorunv2.application.ports import ChatStore, SystemStore
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -17,7 +16,7 @@ logger = get_logger(__name__)
 class NotificationService:
     """Service to handle broadcasting update notifications to group chats."""
 
-    def __init__(self, chat_service: ChatService, system_service: SystemDataService) -> None:
+    def __init__(self, chat_service: ChatStore, system_service: SystemStore) -> None:
         """Initialize with its dependencies."""
         self._chat_service = chat_service
         self._system_service = system_service

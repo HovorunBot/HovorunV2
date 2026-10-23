@@ -10,9 +10,9 @@ from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.clients.base import BaseMediaClient, OGConfig, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.ports import BrowserPort
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -42,7 +42,7 @@ class ThreadsService(BaseMediaClient):
     MIN_FALLBACK_QUOTE_LENGTH: ClassVar[int] = 30
     PROFILE_PATH_PARTS: ClassVar[int] = 2
 
-    def __init__(self, translation_service: TranslationService, browser_service: BrowserService) -> None:
+    def __init__(self, translation_service: TranslationService, browser_service: BrowserPort) -> None:
         """Initialize with required services."""
         super().__init__(translation_service)
         self._browser_service = browser_service

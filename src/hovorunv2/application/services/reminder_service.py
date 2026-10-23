@@ -8,12 +8,9 @@ from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from hovorunv2.application.data.chat_service import ChatService
+from hovorunv2.application.ports import AppSettings, CachePort, ChatStore, TaskQueuePort
 from hovorunv2.domain.enums import ChatStatus
-from hovorunv2.infrastructure.cache import CacheService
-from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger
-from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 
 logger = get_logger(__name__)
@@ -71,10 +68,10 @@ class ChatReminderService:
 
     def __init__(
         self,
-        chat_service: ChatService,
-        cache_service: CacheService,
-        task_queue: TaskQueueService,
-        settings: Settings,
+        chat_service: ChatStore,
+        cache_service: CachePort,
+        task_queue: TaskQueuePort,
+        settings: AppSettings,
     ) -> None:
         """Initialize chat reminder service."""
         self._chat_service = chat_service

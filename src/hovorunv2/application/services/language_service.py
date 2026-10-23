@@ -2,8 +2,7 @@
 
 import json
 
-from hovorunv2.application.data.chat_service import ChatService
-from hovorunv2.infrastructure.config import settings
+from hovorunv2.application.ports import AppSettings, ChatStore
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -16,11 +15,12 @@ class LanguageService:
     falling back to global settings when chat-specific ones are missing.
     """
 
-    def __init__(self, chat_service: ChatService) -> None:
+    def __init__(self, chat_service: ChatStore, settings: AppSettings) -> None:
         """Initialize the service.
 
         Args:
             chat_service: Data service for chat persistence.
+            settings: Application settings port.
 
         """
         self._chat_service = chat_service

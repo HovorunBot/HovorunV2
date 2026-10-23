@@ -4,7 +4,7 @@ from collections.abc import AsyncIterable
 from typing import NewType
 
 import aiohttp
-from dishka import Provider, Scope, provide
+from dishka import Provider, Scope, alias, provide
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
@@ -20,6 +20,15 @@ from hovorunv2.application.data.command_service import CommandDataService
 from hovorunv2.application.data.system_service import SystemDataService
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.ports import (
+    AppSettings,
+    BrowserPort,
+    CachePort,
+    ChatStore,
+    CommandStore,
+    SystemStore,
+    TaskQueuePort,
+)
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
@@ -100,11 +109,20 @@ class InfrastructureProvider(Provider):
         yield service
         await service.stop_worker()
 
+    settings_port = alias(source=Settings, provides=AppSettings)
+    cache_port = alias(source=CacheService, provides=CachePort)
+    browser_port = alias(source=BrowserService, provides=BrowserPort)
+    task_queue_port = alias(source=TaskQueueService, provides=TaskQueuePort)
+
 
 class AppProvider(Provider):
     """Provider for application business logic services."""
 
     scope = Scope.APP
+
+    chat_store = alias(source=ChatService, provides=ChatStore)
+    command_store = alias(source=CommandDataService, provides=CommandStore)
+    system_store = alias(source=SystemDataService, provides=SystemStore)
 
     message_service = provide(MessageService)
     chat_service = provide(ChatService)

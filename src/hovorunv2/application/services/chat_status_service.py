@@ -1,6 +1,6 @@
 """Application service for managing chat access status."""
 
-from hovorunv2.application.data.chat_service import ChatService
+from hovorunv2.application.ports import ChatStore
 from hovorunv2.domain.enums import ChatStatus
 
 
@@ -11,7 +11,7 @@ class ChatStatusService:
     extended functionality (APPROVED) via ChatStatus state machine.
     """
 
-    def __init__(self, chat_service: ChatService) -> None:
+    def __init__(self, chat_service: ChatStore) -> None:
         """Initialize the service.
 
         Args:

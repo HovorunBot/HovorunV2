@@ -67,6 +67,17 @@ class ChatService:
                 await session.commit()
             return chat
 
+    async def set_encryption_salt(self, chat_id: int, salt: str, platform: str = "telegram") -> None:
+        """Set encryption salt for a chat."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemyChatRepository(session)
+            chat = await repo.get_by_id(chat_id, platform)
+            if not chat:
+                chat = ChatDB(chat_id=chat_id, platform=platform)
+            chat.encryption_salt = salt
+            await repo.save(chat)
+            await session.commit()
+
     async def update_chat(self, chat_id: int, platform: str = "telegram", **kwargs: Any) -> None:
         """Update arbitrary chat attributes."""
         async with self._session_maker() as session:

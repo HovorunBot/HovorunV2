@@ -5,7 +5,7 @@ import contextlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from hovorunv2.infrastructure.cache import CacheService
+from hovorunv2.application.ports import CachePort
 from hovorunv2.infrastructure.logger import get_logger
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ class CleanupService:
     # Minimum sleep interval to prevent busy loops
     MIN_CHECK_INTERVAL: int = 5
 
-    def __init__(self, cache_service: CacheService) -> None:
+    def __init__(self, cache_service: CachePort) -> None:
         """Initialize service with cache dependency."""
         self._cache = cache_service
         self._loop_task: asyncio.Task[None] | None = None

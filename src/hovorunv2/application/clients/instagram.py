@@ -9,11 +9,10 @@ import instaloader
 
 from hovorunv2.application.clients.base import BaseMediaClient, BrowserFallbackConfig, OGConfig, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.ports import AppSettings, BrowserPort
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.utils import clean_caption_text
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.browser import BrowserService
-from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -96,8 +95,8 @@ class InstagramService(BaseMediaClient):
     def __init__(
         self,
         translation_service: TranslationService,
-        browser_service: BrowserService,
-        settings: Settings,
+        browser_service: BrowserPort,
+        settings: AppSettings,
     ) -> None:
         """Initialize with required services."""
         super().__init__(translation_service)

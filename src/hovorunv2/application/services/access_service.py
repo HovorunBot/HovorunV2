@@ -2,9 +2,9 @@
 
 from typing import TYPE_CHECKING
 
+from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.infrastructure.config import Settings
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -88,7 +88,7 @@ class AccessService:
 
     def __init__(
         self,
-        settings: Settings,
+        settings: AppSettings,
         chat_status_service: ChatStatusService,
         command_service: CommandService,
     ) -> None:

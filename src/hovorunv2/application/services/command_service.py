@@ -1,6 +1,6 @@
 """Application service for managing allowed commands per chat."""
 
-from hovorunv2.application.data.command_service import CommandDataService
+from hovorunv2.application.ports import CommandStore
 from hovorunv2.domain.enums import (
     DEFAULT_COMMANDS,
     PROVIDER_SPLIT_COMMANDS,
@@ -12,7 +12,7 @@ from hovorunv2.domain.enums import (
 class CommandService:
     """Service to handle command availability business rules."""
 
-    def __init__(self, command_data_service: CommandDataService) -> None:
+    def __init__(self, command_data_service: CommandStore) -> None:
         """Initialize the service.
 
         Args:

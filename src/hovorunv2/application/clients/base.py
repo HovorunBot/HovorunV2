@@ -12,10 +12,10 @@ from typing import Any, ClassVar
 import aiohttp
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.ports import BrowserPort
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.utils import clean_caption_text, extract_og_metadata, format_number
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -107,7 +107,7 @@ class BaseMediaClient:
         """Initialize client with translation service."""
         self._translation_service = translation_service
         self._config: ProviderConfig = getattr(self, "CONFIG", FACEBOOK_CONFIG)
-        self._browser_service: BrowserService | None = None
+        self._browser_service: BrowserPort | None = None
 
     def with_config(self, config: ProviderConfig) -> BaseMediaClient:
         """Bind a specific ProviderConfig to this client instance and return self."""

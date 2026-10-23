@@ -7,10 +7,8 @@ import secrets
 from aiogram import types
 from cryptography.fernet import Fernet
 
-from hovorunv2.application.data.chat_service import ChatService
+from hovorunv2.application.ports import AppSettings, CachePort, ChatStore
 from hovorunv2.application.utils import decrypt_payload, encrypt_payload, get_fernet_for_chat
-from hovorunv2.infrastructure.cache import CacheService
-from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -21,7 +19,7 @@ class MessageService:
 
     CACHE_TTL_SECONDS: int = 60 * 60 * 24  # 24 hours
 
-    def __init__(self, cache_service: CacheService, chat_service: ChatService, settings: Settings) -> None:
+    def __init__(self, cache_service: CachePort, chat_service: ChatStore, settings: AppSettings) -> None:
         """Initialize message service with cache, chat service and settings."""
         self.cache = cache_service
         self.chat_service = chat_service
@@ -85,7 +83,7 @@ class MessageService:
             if not chat.encryption_salt:
                 # Generate new salt for this chat
                 salt_hex = secrets.token_hex(16)
-                await self.chat_service.update_chat(chat_id, encryption_salt=salt_hex)
+                await self.chat_service.set_encryption_salt(chat_id, salt_hex)
                 chat.encryption_salt = salt_hex
                 logger.info("Generated new encryption salt for chat %d", chat_id)
 
