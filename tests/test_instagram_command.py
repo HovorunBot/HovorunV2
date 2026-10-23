@@ -117,7 +117,7 @@ async def test_handle_instagram_browser_fallback(
 
     with (
         patch("instaloader.Post.from_shortcode", side_effect=Exception("Instaloader failed")),
-        patch("hovorunv2.application.media.extractor.MediaExtractor.extract_payload", return_value=None),
+        patch("hovorunv2.application.media.extractor.MediaExtractor.extract", return_value=None),
         patch(
             "hovorunv2.infrastructure.browser.BrowserService.extract_and_download",
             return_value=(payload, [b"fake_image_bytes"]),

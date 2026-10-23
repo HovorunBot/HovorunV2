@@ -179,9 +179,7 @@ class RichMediaCommand:
         )
         if not is_post_url:
             logger.info("%s direct API returned None for %s, trying yt-dlp", self.name, url)
-            if payload := await self._media_extractor.extract_payload(
-                session, url, chat_id, platform, cookies=self._primary_client.get_ytdlp_cookies()
-            ):
+            if payload := await self._media_extractor.extract(url, cookies=self._primary_client.get_ytdlp_cookies()):
                 return payload
 
         # 3. Browser Fallback (if configured on provider)

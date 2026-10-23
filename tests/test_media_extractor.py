@@ -1,6 +1,6 @@
 """Tests for MediaExtractor."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from dishka import AsyncContainer
@@ -26,9 +26,7 @@ async def test_extract_payload_youtube_shorts(init_container: AsyncContainer) ->
 
     media_extractor = await init_container.get(MediaExtractor)
     with patch("hovorunv2.application.media.extractor.yt_dlp.YoutubeDL.extract_info", return_value=mock_info):
-        payload = await media_extractor.extract_payload(
-            session=MagicMock(), url="https://youtube.com/shorts/abc-123", chat_id=123, platform="telegram"
-        )
+        payload = await media_extractor.extract(url="https://youtube.com/shorts/abc-123")
 
         assert payload is not None
         assert payload.author_name == "Uploader Name"
@@ -46,7 +44,5 @@ async def test_extract_payload_failure(init_container: AsyncContainer) -> None:
         "hovorunv2.application.media.extractor.yt_dlp.YoutubeDL.extract_info",
         side_effect=Exception("Failed"),
     ):
-        payload = await media_extractor.extract_payload(
-            session=MagicMock(), url="https://invalid.url", chat_id=123, platform="telegram"
-        )
+        payload = await media_extractor.extract(url="https://invalid.url")
         assert payload is None
