@@ -279,12 +279,8 @@ class SettingsCommand(BaseCommand):
         chat_id = msg.chat.id
         if callback_data.action == SettingsAction.TOGGLE and callback_data.value:
             cmd_name = callback_data.value
-            is_enabled = await self._command_service.is_command_allowed(chat_id, cmd_name)
-            if is_enabled:
-                await self._command_service.disable_command(chat_id, cmd_name)
-            else:
-                await self._command_service.enable_command(chat_id, cmd_name)
-            await query.answer(f"{cmd_name} {'enabled' if not is_enabled else 'disabled'}")
+            is_enabled = await self._command_service.toggle(chat_id, cmd_name)
+            await query.answer(f"{cmd_name} {'enabled' if is_enabled else 'disabled'}")
         await self._show_modules_menu(query)
 
     async def _handle_lang_target_callback(self, query: CallbackQuery, callback_data: SettingsCallback) -> None:

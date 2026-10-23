@@ -20,7 +20,6 @@ INITIAL_COMMANDS: list[dict[str, str]] = [
         entry
         for provider, (video_cmd, post_cmd) in PROVIDER_SPLIT_COMMANDS.items()
         for entry in (
-            {"name": provider, "description": f"Process {provider.capitalize()} links"},
             {"name": video_cmd, "description": f"Process {provider.capitalize()} video links"},
             {"name": post_cmd, "description": f"Process {provider.capitalize()} image/text links"},
         )

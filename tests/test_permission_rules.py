@@ -219,6 +219,14 @@ async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
     await command_service.disable_command(chat_id, command_name)
     assert await access_service.is_allowed(user_id, chat_id, policy, command_name=command_name) is False
 
+    # Toggle it on
+    assert await command_service.toggle(chat_id, command_name) is True
+    assert await access_service.is_allowed(user_id, chat_id, policy, command_name=command_name) is True
+
+    # Toggle it off
+    assert await command_service.toggle(chat_id, command_name) is False
+    assert await access_service.is_allowed(user_id, chat_id, policy, command_name=command_name) is False
+
 
 @pytest.mark.asyncio
 async def test_chat_status_service_approve(test_container: AsyncContainer) -> None:

@@ -4,7 +4,6 @@ from hovorunv2.application.ports import CommandStore
 from hovorunv2.domain.enums import (
     DEFAULT_COMMANDS,
     PROVIDER_SPLIT_COMMANDS,
-    SPLIT_TO_PROVIDER_COMMAND,
     CommandName,
 )
 
@@ -43,19 +42,10 @@ class CommandService:
         except ValueError:
             return cmd_str in allowed
 
-        # Parent provider command is allowed if either video or post (or legacy parent) is enabled.
+        # Parent provider command is allowed if either video or post is enabled.
         if cmd_enum in PROVIDER_SPLIT_COMMANDS:
             video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[cmd_enum]
-            return str(video_cmd) in allowed or str(post_cmd) in allowed or cmd_str in allowed
-
-        # Split sub-command (e.g. twitter_video or twitter_post)
-        if cmd_enum in SPLIT_TO_PROVIDER_COMMAND:
-            if cmd_str in allowed:
-                return True
-            parent_cmd = SPLIT_TO_PROVIDER_COMMAND[cmd_enum]
-            video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[parent_cmd]
-            # Legacy fallback: if parent is enabled and neither split command is explicitly set
-            return str(parent_cmd) in allowed and str(video_cmd) not in allowed and str(post_cmd) not in allowed
+            return str(video_cmd) in allowed or str(post_cmd) in allowed
 
         return cmd_str in allowed
 
@@ -83,14 +73,13 @@ class CommandService:
         return await self.is_command_allowed(chat_id, target_cmd)
 
     async def enable_defaults(self, chat_id: int) -> None:
-        """Enable all default media commands for an approved chat.
+        """Enable all default media split commands for an approved chat.
 
         Args:
             chat_id: The ID of the chat.
 
         """
-        for provider, (video_cmd, post_cmd) in PROVIDER_SPLIT_COMMANDS.items():
-            await self._command_data_service.enable_command(chat_id, str(provider))
+        for video_cmd, post_cmd in PROVIDER_SPLIT_COMMANDS.values():
             await self._command_data_service.enable_command(chat_id, str(video_cmd))
             await self._command_data_service.enable_command(chat_id, str(post_cmd))
 
@@ -113,15 +102,9 @@ class CommandService:
 
         if cmd_enum in PROVIDER_SPLIT_COMMANDS:
             video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[cmd_enum]
-            res_parent = await self._command_data_service.enable_command(chat_id, cmd_str)
             res_video = await self._command_data_service.enable_command(chat_id, str(video_cmd))
             res_post = await self._command_data_service.enable_command(chat_id, str(post_cmd))
-            return res_parent and res_video and res_post
-
-        if cmd_enum in SPLIT_TO_PROVIDER_COMMAND:
-            parent_cmd = SPLIT_TO_PROVIDER_COMMAND[cmd_enum]
-            await self._command_data_service.enable_command(chat_id, str(parent_cmd))
-            return await self._command_data_service.enable_command(chat_id, cmd_str)
+            return res_video and res_post
 
         return await self._command_data_service.enable_command(chat_id, cmd_str)
 
@@ -147,30 +130,42 @@ class CommandService:
 
         if cmd_enum in PROVIDER_SPLIT_COMMANDS:
             video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[cmd_enum]
-            res_parent = await self._command_data_service.disable_command(chat_id, cmd_str)
             res_video = await self._command_data_service.disable_command(chat_id, str(video_cmd))
             res_post = await self._command_data_service.disable_command(chat_id, str(post_cmd))
-            return res_parent or res_video or res_post
-
-        if cmd_enum in SPLIT_TO_PROVIDER_COMMAND:
-            parent_cmd = SPLIT_TO_PROVIDER_COMMAND[cmd_enum]
-            video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[parent_cmd]
-            sibling_cmd = post_cmd if cmd_enum == video_cmd else video_cmd
-
-            allowed = set(await self._command_data_service.get_allowed_commands(chat_id))
-            # If legacy parent was enabled without explicit split commands, preserve sibling
-            if str(parent_cmd) in allowed and str(video_cmd) not in allowed and str(post_cmd) not in allowed:
-                await self._command_data_service.enable_command(chat_id, str(sibling_cmd))
-
-            res = await self._command_data_service.disable_command(chat_id, cmd_str)
-            updated_allowed = set(await self._command_data_service.get_allowed_commands(chat_id))
-            if str(sibling_cmd) not in updated_allowed:
-                await self._command_data_service.disable_command(chat_id, str(parent_cmd))
-            return res
+            return res_video or res_post
 
         return await self._command_data_service.disable_command(chat_id, cmd_str)
 
+    async def toggle(self, chat_id: int, command_name: CommandName | str) -> bool:
+        """Toggle command between enabled and disabled, returning new state.
+
+        Args:
+            chat_id: The ID of the chat.
+            command_name: The name of the command to toggle.
+
+        Returns:
+            True if command is now enabled, False if disabled.
+
+        """
+        is_allowed = await self.is_command_allowed(chat_id, command_name)
+        if is_allowed:
+            await self.disable_command(chat_id, command_name)
+            return False
+        await self.enable_command(chat_id, command_name)
+        return True
+
     async def get_allowed_commands(self, chat_id: int) -> set[str]:
-        """Fetch all enabled commands for a chat."""
-        allowed_list = await self._command_data_service.get_allowed_commands(chat_id)
-        return set(allowed_list)
+        """Fetch all enabled commands for a chat (including active parent providers).
+
+        Args:
+            chat_id: The ID of the chat.
+
+        Returns:
+            Set of allowed command name strings.
+
+        """
+        allowed = set(await self._command_data_service.get_allowed_commands(chat_id))
+        for provider, (video_cmd, post_cmd) in PROVIDER_SPLIT_COMMANDS.items():
+            if str(video_cmd) in allowed or str(post_cmd) in allowed:
+                allowed.add(str(provider))
+        return allowed

@@ -45,6 +45,7 @@ def mock_command_service() -> MagicMock:
     service.is_command_allowed = AsyncMock(return_value=True)
     service.enable_command = AsyncMock()
     service.disable_command = AsyncMock()
+    service.toggle = AsyncMock(return_value=False)
     return service
 
 
@@ -204,13 +205,13 @@ async def test_settings_modules_toggle(
     query.message.edit_text = AsyncMock()
     query.answer = AsyncMock()
 
-    # Mock current state as enabled
-    mock_command_service.is_command_allowed.return_value = True
+    # Mock toggle returning False (disabled)
+    mock_command_service.toggle.return_value = False
 
     await command.handle_callback(query, callback_data)
 
-    # Verify command was disabled
-    mock_command_service.disable_command.assert_called_once_with(chat_id, cmd_name)
+    # Verify command was toggled
+    mock_command_service.toggle.assert_called_once_with(chat_id, cmd_name)
     query.answer.assert_called_once()
     assert "disabled" in query.answer.call_args[0][0]
 
