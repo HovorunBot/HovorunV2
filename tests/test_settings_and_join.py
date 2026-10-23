@@ -3,7 +3,9 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiogram import types
+from aiogram import Bot, types
+from aiogram.types import User
+from dishka import AsyncContainer
 
 from hovorunv2.application.data.constants import ChatStatus, CommandName
 from hovorunv2.interface.telegram.callbacks import (
@@ -13,6 +15,7 @@ from hovorunv2.interface.telegram.callbacks import (
 )
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from tests.conftest import create_mock_message
 
 
 @pytest.fixture
@@ -328,3 +331,23 @@ async def test_settings_close_button(
     query.message.delete.assert_called_once()
     mock_cleanup_service.unregister_window.assert_called_once_with(123, 789)
     query.answer.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_settings_trigger_mention_filtering(init_container: AsyncContainer) -> None:
+    """Verify settings trigger filter matches exact name and own mention, rejects other bots."""
+    settings_cmd = await init_container.get(SettingsCommand)
+    bot = MagicMock(spec=Bot)
+    bot.me = AsyncMock(return_value=User(id=1, is_bot=True, first_name="Hovorun", username="HovorunBot"))
+
+    msg_plain = create_mock_message("/settings")
+    msg_other_cmd = create_mock_message("/settingsXYZ")
+    msg_own = create_mock_message("/settings@HovorunBot")
+    msg_other = create_mock_message("/settings@OtherBot")
+
+    assert await settings_cmd.is_triggered(msg_plain) is True
+    assert await settings_cmd.is_triggered(msg_other_cmd) is False
+    assert await settings_cmd.is_triggered(msg_own) is True
+
+    assert bool(await settings_cmd.trigger(msg_own, bot)) is True
+    assert bool(await settings_cmd.trigger(msg_other, bot)) is False

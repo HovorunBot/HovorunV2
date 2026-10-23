@@ -5,6 +5,7 @@ import math
 from typing import Any, Final
 
 from aiogram import Bot, Router
+from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -60,9 +61,20 @@ class SettingsCommand(BaseCommand):
             is_toggleable=False,
         )
 
+    @property
+    def trigger(self) -> Command:
+        """Trigger filter for settings command."""
+        return Command(CommandName.SETTINGS)
+
     async def is_triggered(self, message: Message) -> bool:
         """Check if message is /settings."""
-        return bool(message.text and message.text.strip().startswith("/settings"))
+        if not message.text:
+            return False
+        parts = message.text.strip().split()
+        if not parts:
+            return False
+        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
+        return cmd_part == CommandName.SETTINGS
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle /settings command."""

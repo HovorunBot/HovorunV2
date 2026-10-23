@@ -3,6 +3,7 @@
 from typing import Any
 
 from aiogram import Bot
+from aiogram.filters import Command
 from aiogram.types import Message
 
 from hovorunv2.application.data.constants import CommandName
@@ -30,11 +31,20 @@ class HelpCommand(BaseCommand):
         """Help is always available to everyone."""
         return CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
+    @property
+    def trigger(self) -> Command:
+        """Trigger filter for help command."""
+        return Command(CommandName.HELP, CommandName.START)
+
     async def is_triggered(self, message: Message) -> bool:
-        """Check if message starts with /help or /start."""
+        """Check if message triggers /help or /start."""
         if not message.text:
             return False
-        return message.text.strip().startswith(("/help", "/start"))
+        parts = message.text.strip().split()
+        if not parts:
+            return False
+        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
+        return cmd_part in (CommandName.HELP, CommandName.START)
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle help command."""

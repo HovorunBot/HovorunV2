@@ -3,6 +3,7 @@
 from typing import Any
 
 from aiogram import Bot
+from aiogram.filters import Command
 from aiogram.types import Message
 
 from hovorunv2.application.data.constants import CommandName
@@ -27,11 +28,20 @@ class DebugCommand(BaseCommand):
         """Admin only, bypasses access."""
         return CommandPolicy(requires_admin=True, requires_approval=False, is_toggleable=False)
 
+    @property
+    def trigger(self) -> Command:
+        """Trigger filter for debug command."""
+        return Command(CommandName.DEBUG, "force_error")
+
     async def is_triggered(self, message: Message) -> bool:
         """Check if message starts with /debug or /force_error."""
         if not message.text:
             return False
-        return message.text.strip().startswith(("/debug", "/force_error"))
+        parts = message.text.strip().split()
+        if not parts:
+            return False
+        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
+        return cmd_part in (CommandName.DEBUG, "force_error")
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle debug commands."""

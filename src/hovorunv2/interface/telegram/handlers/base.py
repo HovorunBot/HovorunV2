@@ -2,13 +2,16 @@
 
 import html
 import re
+from collections.abc import Callable
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
 import aiohttp
-from aiogram import Bot
+from aiogram import Bot, F
 from aiogram.exceptions import TelegramBadRequest, TelegramEntityTooLarge
+from aiogram.filters import Filter
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, MediaUnion, Message
+from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.data.constants import PROVIDER_SPLIT_COMMANDS, CommandName
@@ -36,6 +39,11 @@ class BaseCommand(Protocol):
     @property
     def policy(self) -> CommandPolicy:
         """Access policy for this command."""
+        ...
+
+    @property
+    def trigger(self) -> Filter | MagicFilter | Callable[..., Any]:
+        """Trigger filter for this command."""
         ...
 
     async def is_triggered(self, message: Message) -> bool:
@@ -113,6 +121,11 @@ class RichMediaCommand:
     def platform_name(self) -> str:
         """Human-readable platform name."""
         return self._primary_client.platform_label
+
+    @property
+    def trigger(self) -> MagicFilter:
+        """Trigger filter for rich media links."""
+        return F.text.regexp(self.pattern) & ~F.from_user.is_bot
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message contains links matching the command's pattern."""

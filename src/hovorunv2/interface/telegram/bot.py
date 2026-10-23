@@ -46,7 +46,7 @@ def setup_handlers(commands: list[BaseCommand], bot_join_handler: BotJoinHandler
         # Register the command handler with its custom trigger filter
         router.message.register(
             command.handle,
-            command.is_triggered,
+            command.trigger,
             flags=flags,
         )
 

@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from aiogram import Bot, Router
 from aiogram.exceptions import TelegramForbiddenError
+from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -50,9 +51,20 @@ class AccessCommand(BaseCommand):
         """Everyone can trigger it (it will send a request if not admin)."""
         return CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
+    @property
+    def trigger(self) -> Command:
+        """Trigger filter for allow_chat command."""
+        return Command(CommandName.ALLOW_CHAT)
+
     async def is_triggered(self, message: Message) -> bool:
         """Check if message is /allow_chat."""
-        return bool(message.text and message.text.strip().startswith("/allow_chat"))
+        if not message.text:
+            return False
+        parts = message.text.strip().split()
+        if not parts:
+            return False
+        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
+        return cmd_part == CommandName.ALLOW_CHAT
 
     async def handle(
         self,
