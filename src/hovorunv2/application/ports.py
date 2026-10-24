@@ -1,13 +1,14 @@
 """Application ports (Protocols) defining boundaries for external adapters."""
 
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from aiogram import Bot
 
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import ChatStatus
+from hovorunv2.domain.enums import ChatStatus, Platform, TargetKind
 from hovorunv2.domain.user import UserDB
 
 
@@ -171,6 +172,52 @@ class UserStore(Protocol):
 
     async def get_historical_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> list[UserDB]:
         """Fetch all generations of user identity for explicit recovery workflows."""
+        ...
+
+
+@dataclass(frozen=True)
+class ResolvedTarget:
+    """Resolved target from public handle registry."""
+
+    target_kind: TargetKind
+    target_id: int
+    handle_normalized: str
+    handle_display: str
+    platform: Platform = Platform.TELEGRAM
+
+
+class PublicHandleStore(Protocol):
+    """Protocol for active public-handle registry operations."""
+
+    async def resolve_handle(self, handle: str, platform: Platform = Platform.TELEGRAM) -> ResolvedTarget | None:
+        """Resolve public @username to stable numeric target (active only)."""
+        ...
+
+    async def get_handle_by_target(
+        self, target_kind: TargetKind, target_id: int, platform: Platform = Platform.TELEGRAM
+    ) -> ResolvedTarget | None:
+        """Get current public handle for a numeric target entity."""
+        ...
+
+    async def sync_handle(
+        self,
+        target_kind: TargetKind,
+        target_id: int,
+        raw_handle: str | None,
+        actor: ActorContext,
+        platform: Platform = Platform.TELEGRAM,
+    ) -> ResolvedTarget | None:
+        """Synchronize public handle from verified Telegram evidence with audit."""
+        ...
+
+    async def release_handle(
+        self,
+        target_kind: TargetKind,
+        target_id: int,
+        actor: ActorContext,
+        platform: Platform = Platform.TELEGRAM,
+    ) -> bool:
+        """Release public handle on target soft-deletion or removal with audit."""
         ...
 
 

@@ -19,6 +19,13 @@ class ActorOrigin(StrEnum):
     MIGRATION = "migration"
 
 
+class TargetKind(StrEnum):
+    """Kind of target entity."""
+
+    USER = "user"
+    GROUP = "group"
+
+
 class CommandName(StrEnum):
     """Names of all bot commands."""
 

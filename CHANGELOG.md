@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **identity**: resolve public handles without transferring authority
 - **identity**: preserve durable group identity and metadata
 - **identity**: persist lifecycle-aware users
 - **audit**: audit durable mutations in one transaction
