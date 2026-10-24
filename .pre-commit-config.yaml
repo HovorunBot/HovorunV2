@@ -1,11 +1,19 @@
 # See https://pre-commit.com for more information
-default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_install_hook_types: [pre-commit, pre-push, commit-msg, post-commit]
 repos:
   - repo: local
     hooks:
+      - id: update-changelog
+        name: Generate changelog and amend commit
+        entry: sh scripts/update-changelog-after-commit.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [post-commit]
+
       - id: commitizen-check
         name: Commitizen Conventional Commits
-        entry: uv run cz check --commit-msg-fn
+        entry: uv run cz check --commit-msg-file
         language: system
         stages: [commit-msg]
 

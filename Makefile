@@ -40,7 +40,7 @@ help:
 	@echo "    make format              - Format codebase and fix auto-fixable lint issues"
 	@echo "    make type-check          - Run strict type checking with ty"
 	@echo "    make check               - Run complete verification gate (lint + type-check + test)"
-	@echo "    make install-hooks       - Install Git pre-commit and commit-msg hooks"
+	@echo "    make install-hooks       - Install quality, commit-message, and post-commit changelog hooks"
 	@echo ""
 	@echo "  Release & Versioning (Commitizen):"
 	@echo "    make tag-release         - Bump version, update CHANGELOG.md, and create Git tag"
@@ -219,8 +219,8 @@ dev:
 
 install-hooks:
 	@if command -v git >/dev/null 2>&1 && [ -d .git ]; then \
-		echo "Installing Git pre-commit and commit-msg hooks..."; \
-		uv run pre-commit install --hook-type pre-commit --hook-type commit-msg; \
+		echo "Installing Git quality, commit-message, and post-commit changelog hooks..."; \
+		uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg --hook-type post-commit; \
 	fi
 
 # 9. Run the bot locally (no Docker for Bot) with Valkey in Docker.

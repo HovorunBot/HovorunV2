@@ -104,6 +104,16 @@ If you choose to self-host, deployment is fully automated via `Make` and `Docker
 * `uv run ruff check .`: Linting and formatting.
 * `uv run lint-imports`: Enforce onion architecture layer contracts.
 * `PYTHONPATH=src uv run pytest`: Run unit and integration test suite.
+* `make install-hooks`: Install quality, Conventional Commit, and post-commit changelog hooks.
+
+After each commit, the post-commit hook generates `CHANGELOG.md` with Commitizen and amends
+that file into the same commit if needed. The amendment preserves the message, author, and
+unrelated staged changes; hooks are disabled only for that generated-file amendment to avoid
+recursion. Install hooks in each checkout before committing.
+
+The hook refuses to overwrite local changelog edits or amend a tagged commit. A post-commit
+failure leaves the original commit in place: resolve the reported issue, run `make changelog`,
+review the generated changes, and amend the commit before tagging or pushing.
 
 ---
 

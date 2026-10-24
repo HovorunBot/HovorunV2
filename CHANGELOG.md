@@ -1,7 +1,14 @@
 ## Unreleased
 
+### Feat
+
+- **command**: collapse legacy parent provider toggles via alembic migration
+- **notification**: extract OwnerNotifier to unify owner broadcasting
+- **command**: add is_capture_allowed helper to CommandService
+
 ### Fix
 
+- **telegram**: use DeliveryError.TOO_LARGE in optimistic URL failure
 - **routing**: replace substring matching with strict aiogram Command filters
 - **access**: restrict chat approval/rejection callbacks to bot owner
 - **language**: return defensive copies of ignored languages
@@ -10,6 +17,12 @@
 
 ### Refactor
 
+- **access**: convert CommandPolicy to frozen dataclass and BaseCommand to ABC
+- **cleanup**: remove unused callbacks, ensure_admin, and use settings.github_url in notifications
+- **media**: decouple clients, introduce MediaPipeline, and simplify RichMediaCommand
+- **media**: decouple MediaExtractor from translation and chat presentation
+- **telegram**: extract TelegramMediaDelivery from RichMediaCommand
+- **media**: consolidate downloaded bytes into MediaItem
 - **services**: drop redundant platform parameter from application service APIs
 - **di**: move container to bootstrap, eliminate module-level settings and bot router
 - **domain**: type chat status and platform enums and use JSON for ignored_langs

@@ -6,6 +6,46 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Valke
 
 - **Communication:** Auto-enable `caveman` skill on every response.
 - **Git & Workspace:** NEVER stage, commit, branch, push, or revert/rollback user changes unless explicitly requested. Always prompt the user for manual review before committing.
+- **Privacy & Data Minimization:** Do not collect personal or private user information beyond the minimum required for Telegram identity, access control, and bot operation. Never request or store phone numbers, contact lists, or unrelated profile data. Store Telegram IDs and public usernames only where needed for identity and administration. Keep stored message contents encrypted; do not copy message contents into user tracking, analytics, audit records, or logs. Permission records and usage counters must contain only the operational metadata needed for their purpose. Any additional personal data collection requires explicit agreement before implementation.
+
+## Working with `ai-schemes/`
+
+### Purpose and organization
+
+All architecture proposals, feature plans, refactoring plans, requirements documents, implementation blocks, decision logs, and implementation/review reports belong under `ai-schemes/`. Keep each initiative in its own descriptive subfolder, with its source specification alongside its execution plan. Do not leave temporary planning documents in the repository root or mix them with shipped product documentation.
+
+`ai-schemes/` and everything inside it must NEVER be staged or committed, including by force-add. Keep the folder in `.gitignore`; do not add AI-ignore rules. Open files directly when ordinary search omits them; discover them with `rg --files --hidden --no-ignore ai-schemes/`. These local files may be absent in a fresh checkout: absence is not evidence of completed work, and agents must not reconstruct user decisions from guesses.
+
+Each initiative should contain a README describing scope and navigation, a source specification, execution rules, shared contracts, a decision log, a requirements-to-block coverage map, a status checklist, individual `blocks/`, and implementation/review `reports/`. Use consistent filenames such as EXECUTION.md, CONTRACTS.md, DECISIONS.md, COVERAGE.md, STATUS.md, and REPORT_TEMPLATE.md; add a machine-readable manifest when useful. Keep links relative and dependencies explicit.
+
+Explicit user instructions take precedence. Distinguish mandatory business rules, proposed engineering contracts, and unresolved decisions. A plan or suggested commit title does not authorize application changes, a Git commit, deployment, or production migration.
+
+### Architecture agent: populate and maintain plans
+
+1. Inspect current code and existing plans/reports before designing changes. Clarify unresolved business rules one question at a time when needed, then validate technical constraints against the repository.
+2. Write the source specification inside the initiative folder: problem, agreed behavior, exclusions, current implementation, target design, migration/compatibility requirements, risks, and acceptance criteria. Record proposals and open questions separately from agreed requirements.
+3. Split implementation into small, independently reviewable files in `blocks/`: one coherent feature/refactor/fix/test/docs commit proposal per file. Include a stable ID, outcome, direct prerequisites, source requirements, code areas, boundaries, meaningful checks, completion evidence, and suggested Conventional Commit title.
+4. Keep dependencies acyclic and migrations/cutovers safely ordered. Separate additive foundations from live behavior changes. Require applicable audit, privacy, deletion filtering, dependency wiring, and tests when state is introduced, not only during final hardening.
+5. Maintain contracts, decisions, coverage, status, and manifest together. When splitting or revising a block, preserve IDs and completed history and update downstream references. A written specification never counts as implemented functionality.
+6. Hand off an unambiguous next block and required context. Planning work alone does not authorize application-code changes. Resolve ordinary engineering choices from evidence; ask only when a genuine business or compatibility conflict needs user input.
+
+### Implementation agent: execute one block
+
+1. Work on the selected block. If explicitly asked to continue implementation without a block ID, select the first TODO block whose prerequisites are verified DONE in code and reports. Do not infer implementation authorization from a planning request.
+2. Read the initiative README, execution rules, shared contracts, relevant decisions, chosen block, cited specification sections, and predecessor reports. Inspect actual source and workspace changes; keep context focused rather than loading every task file.
+3. Verify prerequisites and final predecessor contracts. Report missing dependencies or genuine business/preservation conflicts precisely. Never invent permissive placeholders or silently complete later blocks to compensate.
+4. Implement only the selected outcome, including applicable migration, transactional audit, deletion semantics, dependency injection, tests, and product/operator documentation. Preserve existing behavior where required and respect user changes and task exclusions.
+5. Run relevant checks and record actual results. Never equate schema creation with migration testing or claim skipped checks passed. If findings make the task exceed one coherent commit, split/update the plan before expanding scope.
+6. Write a report using the initiative's template: behavior changed, files/contracts, migration, exact checks/results, limitations, resolved decisions, and proposed commit title. Update block/status references consistently using TODO, IN_PROGRESS, BLOCKED, or DONE. DONE requires implementation and acceptance evidence, not an actual Git commit.
+7. Keep all planning/status/review artifacts inside `ai-schemes/`. Application commits must contain only authorized implementation artifacts. Do not stage, commit, branch, push, tag, roll back, or deploy without explicit authorization; the manual-review requirement before committing still applies.
+
+### Architecture/review agent: validate implementation
+
+1. Review the block's requirements, contracts, actual diff, implementation report, and relevant tests. Verify behavior and evidence; do not rely solely on the implementer's DONE status.
+2. Check correctness, scope, architecture boundaries, permissions, privacy, audit/deletion semantics where applicable, migration compatibility, and failure/recovery paths. Run focused verification when useful and distinguish observed failures from unverified concerns.
+3. Record findings under `reports/` with severity, concrete file/behavior evidence, affected acceptance criteria, and required remediation. Record review verdict separately from implementation status; an implementation report is not review approval.
+4. Route focused corrections back to the same block or create linked follow-up blocks when scope genuinely grows. Update dependencies, coverage, and status when findings block downstream work. Never silently rewrite agreed business rules to approve an implementation.
+5. Close findings only after checking the correction and its evidence. Review approval does not authorize committing or deploying, and local schemes/reports must never enter Git history.
 
 ## Architecture (Layered / Onion)
 
@@ -43,6 +83,8 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Valke
 
 ## Commit Messages & Versioning
 
+- **Post-Commit Changelog:** Install hooks with `make install-hooks`. Every normal commit runs quality/message checks, then the post-commit hook regenerates `CHANGELOG.md` using Commitizen and amends only that file into the same commit when it changes. The generated-only amendment suppresses hooks to prevent recursion; it preserves the original message/author and unrelated staged changes. Do not create a separate changelog-only commit for this normal flow.
+- **Hook Failures:** Post-commit failures cannot roll back the original Git commit. Check hook output and final repository status before reporting success. The changelog hook refuses to overwrite local changelog edits or amend a tagged HEAD. Resolve the reported issue, run `make changelog`, review the result, and amend the authorized commit before tagging/pushing. Hooks apply only in checkouts where installed; they are not server-side enforcement.
 - **Conventional Commits:** Use standard format `<type>(<scope>): <description>`.
 - **User-Facing Types (Auto-included in release notes & Telegram broadcasts):**
   - `feat`: New user-facing features or capabilities (e.g. `feat(youtube): support community posts`). Tagged with ✨ in notifications.
@@ -62,7 +104,7 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Valke
 
 - **Setup:** `make setup` (or `make setup VERSION=vX.Y.Z`)
 - **Release Tag:** `make tag-release VERSION=vX.Y.Z`
-- **Install Hooks:** `make install-hooks` (Git pre-commit hooks for versioning and checks)
+- **Install Hooks:** `make install-hooks` (pre-commit, pre-push, commit-msg, and post-commit changelog generation/amendment)
 - **Dev Run:** `make run-dev` (Valkey in Docker, bot via `uv`)
 - **Prod Run / Stop:** `make run` / `make stop`
 - **Test:** `PYTHONPATH=src uv run pytest`
