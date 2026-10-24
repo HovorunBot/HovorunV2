@@ -5,14 +5,31 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
-from aiogram.types import Chat, ChatMemberAdministrator, ChatMemberMember, Message, User
+from aiogram.types import (
+    Chat,
+    ChatMemberAdministrator,
+    ChatMemberMember,
+    ChatMemberUpdated,
+    Message,
+    User,
+)
 from dishka import AsyncContainer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.domain.enums import ChatStatus, CommandName
+from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.enums import (
+    DEFAULT_COMMANDS,
+    PROVIDER_SPLIT_COMMANDS,
+    ChatStatus,
+    CommandName,
+)
 from hovorunv2.infrastructure.config import Settings
+from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 
 
@@ -29,6 +46,32 @@ def create_mock_message(chat_id: int, user_id: int, chat_type: ChatType = ChatTy
     # Ensure isinstance(message, Message) returns True
     message.__class__ = Message
     return message
+
+
+def create_mock_event(chat_id: int, status: str) -> MagicMock:
+    """Create mock ChatMemberUpdated event."""
+    event = MagicMock(spec=ChatMemberUpdated)
+    event.chat = MagicMock(spec=Chat)
+    event.chat.id = chat_id
+    event.new_chat_member = MagicMock()
+    event.new_chat_member.status = status
+    return event
+
+
+async def get_persisted_chat_and_commands(
+    session_maker: async_sessionmaker,
+    chat_id: int,
+) -> tuple[ChatStatus | None, set[str]]:
+    """Directly query real SQLite database without using internal application services."""
+    async with session_maker() as session:
+        stmt = select(ChatDB).where(ChatDB.chat_id == chat_id).options(selectinload(ChatDB.commands))
+        res = await session.execute(stmt)
+        chat = res.scalar_one_or_none()
+        if not chat:
+            return None, set()
+        status = ChatStatus(chat.status)
+        commands = {cmd.name for cmd in chat.commands}
+        return status, commands
 
 
 @pytest.mark.asyncio
@@ -290,3 +333,391 @@ async def test_command_service_is_capture_allowed(test_container: AsyncContainer
     await command_service.enable_command(chat_id, CommandName.TWITTER_VIDEO)
     assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is True
     assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is True
+
+
+# ==============================================================================
+# Legacy Characterization Tests (Block 001)
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_characterize_legacy_group_status_matrix(test_container: AsyncContainer) -> None:
+    """Characterize legacy permission evaluation across all group statuses in real SQLite.
+
+    Legacy Matrix:
+    - Stored statuses: APPROVED, PENDING, REJECTED, BANNED, INACTIVE, and UNAUTHORIZED (nonexistent).
+    - Requires approval (policy.requires_approval=True):
+      Only APPROVED grants access to regular users; all other statuses deny access.
+    - Exempt policy (policy.requires_approval=False):
+      Access is GRANTED to regular users across ALL statuses (including BANNED and REJECTED)!
+    - Global Admin bypass:
+      Global admin bypasses requires_approval across ALL statuses (including BANNED and REJECTED)!
+    """
+    session_maker = await test_container.get(async_sessionmaker)
+    access_service = await test_container.get(AccessService)
+    chat_status_service = await test_container.get(ChatStatusService)
+    settings = await test_container.get(Settings)
+
+    admin_id = settings.admin_ids[0]
+    regular_user_id = 9999
+
+    policy_requires_approval = CommandPolicy(requires_approval=True, is_toggleable=False)
+    policy_exempt = CommandPolicy(requires_approval=False, is_toggleable=False)
+
+    statuses_to_test = [
+        ChatStatus.APPROVED,
+        ChatStatus.PENDING,
+        ChatStatus.REJECTED,
+        ChatStatus.BANNED,
+        ChatStatus.INACTIVE,
+    ]
+
+    base_chat_id = 10000
+    for idx, status in enumerate(statuses_to_test):
+        chat_id = base_chat_id + idx
+        # Persist chat with target status
+        await chat_status_service.set_status(chat_id, status)
+
+        # 1. Assert real SQLite state directly
+        persisted_status, _ = await get_persisted_chat_and_commands(session_maker, chat_id)
+        assert persisted_status == status
+
+        # 2. Service-level status reporting
+        assert await chat_status_service.get_status(chat_id) == status
+        assert await chat_status_service.is_approved(chat_id) is (status == ChatStatus.APPROVED)
+
+        # 3. Regular user evaluation: requires_approval
+        is_allowed_regular = await access_service.is_allowed(regular_user_id, chat_id, policy_requires_approval)
+        assert is_allowed_regular is (status == ChatStatus.APPROVED)
+
+        # 4. Regular user evaluation: policy exempt from approval (legacy quirk: all allowed, even BANNED)
+        is_allowed_exempt = await access_service.is_allowed(regular_user_id, chat_id, policy_exempt)
+        assert is_allowed_exempt is True
+
+        # 5. Global admin evaluation: bypasses approval check across all statuses (legacy quirk)
+        is_allowed_admin = await access_service.is_allowed(admin_id, chat_id, policy_requires_approval)
+        assert is_allowed_admin is True
+
+    # Also characterize nonexistent/unrecorded chat
+    unrecorded_chat_id = 99999
+    persisted_status, _ = await get_persisted_chat_and_commands(session_maker, unrecorded_chat_id)
+    assert persisted_status is None
+    assert await chat_status_service.get_status(unrecorded_chat_id) == ChatStatus.UNAUTHORIZED
+    assert await chat_status_service.is_approved(unrecorded_chat_id) is False
+    assert await access_service.is_allowed(regular_user_id, unrecorded_chat_id, policy_requires_approval) is False
+    assert await access_service.is_allowed(regular_user_id, unrecorded_chat_id, policy_exempt) is True
+    assert await access_service.is_allowed(admin_id, unrecorded_chat_id, policy_requires_approval) is True
+
+
+@pytest.mark.asyncio
+async def test_characterize_legacy_empty_command_set_capture(test_container: AsyncContainer) -> None:
+    """Characterize legacy capture and command check behavior for an empty command set.
+
+    Legacy Behavior / Quirk:
+    - When no commands are associated with a chat in SQLite (`chat_commands` is empty):
+      - `command_service.get_allowed_commands(chat_id)` returns an empty set.
+      - `is_command_allowed` for media commands (e.g. TWITTER, TWITTER_VIDEO, TIKTOK) returns False.
+      - BUT `is_capture_allowed` returns True for ALL media providers and formats (both video and post)!
+      - `DEFAULT_COMMANDS` (DEBUG, ALLOW_CHAT, SETTINGS, HELP, START) return True for `is_command_allowed`
+        and cannot be disabled via `disable_command`.
+    """
+    session_maker = await test_container.get(async_sessionmaker)
+    command_service = await test_container.get(CommandService)
+    chat_status_service = await test_container.get(ChatStatusService)
+
+    chat_id = 20001
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+
+    # 1. Assert real SQLite state: chat exists, but has 0 associated commands
+    persisted_status, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
+    assert persisted_status == ChatStatus.APPROVED
+    assert persisted_commands == set()
+
+    # 2. Allowed commands set is empty
+    allowed = await command_service.get_allowed_commands(chat_id)
+    assert allowed == set()
+
+    # 3. Direct command queries return False for media providers and split commands
+    assert await command_service.is_command_allowed(chat_id, CommandName.TWITTER) is False
+    assert await command_service.is_command_allowed(chat_id, CommandName.TWITTER_VIDEO) is False
+    assert await command_service.is_command_allowed(chat_id, CommandName.TWITTER_POST) is False
+    assert await command_service.is_command_allowed(chat_id, CommandName.TIKTOK) is False
+    assert await command_service.is_command_allowed(chat_id, CommandName.TIKTOK_VIDEO) is False
+
+    # 4. OBSERVED QUIRK: Empty command set allows capture for ALL media providers and formats
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is True
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is True
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TIKTOK, is_video=True) is True
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TIKTOK, is_video=False) is True
+    assert await command_service.is_capture_allowed(chat_id, CommandName.YOUTUBE, is_video=True) is True
+
+    # 5. Default commands are always allowed and cannot be disabled
+    for default_cmd in DEFAULT_COMMANDS:
+        assert await command_service.is_command_allowed(chat_id, default_cmd) is True
+        # Attempting to disable returns False and leaves DB untouched
+        assert await command_service.disable_command(chat_id, default_cmd) is False
+
+    _, persisted_commands_after = await get_persisted_chat_and_commands(session_maker, chat_id)
+    assert persisted_commands_after == set()
+
+
+@pytest.mark.asyncio
+async def test_characterize_legacy_partially_enabled_command_set(test_container: AsyncContainer) -> None:
+    """Characterize parent provider checks and capture when command set is partially enabled.
+
+    Legacy Behavior:
+    - When at least one command is enabled (e.g. `twitter_post`):
+      - SQLite contains only `twitter_post`.
+      - `get_allowed_commands` returns `{"twitter_post", "twitter"}` (parent is synthesized).
+      - `is_command_allowed(TWITTER)` is True because one of its split sub-commands is active.
+      - `is_command_allowed(TWITTER_POST)` is True; `is_command_allowed(TWITTER_VIDEO)` is False.
+      - Effective capture: `is_capture_allowed(TWITTER, is_video=False)` is True; `is_video=True` is False.
+      - Side effect: Empty-set fallback no longer applies to ANY provider, so unconfigured providers
+        (e.g. TIKTOK, YOUTUBE) now return False for `is_capture_allowed`!
+    """
+    session_maker = await test_container.get(async_sessionmaker)
+    command_service = await test_container.get(CommandService)
+    chat_status_service = await test_container.get(ChatStatusService)
+
+    chat_id = 20002
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+
+    # Enable ONLY twitter_post
+    await command_service.enable_command(chat_id, CommandName.TWITTER_POST)
+
+    # 1. Assert real SQLite state: exactly 1 command record
+    _, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
+    assert persisted_commands == {str(CommandName.TWITTER_POST)}
+
+    # 2. Allowed commands includes parent provider
+    allowed = await command_service.get_allowed_commands(chat_id)
+    assert allowed == {str(CommandName.TWITTER_POST), str(CommandName.TWITTER)}
+
+    # 3. Command checks
+    assert await command_service.is_command_allowed(chat_id, CommandName.TWITTER) is True
+    assert await command_service.is_command_allowed(chat_id, CommandName.TWITTER_POST) is True
+    assert await command_service.is_command_allowed(chat_id, CommandName.TWITTER_VIDEO) is False
+
+    # 4. Effective capture checks for Twitter
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is True
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is False
+
+    # 5. Effective capture for other providers now DENIED because allowed commands is non-empty
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TIKTOK, is_video=True) is False
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TIKTOK, is_video=False) is False
+    assert await command_service.is_capture_allowed(chat_id, CommandName.YOUTUBE, is_video=True) is False
+
+
+@pytest.mark.asyncio
+async def test_characterize_legacy_parent_provider_bulk_and_toggle(test_container: AsyncContainer) -> None:
+    """Characterize parent provider bulk operations and toggle behavior in real SQLite."""
+    session_maker = await test_container.get(async_sessionmaker)
+    command_service = await test_container.get(CommandService)
+    chat_status_service = await test_container.get(ChatStatusService)
+
+    chat_id = 20003
+    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+
+    # 1. Enabling parent provider enables both split sub-commands
+    assert await command_service.enable_command(chat_id, CommandName.INSTAGRAM) is True
+    _, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
+    assert persisted_commands == {str(CommandName.INSTAGRAM_VIDEO), str(CommandName.INSTAGRAM_POST)}
+
+    assert await command_service.is_capture_allowed(chat_id, CommandName.INSTAGRAM, is_video=True) is True
+    assert await command_service.is_capture_allowed(chat_id, CommandName.INSTAGRAM, is_video=False) is True
+
+    # 2. Toggle when parent is active disables BOTH sub-commands
+    new_state = await command_service.toggle(chat_id, CommandName.INSTAGRAM)
+    assert new_state is False
+    _, persisted_after_toggle = await get_persisted_chat_and_commands(session_maker, chat_id)
+    assert persisted_after_toggle == set()
+
+    # 3. Toggle when parent is inactive enables BOTH sub-commands
+    new_state_on = await command_service.toggle(chat_id, CommandName.INSTAGRAM)
+    assert new_state_on is True
+    _, persisted_after_re_toggle = await get_persisted_chat_and_commands(session_maker, chat_id)
+    assert persisted_after_re_toggle == {str(CommandName.INSTAGRAM_VIDEO), str(CommandName.INSTAGRAM_POST)}
+
+
+@pytest.mark.asyncio
+async def test_characterize_legacy_default_activation(test_container: AsyncContainer) -> None:
+    """Characterize default activation via chat_status_service.approve in real SQLite.
+
+    When chat_status_service.approve is called:
+    - Chat status is set to APPROVED in SQLite.
+    - All 16 split media sub-commands (8 providers x 2) are inserted into `chat_commands` in SQLite.
+    - Regular users are granted access to all media commands.
+    """
+    session_maker = await test_container.get(async_sessionmaker)
+    chat_status_service = await test_container.get(ChatStatusService)
+    command_service = await test_container.get(CommandService)
+    access_service = await test_container.get(AccessService)
+
+    chat_id = 30001
+    await chat_status_service.approve(chat_id)
+
+    # 1. Assert SQLite state directly
+    persisted_status, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
+    assert persisted_status == ChatStatus.APPROVED
+
+    expected_commands = {str(sub_cmd) for sub_pair in PROVIDER_SPLIT_COMMANDS.values() for sub_cmd in sub_pair}
+    assert len(expected_commands) == 16  # 8 providers * 2
+    assert persisted_commands == expected_commands
+
+    # 2. Verify all parent providers and sub-commands are allowed
+    allowed = await command_service.get_allowed_commands(chat_id)
+    for provider in PROVIDER_SPLIT_COMMANDS:
+        assert str(provider) in allowed
+        assert await command_service.is_command_allowed(chat_id, provider) is True
+        assert await command_service.is_capture_allowed(chat_id, provider, is_video=True) is True
+        assert await command_service.is_capture_allowed(chat_id, provider, is_video=False) is True
+
+    # 3. Regular user is allowed by AccessService for approved commands
+    regular_user_id = 9999
+    policy = CommandPolicy(requires_approval=True, is_toggleable=True)
+    assert (
+        await access_service.is_allowed(regular_user_id, chat_id, policy, command_name=str(CommandName.YOUTUBE)) is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_characterize_legacy_removal_and_rejoin_lifecycle_bug(test_container: AsyncContainer) -> None:
+    """Characterize bot kick and rejoin lifecycle in real SQLite, labeling observed bugs.
+
+    Observed Behavior and Bugs:
+    - Approved chat:
+      - Kick: Sets status to INACTIVE in SQLite. Commands in `chat_commands` remain persisted!
+      - Rejoin: Status transitions from INACTIVE to UNAUTHORIZED in SQLite; prompt sent.
+    - Banned chat (OBSERVED BUG):
+      - Kick: Status is unconditionally overwritten to INACTIVE in SQLite! Banned status is lost!
+      - Rejoin: Since status is INACTIVE, it is overwritten to UNAUTHORIZED in SQLite, and prompt is sent!
+        A banned chat effectively escapes the ban simply by kicking and re-inviting the bot!
+    - Rejected chat (OBSERVED BUG):
+      - Same lifecycle: REJECTED is overwritten to INACTIVE on kick, then UNAUTHORIZED on rejoin.
+    """
+    session_maker = await test_container.get(async_sessionmaker)
+    chat_status_service = await test_container.get(ChatStatusService)
+    bot_join_handler = await test_container.get(BotJoinHandler)
+
+    bot = MagicMock(spec=Bot)
+    bot.send_message = AsyncMock()
+    bot.leave_chat = AsyncMock()
+
+    # --- Scenario A: Approved chat kicked and rejoined ---
+    approved_chat_id = 30002
+    await chat_status_service.approve(approved_chat_id)
+    _, initial_commands = await get_persisted_chat_and_commands(session_maker, approved_chat_id)
+    assert len(initial_commands) == 16
+
+    # 1. Bot kicked from approved chat
+    kick_event = create_mock_event(approved_chat_id, "kicked")
+    await bot_join_handler.handle_my_chat_member_update(kick_event, bot)
+
+    persisted_status, commands_after_kick = await get_persisted_chat_and_commands(session_maker, approved_chat_id)
+    assert persisted_status == ChatStatus.INACTIVE
+    # Commands remain in DB even though chat is INACTIVE
+    assert commands_after_kick == initial_commands
+
+    # 2. Bot rejoins previously approved chat
+    rejoin_event = create_mock_event(approved_chat_id, "member")
+    await bot_join_handler.handle_my_chat_member_update(rejoin_event, bot)
+
+    persisted_status_rejoin, commands_after_rejoin = await get_persisted_chat_and_commands(
+        session_maker, approved_chat_id
+    )
+    assert persisted_status_rejoin == ChatStatus.UNAUTHORIZED
+    assert commands_after_rejoin == initial_commands
+    bot.send_message.assert_called()
+
+    # --- Scenario B: Banned chat kicked and rejoined (OBSERVED BUG) ---
+    banned_chat_id = 30003
+    await chat_status_service.set_status(banned_chat_id, ChatStatus.BANNED)
+    persisted_status, _ = await get_persisted_chat_and_commands(session_maker, banned_chat_id)
+    assert persisted_status == ChatStatus.BANNED
+
+    # 1. Bot kicked from banned chat
+    kick_banned = create_mock_event(banned_chat_id, "kicked")
+    await bot_join_handler.handle_my_chat_member_update(kick_banned, bot)
+
+    # OBSERVED BUG: BANNED status is overwritten by INACTIVE!
+    persisted_after_kick, _ = await get_persisted_chat_and_commands(session_maker, banned_chat_id)
+    assert persisted_after_kick == ChatStatus.INACTIVE, "Bug: kick overwrote BANNED with INACTIVE"
+
+    # 2. Bot rejoins previously banned chat
+    rejoin_banned = create_mock_event(banned_chat_id, "member")
+    bot.send_message.reset_mock()
+    await bot_join_handler.handle_my_chat_member_update(rejoin_banned, bot)
+
+    # OBSERVED BUG: Rejoin transitions INACTIVE to UNAUTHORIZED, clearing the ban!
+    persisted_after_rejoin, _ = await get_persisted_chat_and_commands(session_maker, banned_chat_id)
+    assert persisted_after_rejoin == ChatStatus.UNAUTHORIZED, "Bug: rejoin cleared ban to UNAUTHORIZED"
+    bot.send_message.assert_called()
+
+    # --- Scenario C: Rejected chat kicked and rejoined (OBSERVED BUG) ---
+    rejected_chat_id = 30004
+    await chat_status_service.set_status(rejected_chat_id, ChatStatus.REJECTED)
+
+    # Kick overwrites REJECTED with INACTIVE
+    await bot_join_handler.handle_my_chat_member_update(create_mock_event(rejected_chat_id, "kicked"), bot)
+    persisted_rejected_kick, _ = await get_persisted_chat_and_commands(session_maker, rejected_chat_id)
+    assert persisted_rejected_kick == ChatStatus.INACTIVE
+
+    # Rejoin overwrites INACTIVE with UNAUTHORIZED
+    await bot_join_handler.handle_my_chat_member_update(create_mock_event(rejected_chat_id, "member"), bot)
+    persisted_rejected_rejoin, _ = await get_persisted_chat_and_commands(session_maker, rejected_chat_id)
+    assert persisted_rejected_rejoin == ChatStatus.UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_characterize_legacy_banned_and_rejected_chat_direct_member_event(
+    test_container: AsyncContainer,
+) -> None:
+    """Characterize direct member event (without prior kick) for BANNED, REJECTED, and APPROVED chats.
+
+    When status is already BANNED or REJECTED and a member update arrives:
+    - Bot immediately leaves chat (`bot.leave_chat(chat_id)`).
+    - Status in SQLite remains BANNED or REJECTED.
+    When status is already APPROVED:
+    - Bot stays in chat without modifying status or sending prompt.
+    """
+    session_maker = await test_container.get(async_sessionmaker)
+    chat_status_service = await test_container.get(ChatStatusService)
+    bot_join_handler = await test_container.get(BotJoinHandler)
+
+    bot = MagicMock(spec=Bot)
+    bot.leave_chat = AsyncMock()
+    bot.send_message = AsyncMock()
+
+    # 1. BANNED chat direct update
+    banned_chat_id = 30005
+    await chat_status_service.set_status(banned_chat_id, ChatStatus.BANNED)
+    event_banned = create_mock_event(banned_chat_id, "member")
+    await bot_join_handler.handle_my_chat_member_update(event_banned, bot)
+
+    bot.leave_chat.assert_called_with(banned_chat_id)
+    persisted_banned, _ = await get_persisted_chat_and_commands(session_maker, banned_chat_id)
+    assert persisted_banned == ChatStatus.BANNED
+
+    # 2. REJECTED chat direct update
+    bot.leave_chat.reset_mock()
+    rejected_chat_id = 30006
+    await chat_status_service.set_status(rejected_chat_id, ChatStatus.REJECTED)
+    event_rejected = create_mock_event(rejected_chat_id, "member")
+    await bot_join_handler.handle_my_chat_member_update(event_rejected, bot)
+
+    bot.leave_chat.assert_called_with(rejected_chat_id)
+    persisted_rejected, _ = await get_persisted_chat_and_commands(session_maker, rejected_chat_id)
+    assert persisted_rejected == ChatStatus.REJECTED
+
+    # 3. APPROVED chat direct update
+    bot.leave_chat.reset_mock()
+    bot.send_message.reset_mock()
+    approved_chat_id = 30007
+    await chat_status_service.set_status(approved_chat_id, ChatStatus.APPROVED)
+    event_approved = create_mock_event(approved_chat_id, "member")
+    await bot_join_handler.handle_my_chat_member_update(event_approved, bot)
+
+    bot.leave_chat.assert_not_called()
+    bot.send_message.assert_not_called()
+    persisted_approved, _ = await get_persisted_chat_and_commands(session_maker, approved_chat_id)
+    assert persisted_approved == ChatStatus.APPROVED
