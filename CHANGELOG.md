@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **identity**: persist lifecycle-aware users
 - **audit**: audit durable mutations in one transaction
 - **command**: collapse legacy parent provider toggles via alembic migration
 - **notification**: extract OwnerNotifier to unify owner broadcasting

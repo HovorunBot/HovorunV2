@@ -28,6 +28,7 @@ from hovorunv2.application.ports import (
     SystemStore,
     TaskQueuePort,
     UnauthorizedPromptSender,
+    UserStore,
 )
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
@@ -52,6 +53,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyChatStore,
     SQLAlchemyCommandStore,
     SQLAlchemySystemStore,
+    SQLAlchemyUserStore,
 )
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
@@ -131,11 +133,13 @@ class AppProvider(Provider):
     chat_store_impl = provide(SQLAlchemyChatStore)
     command_store_impl = provide(SQLAlchemyCommandStore)
     system_store_impl = provide(SQLAlchemySystemStore)
+    user_store_impl = provide(SQLAlchemyUserStore)
     audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
 
     chat_store = alias(source=SQLAlchemyChatStore, provides=ChatStore)
     command_store = alias(source=SQLAlchemyCommandStore, provides=CommandStore)
     system_store = alias(source=SQLAlchemySystemStore, provides=SystemStore)
+    user_store = alias(source=SQLAlchemyUserStore, provides=UserStore)
     audited_transaction = alias(source=SQLAlchemyAuditedTransaction, provides=AuditedUnitOfWork)
 
     prompt_sender_impl = provide(TelegramUnauthorizedPromptSender)

@@ -5,6 +5,7 @@ from hovorunv2.domain.base import Base
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.system import SystemStateDB
+from hovorunv2.domain.user import UserDB
 
 __all__ = [
     "ActorContext",
@@ -13,5 +14,6 @@ __all__ = [
     "ChatDB",
     "CommandDB",
     "SystemStateDB",
+    "UserDB",
     "sanitize_audit_changes",
 ]

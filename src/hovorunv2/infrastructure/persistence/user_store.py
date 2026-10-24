@@ -1,0 +1,160 @@
+"""Persistence adapter for lifecycle-aware user identity operations."""
+
+from datetime import UTC, datetime
+from functools import partial
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from hovorunv2.application.ports import AuditedUnitOfWork, UserStore
+from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
+
+
+class SQLAlchemyUserStore(UserStore):
+    """SQLAlchemy persistence store for user identity with lifecycle and audit handling."""
+
+    def __init__(
+        self,
+        session_maker: async_sessionmaker,
+        audited_uow: AuditedUnitOfWork,
+    ) -> None:
+        """Initialize with session maker and audited unit of work."""
+        self._session_maker = session_maker
+        self._audited_uow = audited_uow
+
+    async def get_by_id(self, user_id: int) -> UserDB | None:
+        """Fetch active user by internal entity ID."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemyUserRepository(session)
+            return await repo.get_by_id(user_id)
+
+    async def get_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> UserDB | None:
+        """Fetch active user by platform and numeric Telegram ID."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemyUserRepository(session)
+            return await repo.get_by_telegram_id(telegram_id, platform)
+
+    async def get_historical_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> list[UserDB]:
+        """Fetch all generations of user identity for explicit recovery workflows."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemyUserRepository(session)
+            return await repo.get_historical_by_telegram_id(telegram_id, platform)
+
+    async def _execute_ingest(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        platform: str,
+    ) -> tuple[UserDB | None, bool]:
+        """Execute user ingestion on session."""
+        repo = SQLAlchemyUserRepository(session)
+        return await repo.ingest(telegram_id, platform)
+
+    async def _execute_soft_delete(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        actor_id: int | None,
+        reason: str,
+        platform: str,
+        deleted_at: datetime,
+    ) -> bool:
+        """Execute user soft-deletion on session."""
+        repo = SQLAlchemyUserRepository(session)
+        return await repo.soft_delete(
+            telegram_id,
+            actor_id,
+            reason,
+            platform,
+            deleted_at,
+        )
+
+    async def _execute_set_trust(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        platform: str,
+        *,
+        is_trusted: bool,
+    ) -> tuple[bool, bool]:
+        """Execute user trust update on session."""
+        repo = SQLAlchemyUserRepository(session)
+        return await repo.set_trust(telegram_id, is_trusted=is_trusted, platform=platform)
+
+    async def ingest_user(
+        self, telegram_id: int, platform: str = "telegram", actor: ActorContext | None = None
+    ) -> UserDB | None:
+        """Ingest user from incoming evidence without resurrecting deleted identities."""
+        existing_active = await self.get_by_telegram_id(telegram_id, platform)
+        if existing_active:
+            return existing_active
+
+        async with self._session_maker() as session:
+            repo = SQLAlchemyUserRepository(session)
+            tombstone = await repo.get_deleted_by_telegram_id(telegram_id, platform)
+            if tombstone:
+                return None
+
+        operation = partial(
+            self._execute_ingest,
+            telegram_id=telegram_id,
+            platform=platform,
+        )
+
+        res: tuple[UserDB | None, bool] = await self._audited_uow.execute(
+            actor=actor or ActorContext.system("user_ingestion"),
+            target_type="user",
+            target_id=telegram_id,
+            action="create",
+            operation=operation,
+            changed_fields={"telegram_id": telegram_id, "platform": platform, "generation": 1},
+            audit_if=lambda r: r[1],
+        )
+        return res[0]
+
+    async def soft_delete_user(
+        self, telegram_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
+    ) -> bool:
+        """Soft-delete an active user identity recording actor and deletion reason."""
+        now = datetime.now(UTC)
+        operation = partial(
+            self._execute_soft_delete,
+            telegram_id=telegram_id,
+            actor_id=actor.actor_id,
+            reason=reason,
+            platform=platform,
+            deleted_at=now,
+        )
+
+        return await self._audited_uow.execute(
+            actor=actor,
+            target_type="user",
+            target_id=telegram_id,
+            action="delete",
+            operation=operation,
+            changed_fields={"deleted_at": now.isoformat(), "reason": reason},
+            audit_if=bool,
+        )
+
+    async def set_trust(
+        self, telegram_id: int, *, is_trusted: bool, actor: ActorContext | None = None, platform: str = "telegram"
+    ) -> bool:
+        """Update trust flag for an active user identity."""
+        operation = partial(
+            self._execute_set_trust,
+            telegram_id=telegram_id,
+            platform=platform,
+            is_trusted=is_trusted,
+        )
+
+        res: tuple[bool, bool] = await self._audited_uow.execute(
+            actor=actor or ActorContext.system("set_trust"),
+            target_type="user",
+            target_id=telegram_id,
+            action="set_trust",
+            operation=operation,
+            changed_fields={"is_trusted": is_trusted},
+            audit_if=lambda r: r[1],
+        )
+        return res[0]

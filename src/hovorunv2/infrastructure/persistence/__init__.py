@@ -6,10 +6,12 @@ from hovorunv2.infrastructure.persistence.audited_transaction import (
 from hovorunv2.infrastructure.persistence.chat_store import SQLAlchemyChatStore
 from hovorunv2.infrastructure.persistence.command_store import SQLAlchemyCommandStore
 from hovorunv2.infrastructure.persistence.system_store import SQLAlchemySystemStore
+from hovorunv2.infrastructure.persistence.user_store import SQLAlchemyUserStore
 
 __all__ = [
     "SQLAlchemyAuditedTransaction",
     "SQLAlchemyChatStore",
     "SQLAlchemyCommandStore",
     "SQLAlchemySystemStore",
+    "SQLAlchemyUserStore",
 ]

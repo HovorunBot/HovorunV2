@@ -8,6 +8,7 @@ from aiogram import Bot
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus
+from hovorunv2.domain.user import UserDB
 
 
 class CachePort(Protocol):
@@ -132,6 +133,44 @@ class AppSettings(Protocol):
     @property
     def contact_email(self) -> str:
         """Contact email address."""
+        ...
+
+
+class UserStore(Protocol):
+    """Protocol for user identity persistence operations."""
+
+    async def get_by_id(self, user_id: int) -> UserDB | None:
+        """Fetch active user by internal entity ID."""
+        ...
+
+    async def get_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> UserDB | None:
+        """Fetch active user by platform and numeric Telegram ID."""
+        ...
+
+    async def ingest_user(
+        self, telegram_id: int, platform: str = "telegram", actor: ActorContext | None = None
+    ) -> UserDB | None:
+        """Ingest user from incoming evidence.
+
+        Returns active UserDB if exists or newly created.
+        Returns None if user was previously soft-deleted (tombstone-aware; does not resurrect).
+        """
+        ...
+
+    async def soft_delete_user(
+        self, telegram_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
+    ) -> bool:
+        """Soft-delete an active user identity recording actor and reason."""
+        ...
+
+    async def set_trust(
+        self, telegram_id: int, *, is_trusted: bool, actor: ActorContext | None = None, platform: str = "telegram"
+    ) -> bool:
+        """Update trust flag for an active user."""
+        ...
+
+    async def get_historical_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> list[UserDB]:
+        """Fetch all generations of user identity for explicit recovery workflows."""
         ...
 
 
