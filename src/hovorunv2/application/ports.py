@@ -1,10 +1,11 @@
 """Application ports (Protocols) defining boundaries for external adapters."""
 
-from collections.abc import Callable, Mapping
-from typing import Any, Protocol
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any, Protocol, runtime_checkable
 
 from aiogram import Bot
 
+from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus
 
@@ -141,21 +142,32 @@ class ChatStore(Protocol):
         """Fetch chat from database."""
         ...
 
-    async def get_or_create_chat(self, chat_id: int, platform: str = "telegram") -> ChatDB:
+    async def get_or_create_chat(
+        self, chat_id: int, platform: str = "telegram", actor: ActorContext | None = None
+    ) -> ChatDB:
         """Fetch chat from database or create it if not exists."""
         ...
 
-    async def update_status(self, chat_id: int, status: ChatStatus, platform: str = "telegram") -> None:
+    async def update_status(
+        self, chat_id: int, status: ChatStatus, platform: str = "telegram", actor: ActorContext | None = None
+    ) -> None:
         """Update lifecycle status for a chat."""
         ...
 
     async def update_translation_settings(
-        self, chat_id: int, target_lang: str, ignored_langs: list[str], platform: str = "telegram"
+        self,
+        chat_id: int,
+        target_lang: str,
+        ignored_langs: list[str],
+        platform: str = "telegram",
+        actor: ActorContext | None = None,
     ) -> None:
         """Update translation settings for a chat."""
         ...
 
-    async def set_encryption_salt(self, chat_id: int, salt: str, platform: str = "telegram") -> None:
+    async def set_encryption_salt(
+        self, chat_id: int, salt: str, platform: str = "telegram", actor: ActorContext | None = None
+    ) -> None:
         """Set encryption salt for a chat."""
         ...
 
@@ -171,11 +183,15 @@ class CommandStore(Protocol):
         """Fetch allowed commands for a chat."""
         ...
 
-    async def enable_command(self, chat_id: int, command_name: str, platform: str = "telegram") -> bool:
+    async def enable_command(
+        self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None
+    ) -> bool:
         """Enable specific command for a chat."""
         ...
 
-    async def disable_command(self, chat_id: int, command_name: str, platform: str = "telegram") -> bool:
+    async def disable_command(
+        self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None
+    ) -> bool:
         """Disable specific command for a chat."""
         ...
 
@@ -187,7 +203,7 @@ class SystemStore(Protocol):
         """Fetch last notified version from database."""
         ...
 
-    async def set_last_notified_version(self, version: str) -> None:
+    async def set_last_notified_version(self, version: str, actor: ActorContext | None = None) -> None:
         """Update last notified version in database."""
         ...
 
@@ -195,7 +211,7 @@ class SystemStore(Protocol):
         """Fetch arbitrary value from system storage."""
         ...
 
-    async def set_value(self, key: str, value: str) -> None:
+    async def set_value(self, key: str, value: str, actor: ActorContext | None = None) -> None:
         """Store arbitrary value in system storage."""
         ...
 
@@ -205,4 +221,22 @@ class UnauthorizedPromptSender(Protocol):
 
     async def send(self, bot: Bot, chat_id: int) -> bool:
         """Send prompt to chat. Returns True if sent, False otherwise."""
+        ...
+
+
+@runtime_checkable
+class AuditedUnitOfWork(Protocol):
+    """Protocol for transactional execution with atomic audit logging."""
+
+    async def execute(
+        self,
+        actor: ActorContext,
+        target_type: str,
+        target_id: str | int,
+        action: str,
+        operation: Callable[[Any], Awaitable[Any]],
+        changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None = None,
+        audit_if: Callable[[Any], bool] | None = None,
+    ) -> Any:
+        """Execute a business operation and append an audit event atomically."""
         ...

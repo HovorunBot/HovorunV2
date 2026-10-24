@@ -20,6 +20,7 @@ from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.ports import (
     AppSettings,
+    AuditedUnitOfWork,
     BrowserPort,
     CachePort,
     ChatStore,
@@ -47,6 +48,7 @@ from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.persistence import (
+    SQLAlchemyAuditedTransaction,
     SQLAlchemyChatStore,
     SQLAlchemyCommandStore,
     SQLAlchemySystemStore,
@@ -129,10 +131,12 @@ class AppProvider(Provider):
     chat_store_impl = provide(SQLAlchemyChatStore)
     command_store_impl = provide(SQLAlchemyCommandStore)
     system_store_impl = provide(SQLAlchemySystemStore)
+    audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
 
     chat_store = alias(source=SQLAlchemyChatStore, provides=ChatStore)
     command_store = alias(source=SQLAlchemyCommandStore, provides=CommandStore)
     system_store = alias(source=SQLAlchemySystemStore, provides=SystemStore)
+    audited_transaction = alias(source=SQLAlchemyAuditedTransaction, provides=AuditedUnitOfWork)
 
     prompt_sender_impl = provide(TelegramUnauthorizedPromptSender)
     prompt_sender = alias(source=TelegramUnauthorizedPromptSender, provides=UnauthorizedPromptSender)

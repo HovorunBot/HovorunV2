@@ -10,6 +10,15 @@ class Platform(StrEnum):
     TELEGRAM = "telegram"
 
 
+class ActorOrigin(StrEnum):
+    """Origin of the actor initiating an action."""
+
+    TELEGRAM = "telegram"
+    CLI = "cli"
+    SYSTEM = "system"
+    MIGRATION = "migration"
+
+
 class CommandName(StrEnum):
     """Names of all bot commands."""
 

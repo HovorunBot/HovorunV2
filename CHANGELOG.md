@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **audit**: audit durable mutations in one transaction
 - **command**: collapse legacy parent provider toggles via alembic migration
 - **notification**: extract OwnerNotifier to unify owner broadcasting
 - **command**: add is_capture_allowed helper to CommandService

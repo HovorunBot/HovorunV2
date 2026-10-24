@@ -11,6 +11,7 @@ from alembic import context
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from hovorunv2.domain.audit import AuditEventDB
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB

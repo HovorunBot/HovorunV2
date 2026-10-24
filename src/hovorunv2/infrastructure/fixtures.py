@@ -1,11 +1,16 @@
 """Database fixtures for initial setup."""
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from functools import partial
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from hovorunv2.application.ports import AuditedUnitOfWork
+from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
 
 logger = get_logger(__name__)
 
@@ -27,13 +32,38 @@ INITIAL_COMMANDS: list[dict[str, str]] = [
 ]
 
 
-async def setup_fixtures(session_maker: async_sessionmaker) -> None:
-    """Populate database with initial commands if they don't exist."""
+async def seed_command_fixtures(
+    session: AsyncSession,
+    missing_commands: list[dict[str, str]],
+) -> None:
+    """Add missing command fixtures to session."""
+    for cmd_data in missing_commands:
+        logger.info("Adding command fixture: %s", cmd_data["name"])
+        session.add(CommandDB(**cmd_data))
+
+
+async def setup_fixtures(
+    session_maker: async_sessionmaker,
+    audited_uow: AuditedUnitOfWork | None = None,
+) -> None:
+    """Populate database with initial commands if they don't exist, auditing the operation."""
     async with session_maker() as session:
-        for cmd_data in INITIAL_COMMANDS:
-            stmt = select(CommandDB).where(CommandDB.name == cmd_data["name"])
-            result = await session.execute(stmt)
-            if not result.scalar_one_or_none():
-                logger.info("Adding command fixture: %s", cmd_data["name"])
-                session.add(CommandDB(**cmd_data))
-        await session.commit()
+        stmt = select(CommandDB.name)
+        result = await session.execute(stmt)
+        existing_names = set(result.scalars().all())
+
+    missing = [cmd_data for cmd_data in INITIAL_COMMANDS if cmd_data["name"] not in existing_names]
+    if not missing:
+        return
+
+    uow = audited_uow or SQLAlchemyAuditedTransaction(session_maker)
+    operation = partial(seed_command_fixtures, missing_commands=missing)
+
+    await uow.execute(
+        actor=ActorContext.system(reason="fixture_seed"),
+        target_type="command_fixture",
+        target_id="initial_commands",
+        action="seed",
+        operation=operation,
+        changed_fields={"added_commands": [cmd["name"] for cmd in missing]},
+    )

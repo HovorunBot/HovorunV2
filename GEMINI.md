@@ -64,12 +64,14 @@ Explicit user instructions take precedence. Distinguish mandatory business rules
   - `handlers/base.py`: `BaseCommand(ABC)` base class with `POLICY: ClassVar[CommandPolicy]` and default `register_callbacks`. Generalized `RichMediaCommand` connects media clients to `MediaPipeline` and delivers via `TelegramMediaDelivery`.
 - **Bootstrap (`src/hovorunv2/bootstrap/`):**
   - `container.py`: Centralized Dishka DI container (composition root). All injected service dependencies are mandatory (NEVER `None`; NEVER write `if self.dependency:` guards).
+  - **DI Typing Consistency:** Consumer parameter type hints MUST match provider definitions exactly (e.g. bare `async_sessionmaker` instead of generic `async_sessionmaker[AsyncSession]`). Type hint discrepancies force Dishka into adaptix fallback generic matching, which triggers noisy Python 3.15 `ForwardRef._evaluate` deprecation warnings during testing.
 
 ## Code Conventions
 
 - **Typing:** Strict hints required (`uv run ty check src`). Rely on Python 3.15+ deferred evaluation (PEP 649); NEVER use stringified forward refs, `# ty:ignore`, or `Any` casts to silence errors (`Any` allowed only on test mock factories).
 - **Linter:** Strict Ruff (`ALL` ruleset, `uv run ruff check .`).
 - **Naming & Methods:** Follow PEP 8 `snake_case` (`UpperCamelCase` allowed for `Enum` members). NEVER use `@staticmethod`, even when `self` is unused.
+- **Nested Functions & Visibility:** Avoid nested/inner functions. Nested functions must be used exclusively when it is the sole and cleanest way (e.g., inline multi-line callback for filter functions). If logic represents a real operation or can be useful beyond a single inline expression, declare it as a private/protected method (`_method_name`) on the class or module level and pass via `functools.partial`.
 - **Constants & Enums:** No magic numbers (extract to constants/enums; `# noqa: PLR2004` only if structural). Reference bot commands via `CommandName` and chat lifecycle states via `ChatStatus` (`StrEnum`s in `application/data/constants.py`), and HTTP statuses via `http.HTTPStatus`.
 - **Exceptions:** Raise semantic built-in/custom exceptions (`ValueError`, `AttributeError`, `TypeError`). NEVER raise generic `RuntimeError`.
 - **Imports:** Top-level imports only. Local imports inside functions are FORBIDDEN unless breaking circular dependencies.
@@ -80,6 +82,7 @@ Explicit user instructions take precedence. Distinguish mandatory business rules
 
 - **Real Infrastructure:** Test against real services, in-memory SQLite, and local Valkey. NEVER use `unittest.mock` for internal services, repositories, or persistence—verify DB/Valkey state directly.
 - **Network Mocking:** Mock external HTTP APIs only (e.g., `api.vxtwitter.com`, `tikwm.com`) using `aioresponses`.
+- **Zero Warnings Policy:** Test suite runs must remain clean of deprecation, resource, and framework warnings. Investigate and eliminate root causes immediately.
 
 ## Commit Messages & Versioning
 
