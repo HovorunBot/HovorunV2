@@ -8,6 +8,7 @@
 
 ### Fix
 
+- **encryption**: require configuration and prevent plaintext caching
 - **telegram**: use DeliveryError.TOO_LARGE in optimistic URL failure
 - **routing**: replace substring matching with strict aiogram Command filters
 - **access**: restrict chat approval/rejection callbacks to bot owner

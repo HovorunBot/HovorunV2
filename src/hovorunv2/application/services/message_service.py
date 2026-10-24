@@ -38,17 +38,19 @@ class MessageService:
         logger.debug("Caching message %d from user %s in chat %d", message_id, user_id, chat_id)
 
         try:
+            fernet = await self._get_fernet_for_chat(chat_id)
+            if not fernet:
+                logger.error("Skipping message %d caching for chat %d: encryption key unavailable", message_id, chat_id)
+                return
+
             # Use model_dump(mode="json") to handle non-serializable types
             data_dict = message.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
             json_data = json.dumps(data_dict)
-
-            # Encrypt if possible
-            fernet = await self._get_fernet_for_chat(chat_id)
-            payload = encrypt_payload(json_data, fernet) if fernet else json_data
+            payload = encrypt_payload(json_data, fernet)
 
             await self.cache.set(key, payload, expire=self.ttl)
         except Exception:
-            logger.exception("Failed to cache message %d", message_id)
+            logger.exception("Failed to cache message %d for chat %d", message_id, chat_id)
 
     async def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
         """Retrieve and decrypt a cached message by chat ID and message ID."""
@@ -58,14 +60,17 @@ class MessageService:
             return None
 
         try:
-            # Decrypt
             fernet = await self._get_fernet_for_chat(chat_id)
-            if fernet:
-                decrypted_data = decrypt_payload(data, fernet)
-                return types.Message.model_validate_json(decrypted_data)
+            if not fernet:
+                logger.error(
+                    "Cannot retrieve message %d for chat %d: encryption key unavailable",
+                    message_id,
+                    chat_id,
+                )
+                return None
 
-            # If encryption disabled, return as plain JSON
-            return types.Message.model_validate_json(data)
+            decrypted_data = decrypt_payload(data, fernet)
+            return types.Message.model_validate_json(decrypted_data)
         except Exception:
             logger.warning("Failed to decrypt or deserialize message %d for chat %d", message_id, chat_id)
             return None
@@ -75,8 +80,8 @@ class MessageService:
         if not self.settings.cache_encryption_key:
             return None
 
-        if chat_id in self._fernet_cache:
-            return self._fernet_cache[chat_id]
+        if (cached_fernet := self._fernet_cache.get(chat_id)) is not None:
+            return cached_fernet
 
         try:
             chat = await self.chat_service.get_or_create_chat(chat_id)

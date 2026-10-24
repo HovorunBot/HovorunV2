@@ -6,6 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiogram import types
 
+from hovorunv2.application.crypto import (
+    decrypt_payload,
+    encrypt_payload,
+    get_fernet_for_chat,
+    verify_encryption_key,
+)
 from hovorunv2.application.services.message_service import MessageService
 
 
@@ -172,3 +178,136 @@ async def test_fernet_derivation_cached_per_chat(
         assert f1 is f2
         assert f2 is f3
         assert mock_kdf.call_count == 1
+
+
+# ==============================================================================
+# Startup Encryption Validation & Compatibility Tests (Block 003)
+# ==============================================================================
+
+
+def test_verify_encryption_key_rejects_missing_or_blank() -> None:
+    """Validate that absent or blank master keys fail with ValueError."""
+    with pytest.raises(ValueError, match="Master encryption key is missing or blank"):
+        verify_encryption_key(None)
+
+    with pytest.raises(ValueError, match="Master encryption key is missing or blank"):
+        verify_encryption_key("")
+
+    with pytest.raises(ValueError, match="Master encryption key is missing or blank"):
+        verify_encryption_key("   \t\n  ")
+
+
+def test_verify_encryption_key_accepts_usable_passphrase() -> None:
+    """Validate that any non-blank passphrase passes the derivation self-check."""
+    # Standard passphrase, does not need to be a raw 32-byte Fernet key
+    verify_encryption_key("hovorun_super_secret_production_passphrase_2026")
+    verify_encryption_key("short_simple_passphrase")
+
+
+def test_verify_encryption_key_does_not_leak_key_value() -> None:
+    """Validate that exceptions and logs never expose the secret passphrase."""
+    secret_passphrase = "TOP_SECRET_SUPER_SENSITIVE_PASSPHRASE_NEVER_LOG_THIS"  # noqa: S105
+
+    # Simulate derivation failure by patching PBKDF2HMAC to raise
+    with patch("hovorunv2.application.crypto.PBKDF2HMAC.derive", side_effect=RuntimeError("KDF error")):
+        with pytest.raises(ValueError, match="Master encryption key is invalid or unusable") as exc_info:
+            verify_encryption_key(secret_passphrase)
+
+        assert secret_passphrase not in str(exc_info.value)
+
+
+def test_existing_passphrase_format_decrypts_synthetic_salt_fixture() -> None:
+    """Verify an existing PBKDF2 passphrase decrypts a fixture encrypted with a fixed synthetic salt."""
+    passphrase = "my_legacy_bot_passphrase"  # noqa: S105
+    fixed_synthetic_salt_hex = "0123456789abcdef" * 2
+    plain_text = "test_compatibility_payload_with_synthetic_salt"
+
+    # Encrypt with existing PBKDF2 derivation
+    fernet = get_fernet_for_chat(passphrase, fixed_synthetic_salt_hex)
+    ciphertext = encrypt_payload(plain_text, fernet)
+
+    # Prove independent derivation with same passphrase and salt decrypts ciphertext
+    decryption_fernet = get_fernet_for_chat(passphrase, fixed_synthetic_salt_hex)
+    decrypted = decrypt_payload(ciphertext, decryption_fernet)
+
+    assert decrypted == plain_text
+
+
+# ==============================================================================
+# Removal of Plaintext Cache Fallbacks (Block 004)
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_cache_message_skips_when_encryption_key_unavailable(
+    mock_cache_service: MagicMock,
+    mock_chat_service: MagicMock,
+) -> None:
+    """Verify caching is skipped entirely when encryption key is not configured."""
+    settings = MagicMock()
+    settings.cache_encryption_key = None
+    service = MessageService(mock_cache_service, mock_chat_service, settings)
+
+    message = MagicMock(spec=types.Message)
+    message.chat = MagicMock(id=12345)
+    message.message_id = 67890
+    message.model_dump.return_value = {"text": "sensitive message"}
+
+    await service.cache_message(message)
+
+    # Cache write must be skipped; never store plaintext
+    mock_cache_service.set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_message_returns_none_when_encryption_key_unavailable(
+    mock_cache_service: MagicMock,
+    mock_chat_service: MagicMock,
+) -> None:
+    """Verify retrieval returns None when encryption key is not configured."""
+    settings = MagicMock()
+    settings.cache_encryption_key = None
+    service = MessageService(mock_cache_service, mock_chat_service, settings)
+
+    mock_cache_service.get.return_value = "some_encrypted_or_plain_data"
+
+    retrieved = await service.get_message(12345, 67890)
+    assert retrieved is None
+
+
+@pytest.mark.asyncio
+async def test_get_message_returns_none_for_corrupted_ciphertext(
+    mock_cache_service: MagicMock,
+    mock_chat_service: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """Verify corrupt ciphertext is treated as unreadable and returns None without crash."""
+    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
+    chat = MagicMock(encryption_salt="0123456789abcdef" * 2)
+    mock_chat_service.get_or_create_chat.return_value = chat
+
+    mock_cache_service.get.return_value = "gAAAAABcorrupt_not_valid_fernet_data_here"
+
+    retrieved = await service.get_message(123, 456)
+    assert retrieved is None
+
+
+@pytest.mark.asyncio
+async def test_cache_message_failure_does_not_crash(
+    mock_cache_service: MagicMock,
+    mock_chat_service: MagicMock,
+    mock_settings: MagicMock,
+) -> None:
+    """Verify cache write errors (e.g. Valkey failure) are safely caught and logged without crashing."""
+    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
+    chat = MagicMock(encryption_salt="0123456789abcdef" * 2)
+    mock_chat_service.get_or_create_chat.return_value = chat
+    mock_cache_service.set.side_effect = ConnectionError("Valkey connection refused")
+
+    message = MagicMock(spec=types.Message)
+    message.chat = MagicMock(id=123)
+    message.message_id = 456
+    message.model_dump.return_value = {"text": "hello"}
+
+    # Should not raise exception
+    await service.cache_message(message)

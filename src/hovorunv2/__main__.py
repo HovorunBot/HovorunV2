@@ -9,6 +9,7 @@ from dishka import make_async_container
 from dishka.integrations.aiogram import setup_dishka
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.crypto import verify_encryption_key
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.message_service import MessageService
@@ -25,6 +26,15 @@ from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import LogContextMiddleware
 
 logger = get_logger(__name__)
+
+
+def _setup_signal_handlers() -> None:
+    """Handle SIGTSTP (Ctrl+Z) as graceful termination alongside SIGINT/SIGTERM."""
+    loop = asyncio.get_running_loop()
+    current_task = asyncio.current_task()
+    if current_task and hasattr(signal, "SIGTSTP"):
+        with suppress(NotImplementedError, RuntimeError):
+            loop.add_signal_handler(signal.SIGTSTP, current_task.cancel)
 
 
 async def run_bot() -> None:
@@ -45,6 +55,7 @@ async def run_bot() -> None:
 
         # Resolve configuration and services
         settings = await container.get(Settings)
+        verify_encryption_key(settings.cache_encryption_key)
         message_service = await container.get(MessageService)
         access_service = await container.get(AccessService)
         commands = await container.get(list[BaseCommand])
@@ -94,11 +105,7 @@ async def run_bot() -> None:
             setup_logging(bot=bot, owner_ids=settings.owners)
 
         # Handle SIGTSTP (Ctrl+Z) as graceful termination alongside SIGINT/SIGTERM
-        loop = asyncio.get_running_loop()
-        current_task = asyncio.current_task()
-        if current_task and hasattr(signal, "SIGTSTP"):
-            with suppress(NotImplementedError, RuntimeError):
-                loop.add_signal_handler(signal.SIGTSTP, current_task.cancel)
+        _setup_signal_handlers()
 
         logger.info("Bot started and polling...")
         await dp.start_polling(bot)

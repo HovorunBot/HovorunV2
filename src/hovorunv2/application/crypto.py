@@ -58,3 +58,37 @@ def decrypt_payload(encrypted_data: str, fernet: Fernet) -> str:
 
     """
     return fernet.decrypt(encrypted_data.encode()).decode()
+
+
+def verify_encryption_key(key: str | None) -> None:
+    """Validate that master encryption key is configured, non-blank, and usable.
+
+    Performs a derivation, encryption, and decryption self-test using a fixed synthetic salt.
+    Does not log or expose the key value in exceptions.
+
+    Args:
+        key: Master encryption passphrase from configuration.
+
+    Raises:
+        ValueError: If key is absent, blank, or fails cryptographic self-check.
+
+    """
+    if not key or not key.strip():
+        msg = "Master encryption key is missing or blank. Please configure CACHE_ENCRYPTION_KEY."
+        raise ValueError(msg)
+
+    # Use a fixed synthetic 16-byte hex salt for startup self-check
+    synthetic_salt_hex = "00" * 16
+    try:
+        fernet = get_fernet_for_chat(key, synthetic_salt_hex)
+        test_payload = "hovorun_startup_encryption_self_check"
+        encrypted = encrypt_payload(test_payload, fernet)
+        decrypted = decrypt_payload(encrypted, fernet)
+        is_match = decrypted == test_payload
+    except Exception as exc:
+        msg = "Master encryption key is invalid or unusable for key derivation."
+        raise ValueError(msg) from exc
+
+    if not is_match:
+        msg = "Encryption self-check failed: decrypted payload mismatch."
+        raise ValueError(msg)
