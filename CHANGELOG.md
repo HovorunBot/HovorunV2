@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **identity**: preserve durable group identity and metadata
 - **identity**: persist lifecycle-aware users
 - **audit**: audit durable mutations in one transaction
 - **command**: collapse legacy parent provider toggles via alembic migration

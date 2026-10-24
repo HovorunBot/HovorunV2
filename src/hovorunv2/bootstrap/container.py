@@ -1,10 +1,11 @@
 """Dependency injection configuration using dishka."""
 
 from collections.abc import AsyncIterable
-from typing import NewType
+from typing import Any, NewType
 
 import aiohttp
 from dishka import Provider, Scope, alias, provide
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
@@ -79,8 +80,15 @@ class InfrastructureProvider(Provider):
 
     @provide(scope=Scope.APP)
     async def get_engine(self, config: Settings) -> AsyncIterable[AsyncEngine]:
-        """Provide SQLAlchemy async engine."""
+        """Provide SQLAlchemy async engine with foreign keys enabled."""
         engine = create_async_engine(f"sqlite+aiosqlite:///{config.db_path}")
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def set_sqlite_pragma(dbapi_connection: Any, _connection_record: Any) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
         yield engine
         await engine.dispose()
 

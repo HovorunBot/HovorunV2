@@ -214,6 +214,16 @@ class ChatStore(Protocol):
         """Fetch all chats with a specific status."""
         ...
 
+    async def soft_delete_chat(
+        self, chat_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
+    ) -> bool:
+        """Soft-delete an active chat identity recording actor and reason."""
+        ...
+
+    async def get_historical_by_chat_id(self, chat_id: int, platform: str = "telegram") -> list[ChatDB]:
+        """Fetch all generations of chat identity for explicit recovery workflows."""
+        ...
+
 
 class CommandStore(Protocol):
     """Protocol for command allowance and association operations."""

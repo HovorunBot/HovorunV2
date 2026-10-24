@@ -1,5 +1,6 @@
 """Persistence adapter for chat storage operations."""
 
+from datetime import UTC, datetime
 from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -34,6 +35,55 @@ class SQLAlchemyChatStore(ChatStore):
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
             return await repo.get_all_by_status(status, platform)
+
+    async def get_historical_by_chat_id(self, chat_id: int, platform: str = "telegram") -> list[ChatDB]:
+        """Fetch all chat generations for recovery workflows."""
+        async with self._session_maker() as session:
+            repo = SQLAlchemyChatRepository(session)
+            return await repo.get_historical_by_chat_id(chat_id, platform)
+
+    async def _execute_soft_delete(
+        self,
+        session: AsyncSession,
+        chat_id: int,
+        actor_id: int | None,
+        reason: str,
+        platform: str,
+        deleted_at: datetime,
+    ) -> bool:
+        """Execute chat soft-deletion on session."""
+        repo = SQLAlchemyChatRepository(session)
+        return await repo.soft_delete(
+            chat_id=chat_id,
+            actor_id=actor_id,
+            reason=reason,
+            platform=platform,
+            deleted_at=deleted_at,
+        )
+
+    async def soft_delete_chat(
+        self, chat_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
+    ) -> bool:
+        """Soft-delete an active chat identity recording actor and deletion reason."""
+        now = datetime.now(UTC)
+        operation = partial(
+            self._execute_soft_delete,
+            chat_id=chat_id,
+            actor_id=actor.actor_id,
+            reason=reason,
+            platform=platform,
+            deleted_at=now,
+        )
+
+        return await self._audited_uow.execute(
+            actor=actor,
+            target_type="chat",
+            target_id=str(chat_id),
+            action="delete",
+            operation=operation,
+            changed_fields={"deleted_at": now.isoformat(), "reason": reason},
+            audit_if=bool,
+        )
 
     async def _execute_update_status(
         self,
