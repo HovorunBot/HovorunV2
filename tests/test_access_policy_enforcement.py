@@ -9,11 +9,10 @@ from dishka import AsyncContainer
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.domain.enums import ChatStatus, CommandName
-from hovorunv2.infrastructure.config import Settings
+from hovorunv2.domain.enums import ChatStatus, CommandName, Role
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
-from tests.conftest import create_mock_message, get_media_command
+from tests.conftest import create_mock_message, get_media_command, provision_role
 
 
 @pytest.mark.asyncio
@@ -59,10 +58,8 @@ async def test_youtube_admin_blocked_if_disabled(init_container: AsyncContainer)
     command_service = await init_container.get(CommandService)
     chat_status_service = await init_container.get(ChatStatusService)
     youtube_cmd = await get_media_command(init_container, CommandName.YOUTUBE)
-    settings = await init_container.get(Settings)
 
-    if user_id not in settings.owners:
-        settings.owners.append(user_id)
+    await provision_role(init_container, user_id, Role.OWNER)
 
     # 2. Access chat and DISABLE youtube
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
@@ -85,11 +82,9 @@ async def test_youtube_admin_blocked_if_disabled(init_container: AsyncContainer)
 async def test_youtube_auto_enable_on_access(init_container: AsyncContainer) -> None:
     """Test that YouTube command is automatically enabled when chat is approved via AccessCommand."""
     chat_id = 999
-    # Ensure owner ID is in settings
-    settings = await init_container.get(Settings)
+    # Provision the owner through durable role storage
     user_id = 1
-    if user_id not in settings.owners:
-        settings.owners.append(user_id)
+    await provision_role(init_container, user_id, Role.OWNER)
 
     # 1. Setup services
     allow_cmd = await init_container.get(AccessCommand)

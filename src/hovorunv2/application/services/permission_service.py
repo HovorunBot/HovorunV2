@@ -2,18 +2,29 @@
 
 from datetime import UTC, datetime
 
-from hovorunv2.application.permissions import AccessDecision, DecisionReason, PermissionFacts, PermissionRequest
+from hovorunv2.application.permissions import (
+    AccessDecision,
+    DecisionReason,
+    PermissionFacts,
+    PermissionRequest,
+    PermissionTarget,
+)
 from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
 from hovorunv2.domain.enums import ChatStatus
 
 
 class PermissionService:
-    """Evaluate additive protected actions without changing existing handler authorization."""
+    """Evaluate current database authority and explicit protected actions."""
 
     def __init__(self, users: UserStore, chats: ChatStore, policy: AuthorizationPolicy) -> None:
         self._users = users
         self._chats = chats
         self._policy = policy
+
+    async def has_authority(self, actor_id: int, action: str) -> bool:
+        """Query current bot authority for legacy gates; execution still needs action/target guards."""
+        user = await self._users.get_by_telegram_id(actor_id)
+        return user is not None and self._policy.is_allowed(PermissionFacts(user.role, action, PermissionTarget("bot")))
 
     async def evaluate(self, request: PermissionRequest) -> AccessDecision:
         """Read fresh active identities; owners cannot bypass resource blockers."""

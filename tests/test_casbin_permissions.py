@@ -22,7 +22,6 @@ from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, Role
 from hovorunv2.infrastructure.authorization.casbin_policy import CasbinAuthorizationPolicy, load_authorization_policy
-from hovorunv2.infrastructure.config import Settings
 
 
 @pytest.mark.asyncio
@@ -142,15 +141,15 @@ async def test_invalid_policy_fails_initialization(model: str | None, policy: st
 
 
 @pytest.mark.asyncio
-async def test_legacy_handlers_keep_their_original_authorization_path(test_container: AsyncContainer) -> None:
-    """The foundation does not silently cut legacy handlers over to database authority."""
-    settings = await test_container.get(Settings)
-    settings.admin_ids = [101]
-    settings.owners = []
+async def test_legacy_gates_now_share_database_authority(test_container: AsyncContainer) -> None:
+    """Legacy role gates use Casbin and database roles after the explicit cutover."""
     access = await test_container.get(AccessService)
     roles = await test_container.get(RoleService)
     await roles.set_role(101, Role.USER, actor=ActorContext.cli())
     legacy = CommandPolicy(requires_admin=True, requires_approval=False, is_toggleable=False)
-    assert await access.is_allowed(101, -100101, legacy) is True
+    assert await access.is_allowed(101, -100101, legacy) is False
     request = PermissionRequest(101, "bot:administer", PermissionTarget("bot"), transport_kind="private")
     assert (await access.evaluate_permission(request)).reason == DecisionReason.UNAUTHORIZED_MANAGEMENT
+    await roles.set_role(101, Role.ADMIN, actor=ActorContext.cli())
+    assert await access.is_allowed(101, -100101, legacy) is True
+    assert (await access.evaluate_permission(request)).allowed is True

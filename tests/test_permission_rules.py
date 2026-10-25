@@ -27,10 +27,12 @@ from hovorunv2.domain.enums import (
     PROVIDER_SPLIT_COMMANDS,
     ChatStatus,
     CommandName,
+    Role,
 )
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
+from tests.conftest import provision_role
 
 
 def create_mock_message(chat_id: int, user_id: int, chat_type: ChatType = ChatType.SUPERGROUP) -> MagicMock:
@@ -78,10 +80,9 @@ async def get_persisted_chat_and_commands(
 async def test_access_middleware_private_chat_admin(test_container: AsyncContainer) -> None:
     """Test that admins have access in private chats."""
     access_service = await test_container.get(AccessService)
-    settings = await test_container.get(Settings)
     middleware = AccessMiddleware(access_service)
 
-    admin_id = settings.admin_ids[0]
+    admin_id = await provision_role(test_container)
     message = create_mock_message(admin_id, admin_id, ChatType.PRIVATE)
 
     handler = AsyncMock()
@@ -167,9 +168,8 @@ async def test_access_middleware_denied_group(test_container: AsyncContainer) ->
 async def test_policy_bypass_for_global_admin(test_container: AsyncContainer) -> None:
     """Test that global admins bypass all policy restrictions."""
     access_service = await test_container.get(AccessService)
-    settings = await test_container.get(Settings)
 
-    admin_id = settings.admin_ids[0]
+    admin_id = await provision_role(test_container)
     chat_id = 123
 
     # Policy that would normally block everyone
@@ -186,7 +186,7 @@ async def test_policy_requires_admin(test_container: AsyncContainer) -> None:
 
     policy = CommandPolicy(requires_admin=True)
 
-    admin_id = (await test_container.get(Settings)).admin_ids[0]
+    admin_id = await provision_role(test_container)
     normal_user_id = 999
     chat_id = 123
 
@@ -290,9 +290,8 @@ async def test_chat_status_service_approve(test_container: AsyncContainer) -> No
 async def test_access_service_is_owner(test_container: AsyncContainer) -> None:
     """Test is_owner check."""
     access_service = await test_container.get(AccessService)
-    settings = await test_container.get(Settings)
 
-    owner_id = settings.owners[0]
+    owner_id = await provision_role(test_container, 201, Role.OWNER)
     non_owner_id = 999
 
     assert await access_service.is_owner(owner_id) is True
@@ -303,10 +302,9 @@ async def test_access_service_is_owner(test_container: AsyncContainer) -> None:
 async def test_access_service_is_admin(test_container: AsyncContainer) -> None:
     """Test is_admin check."""
     access_service = await test_container.get(AccessService)
-    settings = await test_container.get(Settings)
 
-    admin_id = settings.admin_ids[0]
-    owner_id = settings.owners[0]
+    admin_id = await provision_role(test_container)
+    owner_id = await provision_role(test_container, 201, Role.OWNER)
     non_admin_id = 999
 
     assert await access_service.is_admin(admin_id) is True
@@ -356,9 +354,8 @@ async def test_characterize_legacy_group_status_matrix(test_container: AsyncCont
     session_maker = await test_container.get(async_sessionmaker)
     access_service = await test_container.get(AccessService)
     chat_status_service = await test_container.get(ChatStatusService)
-    settings = await test_container.get(Settings)
 
-    admin_id = settings.admin_ids[0]
+    admin_id = await provision_role(test_container)
     regular_user_id = 9999
 
     policy_requires_approval = CommandPolicy(requires_approval=True, is_toggleable=False)

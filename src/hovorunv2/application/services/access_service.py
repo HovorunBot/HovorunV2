@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from hovorunv2.application.permissions import AccessDecision, PermissionRequest
-from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.permission_service import PermissionService
@@ -31,28 +30,26 @@ class AccessService:
 
     def __init__(
         self,
-        settings: AppSettings,
         chat_status_service: ChatStatusService,
         command_service: CommandService,
         permission_service: PermissionService,
     ) -> None:
         """Initialize service with dependencies."""
-        self._settings = settings
         self._chat_status_service = chat_status_service
         self._command_service = command_service
         self._permission_service = permission_service
 
     async def evaluate_permission(self, request: PermissionRequest) -> AccessDecision:
-        """Evaluate explicit permissions; legacy handlers retain their existing path until cutover."""
+        """Evaluate explicit action/target guards beside legacy group-policy orchestration."""
         return await self._permission_service.evaluate(request)
 
     async def is_owner(self, user_id: int) -> bool:
         """Check if a user is an Owner (super admin)."""
-        return user_id in self._settings.owners
+        return await self._permission_service.has_authority(user_id, "bot:own")
 
     async def is_admin(self, user_id: int) -> bool:
         """Check if a user has administrative privileges."""
-        return user_id in self._settings.admin_ids or await self.is_owner(user_id)
+        return await self._permission_service.has_authority(user_id, "bot:administer")
 
     async def is_group_admin(
         self,

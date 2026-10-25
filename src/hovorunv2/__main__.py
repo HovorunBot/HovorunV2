@@ -15,10 +15,11 @@ from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
 from hovorunv2.application.services.reminder_service import ChatReminderService
+from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
-from hovorunv2.infrastructure.logger import get_logger, setup_logging
+from hovorunv2.infrastructure.logger import AsyncTelegramHandler, get_logger, setup_logging, setup_telegram_logging
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
@@ -47,6 +48,7 @@ async def run_bot() -> None:
     bot: Bot | None = None
     cleanup_service: CleanupService | None = None
     task_queue_service: TaskQueueService | None = None
+    telegram_log_handler: AsyncTelegramHandler | None = None
 
     try:
         # Populate fixtures
@@ -100,9 +102,8 @@ async def run_bot() -> None:
         setup_dishka(container=container, router=dp)
 
         # Initialize improved logging with Telegram DM handler
-        if settings.error_dm_enabled and settings.owners:
-            logger.info("Enabling Error DM logging to owners: %s", settings.owners)
-            setup_logging(bot=bot, owner_ids=settings.owners)
+        if settings.error_dm_enabled:
+            telegram_log_handler = setup_telegram_logging(bot, await container.get(RoleService))
 
         # Handle SIGTSTP (Ctrl+Z) as graceful termination alongside SIGINT/SIGTERM
         _setup_signal_handlers()
@@ -116,6 +117,8 @@ async def run_bot() -> None:
             await task_queue_service.stop_worker()
         if cleanup_service:
             await cleanup_service.stop_cleanup_loop()
+        if telegram_log_handler:
+            await telegram_log_handler.shutdown()
         if bot:
             await bot.session.close()
         await container.close()

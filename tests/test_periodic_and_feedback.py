@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import types
+from dishka import AsyncContainer
 
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
@@ -13,27 +14,25 @@ from hovorunv2.application.services.reminder_service import (
     scheduled_unauthorized_reminder_job,
 )
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import ChatStatus, CommandName
-from hovorunv2.infrastructure.config import Settings
+from hovorunv2.domain.enums import ChatStatus, CommandName, Role
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
+from tests.conftest import provision_role
 
 
 @pytest.fixture
-def test_settings() -> Settings:
-    """Fixture providing test settings with mock owners."""
-    return Settings(
-        bot_token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",  # noqa: S106
-        admin_ids=[100, 200],
-        OWNERS=[111, 222],
-    )
+async def owner_notifier(test_container: AsyncContainer) -> OwnerNotifier:
+    """Provision synthetic durable owners for notification tests."""
+    await provision_role(test_container, 111, Role.OWNER)
+    await provision_role(test_container, 222, Role.OWNER)
+    return await test_container.get(OwnerNotifier)
 
 
 @pytest.mark.asyncio
-async def test_feedback_service_submits_to_owners(test_settings: Settings) -> None:
+async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier) -> None:
     """Test feedback service properly formats and delivers feedback to all owners."""
-    service = FeedbackService(OwnerNotifier(test_settings))
+    service = FeedbackService(owner_notifier)
     bot = MagicMock()
     bot.send_message = AsyncMock()
 
@@ -102,7 +101,7 @@ async def test_feedback_command_validation_and_delegation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reminder_service_send_prompt_cooldown(test_settings: Settings) -> None:
+async def test_reminder_service_send_prompt_cooldown(owner_notifier: OwnerNotifier) -> None:
     """Test ChatReminderService sets Valkey cooldown when sending unauthorized prompt."""
     chat_service = MagicMock()
     cache_service = MagicMock()
@@ -111,9 +110,7 @@ async def test_reminder_service_send_prompt_cooldown(test_settings: Settings) ->
     task_queue = MagicMock(spec=TaskQueueService)
     prompt_sender = TelegramUnauthorizedPromptSender()
 
-    reminder_service = ChatReminderService(
-        chat_service, cache_service, task_queue, OwnerNotifier(test_settings), prompt_sender
-    )
+    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, owner_notifier, prompt_sender)
 
     bot = MagicMock()
     bot.send_message = AsyncMock()
@@ -132,7 +129,7 @@ async def test_reminder_service_send_prompt_cooldown(test_settings: Settings) ->
 
 
 @pytest.mark.asyncio
-async def test_reminder_service_maintenance_cycle(test_settings: Settings) -> None:
+async def test_reminder_service_maintenance_cycle(owner_notifier: OwnerNotifier) -> None:
     """Test maintenance cycle handles rejected chats and pending chats."""
     rejected_chat = MagicMock(spec=ChatDB, chat_id=-100111)
     pending_chat = MagicMock(spec=ChatDB, chat_id=-100222)
@@ -154,9 +151,7 @@ async def test_reminder_service_maintenance_cycle(test_settings: Settings) -> No
     task_queue = MagicMock(spec=TaskQueueService)
     prompt_sender = TelegramUnauthorizedPromptSender()
 
-    reminder_service = ChatReminderService(
-        chat_service, cache_service, task_queue, OwnerNotifier(test_settings), prompt_sender
-    )
+    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, owner_notifier, prompt_sender)
 
     bot = MagicMock()
     bot.leave_chat = AsyncMock()
@@ -165,7 +160,7 @@ async def test_reminder_service_maintenance_cycle(test_settings: Settings) -> No
     await reminder_service.run_maintenance_cycle(bot)
 
     bot.leave_chat.assert_called_once_with(-100111)
-    assert bot.send_message.call_count == 2  # Notified both owners in test_settings
+    assert bot.send_message.call_count == 2  # Notified both durable owners
     assert "Pending Approval" in bot.send_message.call_args[1]["text"]
 
 

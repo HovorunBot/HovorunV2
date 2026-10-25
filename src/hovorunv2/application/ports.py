@@ -83,16 +83,6 @@ class AppSettings(Protocol):
     """Protocol for application configuration properties needed by application services."""
 
     @property
-    def owners(self) -> list[int]:
-        """List of bot owner user IDs."""
-        ...
-
-    @property
-    def admin_ids(self) -> list[int]:
-        """List of bot admin user IDs."""
-        ...
-
-    @property
     def cache_encryption_key(self) -> str | None:
         """Master secret key for per-chat PBKDF2 message encryption."""
         ...

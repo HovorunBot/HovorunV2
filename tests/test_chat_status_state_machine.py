@@ -8,10 +8,10 @@ from aiogram.types import Chat, ChatMemberUpdated
 from dishka import AsyncContainer
 
 from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.domain.enums import ChatStatus
-from hovorunv2.infrastructure.config import Settings
+from hovorunv2.domain.enums import ChatStatus, Role
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
+from tests.conftest import provision_role
 
 
 @pytest.fixture
@@ -50,7 +50,6 @@ async def test_state_machine_flow(
     init_container: AsyncContainer,
 ) -> None:
     """Test full access state machine lifecycle."""
-    settings = await init_container.get(Settings)
     chat_id = 111
     bot = MagicMock(spec=Bot)
     bot.send_message = AsyncMock()
@@ -91,7 +90,7 @@ async def test_state_machine_flow(
     # 6. Approve -> APPROVED
     callback_data = MagicMock(chat_id=chat_id, action="approve")
     query = MagicMock(
-        from_user=MagicMock(full_name="Owner", id=settings.owners[0]),
+        from_user=MagicMock(full_name="Owner", id=await provision_role(init_container, 201, Role.OWNER)),
         message=MagicMock(text="Request", edit_text=AsyncMock()),
         answer=AsyncMock(),
     )

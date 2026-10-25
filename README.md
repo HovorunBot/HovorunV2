@@ -68,10 +68,10 @@ If you choose to self-host, deployment is fully automated via `Make` and `Docker
 2. **Configure**: Edit the `.env` file created during setup:
    ```env
    BOT_TOKEN=...
-   ADMIN_IDS=[123, 456]    # Global Admins
-   OWNERS=[123]            # Owners (for approval requests)
+   CACHE_ENCRYPTION_KEY=... # Required encryption passphrase
    ```
-3. **Launch**: `make run`
+3. **Provision an owner**: `docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role add 123456789 --role owner` (replace the synthetic ID with your numeric Telegram user ID).
+4. **Launch**: `make run`
 
 ---
 
@@ -165,8 +165,9 @@ docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role r
 ```
 
 The container entrypoint applies migrations first. Use `docker compose exec bot uv run hovorun-admin ...` when the bot
-container is already running. These commands prepare database roles; live bot authorization still uses the existing
-configuration until the planned authorization cutover. No configured owner/admin IDs are imported automatically.
+container is already running. Live administrator and owner checks use these database roles through Casbin. No owner/admin IDs are imported from
+configuration; legacy `ADMIN_IDS` and `OWNERS` values are ignored and can be removed. An empty role registry grants nobody
+administrator access. Owner notifications and optional error DMs follow current active OWNER rows without restarting.
 
 ### Permission policy foundation
 
@@ -181,6 +182,6 @@ immutable after loading. Add a policy row and focused tests for a new action; in
 when that action needs them. There is no separate policy database or user-role mirror. CLI bootstrap keeps its explicit
 application-service path.
 
-This foundation is additive. Existing handlers still use the legacy authorization path until the planned cutover;
+Live role gates now use database authority through Casbin. Existing group approval/toggle behavior remains in place;
 Telegram membership verification, sponsor eligibility, additional ban types and feature/emergency guards remain separate
 implementation stages. Request facts are internal application inputs, never proof supplied by callback payloads.

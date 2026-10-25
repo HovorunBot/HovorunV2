@@ -8,8 +8,14 @@ import traceback
 from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Final
 
+from hovorunv2.domain.enums import Role
+
 if TYPE_CHECKING:
     from aiogram import Bot
+
+    from hovorunv2.application.services.role_service import RoleService
+
+LOG_FORMAT: Final = "%(asctime)s - %(name)s - %(levelname)s - [user=%(user_id)s chat=%(chat_id)s] - %(message)s"
 
 MAX_TB_LINES: Final = 8
 MAX_TELEGRAM_MESSAGE_LENGTH: Final = 4096
@@ -48,11 +54,11 @@ class LogContextFilter(logging.Filter):
 class AsyncTelegramHandler(logging.Handler):
     """Logging handler that sends messages to Telegram owners asynchronously."""
 
-    def __init__(self, bot: Bot, owner_ids: list[int]) -> None:
-        """Initialize with bot and owner IDs."""
+    def __init__(self, bot: Bot, roles: RoleService) -> None:
+        """Initialize with bot and current owner lookup."""
         super().__init__()
         self.bot = bot
-        self.owner_ids = owner_ids
+        self._roles = roles
         self._tasks: set[asyncio.Task] = set()
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -66,12 +72,29 @@ class AsyncTelegramHandler(logging.Handler):
         # Create tasks in the running loop
         try:
             loop = asyncio.get_running_loop()
-            for owner_id in self.owner_ids:
-                task = loop.create_task(self._send_to_telegram(msg, owner_id))
-                self._tasks.add(task)
-                task.add_done_callback(self._tasks.discard)
+            task = loop.create_task(self._send_to_owners(msg))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
         except RuntimeError:
             print(f"[AsyncTelegramHandler Fallback] {msg}", file=sys.stderr)  # noqa: T201
+
+    async def _send_to_owners(self, message: str) -> None:
+        """Resolve one active-owner snapshot per log event without recursive error logging."""
+        try:
+            for owner in await self._roles.list_roles(Role.OWNER):
+                await self._send_to_telegram(message, owner.telegram_id)
+        except Exception:
+            sys.stderr.write("[AsyncTelegramHandler Error] Could not resolve current owners.\n")
+
+    async def drain(self) -> None:
+        """Wait for pending error deliveries while database and bot resources remain open."""
+        await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
+
+    async def shutdown(self) -> None:
+        """Stop accepting records and finish pending sends before bot/database shutdown."""
+        logging.getLogger().removeHandler(self)
+        await self.drain()
+        self.close()
 
     def _condense_exception_log(self, record: logging.LogRecord) -> str:
         """Extract key info from exception to fit in Telegram message."""
@@ -117,8 +140,8 @@ class AsyncTelegramHandler(logging.Handler):
             print(f"[AsyncTelegramHandler Error] Failed to send to {owner_id}: {e}", file=sys.stderr)  # noqa: T201
 
 
-def setup_logging(level: int = logging.INFO, bot: Bot | None = None, owner_ids: list[int] | None = None) -> None:
-    """Initialize logging with optional Telegram handler."""
+def setup_logging(level: int = logging.INFO) -> None:
+    """Initialize console logging; Telegram routing is attached separately."""
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
@@ -128,21 +151,21 @@ def setup_logging(level: int = logging.INFO, bot: Bot | None = None, owner_ids: 
     context_filter = LogContextFilter()
 
     # Console handler
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - [user=%(user_id)s chat=%(chat_id)s] - %(message)s"
-    )
+    formatter = logging.Formatter(LOG_FORMAT)
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     console_handler.addFilter(context_filter)
     root_logger.addHandler(console_handler)
 
-    # Telegram Error handler
-    if bot and owner_ids:
-        tg_handler = AsyncTelegramHandler(bot, owner_ids)
-        tg_handler.setLevel(logging.ERROR)
-        tg_handler.setFormatter(formatter)
-        tg_handler.addFilter(context_filter)
-        root_logger.addHandler(tg_handler)
+
+def setup_telegram_logging(bot: Bot, roles: RoleService) -> AsyncTelegramHandler:
+    """Attach dynamic error routing even when the owner registry is initially empty."""
+    handler = AsyncTelegramHandler(bot, roles)
+    handler.setLevel(logging.ERROR)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    handler.addFilter(LogContextFilter())
+    logging.getLogger().addHandler(handler)
+    return handler
 
 
 def get_logger(name: str) -> logging.Logger:

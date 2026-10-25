@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ROOT is 4 levels up from this file: src/hovorunv2/infrastructure/config.py
@@ -32,13 +32,11 @@ class Settings(DatabaseSettings):
 
     Attributes:
         bot_token: Telegram Bot API token.
-        admin_ids: List of admin IDs for accessing.
         db_path: Path to the database file.
 
     """
 
     bot_token: str
-    admin_ids: list[int]
     valkey_url: str = "redis://localhost:6379/0"
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
@@ -46,7 +44,6 @@ class Settings(DatabaseSettings):
     browser_idle_timeout: int = 600  # 10 minutes
     instagram_sessionid: str | None = None
     error_dm_enabled: bool = False
-    owners: list[int] = Field(default_factory=list, validation_alias="OWNERS")
     cache_encryption_key: str | None = None
 
     # Project Metadata

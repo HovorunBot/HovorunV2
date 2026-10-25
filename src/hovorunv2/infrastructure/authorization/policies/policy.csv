@@ -2,3 +2,4 @@
 p, admin, bot:administer, bot, role
 p, admin, group:settings, group, role
 p, user, group:settings, group, group_admin
+p, owner, bot:own, bot, role

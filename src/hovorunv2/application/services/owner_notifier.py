@@ -6,7 +6,8 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
-from hovorunv2.application.ports import AppSettings
+from hovorunv2.application.services.role_service import RoleService
+from hovorunv2.domain.enums import Role
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +15,9 @@ logger = logging.getLogger(__name__)
 class OwnerNotifier:
     """Dispatches direct messages to all registered bot owners."""
 
-    def __init__(self, settings: AppSettings) -> None:
-        """Initialize with application settings."""
-        self._settings = settings
+    def __init__(self, roles: RoleService) -> None:
+        """Initialize with durable role lookup."""
+        self._roles = roles
 
     async def broadcast(
         self,
@@ -27,9 +28,10 @@ class OwnerNotifier:
         parse_mode: str = "HTML",
         disable_web_page_preview: bool = True,
     ) -> int:
-        """Broadcast text message to all registered owners, returning successful send count."""
+        """Broadcast to one snapshot of active owners, returning successful send count."""
         sent_count = 0
-        for owner_id in self._settings.owners:
+        for owner in await self._roles.list_roles(Role.OWNER):
+            owner_id = owner.telegram_id
             try:
                 await bot.send_message(
                     chat_id=owner_id,

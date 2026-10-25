@@ -13,14 +13,23 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
+from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.base import Base
-from hovorunv2.domain.enums import CommandName
+from hovorunv2.domain.enums import CommandName, Role
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.utils.browser_cache import TestBrowserService
+
+
+async def provision_role(container: AsyncContainer, user_id: int = 101, role: Role = Role.ADMIN) -> int:
+    """Provision synthetic test authority through the audited application service."""
+    roles = await container.get(RoleService)
+    await roles.set_role(user_id, role, actor=ActorContext.cli())
+    return user_id
 
 
 async def get_media_command(container: AsyncContainer, name: CommandName) -> RichMediaCommand:

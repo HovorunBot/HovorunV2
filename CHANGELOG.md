@@ -26,6 +26,7 @@
 
 ### Refactor
 
+- **roles**: replace configured administrator lists
 - **access**: convert CommandPolicy to frozen dataclass and BaseCommand to ABC
 - **cleanup**: remove unused callbacks, ensure_admin, and use settings.github_url in notifications
 - **media**: decouple clients, introduce MediaPipeline, and simplify RichMediaCommand
