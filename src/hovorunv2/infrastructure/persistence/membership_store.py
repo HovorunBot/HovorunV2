@@ -47,6 +47,11 @@ class SQLAlchemyMembershipStore(MembershipStore):
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).get_state(group_id)
 
+    async def is_admin_any(self, user_telegram_id: int, now: datetime) -> bool:
+        """Check if user is verified administrator in any active group."""
+        async with self._session_maker() as session:
+            return await SQLAlchemyMembershipRepository(session).is_admin_any(user_telegram_id, now)
+
     async def _execute(
         self,
         session: AsyncSession,

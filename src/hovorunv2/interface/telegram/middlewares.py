@@ -12,7 +12,6 @@ from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObj
 from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.domain.enums import TOGGLEABLE_COMMANDS
 from hovorunv2.infrastructure.logger import get_logger, set_log_context
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 
@@ -86,49 +85,62 @@ class AccessMiddleware(BaseMiddleware):
         self._access_service = access_service
         self._settings = settings
 
-    async def __call__(
+    async def _handle_private_chat(
         self,
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
         data: dict[str, Any],
+        user_id: int | None,
+        policy: CommandPolicy,
     ) -> Any:
-        """Check authorization before executing handler."""
-        handler_obj = data.get("handler")
-        policy = (
-            get_flag(data, "policy")
-            or data.get("policy")
-            or (getattr(handler_obj, "flags", {}).get("policy") if handler_obj else None)
-        )
-        command_name = (
-            get_flag(data, "command_name")
-            or data.get("command_name")
-            or (getattr(handler_obj, "flags", {}).get("command_name") if handler_obj else None)
-        )
-
-        # If no policy is attached, it might be a default command
-        # However, for toggleable commands we MUST have a policy to evaluate access
-        if not policy or not isinstance(policy, CommandPolicy):
-            # If it's a known toggleable command but has no policy, DENY by default
-            if command_name in TOGGLEABLE_COMMANDS:
-                logger.error("Toggleable command %s missing policy in middleware!", command_name)
-                return None
-            return await handler(event, data)
-
-        user_id, chat_id, is_private = self._extract_event_context(event)
-        if not chat_id or (is_private and user_id and await self._access_service.is_admin(user_id)):
-            return await handler(event, data)
-
-        # 1. Handle Private Chats (Direct Messages)
-        if is_private:
+        """Authorize private chats: trusted/admin features, untrusted admin management."""
+        if not user_id or await self._access_service.is_banned(user_id):
             await self._deny_private_chat(event)
             return None
 
-        # 2. Evaluate Policy
+        if await self._access_service.is_admin(user_id):
+            return await handler(event, data)
+
+        if policy.requires_admin:
+            await self._deny_private_chat(event)
+            return None
+
+        if policy.requires_group_admin and await self._access_service.is_group_admin_any(user_id):
+            return await handler(event, data)
+
+        if await self._access_service.is_trusted(user_id):
+            return await handler(event, data)
+
+        await self._deny_private_chat(event)
+        return None
+
+    async def _handle_group_chat(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+        user_id: int | None,
+        chat_id: int,
+        policy: CommandPolicy,
+        command_name: str | None,
+    ) -> Any:
+        """Authorize group interactions: ban enforcement, direct vs automatic differ, bot admin private-only."""
+        if policy.requires_admin:
+            logger.info("Bot administration rejected in group chat %d", chat_id)
+            return None
+
+        if user_id and await self._access_service.is_banned(user_id) and not policy.is_automatic:
+            logger.info("Direct action denied for banned user %d in group %d", user_id, chat_id)
+            if isinstance(event, CallbackQuery):
+                await event.answer("🚫 You are banned from using bot commands.", show_alert=True)
+            return None
+
+        bot = data.get("bot")
         is_allowed = await self._access_service.is_allowed(
             user_id=user_id,
             chat_id=chat_id,
             policy=policy,
-            bot=data["bot"],
+            bot=bot,
             command_name=command_name,
         )
 
@@ -136,11 +148,53 @@ class AccessMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         logger.info("Access denied for %s in chat %d by user %s", command_name or "callback", chat_id, user_id)
-
         if isinstance(event, CallbackQuery):
             await event.answer("🚫 You don't have permission to do this.", show_alert=True)
-
         return None
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        """Check authorization before executing handler with deny-by-default for missing policies."""
+        handler_obj = data.get("handler")
+        raw_policy = data.get("policy") or get_flag(data, "policy")
+        if (
+            not isinstance(raw_policy, CommandPolicy)
+            and handler_obj
+            and hasattr(handler_obj, "flags")
+            and isinstance(handler_obj.flags, dict)
+        ):
+            raw_policy = handler_obj.flags.get("policy")
+
+        policy = raw_policy if isinstance(raw_policy, CommandPolicy) else None
+        flag_cmd = get_flag(data, "command_name")
+        command_name = (
+            data.get("command_name")
+            or (flag_cmd if isinstance(flag_cmd, str) else None)
+            or (
+                handler_obj.flags.get("command_name")
+                if handler_obj and hasattr(handler_obj, "flags") and isinstance(handler_obj.flags, dict)
+                else None
+            )
+        )
+
+        if not policy or not isinstance(policy, CommandPolicy):
+            logger.warning("Event missing required command policy: denying by default")
+            if isinstance(event, CallbackQuery):
+                await event.answer("🚫 Access denied.", show_alert=True)
+            return None
+
+        user_id, chat_id, is_private = self._extract_event_context(event)
+        if not chat_id:
+            return None
+
+        if is_private:
+            return await self._handle_private_chat(handler, event, data, user_id, policy)
+
+        return await self._handle_group_chat(handler, event, data, user_id, chat_id, policy, command_name)
 
     def _extract_event_context(self, event: TelegramObject) -> tuple[int | None, int, bool]:
         """Extract user_id, chat_id, and private chat flag from a Telegram event."""

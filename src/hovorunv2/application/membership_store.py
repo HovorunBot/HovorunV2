@@ -29,6 +29,10 @@ class MembershipStore(Protocol):
         """Read current bot/admin freshness and policy revision for an active generation."""
         ...
 
+    async def is_admin_any(self, user_telegram_id: int, now: datetime) -> bool:
+        """Check if user is verified administrator in any active group."""
+        ...
+
     async def save_member(
         self,
         group_id: int,

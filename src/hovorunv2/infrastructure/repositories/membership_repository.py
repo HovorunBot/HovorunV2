@@ -144,6 +144,27 @@ class SQLAlchemyMembershipRepository:
             )
         )
 
+    async def is_admin_any(self, user_telegram_id: int, now: datetime) -> bool:
+        """Check if user is verified administrator in any active group."""
+        user = await self._session.scalar(
+            select(UserDB).where(UserDB.telegram_id == user_telegram_id, UserDB.deleted_at.is_(None))
+        )
+        if user is None:
+            return False
+        query = (
+            select(MemberEvidenceDB.id)
+            .join(ChatDB, ChatDB.id == MemberEvidenceDB.group_id)
+            .where(
+                MemberEvidenceDB.user_id == user.id,
+                MemberEvidenceDB.status == MembershipStatus.ADMIN.value,
+                MemberEvidenceDB.deleted_at.is_(None),
+                MemberEvidenceDB.expires_at > now,
+                ChatDB.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        return (await self._session.scalar(query)) is not None
+
     async def _record(self, group_id: int, user_id: int) -> MemberEvidenceDB | None:
         return await self._session.scalar(
             select(MemberEvidenceDB).where(

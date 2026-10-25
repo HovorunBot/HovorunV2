@@ -1,13 +1,17 @@
 """Application service for unified access control and permissions."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from hovorunv2.application.ban_ports import BanStore
+from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.permissions import AccessDecision, DecisionReason, PermissionRequest
+from hovorunv2.application.ports import UserStore
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.permission_service import PermissionService
+from hovorunv2.domain.enums import TargetKind
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -21,6 +25,7 @@ class CommandPolicy:
     requires_group_admin: bool = False
     requires_approval: bool = True
     is_toggleable: bool = True
+    is_automatic: bool = False
 
 
 class AccessService:
@@ -34,11 +39,17 @@ class AccessService:
         chat_status_service: ChatStatusService,
         command_service: CommandService,
         permission_service: PermissionService,
+        ban_store: BanStore,
+        user_store: UserStore,
+        membership_store: MembershipStore,
     ) -> None:
         """Initialize service with dependencies."""
         self._chat_status_service = chat_status_service
         self._command_service = command_service
         self._permission_service = permission_service
+        self._ban_store = ban_store
+        self._user_store = user_store
+        self._membership_store = membership_store
 
     async def evaluate_permission(self, request: PermissionRequest) -> AccessDecision:
         """Evaluate explicit action/target guards beside legacy group-policy orchestration."""
@@ -56,6 +67,27 @@ class AccessService:
         """Check if a user has administrative privileges."""
         return await self._permission_service.has_authority(user_id, "bot:administer")
 
+    async def is_banned(self, user_id: int | None) -> bool:
+        """Check if user has an active personal or full ban."""
+        if user_id is None:
+            return False
+        bans = await self._ban_store.list_active(TargetKind.USER, user_id)
+        return len(bans) > 0
+
+    async def is_trusted(self, user_id: int | None) -> bool:
+        """Check if user has trusted flag enabled and is active."""
+        if user_id is None:
+            return False
+        user = await self._user_store.get_by_telegram_id(user_id)
+        return user is not None and user.is_trusted and user.deleted_at is None
+
+    async def is_group_admin_any(self, user_id: int | None, now: datetime | None = None) -> bool:
+        """Check if user is a verified administrator in any active group."""
+        if user_id is None:
+            return False
+        current_time = now if now is not None else datetime.now(UTC)
+        return await self._membership_store.is_admin_any(user_id, current_time)
+
     async def is_group_admin(
         self,
         bot: Bot,
@@ -69,6 +101,22 @@ class AccessService:
             return False
         else:
             return member.status in ("administrator", "creator")
+
+    async def _check_non_admin_policy(
+        self,
+        user_id: int | None,
+        chat_id: int,
+        policy: CommandPolicy,
+        bot: Bot | None,
+    ) -> bool:
+        """Evaluate policy constraints for non-administrative users."""
+        if policy.requires_admin:
+            return False
+        if policy.requires_group_admin and (
+            not user_id or not bot or not await self.is_group_admin(bot, chat_id, user_id)
+        ):
+            return False
+        return not (policy.requires_approval and not await self._chat_status_service.is_approved(chat_id))
 
     async def is_allowed(
         self,
@@ -104,15 +152,11 @@ class AccessService:
             if decision.reason == DecisionReason.GROUP_BANNED:
                 return False
 
+        # Personal user bans block direct commands, but not automatic media links in groups
+        if user_id is not None and await self.is_banned(user_id) and not policy.is_automatic:
+            return False
+
         if user_id is not None and await self.is_admin(user_id):
             return True
 
-        if policy.requires_admin:
-            return False
-
-        if policy.requires_group_admin and (
-            not user_id or not bot or not await self.is_group_admin(bot, chat_id, user_id)
-        ):
-            return False
-
-        return not (policy.requires_approval and not await self._chat_status_service.is_approved(chat_id))
+        return await self._check_non_admin_policy(user_id, chat_id, policy, bot)

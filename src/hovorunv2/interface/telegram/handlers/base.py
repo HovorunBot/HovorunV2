@@ -55,7 +55,12 @@ class BaseCommand(ABC):
 class RichMediaCommand(BaseCommand):
     """Unified command handler for all rich media providers."""
 
-    POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=True, is_toggleable=True)
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(
+        requires_admin=False,
+        requires_approval=True,
+        is_toggleable=True,
+        is_automatic=True,
+    )
 
     def __init__(
         self,
