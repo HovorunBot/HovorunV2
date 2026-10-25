@@ -10,10 +10,11 @@ TAG ?=
 VERSION ?= $(TAG)
 INCREMENT ?=
 MESSAGE ?=
+CAVEMAN_REF ?= main
 
 .PHONY: all setup run stop update help install-git checkout migrate dev run-dev env-init build-prod clean-build \
         verify-build tag-release release-tag release-dry-run release-preview changelog \
-        test lint format type-check check install-hooks _all _setup _run _update _migrate _deploy
+        test lint format type-check check install-hooks install-ai-skills _all _setup _run _update _migrate _deploy
 
 # Public targets with automatic cleanup
 all setup run update migrate deploy:
@@ -41,6 +42,7 @@ help:
 	@echo "    make type-check          - Run strict type checking with ty"
 	@echo "    make check               - Run complete verification gate (lint + type-check + test)"
 	@echo "    make install-hooks       - Install quality, commit-message, and post-commit changelog hooks"
+	@echo "    make install-ai-skills   - Download shared project-local caveman skill (CAVEMAN_REF=main)"
 	@echo ""
 	@echo "  Release & Versioning (Commitizen):"
 	@echo "    make tag-release         - Bump version, update CHANGELOG.md, and create Git tag"
@@ -216,6 +218,19 @@ stop:
 # 8. Start development tools (Valkey only).
 dev:
 	docker compose up -d valkey
+
+install-ai-skills:
+	@set -eu; \
+		skill_stage=$$(mktemp -d); \
+		trap 'rm -f "$$skill_stage/SKILL.md" "$$skill_stage/README.md"; rmdir "$$skill_stage"' EXIT; \
+		for skill_file in SKILL.md README.md; do \
+			curl --fail --silent --show-error --location --retry 3 \
+				"https://raw.githubusercontent.com/JuliusBrussee/caveman/$(CAVEMAN_REF)/skills/caveman/$$skill_file" \
+				--output "$$skill_stage/$$skill_file"; \
+		done; \
+		mkdir -p .agents/skills/caveman; \
+		cp "$$skill_stage/SKILL.md" "$$skill_stage/README.md" .agents/skills/caveman/; \
+		echo "Installed caveman from $(CAVEMAN_REF) into .agents/skills/caveman/"
 
 install-hooks:
 	@if command -v git >/dev/null 2>&1 && [ -d .git ]; then \

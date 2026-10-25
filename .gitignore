@@ -154,6 +154,8 @@ cython_debug/
 .idea/
 
 # Custom project ignores
+/.agents/skills/
+/.import_linter_cache/
 /cache/
 /src/hovorunv2/bot.db
 /src/hovorunv2/cache/

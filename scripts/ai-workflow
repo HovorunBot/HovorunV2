@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Apply the same project boundary and approval intent to both assistants.
+set -euo pipefail
+
+workflow_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+workflow_cache="${UV_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/uv}"
+workflow_assistant="${1:-}"
+if [[ $# -gt 0 ]]; then
+    shift
+fi
+
+case "$workflow_assistant" in
+    codex|gemini|agy) ;;
+    *)
+        printf 'Usage: %s {codex|gemini} [CLI arguments...]\n' "$0" >&2
+        exit 2
+        ;;
+esac
+
+# Both CLIs treat these directories as writable alongside the project.
+mkdir -p -- "$workflow_cache"
+workflow_cache="$(cd -- "$workflow_cache" && pwd)"
+cd -- "$workflow_root"
+
+case "$workflow_assistant" in
+    codex)
+        exec codex --approve-for-me --add-dir "$workflow_cache" "$@"
+        ;;
+    gemini|agy)
+        exec agy --sandbox --mode auto --add-dir "$workflow_cache" "$@"
+        ;;
+esac
