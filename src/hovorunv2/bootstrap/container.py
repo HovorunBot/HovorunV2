@@ -49,6 +49,7 @@ from hovorunv2.application.services.translation_providers import (
     GoogleTranslationService,
 )
 from hovorunv2.application.services.translation_service import TranslationService
+from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
 from hovorunv2.infrastructure.browser import BrowserService
@@ -160,6 +161,7 @@ class AppProvider(Provider):
     chat_status_service = provide(ChatStatusService)
     access_service = provide(AccessService)
     role_service = provide(RoleService)
+    trust_service = provide(TrustService)
     permission_service = provide(PermissionService)
     cleanup_service = provide(CleanupService)
     language_service = provide(LanguageService)

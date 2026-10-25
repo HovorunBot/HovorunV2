@@ -13,6 +13,7 @@ MAX_USER_ID = (1 << 63) - 1
 class RoleArguments(argparse.Namespace):
     """Typed namespace populated by the administrative parser."""
 
+    topic: str
     operation: str
     target: str | None
     role: str | None
@@ -38,6 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
     remove.add_argument("--reason")
     listing = operations.add_parser("list", help="List active OWNER/ADMIN assignments.")
     listing.add_argument("--role", choices=(Role.OWNER.name.lower(), Role.ADMIN.name.lower()))
+    trust = topics.add_parser("trust", help="Manage the single user trust flag.")
+    trust.set_defaults(role=None, yes=False, reason=None)
+    trust_operations = trust.add_subparsers(dest="operation", required=True)
+    for operation in ("grant", "revoke"):
+        command = trust_operations.add_parser(operation)
+        command.add_argument("target", help="Existing numeric Telegram user ID or known @username.")
+        command.add_argument("--reason")
     return parser
 
 

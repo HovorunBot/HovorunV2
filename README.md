@@ -132,7 +132,7 @@ Released under the **BSD 3-Clause License**. See `LICENSE` for details.
 
 Developed with ❤️ by TwilightSparkle42
 
-### Offline role administration
+### Offline role and trust administration
 
 Authority uses ordered `Role` integer values: `USER = 1`, `ADMIN = 10`, `OWNER = 100`. Minimum authority checks use
 `role >= Role.ADMIN`; exact role checks remain available. Trust, bans, group membership and feature access stay separate.
@@ -143,6 +143,8 @@ Prepare an empty or existing database with `uv run alembic upgrade head`, then u
 uv run hovorun-admin role add 123456789 --role owner --reason "Initial bootstrap"
 uv run hovorun-admin role add @known_user --role admin
 uv run hovorun-admin role list
+uv run hovorun-admin trust grant @known_user --reason "Approved sponsor"
+uv run hovorun-admin trust revoke 123456789 --reason "Trust withdrawn"
 uv run hovorun-admin role list --role owner
 uv run hovorun-admin role remove 123456789 --yes --reason "Retired operator"
 ```
@@ -185,3 +187,6 @@ application-service path.
 Live role gates now use database authority through Casbin. Existing group approval/toggle behavior remains in place;
 Telegram membership verification, sponsor eligibility, additional ban types and feature/emergency guards remain separate
 implementation stages. Request facts are internal application inputs, never proof supplied by callback payloads.
+
+Trust grant/revoke accepts an existing active numeric user ID or known public handle. It never creates or recovers identities. Trust remains separate from roles and beta eligibility; each actual change atomically records before/after values and advances the user trust revision for sponsorship reconciliation. Repeating the same setting produces no extra audit event or revision. Telegram service callers require current bot-admin authority and private transport; trust alone grants no administrative powers.
+

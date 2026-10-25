@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **trust**: add audited trust administration
 - **access**: add Casbin policy foundation
 - **cli**: bootstrap and administer authority roles offline
 - **roles**: persist one CLI-managed authority role per user

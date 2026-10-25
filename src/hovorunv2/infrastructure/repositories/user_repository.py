@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.domain.enums import Platform
@@ -104,12 +104,20 @@ class SQLAlchemyUserRepository:
         *,
         is_trusted: bool,
         platform: str = "telegram",
-    ) -> tuple[bool, bool]:
-        """Update trust flag for an active user."""
+    ) -> tuple[bool, bool, int | None]:
+        """Atomically change trust and advance its durable reconciliation revision."""
+        revision = await self._session.scalar(
+            update(UserDB)
+            .where(
+                UserDB.telegram_id == telegram_id,
+                UserDB.platform == Platform(platform),
+                UserDB.deleted_at.is_(None),
+                UserDB.is_trusted != is_trusted,
+            )
+            .values(is_trusted=is_trusted, trust_revision=UserDB.trust_revision + 1)
+            .returning(UserDB.trust_revision)
+        )
+        if revision is not None:
+            return True, True, revision
         user = await self.get_by_telegram_id(telegram_id, platform)
-        if not user:
-            return False, False
-        if user.is_trusted == is_trusted:
-            return True, False
-        user.is_trusted = is_trusted
-        return True, True
+        return user is not None, False, None

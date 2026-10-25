@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from alembic import command
 
@@ -53,7 +54,9 @@ def test_actual_upgrade_preserves_legacy_group_configuration(tmp_path: Path, mon
         assert connection.execute("SELECT COUNT(*) FROM user_roles").fetchone() == (0,)
         assert connection.execute("SELECT COUNT(*) FROM users").fetchone() == (0,)
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
-        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (TIER_REVISION,)
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            ScriptDirectory.from_config(config).get_current_head(),
+        )
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute("INSERT INTO chats (chat_id, platform, status) VALUES (-100123, 'telegram', 'approved')")
 

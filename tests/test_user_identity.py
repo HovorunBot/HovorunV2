@@ -181,7 +181,7 @@ async def test_audited_user_lifecycle_mutations(test_container: AsyncContainer) 
         )
         assert len(events) == 2
         assert events[1].action == "set_trust"
-        assert events[1].changed_fields == {"is_trusted": True}
+        assert events[1].changed_fields == {"is_trusted": [False, True], "trust_revision": [0, 1]}
 
     # 4. Soft-delete creates audit event
     del_actor = ActorContext.cli(actor_id=None, reason="cleanup test")

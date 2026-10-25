@@ -78,7 +78,7 @@ class SQLAlchemyUserStore(UserStore):
         platform: str,
         *,
         is_trusted: bool,
-    ) -> tuple[bool, bool]:
+    ) -> tuple[bool, bool, int | None]:
         """Execute user trust update on session."""
         repo = SQLAlchemyUserRepository(session)
         return await repo.set_trust(telegram_id, is_trusted=is_trusted, platform=platform)
@@ -157,13 +157,16 @@ class SQLAlchemyUserStore(UserStore):
             is_trusted=is_trusted,
         )
 
-        res: tuple[bool, bool] = await self._audited_uow.execute(
+        res: tuple[bool, bool, int | None] = await self._audited_uow.execute(
             actor=actor or ActorContext.system("set_trust"),
             target_type="user",
             target_id=telegram_id,
             action="set_trust",
             operation=operation,
-            changed_fields={"is_trusted": is_trusted},
+            changed_fields=lambda result: {
+                "is_trusted": [not is_trusted, is_trusted],
+                "trust_revision": [result[2] - 1, result[2]],
+            },
             audit_if=lambda r: r[1],
         )
         return res[0]
