@@ -10,7 +10,24 @@ ROOT_DIR = Path(__file__).parent.parent.parent.parent
 DOT_ENV_PATH = ROOT_DIR / ".env"
 
 
-class Settings(BaseSettings):
+class DatabaseSettings(BaseSettings):
+    """Database configuration usable by offline administration without bot credentials."""
+
+    db_path: str = "data/bot.db"
+
+    @field_validator("db_path", mode="after")
+    @classmethod
+    def make_db_path_absolute(cls, v: str) -> str:
+        """Ensure the database path is absolute relative to the project root."""
+        path = Path(v)
+        if not path.is_absolute():
+            return str((ROOT_DIR / path).absolute())
+        return str(path.absolute())
+
+    model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore")
+
+
+class Settings(DatabaseSettings):
     """Application settings schema.
 
     Attributes:
@@ -22,7 +39,6 @@ class Settings(BaseSettings):
 
     bot_token: str
     admin_ids: list[int]
-    db_path: str = "data/bot.db"
     valkey_url: str = "redis://localhost:6379/0"
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
@@ -40,14 +56,3 @@ class Settings(BaseSettings):
     project_description: str = (
         "The ultimate wingman for your Telegram group chats — making them smarter, faster, and way more fun."
     )
-
-    @field_validator("db_path", mode="after")
-    @classmethod
-    def make_db_path_absolute(cls, v: str) -> str:
-        """Ensure the database path is absolute relative to the project root."""
-        path = Path(v)
-        if not path.is_absolute():
-            return str((ROOT_DIR / path).absolute())
-        return str(path.absolute())
-
-    model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore")

@@ -44,6 +44,7 @@ Issues = "https://github.com/HovorunBot/HovorunV2/issues"
 
 [project.scripts]
 hovorunv2 = "hovorunv2.__main__:main"
+hovorun-admin = "hovorunv2.bootstrap.admin:main"
 
 [build-system]
 requires = ["hatchling"]

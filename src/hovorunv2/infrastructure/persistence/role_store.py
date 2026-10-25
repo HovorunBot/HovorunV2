@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from hovorunv2.application.ports import AuditedUnitOfWork, RoleStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import Platform, Role
+from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.role_repository import SQLAlchemyRoleRepository
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 
@@ -29,6 +30,11 @@ class SQLAlchemyRoleStore(RoleStore):
         async with self._session_maker() as session:
             repo = SQLAlchemyRoleRepository(session)
             return await repo.get_role_by_telegram_id(telegram_id, platform)
+
+    async def list_roles(self, role: Role | None = None) -> list[UserDB]:
+        """List current authority from active user records."""
+        async with self._session_maker() as session:
+            return await SQLAlchemyRoleRepository(session).get_all_by_role(role)
 
     async def _execute_set_role(
         self,

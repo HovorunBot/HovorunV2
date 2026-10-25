@@ -131,3 +131,39 @@ pipelines. Treat AI as an assistant, but *you* are the engineer.
 Released under the **BSD 3-Clause License**. See `LICENSE` for details.
 
 Developed with ❤️ by TwilightSparkle42
+
+### Offline role administration
+
+Authority uses ordered `Role` integer values: `USER = 1`, `ADMIN = 10`, `OWNER = 100`. Minimum authority checks use
+`role >= Role.ADMIN`; exact role checks remain available. Trust, bans, group membership and feature access stay separate.
+
+Prepare an empty or existing database with `uv run alembic upgrade head`, then use the standalone CLI:
+
+```bash
+uv run hovorun-admin role add 123456789 --role owner --reason "Initial bootstrap"
+uv run hovorun-admin role add @known_user --role admin
+uv run hovorun-admin role list
+uv run hovorun-admin role list --role owner
+uv run hovorun-admin role remove 123456789 --yes --reason "Retired operator"
+```
+
+The example ID is synthetic. Numeric provisioning works before the user contacts the bot. Handles must already resolve to
+an active stored user; group, unknown, and deleted-user handles are rejected. Removing authority sets the user's role to
+`USER`. Both removal and replacing an `OWNER` with `ADMIN` require `--yes`. Repeating an assignment does not duplicate audit
+entries. Role changes record CLI origin and the optional reason in the same transaction.
+
+The CLI and migrations require only `DB_PATH` (default `data/bot.db`, relative to the project root). They do not authenticate
+to Telegram, start polling, initialize browsers, or require Valkey or encryption credentials. Run migrations before
+administration; the CLI does not create schema or restore deleted users.
+
+To administer the persistent database without starting the bot or Valkey:
+
+```bash
+docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role add 123456789 --role owner
+docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role list
+docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role remove 123456789 --yes
+```
+
+The container entrypoint applies migrations first. Use `docker compose exec bot uv run hovorun-admin ...` when the bot
+container is already running. These commands prepare database roles; live bot authorization still uses the existing
+configuration until the planned authorization cutover. No configured owner/admin IDs are imported automatically.

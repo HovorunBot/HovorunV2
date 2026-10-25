@@ -1,12 +1,10 @@
 """Dependency injection configuration using dishka."""
 
 from collections.abc import AsyncIterable
-from typing import Any, NewType
+from typing import NewType
 
 import aiohttp
 from dishka import Provider, Scope, alias, provide
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
 from hovorunv2.application.clients.bluesky import BlueskyService
@@ -49,9 +47,10 @@ from hovorunv2.application.services.translation_providers import (
     GoogleTranslationService,
 )
 from hovorunv2.application.services.translation_service import TranslationService
+from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
-from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.config import DatabaseSettings, Settings
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyAuditedTransaction,
     SQLAlchemyChatStore,
@@ -75,32 +74,13 @@ from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSende
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
 
-class InfrastructureProvider(Provider):
+class InfrastructureProvider(DatabaseProvider):
     """Provider for core infrastructure services."""
 
     @provide(scope=Scope.APP)
     def get_settings(self) -> Settings:
         """Provide application settings."""
         return Settings()
-
-    @provide(scope=Scope.APP)
-    async def get_engine(self, config: Settings) -> AsyncIterable[AsyncEngine]:
-        """Provide SQLAlchemy async engine with foreign keys enabled."""
-        engine = create_async_engine(f"sqlite+aiosqlite:///{config.db_path}")
-
-        @event.listens_for(engine.sync_engine, "connect")
-        def set_sqlite_pragma(dbapi_connection: Any, _connection_record: Any) -> None:
-            cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.close()
-
-        yield engine
-        await engine.dispose()
-
-    @provide(scope=Scope.APP)
-    def get_session_maker(self, engine: AsyncEngine) -> async_sessionmaker:
-        """Provide SQLAlchemy async session maker."""
-        return async_sessionmaker(engine, expire_on_commit=False)
 
     @provide(scope=Scope.APP)
     async def get_http_session(self) -> AsyncIterable[aiohttp.ClientSession]:
@@ -132,6 +112,7 @@ class InfrastructureProvider(Provider):
         yield service
         await service.stop_worker()
 
+    database_settings = alias(source=Settings, provides=DatabaseSettings)
     settings_port = alias(source=Settings, provides=AppSettings)
     cache_port = alias(source=CacheService, provides=CachePort)
     browser_port = alias(source=BrowserService, provides=BrowserPort)

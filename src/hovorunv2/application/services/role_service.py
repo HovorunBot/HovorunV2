@@ -3,6 +3,7 @@
 from hovorunv2.application.ports import RoleStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, Platform, Role
+from hovorunv2.domain.user import UserDB
 
 
 class RoleService:
@@ -32,6 +33,10 @@ class RoleService:
     async def is_effective_admin(self, telegram_id: int, platform: Platform = Platform.TELEGRAM) -> bool:
         """Check if user is an effective admin (Owner OR Admin). Owner always implies admin."""
         return await self.has_at_least_role(telegram_id, Role.ADMIN, platform)
+
+    async def list_roles(self, role: Role | None = None) -> list[UserDB]:
+        """List active assignments for offline administration."""
+        return await self._role_store.list_roles(role)
 
     async def set_role(
         self,

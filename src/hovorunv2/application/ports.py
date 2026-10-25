@@ -228,6 +228,10 @@ class RoleStore(Protocol):
         """Fetch the active user's role, or None for missing/deleted identities."""
         ...
 
+    async def list_roles(self, role: Role | None = None) -> list[UserDB]:
+        """List active authority assignments; by default include ADMIN and OWNER only."""
+        ...
+
     async def set_role(
         self,
         telegram_id: int,

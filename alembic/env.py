@@ -19,9 +19,9 @@ from hovorunv2.domain.handle import PublicHandleDB
 from hovorunv2.domain.role import UserRoleDB
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.config import DatabaseSettings
 
-settings = Settings()
+settings = DatabaseSettings()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
