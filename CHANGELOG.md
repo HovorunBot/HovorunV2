@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **roles**: persist one CLI-managed authority role per user
 - **identity**: resolve public handles without transferring authority
 - **identity**: preserve durable group identity and metadata
 - **identity**: persist lifecycle-aware users

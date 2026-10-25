@@ -25,6 +25,7 @@ def test_user_model_has_no_invasive_personal_data_columns() -> None:
         "id",
         "platform",
         "telegram_id",
+        "role",
         "is_trusted",
         "generation",
         "created_at",

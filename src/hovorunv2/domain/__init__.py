@@ -11,6 +11,7 @@ from hovorunv2.domain.handle import (
     normalize_handle,
     validate_handle,
 )
+from hovorunv2.domain.role import UserRoleDB
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.domain.user import UserDB
 
@@ -25,6 +26,7 @@ __all__ = [
     "SystemStateDB",
     "UnknownHandleError",
     "UserDB",
+    "UserRoleDB",
     "normalize_handle",
     "sanitize_audit_changes",
     "validate_handle",

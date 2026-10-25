@@ -2,11 +2,12 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, Index, Integer, String, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
-from hovorunv2.domain.enums import Platform
+from hovorunv2.domain.enums import Platform, Role
+from hovorunv2.domain.role_type import RoleType
 
 
 class UserDB(Base):
@@ -21,6 +22,12 @@ class UserDB(Base):
         nullable=False,
     )
     telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    role: Mapped[Role] = mapped_column(
+        RoleType(),
+        default=Role.USER,
+        server_default=str(Role.USER.value),
+        nullable=False,
+    )
     is_trusted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     generation: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
@@ -46,4 +53,5 @@ class UserDB(Base):
             unique=True,
             sqlite_where=text("deleted_at IS NULL"),
         ),
+        CheckConstraint("role IN (1, 10, 100)", name="ck_users_valid_role"),
     )

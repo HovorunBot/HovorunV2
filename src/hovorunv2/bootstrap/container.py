@@ -27,6 +27,7 @@ from hovorunv2.application.ports import (
     ChatStore,
     CommandStore,
     PublicHandleStore,
+    RoleStore,
     SystemStore,
     TaskQueuePort,
     UnauthorizedPromptSender,
@@ -42,6 +43,7 @@ from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import ChatReminderService
+from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.application.services.translation_providers import (
     BaseTranslationService,
     GoogleTranslationService,
@@ -55,6 +57,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyChatStore,
     SQLAlchemyCommandStore,
     SQLAlchemyPublicHandleStore,
+    SQLAlchemyRoleStore,
     SQLAlchemySystemStore,
     SQLAlchemyUserStore,
 )
@@ -145,6 +148,7 @@ class AppProvider(Provider):
     system_store_impl = provide(SQLAlchemySystemStore)
     user_store_impl = provide(SQLAlchemyUserStore)
     public_handle_store_impl = provide(SQLAlchemyPublicHandleStore)
+    role_store_impl = provide(SQLAlchemyRoleStore)
     audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
 
     chat_store = alias(source=SQLAlchemyChatStore, provides=ChatStore)
@@ -152,6 +156,7 @@ class AppProvider(Provider):
     system_store = alias(source=SQLAlchemySystemStore, provides=SystemStore)
     user_store = alias(source=SQLAlchemyUserStore, provides=UserStore)
     public_handle_store = alias(source=SQLAlchemyPublicHandleStore, provides=PublicHandleStore)
+    role_store = alias(source=SQLAlchemyRoleStore, provides=RoleStore)
     audited_transaction = alias(source=SQLAlchemyAuditedTransaction, provides=AuditedUnitOfWork)
 
     prompt_sender_impl = provide(TelegramUnauthorizedPromptSender)
@@ -165,6 +170,7 @@ class AppProvider(Provider):
     command_service = provide(CommandService)
     chat_status_service = provide(ChatStatusService)
     access_service = provide(AccessService)
+    role_service = provide(RoleService)
     cleanup_service = provide(CleanupService)
     language_service = provide(LanguageService)
     translation_provider = provide(GoogleTranslationService, provides=BaseTranslationService)

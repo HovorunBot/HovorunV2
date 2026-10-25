@@ -1,6 +1,6 @@
 """Domain enums and command definitions."""
 
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from typing import Final
 
 
@@ -17,6 +17,14 @@ class ActorOrigin(StrEnum):
     CLI = "cli"
     SYSTEM = "system"
     MIGRATION = "migration"
+
+
+class Role(IntEnum):
+    """Ordered application authority; independent access restrictions still apply."""
+
+    USER = 1
+    ADMIN = 10
+    OWNER = 100
 
 
 class TargetKind(StrEnum):

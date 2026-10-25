@@ -8,7 +8,7 @@ from aiogram import Bot
 
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import ChatStatus, Platform, TargetKind
+from hovorunv2.domain.enums import ChatStatus, Platform, Role, TargetKind
 from hovorunv2.domain.user import UserDB
 
 
@@ -218,6 +218,24 @@ class PublicHandleStore(Protocol):
         platform: Platform = Platform.TELEGRAM,
     ) -> bool:
         """Release public handle on target soft-deletion or removal with audit."""
+        ...
+
+
+class RoleStore(Protocol):
+    """Durable single-role lookup and audited role assignment."""
+
+    async def get_role(self, telegram_id: int, platform: Platform = Platform.TELEGRAM) -> Role | None:
+        """Fetch the active user's role, or None for missing/deleted identities."""
+        ...
+
+    async def set_role(
+        self,
+        telegram_id: int,
+        role: Role,
+        actor: ActorContext,
+        platform: Platform = Platform.TELEGRAM,
+    ) -> bool:
+        """Set one role atomically with audit; USER explicitly demotes authority."""
         ...
 
 

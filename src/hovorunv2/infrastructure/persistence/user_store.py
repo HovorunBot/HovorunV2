@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ports import AuditedUnitOfWork, UserStore
 from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.enums import ActorOrigin, Role
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 
@@ -117,6 +118,14 @@ class SQLAlchemyUserStore(UserStore):
         self, telegram_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
     ) -> bool:
         """Soft-delete an active user identity recording actor and deletion reason."""
+        if actor.origin != ActorOrigin.CLI:
+            async with self._session_maker() as session:
+                repo = SQLAlchemyUserRepository(session)
+                target = await repo.get_by_telegram_id(telegram_id, platform)
+                if target and target.role == Role.OWNER:
+                    msg = "Protected Owner cannot be deleted via Telegram origin."
+                    raise PermissionError(msg)
+
         now = datetime.now(UTC)
         operation = partial(
             self._execute_soft_delete,
