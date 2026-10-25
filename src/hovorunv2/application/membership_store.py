@@ -3,7 +3,12 @@
 from datetime import datetime
 from typing import Protocol
 
-from hovorunv2.application.membership import AdministratorEvidence, BotCapabilityEvidence, MembershipEvidence
+from hovorunv2.application.membership import (
+    AdministratorEvidence,
+    BotCapabilityEvidence,
+    MembershipEvidence,
+    MembershipStatus,
+)
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.membership import GroupMembershipStateDB
@@ -19,6 +24,10 @@ class MembershipStore(Protocol):
 
     async def relevant_users(self, group_id: int, limit: int = 50) -> list[UserDB]:
         """Return current and unresolved former administrators, missing/stale evidence first."""
+        ...
+
+    async def full_banned_admin_status(self, group_id: int, now: datetime) -> MembershipStatus | None:
+        """Return a full-ban blocker across all active administrator candidates, without batching."""
         ...
 
     async def get_member(self, group_id: int, user_id: int) -> MembershipEvidence | None:

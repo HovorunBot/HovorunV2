@@ -4,9 +4,15 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from dishka import AsyncContainer
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
+from hovorunv2.application.membership import (
+    AdministratorEvidence,
+    BotCapabilityEvidence,
+    MembershipEvidence,
+    MembershipStatus,
+)
 from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.permissions import (
     DecisionReason,
@@ -23,6 +29,8 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ChatStatus, Role, TargetKind
 from hovorunv2.domain.group_grant import ApprovalBasis
+from hovorunv2.domain.membership import GroupMembershipStateDB
+from tests.conftest import verify_group_admins
 
 
 @pytest.mark.asyncio
@@ -36,6 +44,7 @@ async def test_group_access_stored_explicit_and_legacy_approval_and_revocation(
     actor = ActorContext.cli()
 
     chat = await chats.get_or_create_chat(-100201)
+    await verify_group_admins(test_container, chat.chat_id)
     assert (await statuses.evaluate_access(chat.chat_id)).reason == DecisionReason.NOT_APPROVED
     assert await statuses.is_approved(chat.chat_id) is False
 
@@ -61,6 +70,7 @@ async def test_group_access_stored_explicit_and_legacy_approval_and_revocation(
 
     # 4. Unmigrated legacy chat with ChatStatus.APPROVED and no grant rows
     legacy_chat = await chats.get_or_create_chat(-100202)
+    await verify_group_admins(test_container, legacy_chat.chat_id)
     await statuses.set_status(legacy_chat.chat_id, ChatStatus.APPROVED)
     legacy_decision = await statuses.evaluate_access(legacy_chat.chat_id)
     assert legacy_decision.allowed is True
@@ -81,6 +91,7 @@ async def test_group_access_group_ban_precedence_and_no_admin_bypass(
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100203)
+    await verify_group_admins(test_container, chat.chat_id)
     await grants.approve(chat.id, actor)
     await roles.set_role(1001, Role.OWNER, actor)
 
@@ -125,6 +136,7 @@ async def test_group_access_admin_full_ban_suspends_group_and_recovers(
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100204)
+    await verify_group_admins(test_container, chat.chat_id)
     admin_user = await users.ingest_user(204)
     assert admin_user is not None
     await grants.approve(chat.id, actor)
@@ -172,6 +184,7 @@ async def test_group_access_ordinary_member_or_personal_ban_does_not_suspend(
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100205)
+    await verify_group_admins(test_container, chat.chat_id)
     member_user = await users.ingest_user(205)
     admin_user = await users.ingest_user(206)
     assert member_user is not None
@@ -215,6 +228,7 @@ async def test_group_access_banned_former_admin_demoted_or_departed(
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100206)
+    await verify_group_admins(test_container, chat.chat_id)
     user = await users.ingest_user(207)
     assert user is not None
     await grants.approve(chat.id, actor)
@@ -270,6 +284,7 @@ async def test_group_access_unknown_admin_evidence_suspends_and_recovers(
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100207)
+    await verify_group_admins(test_container, chat.chat_id)
     user = await users.ingest_user(208)
     assert user is not None
     await grants.approve(chat.id, actor)
@@ -329,6 +344,7 @@ async def test_group_access_independent_of_activator_trust_or_membership(
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100208)
+    await verify_group_admins(test_container, chat.chat_id)
     activator = await users.ingest_user(301)
     assert activator is not None
     await trust.set_trust(str(activator.telegram_id), is_trusted=True, actor=actor)
@@ -344,3 +360,95 @@ async def test_group_access_independent_of_activator_trust_or_membership(
     # 2. Activator receives a FULL ban (activator is NOT an admin of this group)
     await bans.apply(TargetKind.USER, activator.telegram_id, BanKind.FULL, actor)
     assert (await statuses.evaluate_access(chat.chat_id)).allowed is True
+
+
+@pytest.mark.parametrize("snapshot", ["absent", "bot_only", "unknown", "future", "expired", "missing_expiry"])
+async def test_incomplete_administrator_snapshot_denies_and_recovers(
+    test_container: AsyncContainer, snapshot: str
+) -> None:
+    """Only fresh successful listings prove that all current administrators were checked."""
+    chats = await test_container.get(ChatStore)
+    memberships = await test_container.get(MembershipStore)
+    grants = await test_container.get(GroupGrantStore)
+    statuses = await test_container.get(ChatStatusService)
+    chat = await chats.get_or_create_chat(-100999)
+    actor = ActorContext.cli()
+    await grants.approve(chat.id, actor)
+    now = datetime.now(UTC)
+    if snapshot == "bot_only":
+        await memberships.save_bot(
+            chat.id,
+            BotCapabilityEvidence(
+                MembershipEvidence(chat.chat_id, 900, MembershipStatus.ADMIN, now, now + timedelta(minutes=5)),
+                True,
+                True,
+                True,
+                True,
+                True,
+            ),
+            actor,
+        )
+    elif snapshot not in {"absent", "missing_expiry"}:
+        verified = now + timedelta(minutes=1) if snapshot == "future" else now - timedelta(minutes=2)
+        expiry = now if snapshot == "expired" else now + timedelta(minutes=5)
+        await memberships.save_admins(
+            chat.id, AdministratorEvidence(chat.chat_id, snapshot != "unknown", (), verified, expiry), actor
+        )
+    elif snapshot == "missing_expiry":
+        sessions = await test_container.get(async_sessionmaker)
+        async with sessions() as session:
+            session.add(GroupMembershipStateDB(group_id=chat.id, admins_known=True, admins_verified_at=now))
+            await session.commit()
+    assert (await statuses.evaluate_access(chat.chat_id, now)).reason == DecisionReason.MEMBER_EVIDENCE_UNKNOWN
+    assert len(await grants.approvals(chat.id)) == 1
+    recovered_at = now + timedelta(minutes=2)
+    await memberships.save_admins(
+        chat.id, AdministratorEvidence(chat.chat_id, True, (), recovered_at, recovered_at + timedelta(minutes=5)), actor
+    )
+    assert (await statuses.evaluate_access(chat.chat_id, recovered_at)).allowed
+    assert len(await grants.approvals(chat.id)) == 1
+
+
+@pytest.mark.parametrize("expired", [False, True])
+async def test_full_banned_candidate_beyond_maintenance_batch(test_container: AsyncContainer, expired: bool) -> None:
+    """The 101st candidate still blocks access, including unresolved expired evidence."""
+    chats = await test_container.get(ChatStore)
+    memberships = await test_container.get(MembershipStore)
+    grants = await test_container.get(GroupGrantStore)
+    bans = await test_container.get(BanService)
+    statuses = await test_container.get(ChatStatusService)
+    chat = await chats.get_or_create_chat(-100998)
+    actor = ActorContext.cli(reason="synthetic restriction")
+    now = datetime.now(UTC)
+    members = tuple(
+        MembershipEvidence(
+            chat.chat_id,
+            10000 + index,
+            MembershipStatus.ADMIN,
+            now - timedelta(minutes=2),
+            now + timedelta(minutes=index + 1),
+        )
+        for index in range(101)
+    )
+    await memberships.save_admins(
+        chat.id,
+        AdministratorEvidence(chat.chat_id, True, members, now - timedelta(minutes=2), now + timedelta(minutes=5)),
+        actor,
+    )
+    await grants.approve(chat.id, actor)
+    await bans.apply(TargetKind.USER, members[-1].user_telegram_id, BanKind.FULL, actor)
+    check_time = now
+    if expired:
+        # Keep first 100 candidates earlier in maintenance order while every row expires.
+        check_time = now + timedelta(minutes=102)
+        sessions = await test_container.get(async_sessionmaker)
+        async with sessions() as session:
+            state = await session.get(GroupMembershipStateDB, chat.id)
+            assert state is not None
+            state.admins_expires_at = check_time + timedelta(minutes=5)
+            await session.commit()
+    assert len(await memberships.relevant_users(chat.id, limit=100)) == 100
+    decision = await statuses.evaluate_access(chat.chat_id, check_time)
+    assert decision.reason == (DecisionReason.MEMBER_EVIDENCE_UNKNOWN if expired else DecisionReason.ADMIN_FULL_BANNED)
+    await bans.revoke(TargetKind.USER, members[-1].user_telegram_id, BanKind.FULL, actor)
+    assert (await statuses.evaluate_access(chat.chat_id, check_time)).allowed

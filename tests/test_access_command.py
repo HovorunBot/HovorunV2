@@ -13,7 +13,7 @@ from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
-from tests.conftest import provision_role
+from tests.conftest import provision_role, verify_group_admins
 
 
 @pytest.fixture
@@ -57,6 +57,7 @@ async def test_handle_authorized(access_command: AccessCommand, init_container: 
     """Test handling by an authorized user."""
     admin_id = await provision_role(init_container)
     chat_id = 789
+    await verify_group_admins(init_container, chat_id)
     message = create_mock_message("/allow_chat", user_id=admin_id, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
 

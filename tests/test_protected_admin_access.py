@@ -25,6 +25,7 @@ from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ActorOrigin, CommandName, Role, TargetKind
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
+from tests.conftest import verify_group_admins
 
 ALICE_ID = 220001
 BOB_ID = 220002
@@ -90,6 +91,7 @@ async def test_group_suspension_preserves_private_administrator_access(
     bob = await users.ingest_user(BOB_ID)
     assert bob is not None
     group = await chats.get_or_create_chat(GROUP_ID)
+    await verify_group_admins(test_container, group.chat_id)
     await grants.approve(group.id, actor)
     await commands.enable_command(GROUP_ID, CommandName.YOUTUBE_VIDEO)
     selection_before = await commands.get_allowed_commands(GROUP_ID)

@@ -23,6 +23,7 @@ from hovorunv2.domain.enums import Role, TargetKind
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
+from tests.conftest import verify_group_admins
 
 
 def make_message(chat_id: int, user_id: int, chat_type: ChatType) -> MagicMock:
@@ -71,6 +72,7 @@ async def test_personally_banned_user_direct_command_vs_automatic_media(
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100301)
+    await verify_group_admins(test_container, chat.chat_id)
     await grants.approve(chat.id, actor)
 
     banned_user = await users.ingest_user(401)

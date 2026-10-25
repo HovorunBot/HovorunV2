@@ -17,6 +17,7 @@
 
 ### Fix
 
+- **access**: require fresh administrator snapshots
 - **access**: enforce suspension and protect admin authority
 - **validation**: preserve valid translation data and simplify guards
 - **encryption**: require configuration and prevent plaintext caching

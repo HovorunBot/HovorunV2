@@ -32,7 +32,7 @@ from hovorunv2.domain.enums import (
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
-from tests.conftest import provision_role
+from tests.conftest import provision_role, verify_group_admins
 
 
 def create_mock_message(chat_id: int, user_id: int, chat_type: ChatType = ChatType.SUPERGROUP) -> MagicMock:
@@ -209,6 +209,7 @@ async def test_policy_requires_access(test_container: AsyncContainer) -> None:
     approved_chat_id = 123
     non_approved_chat_id = 456
 
+    await verify_group_admins(test_container, approved_chat_id)
     await chat_status_service.set_status(approved_chat_id, ChatStatus.APPROVED)
 
     assert await access_service.is_allowed(user_id, approved_chat_id, policy) is True
@@ -252,6 +253,7 @@ async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
     user_id = 999
     chat_id = 123
 
+    await verify_group_admins(test_container, chat_id)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     # Disabled by default for features
@@ -281,6 +283,7 @@ async def test_chat_status_service_approve(test_container: AsyncContainer) -> No
     command_service = await test_container.get(CommandService)
     chat_id = 12345
 
+    await verify_group_admins(test_container, chat_id)
     await chat_status_service.approve(chat_id)
 
     assert await chat_status_service.is_approved(chat_id) is True
@@ -376,6 +379,7 @@ async def test_characterize_legacy_group_status_matrix(test_container: AsyncCont
     for idx, status in enumerate(statuses_to_test):
         chat_id = base_chat_id + idx
         # Persist chat with target status
+        await verify_group_admins(test_container, chat_id)
         await chat_status_service.set_status(chat_id, status)
 
         # 1. Assert real SQLite state directly
@@ -426,6 +430,7 @@ async def test_characterize_legacy_empty_command_set_capture(test_container: Asy
     chat_status_service = await test_container.get(ChatStatusService)
 
     chat_id = 20001
+    await verify_group_admins(test_container, chat_id)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     # 1. Assert real SQLite state: chat exists, but has 0 associated commands
@@ -480,6 +485,7 @@ async def test_characterize_legacy_partially_enabled_command_set(test_container:
     chat_status_service = await test_container.get(ChatStatusService)
 
     chat_id = 20002
+    await verify_group_admins(test_container, chat_id)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     # Enable ONLY twitter_post
@@ -516,6 +522,7 @@ async def test_characterize_legacy_parent_provider_bulk_and_toggle(test_containe
     chat_status_service = await test_container.get(ChatStatusService)
 
     chat_id = 20003
+    await verify_group_admins(test_container, chat_id)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
 
     # 1. Enabling parent provider enables both split sub-commands
@@ -554,6 +561,7 @@ async def test_characterize_legacy_default_activation(test_container: AsyncConta
     access_service = await test_container.get(AccessService)
 
     chat_id = 30001
+    await verify_group_admins(test_container, chat_id)
     await chat_status_service.approve(chat_id)
 
     # 1. Assert SQLite state directly

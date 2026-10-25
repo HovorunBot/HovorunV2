@@ -6,7 +6,12 @@ from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.membership import AdministratorEvidence, BotCapabilityEvidence, MembershipEvidence
+from hovorunv2.application.membership import (
+    AdministratorEvidence,
+    BotCapabilityEvidence,
+    MembershipEvidence,
+    MembershipStatus,
+)
 from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext
@@ -36,6 +41,11 @@ class SQLAlchemyMembershipStore(MembershipStore):
         """List only active administrator candidates with a SQL bound."""
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).relevant_users(group_id, limit)
+
+    async def full_banned_admin_status(self, group_id: int, now: datetime) -> MembershipStatus | None:
+        """Query complete current-generation blockers independently of maintenance batch sizes."""
+        async with self._session_maker() as session:
+            return await SQLAlchemyMembershipRepository(session).full_banned_admin_status(group_id, now)
 
     async def get_member(self, group_id: int, user_id: int) -> MembershipEvidence | None:
         """Read evidence with explicit verification and expiry times."""

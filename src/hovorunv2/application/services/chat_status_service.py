@@ -69,31 +69,20 @@ class ChatStatusService:
     async def _check_admin_blockers(self, group_id: int, current_time: datetime) -> AccessDecision | None:
         """Check administrator evidence freshness and full-ban suspension on current admins."""
         state = await self._membership_store.get_state(group_id)
-        if state is not None and state.admins_verified_at is not None:
-            if not state.admins_known:
-                return AccessDecision(allowed=False, reason=DecisionReason.MEMBER_EVIDENCE_UNKNOWN)
-            if state.admins_expires_at is not None and evidence_time(state.admins_expires_at) <= current_time:
-                return AccessDecision(allowed=False, reason=DecisionReason.MEMBER_EVIDENCE_UNKNOWN)
+        if (
+            state is None
+            or not state.admins_known
+            or state.admins_verified_at is None
+            or state.admins_expires_at is None
+            or evidence_time(state.admins_verified_at) > current_time
+            or evidence_time(state.admins_expires_at) <= current_time
+        ):
+            return AccessDecision(allowed=False, reason=DecisionReason.MEMBER_EVIDENCE_UNKNOWN)
 
-        relevant_users = await self._membership_store.relevant_users(group_id, limit=100)
-        has_unknown_banned_candidate = False
-
-        for user in relevant_users:
-            user_bans = await self._ban_store.list_active(TargetKind.USER, user.telegram_id)
-            if not any(b.kind == BanKind.FULL.value for b in user_bans):
-                continue
-
-            evidence = await self._membership_store.get_member(group_id, user.id)
-            if (
-                evidence is None
-                or evidence.status == MembershipStatus.UNKNOWN
-                or evidence_time(evidence.expires_at) <= current_time
-            ):
-                has_unknown_banned_candidate = True
-            elif evidence.status == MembershipStatus.ADMIN:
-                return AccessDecision(allowed=False, reason=DecisionReason.ADMIN_FULL_BANNED)
-
-        if has_unknown_banned_candidate:
+        blocker = await self._membership_store.full_banned_admin_status(group_id, current_time)
+        if blocker == MembershipStatus.ADMIN:
+            return AccessDecision(allowed=False, reason=DecisionReason.ADMIN_FULL_BANNED)
+        if blocker == MembershipStatus.UNKNOWN:
             return AccessDecision(allowed=False, reason=DecisionReason.MEMBER_EVIDENCE_UNKNOWN)
         return None
 

@@ -204,6 +204,8 @@ Independent ban records retain internal reasons separately from optional public 
 
 ### Membership verification
 
+Group feature execution requires a complete, successful administrator snapshot within its validity window. Missing, failed, future, or expired verification suspends processing until refreshed, without revoking approval. Full-ban checks cover every retained administrator candidate.
+
 The bot subscribes to group member and bot membership updates. It retains evidence only for human administrators and unresolved former administrators. API errors produce unknown evidence; they do not revoke grants or prove someone left. Bot presence and individual administrator rights remain separate from approvals and bans.
 
 Evidence expires after five minutes. Startup and the existing SAQ worker refresh at most ten due groups per minute, with at most fifty relevant member checks per group and a thirty-second cycle deadline. Unprocessed evidence remains expired for the next cycle. Refreshes use ten-second Telegram request deadlines and coalesce simultaneous checks for the same group within a process. Ordinary messages do not trigger membership API calls. Action authorization enforcement follows in the next access blocks.

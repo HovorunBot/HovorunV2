@@ -23,7 +23,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, CommandName, Role
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.logger import setup_telegram_logging
-from tests.conftest import provision_role
+from tests.conftest import provision_role, verify_group_admins
 
 
 class RecordingSession(BaseSession):
@@ -103,6 +103,7 @@ async def test_empty_role_registry_preserves_existing_group_access(test_containe
     """Resolving access with no operators never erases approvals or enabled commands."""
     statuses = await test_container.get(ChatStatusService)
     commands = await test_container.get(CommandService)
+    await verify_group_admins(test_container, -100101)
     await statuses.set_status(-100101, ChatStatus.APPROVED)
     await commands.enable_command(-100101, CommandName.TIKTOK)
     before = await commands.get_allowed_commands(-100101)

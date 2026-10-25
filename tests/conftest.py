@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -13,6 +14,9 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from hovorunv2.application.membership import AdministratorEvidence
+from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.ports import ChatStore
 from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
 from hovorunv2.domain.audit import ActorContext
@@ -148,3 +152,14 @@ def manage_vcr_cassettes(request: pytest.FixtureRequest) -> None:
         mtime = cassette_path.stat().st_mtime
         if (time.time() - mtime) > (7 * 24 * 60 * 60):  # 7 days
             cassette_path.unlink()
+
+
+async def verify_group_admins(container: AsyncContainer, telegram_id: int) -> None:
+    """Explicitly provide a fresh empty administrator snapshot before member events."""
+    chats = await container.get(ChatStore)
+    group = await chats.get_or_create_chat(telegram_id)
+    memberships = await container.get(MembershipStore)
+    now = datetime.now(UTC) - timedelta(minutes=3)
+    await memberships.save_admins(
+        group.id, AdministratorEvidence(telegram_id, True, (), now, now + timedelta(minutes=10)), ActorContext.cli()
+    )
