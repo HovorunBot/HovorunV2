@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ports import AuditedUnitOfWork, RoleStore
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.domain.enums import Platform, Role
+from hovorunv2.domain.enums import ActorOrigin, Platform, Role
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.role_repository import SQLAlchemyRoleRepository
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
@@ -70,6 +70,9 @@ class SQLAlchemyRoleStore(RoleStore):
         platform: Platform = Platform.TELEGRAM,
     ) -> bool:
         """Set user's single authority role with audit."""
+        if actor.origin != ActorOrigin.CLI:
+            msg = "Role assignment is strictly restricted to CLI origin."
+            raise PermissionError(msg)
         op = partial(
             self._execute_set_role,
             telegram_id=telegram_id,

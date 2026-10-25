@@ -93,8 +93,8 @@ class SQLAlchemyBanStore(BanStore):
             if not isinstance(operator, UserDB) or operator.role < Role.ADMIN:
                 msg = "Ban administration requires current bot administrator authority."
                 raise PermissionError(msg)
-            if isinstance(entity, UserDB) and entity.role == Role.OWNER:
-                msg = "Protected Owner restrictions can only be changed through CLI."
+            if isinstance(entity, UserDB) and entity.role >= Role.ADMIN:
+                msg = f"Protected {entity.role.name.title()} restrictions can only be changed through CLI."
                 raise PermissionError(msg)
         elif actor.origin != ActorOrigin.CLI:
             msg = "Ban administration requires CLI or Telegram administrator origin."

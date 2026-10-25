@@ -147,9 +147,9 @@ async def test_legacy_gates_now_share_database_authority(test_container: AsyncCo
     roles = await test_container.get(RoleService)
     await roles.set_role(101, Role.USER, actor=ActorContext.cli())
     legacy = CommandPolicy(requires_admin=True, requires_approval=False, is_toggleable=False)
-    assert await access.is_allowed(101, -100101, legacy) is False
+    assert await access.is_allowed(101, 101, legacy) is False
     request = PermissionRequest(101, "bot:administer", PermissionTarget("bot"), transport_kind="private")
     assert (await access.evaluate_permission(request)).reason == DecisionReason.UNAUTHORIZED_MANAGEMENT
     await roles.set_role(101, Role.ADMIN, actor=ActorContext.cli())
-    assert await access.is_allowed(101, -100101, legacy) is True
+    assert await access.is_allowed(101, 101, legacy) is True
     assert (await access.evaluate_permission(request)).allowed is True

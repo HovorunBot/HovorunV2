@@ -154,6 +154,12 @@ an active stored user; group, unknown, and deleted-user handles are rejected. Re
 `USER`. Both removal and replacing an `OWNER` with `ADMIN` require `--yes`. Repeating an assignment does not duplicate audit
 entries. Role changes record CLI origin and the optional reason in the same transaction.
 
+Only CLI-origin operations may change `ADMIN`/`OWNER` authority or apply/revoke personal restrictions against them.
+Non-CLI deletion cannot remove their authority. Group bans and suspension caused by a full-banned current Telegram
+administrator still block feature processing in that group for everyone, including bot administrators and owners.
+Those group restrictions preserve administrators' private communication and authorized private administration;
+explicit personal restrictions applied through CLI remain effective.
+
 The CLI and migrations require only `DB_PATH` (default `data/bot.db`, relative to the project root). They do not authenticate
 to Telegram, start polling, initialize browsers, or require Valkey or encryption credentials. Run migrations before
 administration; the CLI does not create schema or restore deleted users.

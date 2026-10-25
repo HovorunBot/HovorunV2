@@ -149,7 +149,12 @@ class AccessService:
         # Group bans always block everyone, including global admins.
         if chat_id < 0:
             decision = await self._chat_status_service.evaluate_access(chat_id)
-            if decision.reason == DecisionReason.GROUP_BANNED:
+            if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ENTITY_UNAVAILABLE}:
+                return False
+            if policy.requires_approval and decision.reason in {
+                DecisionReason.ADMIN_FULL_BANNED,
+                DecisionReason.MEMBER_EVIDENCE_UNKNOWN,
+            }:
                 return False
 
         # Personal user bans block direct commands, but not automatic media links in groups

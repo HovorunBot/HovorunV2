@@ -187,7 +187,7 @@ async def test_owner_protected_from_telegram_deletion(test_container: AsyncConta
     assert await role_service.is_owner(owner_id) is True
 
     # Telegram actor fails to delete Owner
-    with pytest.raises(PermissionError, match="Protected Owner cannot be deleted via Telegram origin"):
+    with pytest.raises(PermissionError, match="Protected administrators can only be deleted through CLI"):
         await user_store.soft_delete_user(owner_id, actor=tg_actor, reason="hostile delete")
 
     # CLI actor can delete Owner

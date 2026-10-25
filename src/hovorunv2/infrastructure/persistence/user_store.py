@@ -56,16 +56,20 @@ class SQLAlchemyUserStore(UserStore):
         self,
         session: AsyncSession,
         telegram_id: int,
-        actor_id: int | None,
+        actor: ActorContext,
         reason: str,
         platform: str,
         deleted_at: datetime,
     ) -> bool:
         """Execute user soft-deletion on session."""
         repo = SQLAlchemyUserRepository(session)
+        target = await repo.get_by_telegram_id(telegram_id, platform)
+        if actor.origin != ActorOrigin.CLI and target is not None and target.role >= Role.ADMIN:
+            msg = "Protected administrators can only be deleted through CLI."
+            raise PermissionError(msg)
         return await repo.soft_delete(
             telegram_id,
-            actor_id,
+            actor.actor_id,
             reason,
             platform,
             deleted_at,
@@ -118,19 +122,11 @@ class SQLAlchemyUserStore(UserStore):
         self, telegram_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
     ) -> bool:
         """Soft-delete an active user identity recording actor and deletion reason."""
-        if actor.origin != ActorOrigin.CLI:
-            async with self._session_maker() as session:
-                repo = SQLAlchemyUserRepository(session)
-                target = await repo.get_by_telegram_id(telegram_id, platform)
-                if target and target.role == Role.OWNER:
-                    msg = "Protected Owner cannot be deleted via Telegram origin."
-                    raise PermissionError(msg)
-
         now = datetime.now(UTC)
         operation = partial(
             self._execute_soft_delete,
             telegram_id=telegram_id,
-            actor_id=actor.actor_id,
+            actor=actor,
             reason=reason,
             platform=platform,
             deleted_at=now,
