@@ -20,6 +20,7 @@ from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.ports import (
     AppSettings,
     AuditedUnitOfWork,
+    AuthorizationPolicy,
     BrowserPort,
     CachePort,
     ChatStore,
@@ -40,6 +41,7 @@ from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
+from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.application.services.translation_providers import (
@@ -48,6 +50,7 @@ from hovorunv2.application.services.translation_providers import (
 )
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.bootstrap.database import DatabaseProvider
+from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import DatabaseSettings, Settings
@@ -124,6 +127,11 @@ class AppProvider(Provider):
 
     scope = Scope.APP
 
+    @provide
+    async def authorization_policy(self) -> AuthorizationPolicy:
+        """Load static permission assets once without changing live enforcement paths."""
+        return await load_authorization_policy()
+
     chat_store_impl = provide(SQLAlchemyChatStore)
     command_store_impl = provide(SQLAlchemyCommandStore)
     system_store_impl = provide(SQLAlchemySystemStore)
@@ -152,6 +160,7 @@ class AppProvider(Provider):
     chat_status_service = provide(ChatStatusService)
     access_service = provide(AccessService)
     role_service = provide(RoleService)
+    permission_service = provide(PermissionService)
     cleanup_service = provide(CleanupService)
     language_service = provide(LanguageService)
     translation_provider = provide(GoogleTranslationService, provides=BaseTranslationService)

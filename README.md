@@ -167,3 +167,20 @@ docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role r
 The container entrypoint applies migrations first. Use `docker compose exec bot uv run hovorun-admin ...` when the bot
 container is already running. These commands prepare database roles; live bot authorization still uses the existing
 configuration until the planned authorization cutover. No configured owner/admin IDs are imported automatically.
+
+### Permission policy foundation
+
+Protected actions can be evaluated through `AccessService.evaluate_permission` with an application-owned `PermissionRequest`.
+The service reads current database authority on each call, checks active identities and group generations/bans, and then
+uses the packaged Casbin policy. Group administrator evidence is scoped to the actor, target generation and validity window;
+missing or stale evidence grants no group administrator authority. Bot administration requires explicit private transport.
+
+Static capabilities live in `src/hovorunv2/infrastructure/authorization/policies/`. The initial actions are
+`bot:administer` and `group:settings`; unmatched actions deny. Policies use the existing integer authority tiers and remain
+immutable after loading. Add a policy row and focused tests for a new action; introduce new domain facts and guards only
+when that action needs them. There is no separate policy database or user-role mirror. CLI bootstrap keeps its explicit
+application-service path.
+
+This foundation is additive. Existing handlers still use the legacy authorization path until the planned cutover;
+Telegram membership verification, sponsor eligibility, additional ban types and feature/emergency guards remain separate
+implementation stages. Request facts are internal application inputs, never proof supplied by callback payloads.

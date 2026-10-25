@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **access**: add Casbin policy foundation
 - **cli**: bootstrap and administer authority roles offline
 - **roles**: persist one CLI-managed authority role per user
 - **identity**: resolve public handles without transferring authority

@@ -3,9 +3,11 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from hovorunv2.application.permissions import AccessDecision, PermissionRequest
 from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.permission_service import PermissionService
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -32,11 +34,17 @@ class AccessService:
         settings: AppSettings,
         chat_status_service: ChatStatusService,
         command_service: CommandService,
+        permission_service: PermissionService,
     ) -> None:
         """Initialize service with dependencies."""
         self._settings = settings
         self._chat_status_service = chat_status_service
         self._command_service = command_service
+        self._permission_service = permission_service
+
+    async def evaluate_permission(self, request: PermissionRequest) -> AccessDecision:
+        """Evaluate explicit permissions; legacy handlers retain their existing path until cutover."""
+        return await self._permission_service.evaluate(request)
 
     async def is_owner(self, user_id: int) -> bool:
         """Check if a user is an Owner (super admin)."""

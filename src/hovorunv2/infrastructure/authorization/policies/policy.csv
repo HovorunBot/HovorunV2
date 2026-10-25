@@ -1,0 +1,4 @@
+# Static capabilities only. User authority and verified membership remain request facts.
+p, admin, bot:administer, bot, role
+p, admin, group:settings, group, role
+p, user, group:settings, group, group_admin
