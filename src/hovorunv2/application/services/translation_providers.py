@@ -79,15 +79,18 @@ class GoogleTranslationService(BaseTranslationService):
                 if src_lang == "ji":
                     src_lang = "yi"
 
-                if data[self.SENTENCES_INDEX] and isinstance(data[self.SENTENCES_INDEX], list):
-                    translated_text = "".join(
-                        [
-                            sentence[self.TEXT_INDEX]
-                            for sentence in data[self.SENTENCES_INDEX]
-                            if isinstance(sentence, list) and sentence[self.TEXT_INDEX]
-                        ]
-                    )
-                    return TranslationRawResult(text=translated_text, source_lang=src_lang)
+                sentences = data[self.SENTENCES_INDEX]
+                if not isinstance(sentences, list) or not sentences:
+                    return None
+
+                translated_text = "".join(
+                    sentence[self.TEXT_INDEX]
+                    for sentence in sentences
+                    if isinstance(sentence, list)
+                    and len(sentence) > self.TEXT_INDEX
+                    and isinstance(sentence[self.TEXT_INDEX], str)
+                )
+                return TranslationRawResult(text=translated_text, source_lang=src_lang)
         except Exception:
             logger.exception("Google Translation API call failed")
 

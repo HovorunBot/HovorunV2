@@ -94,14 +94,15 @@ class SettingsCommand(BaseCommand):
                 await self._cleanup_service.replace_singleton_window(
                     bot, msg.chat.id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
                 )
-        else:
-            msg = message.message
-            if not msg or not isinstance(msg, Message):
-                return
-            await msg.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
-            await self._cleanup_service.reset_ttl(
-                msg.chat.id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
-            )
+            return
+
+        msg = message.message
+        if not isinstance(msg, Message):
+            return
+        await msg.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
+        await self._cleanup_service.reset_ttl(
+            msg.chat.id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
+        )
 
     async def _show_lang_menu(self, query: CallbackQuery) -> None:
         """Show language configuration menu."""
@@ -257,18 +258,17 @@ class SettingsCommand(BaseCommand):
         if not msg or not isinstance(msg, Message):
             return
 
-        menu = callback_data.menu
-
-        if menu == SettingsMenu.MAIN:
-            await self._show_main_menu(query, None)
-        elif menu == SettingsMenu.LANG:
-            await self._show_lang_menu(query)
-        elif menu == SettingsMenu.MODULES:
-            await self._handle_modules_callback(query, callback_data)
-        elif menu == SettingsMenu.LANG_TARGET:
-            await self._handle_lang_target_callback(query, callback_data)
-        elif menu == SettingsMenu.LANG_IGNORED:
-            await self._handle_lang_ignored_callback(query, callback_data)
+        match callback_data.menu:
+            case SettingsMenu.MAIN:
+                await self._show_main_menu(query, None)
+            case SettingsMenu.LANG:
+                await self._show_lang_menu(query)
+            case SettingsMenu.MODULES:
+                await self._handle_modules_callback(query, callback_data)
+            case SettingsMenu.LANG_TARGET:
+                await self._handle_lang_target_callback(query, callback_data)
+            case SettingsMenu.LANG_IGNORED:
+                await self._handle_lang_ignored_callback(query, callback_data)
 
     async def _handle_modules_callback(self, query: CallbackQuery, callback_data: SettingsCallback) -> None:
         """Handle module toggle callbacks."""

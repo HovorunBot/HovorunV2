@@ -139,8 +139,7 @@ class BaseMediaClient:
         if not resolved_url:
             return None
 
-        match = self._config.pattern.search(resolved_url)
-        if not match:
+        if not (match := self._config.pattern.search(resolved_url)):
             return None
 
         return await self._extract_raw_payload(resolved_url, match)
@@ -191,14 +190,15 @@ class BaseMediaClient:
                 wait_selector=b_cfg.wait_selector,
                 cookies=self.get_browser_cookies(),
             )
-            if payload:
-                if media_bytes:
-                    for item, b in zip(payload.media_items, media_bytes, strict=False):
-                        item.data = b
-                return payload
+            if not payload:
+                return None
+            for item, content in zip(payload.media_items, media_bytes, strict=False):
+                item.data = content
         except Exception:
             logger.exception("Browser fallback failed for %s", url)
-        return None
+            return None
+        else:
+            return payload
 
     # Compatibility aliases
     extract_payload = extract
@@ -421,7 +421,6 @@ class BaseMediaClient:
                 return None
 
         for item in items:
-            result = self._find_key_in_json(item, target_key)
-            if result is not None:
+            if (result := self._find_key_in_json(item, target_key)) is not None:
                 return result
         return None

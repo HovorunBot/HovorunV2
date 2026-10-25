@@ -86,7 +86,6 @@ class TranslationService:
     ) -> str:
         """HTML-escape raw text and append translation block if needed."""
         content = html.escape(raw_text)
-        trans_res = await self.translate_if_needed(content, chat_id, session)
-        if trans_res:
+        if trans_res := await self.translate_if_needed(content, chat_id, session):
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
         return content
