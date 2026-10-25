@@ -7,6 +7,7 @@ from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
+from hovorunv2.interface.telegram.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.middlewares import (
     AccessMiddleware,
     LogContextMiddleware,
@@ -19,10 +20,16 @@ def build_router(
     message_service: MessageService,
     access_service: AccessService,
     settings: AppSettings,
+    identity_middleware: IdentityMiddleware,
     bot_join_handler: BotJoinHandler | None = None,
 ) -> Router:
     """Build and configure the main Telegram router with middlewares and handlers."""
     router = Router()
+
+    router.message.outer_middleware(identity_middleware)
+    router.callback_query.outer_middleware(identity_middleware)
+    router.my_chat_member.outer_middleware(identity_middleware)
+    router.chat_member.outer_middleware(identity_middleware)
 
     # Outer middlewares (run before filter evaluation)
     log_context_middleware = LogContextMiddleware()

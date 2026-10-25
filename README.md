@@ -190,3 +190,14 @@ implementation stages. Request facts are internal application inputs, never proo
 
 Trust grant/revoke accepts an existing active numeric user ID or known public handle. It never creates or recovers identities. Trust remains separate from roles and beta eligibility; each actual change atomically records before/after values and advances the user trust revision for sponsorship reconciliation. Repeating the same setting produces no extra audit event or revision. Telegram service callers require current bot-admin authority and private transport; trust alone grants no administrative powers.
 
+### Identity and access storage
+
+Incoming interactions refresh only numeric identity and public usernames; groups also retain their public title and type. Identity ingestion does not restore deleted records, transfer authority when a username changes, or collect private profile fields.
+
+Independent ban records retain internal reasons separately from optional public explanations. `BanService` provides audited administration; Telegram menus, CLI ban commands, and runtime ban enforcement belong to later access workflows. Group approvals, sponsorships, and requests likewise store independent access bases without replacing current runtime authorization. Migration preserves legacy approved groups and existing feature selections, including an explicit marker for the historical empty-selection capture behavior.
+
+### Membership verification
+
+The bot subscribes to group member and bot membership updates. It retains evidence only for sponsors, human administrators, and unresolved former administrators. API errors produce unknown evidence; they do not revoke grants or prove someone left. Bot presence and individual administrator rights remain separate from approvals and bans.
+
+Evidence expires after five minutes. Startup and the existing SAQ worker refresh at most ten due groups per minute, with at most fifty relevant member checks per group and a thirty-second cycle deadline. Unprocessed evidence remains expired for the next cycle. Refreshes use ten-second Telegram request deadlines and coalesce simultaneous checks for the same group within a process. Ordinary messages do not trigger membership API calls. Full sponsorship and action authorization enforcement follows in the next access blocks.

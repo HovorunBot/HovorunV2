@@ -56,6 +56,7 @@ packages = ["src/hovorunv2"]
 
 [dependency-groups]
 dev = [
+    "aioresponses>=0.7.9",
     "commitizen",
     "import-linter",
     "pre-commit",

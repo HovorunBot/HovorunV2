@@ -145,10 +145,12 @@ class AccessMiddleware(BaseMiddleware):
     def _extract_event_context(self, event: TelegramObject) -> tuple[int | None, int, bool]:
         """Extract user_id, chat_id, and private chat flag from a Telegram event."""
         if isinstance(event, Message):
-            user_id = event.from_user.id if event.from_user else None
+            user_id = (
+                event.from_user.id if event.from_user and not event.from_user.is_bot and not event.sender_chat else None
+            )
             return user_id, event.chat.id, event.chat.type == ChatType.PRIVATE
         if isinstance(event, CallbackQuery):
-            user_id = event.from_user.id
+            user_id = event.from_user.id if not event.from_user.is_bot else None
             if event.message and isinstance(event.message, Message):
                 return user_id, event.message.chat.id, event.message.chat.type == ChatType.PRIVATE
             return user_id, 0, False

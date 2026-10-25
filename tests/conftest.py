@@ -50,6 +50,7 @@ def create_mock_message(text: str | None, *, is_bot: bool = False, chat_id: int 
     message.from_user = MagicMock(spec=User)
     message.from_user.id = user_id
     message.from_user.is_bot = is_bot
+    message.sender_chat = None
     message.from_user.full_name = "Mock User"
     message.from_user.username = "mockuser"
     message.chat = MagicMock(spec=Chat)

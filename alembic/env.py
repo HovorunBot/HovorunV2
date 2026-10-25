@@ -15,7 +15,9 @@ from hovorunv2.domain.audit import AuditEventDB
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
+from hovorunv2.domain.group_grant import GroupAccessRequestDB, GroupApprovalDB, GroupSponsorDB
 from hovorunv2.domain.handle import PublicHandleDB
+from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.role import UserRoleDB
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.domain.user import UserDB

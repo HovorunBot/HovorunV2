@@ -37,6 +37,7 @@ def create_mock_event(chat_id: int, status: str) -> MagicMock:
     event = MagicMock(spec=ChatMemberUpdated)
     event.chat = MagicMock(spec=Chat)
     event.chat.id = chat_id
+    event.chat.type = "supergroup"
     event.new_chat_member = MagicMock()
     event.new_chat_member.status = status
     return event
@@ -77,15 +78,15 @@ async def test_state_machine_flow(
     await access_command.handle(message, bot)
     message.answer.assert_called_with("⏳ Approval is already pending. Owners have been notified.")
 
-    # 4. Kick -> INACTIVE
+    # 4. Kick preserves pending approval while physical presence is tracked separately
     event_kick = create_mock_event(chat_id, "kicked")
     await bot_join_handler.handle_my_chat_member_update(event_kick, bot)
-    assert await chat_status_service.get_status(chat_id) == ChatStatus.INACTIVE
+    assert await chat_status_service.get_status(chat_id) == ChatStatus.PENDING
 
-    # 5. Re-join -> UNAUTHORIZED prompt
+    # 5. Rejoin preserves pending approval without a duplicate prompt
     bot.send_message.reset_mock()
     await bot_join_handler.handle_my_chat_member_update(event, bot)
-    bot.send_message.assert_called()
+    bot.send_message.assert_not_called()
 
     # 6. Approve -> APPROVED
     callback_data = MagicMock(chat_id=chat_id, action="approve")
@@ -103,7 +104,7 @@ async def test_state_machine_flow(
     await bot_join_handler.handle_my_chat_member_update(event, bot)
     bot.send_message.assert_not_called()
 
-    # 8. BANNED -> Auto-leave
+    # 8. BANNED remains restricted without leaving
     await chat_status_service.set_status(chat_id, ChatStatus.BANNED)
     await bot_join_handler.handle_my_chat_member_update(event, bot)
-    bot.leave_chat.assert_called_with(chat_id)
+    bot.leave_chat.assert_not_called()

@@ -1,12 +1,15 @@
 """Tests for the unified settings menu and on-join verification."""
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import Bot, types
-from aiogram.types import User
+from aiogram.types import Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, User
+from aioresponses import aioresponses
 from dishka import AsyncContainer
 
+from hovorunv2.application.ports import ChatStore
 from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.interface.telegram.callbacks import (
     SettingsAction,
@@ -76,24 +79,36 @@ def mock_access_service() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_bot_join_prompt(
-    mock_chat_status_service: MagicMock,
-    mock_reminder_service: MagicMock,
-) -> None:
-    """Test that bot join sends a verification prompt if not approved."""
-    handler = BotJoinHandler(mock_chat_status_service, mock_reminder_service)
-
-    event = MagicMock()
-    event.new_chat_member.status = "member"
-    event.chat.id = 123
-
-    bot = MagicMock()
-    bot.send_message = AsyncMock()
-
-    await handler.handle_my_chat_member_update(event, bot)
-
-    mock_chat_status_service.set_status.assert_called_with(123, ChatStatus.UNAUTHORIZED)
-    mock_reminder_service.send_unauthorized_prompt.assert_called_once_with(bot, 123, force=True)
+async def test_bot_join_prompt(test_container: AsyncContainer) -> None:
+    """Use real services and intercept only the external Telegram HTTP prompt."""
+    handler = await test_container.get(BotJoinHandler)
+    user = User(id=777, is_bot=True, first_name="Synthetic bot")
+    event = ChatMemberUpdated(
+        chat=Chat(id=-100777, type="supergroup", title="Synthetic group"),
+        from_user=User(id=101, is_bot=False, first_name="Synthetic actor"),
+        date=datetime.now(UTC),
+        old_chat_member=ChatMemberLeft(user=user),
+        new_chat_member=ChatMemberMember(user=user),
+    )
+    bot = Bot("777:synthetic-token")
+    try:
+        with aioresponses() as responses:
+            responses.post(
+                "https://api.telegram.org/bot777:synthetic-token/sendMessage",
+                payload={
+                    "ok": True,
+                    "result": {"message_id": 1, "date": 1, "chat": {"id": -100777, "type": "supergroup"}},
+                },
+            )
+            await handler.handle_my_chat_member_update(event, bot)
+            assert len(responses.requests) == 1
+        store = await test_container.get(ChatStore)
+        chat = await store.get_chat(-100777)
+        assert chat is not None
+        assert chat.status == ChatStatus.UNAUTHORIZED
+        assert chat.is_bot_present
+    finally:
+        await bot.session.close()
 
 
 @pytest.mark.asyncio

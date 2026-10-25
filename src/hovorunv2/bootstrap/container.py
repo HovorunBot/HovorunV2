@@ -4,8 +4,10 @@ from collections.abc import AsyncIterable
 from typing import NewType
 
 import aiohttp
+from aiogram import Bot
 from dishka import Provider, Scope, alias, provide
 
+from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
 from hovorunv2.application.clients.bluesky import BlueskyService
 from hovorunv2.application.clients.instagram import InstagramService
@@ -14,9 +16,13 @@ from hovorunv2.application.clients.threads import ThreadsService
 from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.clients.youtube import YoutubeService
+from hovorunv2.application.group_grants import GroupGrantStore
+from hovorunv2.application.identity import GroupIdentityStore
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
+from hovorunv2.application.membership import MembershipPort
+from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.ports import (
     AppSettings,
     AuditedUnitOfWork,
@@ -33,11 +39,13 @@ from hovorunv2.application.ports import (
     UserStore,
 )
 from hovorunv2.application.services.access_service import AccessService
+from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.language_service import LanguageService
+from hovorunv2.application.services.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
@@ -64,6 +72,10 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemySystemStore,
     SQLAlchemyUserStore,
 )
+from hovorunv2.infrastructure.persistence.ban_store import SQLAlchemyBanStore
+from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGroupGrantStore
+from hovorunv2.infrastructure.persistence.group_identity_store import SQLAlchemyGroupIdentityStore
+from hovorunv2.infrastructure.persistence.membership_store import SQLAlchemyMembershipStore
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
@@ -72,7 +84,10 @@ from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
+from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from hovorunv2.interface.telegram.identity import IdentityMiddleware
+from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter
 from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
@@ -85,6 +100,12 @@ class InfrastructureProvider(DatabaseProvider):
     def get_settings(self) -> Settings:
         """Provide application settings."""
         return Settings()
+
+    @provide(scope=Scope.APP)
+    async def get_bot(self, config: Settings) -> AsyncIterable[Bot]:
+        """Share one Telegram transport and close it after its consumers."""
+        async with Bot(token=config.bot_token) as bot:
+            yield bot
 
     @provide(scope=Scope.APP)
     async def get_http_session(self) -> AsyncIterable[aiohttp.ClientSession]:
@@ -116,6 +137,9 @@ class InfrastructureProvider(DatabaseProvider):
         yield service
         await service.stop_worker()
 
+    membership_adapter = provide(TelegramMembershipAdapter, scope=Scope.APP)
+    membership_port = alias(source=TelegramMembershipAdapter, provides=MembershipPort)
+
     database_settings = alias(source=Settings, provides=DatabaseSettings)
     settings_port = alias(source=Settings, provides=AppSettings)
     cache_port = alias(source=CacheService, provides=CachePort)
@@ -134,10 +158,21 @@ class AppProvider(Provider):
         return await load_authorization_policy()
 
     chat_store_impl = provide(SQLAlchemyChatStore)
+    membership_store_impl = provide(SQLAlchemyMembershipStore)
+    membership_store = alias(source=SQLAlchemyMembershipStore, provides=MembershipStore)
+    group_grant_store_impl = provide(SQLAlchemyGroupGrantStore)
+    group_grant_store = alias(source=SQLAlchemyGroupGrantStore, provides=GroupGrantStore)
+    group_identity_store_impl = provide(SQLAlchemyGroupIdentityStore)
+    group_identity_store = alias(source=SQLAlchemyGroupIdentityStore, provides=GroupIdentityStore)
+    identity_middleware = provide(IdentityMiddleware)
+    membership_event_handler = provide(MembershipEventHandler)
     command_store_impl = provide(SQLAlchemyCommandStore)
     system_store_impl = provide(SQLAlchemySystemStore)
     user_store_impl = provide(SQLAlchemyUserStore)
     public_handle_store_impl = provide(SQLAlchemyPublicHandleStore)
+    ban_store_impl = provide(SQLAlchemyBanStore)
+    ban_store = alias(source=SQLAlchemyBanStore, provides=BanStore)
+    ban_service = provide(BanService)
     role_store_impl = provide(SQLAlchemyRoleStore)
     audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
 
@@ -153,6 +188,7 @@ class AppProvider(Provider):
     prompt_sender = alias(source=TelegramUnauthorizedPromptSender, provides=UnauthorizedPromptSender)
 
     message_service = provide(MessageService)
+    membership_reconciliation = provide(MembershipReconciliationService)
     notification_service = provide(NotificationService)
     owner_notifier = provide(OwnerNotifier)
     reminder_service = provide(ChatReminderService)

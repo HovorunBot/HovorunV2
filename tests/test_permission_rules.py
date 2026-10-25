@@ -40,6 +40,8 @@ def create_mock_message(chat_id: int, user_id: int, chat_type: ChatType = ChatTy
     message = MagicMock(spec=Message)
     message.from_user = MagicMock(spec=User)
     message.from_user.id = user_id
+    message.from_user.is_bot = False
+    message.sender_chat = None
     message.from_user.full_name = "Test User"
     message.chat = MagicMock(spec=Chat)
     message.chat.id = chat_id
@@ -55,6 +57,7 @@ def create_mock_event(chat_id: int, status: str) -> MagicMock:
     event = MagicMock(spec=ChatMemberUpdated)
     event.chat = MagicMock(spec=Chat)
     event.chat.id = chat_id
+    event.chat.type = "supergroup"
     event.new_chat_member = MagicMock()
     event.new_chat_member.status = status
     return event
@@ -578,143 +581,23 @@ async def test_characterize_legacy_default_activation(test_container: AsyncConta
 
 
 @pytest.mark.asyncio
-async def test_characterize_legacy_removal_and_rejoin_lifecycle_bug(test_container: AsyncContainer) -> None:
-    """Characterize bot kick and rejoin lifecycle in real SQLite, labeling observed bugs.
-
-    Observed Behavior and Bugs:
-    - Approved chat:
-      - Kick: Sets status to INACTIVE in SQLite. Commands in `chat_commands` remain persisted!
-      - Rejoin: Status transitions from INACTIVE to UNAUTHORIZED in SQLite; prompt sent.
-    - Banned chat (OBSERVED BUG):
-      - Kick: Status is unconditionally overwritten to INACTIVE in SQLite! Banned status is lost!
-      - Rejoin: Since status is INACTIVE, it is overwritten to UNAUTHORIZED in SQLite, and prompt is sent!
-        A banned chat effectively escapes the ban simply by kicking and re-inviting the bot!
-    - Rejected chat (OBSERVED BUG):
-      - Same lifecycle: REJECTED is overwritten to INACTIVE on kick, then UNAUTHORIZED on rejoin.
-    """
+@pytest.mark.parametrize("status", [ChatStatus.APPROVED, ChatStatus.BANNED, ChatStatus.REJECTED])
+async def test_removal_and_rejoin_preserve_access_status(test_container: AsyncContainer, status: ChatStatus) -> None:
+    """Physical bot removal/rejoin preserves durable status and command selections (019)."""
     session_maker = await test_container.get(async_sessionmaker)
-    chat_status_service = await test_container.get(ChatStatusService)
-    bot_join_handler = await test_container.get(BotJoinHandler)
-
+    statuses = await test_container.get(ChatStatusService)
+    handler = await test_container.get(BotJoinHandler)
     bot = MagicMock(spec=Bot)
     bot.send_message = AsyncMock()
     bot.leave_chat = AsyncMock()
-
-    # --- Scenario A: Approved chat kicked and rejoined ---
-    approved_chat_id = 30002
-    await chat_status_service.approve(approved_chat_id)
-    _, initial_commands = await get_persisted_chat_and_commands(session_maker, approved_chat_id)
-    assert len(initial_commands) == 16
-
-    # 1. Bot kicked from approved chat
-    kick_event = create_mock_event(approved_chat_id, "kicked")
-    await bot_join_handler.handle_my_chat_member_update(kick_event, bot)
-
-    persisted_status, commands_after_kick = await get_persisted_chat_and_commands(session_maker, approved_chat_id)
-    assert persisted_status == ChatStatus.INACTIVE
-    # Commands remain in DB even though chat is INACTIVE
-    assert commands_after_kick == initial_commands
-
-    # 2. Bot rejoins previously approved chat
-    rejoin_event = create_mock_event(approved_chat_id, "member")
-    await bot_join_handler.handle_my_chat_member_update(rejoin_event, bot)
-
-    persisted_status_rejoin, commands_after_rejoin = await get_persisted_chat_and_commands(
-        session_maker, approved_chat_id
-    )
-    assert persisted_status_rejoin == ChatStatus.UNAUTHORIZED
-    assert commands_after_rejoin == initial_commands
-    bot.send_message.assert_called()
-
-    # --- Scenario B: Banned chat kicked and rejoined (OBSERVED BUG) ---
-    banned_chat_id = 30003
-    await chat_status_service.set_status(banned_chat_id, ChatStatus.BANNED)
-    persisted_status, _ = await get_persisted_chat_and_commands(session_maker, banned_chat_id)
-    assert persisted_status == ChatStatus.BANNED
-
-    # 1. Bot kicked from banned chat
-    kick_banned = create_mock_event(banned_chat_id, "kicked")
-    await bot_join_handler.handle_my_chat_member_update(kick_banned, bot)
-
-    # OBSERVED BUG: BANNED status is overwritten by INACTIVE!
-    persisted_after_kick, _ = await get_persisted_chat_and_commands(session_maker, banned_chat_id)
-    assert persisted_after_kick == ChatStatus.INACTIVE, "Bug: kick overwrote BANNED with INACTIVE"
-
-    # 2. Bot rejoins previously banned chat
-    rejoin_banned = create_mock_event(banned_chat_id, "member")
-    bot.send_message.reset_mock()
-    await bot_join_handler.handle_my_chat_member_update(rejoin_banned, bot)
-
-    # OBSERVED BUG: Rejoin transitions INACTIVE to UNAUTHORIZED, clearing the ban!
-    persisted_after_rejoin, _ = await get_persisted_chat_and_commands(session_maker, banned_chat_id)
-    assert persisted_after_rejoin == ChatStatus.UNAUTHORIZED, "Bug: rejoin cleared ban to UNAUTHORIZED"
-    bot.send_message.assert_called()
-
-    # --- Scenario C: Rejected chat kicked and rejoined (OBSERVED BUG) ---
-    rejected_chat_id = 30004
-    await chat_status_service.set_status(rejected_chat_id, ChatStatus.REJECTED)
-
-    # Kick overwrites REJECTED with INACTIVE
-    await bot_join_handler.handle_my_chat_member_update(create_mock_event(rejected_chat_id, "kicked"), bot)
-    persisted_rejected_kick, _ = await get_persisted_chat_and_commands(session_maker, rejected_chat_id)
-    assert persisted_rejected_kick == ChatStatus.INACTIVE
-
-    # Rejoin overwrites INACTIVE with UNAUTHORIZED
-    await bot_join_handler.handle_my_chat_member_update(create_mock_event(rejected_chat_id, "member"), bot)
-    persisted_rejected_rejoin, _ = await get_persisted_chat_and_commands(session_maker, rejected_chat_id)
-    assert persisted_rejected_rejoin == ChatStatus.UNAUTHORIZED
-
-
-@pytest.mark.asyncio
-async def test_characterize_legacy_banned_and_rejected_chat_direct_member_event(
-    test_container: AsyncContainer,
-) -> None:
-    """Characterize direct member event (without prior kick) for BANNED, REJECTED, and APPROVED chats.
-
-    When status is already BANNED or REJECTED and a member update arrives:
-    - Bot immediately leaves chat (`bot.leave_chat(chat_id)`).
-    - Status in SQLite remains BANNED or REJECTED.
-    When status is already APPROVED:
-    - Bot stays in chat without modifying status or sending prompt.
-    """
-    session_maker = await test_container.get(async_sessionmaker)
-    chat_status_service = await test_container.get(ChatStatusService)
-    bot_join_handler = await test_container.get(BotJoinHandler)
-
-    bot = MagicMock(spec=Bot)
-    bot.leave_chat = AsyncMock()
-    bot.send_message = AsyncMock()
-
-    # 1. BANNED chat direct update
-    banned_chat_id = 30005
-    await chat_status_service.set_status(banned_chat_id, ChatStatus.BANNED)
-    event_banned = create_mock_event(banned_chat_id, "member")
-    await bot_join_handler.handle_my_chat_member_update(event_banned, bot)
-
-    bot.leave_chat.assert_called_with(banned_chat_id)
-    persisted_banned, _ = await get_persisted_chat_and_commands(session_maker, banned_chat_id)
-    assert persisted_banned == ChatStatus.BANNED
-
-    # 2. REJECTED chat direct update
-    bot.leave_chat.reset_mock()
-    rejected_chat_id = 30006
-    await chat_status_service.set_status(rejected_chat_id, ChatStatus.REJECTED)
-    event_rejected = create_mock_event(rejected_chat_id, "member")
-    await bot_join_handler.handle_my_chat_member_update(event_rejected, bot)
-
-    bot.leave_chat.assert_called_with(rejected_chat_id)
-    persisted_rejected, _ = await get_persisted_chat_and_commands(session_maker, rejected_chat_id)
-    assert persisted_rejected == ChatStatus.REJECTED
-
-    # 3. APPROVED chat direct update
-    bot.leave_chat.reset_mock()
-    bot.send_message.reset_mock()
-    approved_chat_id = 30007
-    await chat_status_service.set_status(approved_chat_id, ChatStatus.APPROVED)
-    event_approved = create_mock_event(approved_chat_id, "member")
-    await bot_join_handler.handle_my_chat_member_update(event_approved, bot)
-
-    bot.leave_chat.assert_not_called()
+    chat_id = 30002
+    await statuses.approve(chat_id)
+    await statuses.set_status(chat_id, status)
+    _, initial_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
+    for event_status in ("kicked", "member"):
+        await handler.handle_my_chat_member_update(create_mock_event(chat_id, event_status), bot)
+        persisted_status, commands = await get_persisted_chat_and_commands(session_maker, chat_id)
+        assert persisted_status == status
+        assert commands == initial_commands
     bot.send_message.assert_not_called()
-    persisted_approved, _ = await get_persisted_chat_and_commands(session_maker, approved_chat_id)
-    assert persisted_approved == ChatStatus.APPROVED
+    bot.leave_chat.assert_not_called()

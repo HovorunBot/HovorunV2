@@ -57,6 +57,7 @@ class ChatDB(Base):
         default=None,
     )
     generation: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    legacy_empty_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     target_lang: Mapped[str | None] = mapped_column(String, nullable=True)
     ignored_langs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     encryption_salt: Mapped[str | None] = mapped_column(String, nullable=True)
