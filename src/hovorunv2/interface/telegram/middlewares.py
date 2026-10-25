@@ -93,7 +93,7 @@ class AccessMiddleware(BaseMiddleware):
         user_id: int | None,
         policy: CommandPolicy,
     ) -> Any:
-        """Authorize private chats: trusted/admin features, untrusted admin management."""
+        """Authorize private features without treating trust as group management authority."""
         if not user_id or await self._access_service.is_banned(user_id):
             await self._deny_private_chat(event)
             return None
@@ -105,8 +105,11 @@ class AccessMiddleware(BaseMiddleware):
             await self._deny_private_chat(event)
             return None
 
-        if policy.requires_group_admin and await self._access_service.is_group_admin_any(user_id):
-            return await handler(event, data)
+        if policy.requires_group_admin:
+            # Current settings use the transport chat as target. Private group
+            # management needs a selected group and generation-bound authorization.
+            await self._deny_private_chat(event)
+            return None
 
         if await self._access_service.is_trusted(user_id):
             return await handler(event, data)

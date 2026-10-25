@@ -182,7 +182,7 @@ administrator access. Owner notifications and optional error DMs follow current 
 Protected actions can be evaluated through `AccessService.evaluate_permission` with an application-owned `PermissionRequest`.
 The service reads current database authority on each call, checks active identities and group generations/bans, and then
 uses the packaged Casbin policy. Group administrator evidence is scoped to the actor, target generation and validity window;
-missing or stale evidence grants no group administrator authority. Bot administration requires explicit private transport.
+missing or stale evidence grants no group administrator authority. Trust never grants settings authority. Until target-bound private group menus are implemented, ordinary users must manage settings inside the group, where current membership is checked. Bot administration requires explicit private transport.
 
 Static capabilities live in `src/hovorunv2/infrastructure/authorization/policies/`. The initial actions are
 `bot:administer` and `group:settings`; unmatched actions deny. Policies use the existing integer authority tiers and remain

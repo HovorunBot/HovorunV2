@@ -165,7 +165,7 @@ async def test_private_chat_banned_user_blocked(test_container: AsyncContainer) 
 async def test_private_chat_untrusted_group_admin_management_vs_feature(
     test_container: AsyncContainer,
 ) -> None:
-    """Untrusted group admin can access private group management but not private media features."""
+    """Any-group authority cannot authorize private settings without a selected target."""
     chats = await test_container.get(ChatStore)
     users = await test_container.get(UserStore)
     memberships = await test_container.get(MembershipStore)
@@ -190,13 +190,13 @@ async def test_private_chat_untrusted_group_admin_management_vs_feature(
 
     message = make_message(admin_user.telegram_id, admin_user.telegram_id, ChatType.PRIVATE)
 
-    # 1. Private group management (requires_group_admin=True): ALLOWED
+    # 1. Private group management without a selected target: BLOCKED
     management_policy = CommandPolicy(requires_group_admin=True, requires_approval=False)
     handler = AsyncMock(return_value="managed")
     data = {"handler": MagicMock(), "bot": MagicMock(spec=Bot), "policy": management_policy}
     result = await middleware(handler, message, data)
-    assert result == "managed"
-    handler.assert_called_once()
+    assert result is None
+    handler.assert_not_called()
 
     # 2. Private media feature (requires_approval=True, is_automatic=True): BLOCKED
     feature_policy = RichMediaCommand.POLICY

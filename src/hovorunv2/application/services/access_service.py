@@ -82,7 +82,7 @@ class AccessService:
         return user is not None and user.is_trusted and user.deleted_at is None
 
     async def is_group_admin_any(self, user_id: int | None, now: datetime | None = None) -> bool:
-        """Check if user is a verified administrator in any active group."""
+        """Discover management eligibility; this never authorizes a selected group mutation."""
         if user_id is None:
             return False
         current_time = now if now is not None else datetime.now(UTC)
