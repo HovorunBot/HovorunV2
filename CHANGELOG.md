@@ -17,6 +17,7 @@
 
 ### Fix
 
+- **privacy**: minimize authorized message caching
 - **access**: separate trust from settings authority
 - **access**: require fresh administrator snapshots
 - **access**: enforce suspension and protect admin authority

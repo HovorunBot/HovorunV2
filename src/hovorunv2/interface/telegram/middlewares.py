@@ -57,7 +57,7 @@ class LogContextMiddleware(BaseMiddleware):
 
 
 class MessageCacheMiddleware(BaseMiddleware):
-    """Outer middleware to cache every incoming message."""
+    """Cache authorized messages after policy checks."""
 
     def __init__(self, message_service: MessageService) -> None:
         """Initialize middleware with dependencies."""
@@ -70,7 +70,7 @@ class MessageCacheMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        """Cache message before any filters run."""
+        """Cache minimal content only after filters and access checks succeed."""
         if isinstance(event, Message):
             await self._message_service.cache_message(event)
         return await handler(event, data)

@@ -37,11 +37,10 @@ def build_router(
     router.callback_query.outer_middleware(log_context_middleware)
     router.my_chat_member.outer_middleware(log_context_middleware)
 
-    router.message.outer_middleware(MessageCacheMiddleware(message_service))
-
     # Inner middlewares (run after filters, before handlers)
     router.message.middleware(AccessMiddleware(access_service, settings))
     router.callback_query.middleware(AccessMiddleware(access_service, settings))
+    router.message.middleware(MessageCacheMiddleware(message_service))
 
     # Register bot join/leave events
     if bot_join_handler:

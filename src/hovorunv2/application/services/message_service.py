@@ -43,8 +43,7 @@ class MessageService:
                 logger.error("Skipping message %d caching for chat %d: encryption key unavailable", message_id, chat_id)
                 return
 
-            # Use model_dump(mode="json") to handle non-serializable types
-            data_dict = message.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
+            data_dict = minimal_message_data(message)
             json_data = json.dumps(data_dict)
             payload = encrypt_payload(json_data, fernet)
 
@@ -70,7 +69,8 @@ class MessageService:
                 return None
 
             decrypted_data = decrypt_payload(data, fernet)
-            return types.Message.model_validate_json(decrypted_data)
+            legacy = types.Message.model_validate_json(decrypted_data)
+            return types.Message.model_validate(minimal_message_data(legacy))
         except Exception:
             logger.warning("Failed to decrypt or deserialize message %d for chat %d", message_id, chat_id)
             return None
@@ -107,3 +107,33 @@ class MessageService:
     def _generate_key(self, chat_id: int, message_id: int) -> str:
         """Generate a cache key for a specific message."""
         return f"msg:{chat_id}:{message_id}"
+
+
+def minimal_message_data(message: types.Message) -> dict[str, object]:
+    """Retain encrypted content and delivery handles without profiles or nested messages.
+
+    Provider quotes are part of extraction payloads, not Telegram reply cache entries.
+    Media handles keep identifiers and required technical dimensions only.
+    """
+    return message.model_dump(
+        mode="json",
+        exclude_none=True,
+        exclude_defaults=True,
+        include={
+            "message_id": True,
+            "date": True,
+            "chat": {"id", "type"},
+            "text": True,
+            "caption": True,
+            "entities": {"__all__": {"type", "offset", "length", "url", "language", "custom_emoji_id"}},
+            "caption_entities": {"__all__": {"type", "offset", "length", "url", "language", "custom_emoji_id"}},
+            "media_group_id": True,
+            "photo": {"__all__": {"file_id", "file_unique_id", "width", "height", "file_size"}},
+            "video": {"file_id", "file_unique_id", "width", "height", "duration", "file_size"},
+            "animation": {"file_id", "file_unique_id", "width", "height", "duration", "file_size"},
+            "audio": {"file_id", "file_unique_id", "duration", "file_size"},
+            "document": {"file_id", "file_unique_id", "file_size"},
+            "voice": {"file_id", "file_unique_id", "duration", "file_size"},
+            "video_note": {"file_id", "file_unique_id", "length", "duration", "file_size"},
+        },
+    )
