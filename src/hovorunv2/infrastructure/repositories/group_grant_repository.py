@@ -11,7 +11,6 @@ from hovorunv2.domain.group_grant import (
     ApprovalBasis,
     GroupAccessRequestDB,
     GroupApprovalDB,
-    GroupSponsorDB,
     RequestStatus,
 )
 from hovorunv2.domain.user import UserDB
@@ -58,25 +57,6 @@ class SQLAlchemyGroupGrantRepository:
         )
         return list((await self._session.scalars(query)).all())
 
-    async def sponsors(self, group_id: int) -> list[GroupSponsorDB]:
-        """Fetch active recorded sponsors, without claiming current trust/membership."""
-        query = (
-            select(GroupSponsorDB)
-            .join(ChatDB, ChatDB.id == GroupSponsorDB.group_id)
-            .join(
-                UserDB,
-                UserDB.id == GroupSponsorDB.user_id,
-            )
-            .where(
-                GroupSponsorDB.group_id == group_id,
-                GroupSponsorDB.deleted_at.is_(None),
-                GroupSponsorDB.revoked_at.is_(None),
-                ChatDB.deleted_at.is_(None),
-                UserDB.deleted_at.is_(None),
-            )
-        )
-        return list((await self._session.scalars(query)).all())
-
     async def requests(self, group_id: int) -> list[GroupAccessRequestDB]:
         """Fetch visible request history with active parents."""
         query = (
@@ -112,25 +92,6 @@ class SQLAlchemyGroupGrantRepository:
             return GrantMutation(0)
         row.revoked_at = datetime.now(UTC)
         return GrantMutation(1, {"group_id": group_id, "basis": basis.value, "revoked": True})
-
-    async def sponsor(self, group_id: int, user_id: int) -> GrantMutation:
-        """Record one sponsor without replacing existing sponsors."""
-        await self._require_group(group_id)
-        await self._require_user(user_id)
-        if any(row.user_id == user_id for row in await self.sponsors(group_id)):
-            return GrantMutation(0)
-        self._session.add(GroupSponsorDB(group_id=group_id, user_id=user_id))
-        await self._session.flush()
-        return GrantMutation(1, {"group_id": group_id, "user_id": user_id})
-
-    async def revoke_sponsor(self, group_id: int, user_id: int) -> GrantMutation:
-        """Revoke a relationship without erasing it or other grants."""
-        await self._require_group(group_id)
-        row = next((row for row in await self.sponsors(group_id) if row.user_id == user_id), None)
-        if row is None:
-            return GrantMutation(0)
-        row.revoked_at = datetime.now(UTC)
-        return GrantMutation(1, {"group_id": group_id, "user_id": user_id, "revoked": True})
 
     async def request(self, group_id: int, user_id: int) -> GrantMutation:
         """Return a pending request, or add a new lifecycle after a prior decision."""

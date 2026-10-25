@@ -12,7 +12,6 @@ from hovorunv2.domain.group_grant import (
     ApprovalBasis,
     GroupAccessRequestDB,
     GroupApprovalDB,
-    GroupSponsorDB,
     RequestStatus,
 )
 from hovorunv2.infrastructure.repositories.group_grant_repository import GrantMutation, SQLAlchemyGroupGrantRepository
@@ -30,11 +29,6 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         """List visible active approvals."""
         async with self._session_maker() as session:
             return await SQLAlchemyGroupGrantRepository(session).approvals(group_id)
-
-    async def sponsors(self, group_id: int) -> list[GroupSponsorDB]:
-        """List recorded sponsors; current validity remains computed elsewhere."""
-        async with self._session_maker() as session:
-            return await SQLAlchemyGroupGrantRepository(session).sponsors(group_id)
 
     async def requests(self, group_id: int) -> list[GroupAccessRequestDB]:
         """List visible request lifecycle records."""
@@ -82,28 +76,6 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
                 "revoke_approval",
                 actor,
                 partial(SQLAlchemyGroupGrantRepository.revoke_approval, group_id=group_id, basis=basis),
-            )
-        )
-
-    async def sponsor(self, group_id: int, user_id: int, actor: ActorContext) -> bool:
-        """Idempotently add a sponsor relationship."""
-        return bool(
-            await self._mutate(
-                group_id,
-                "sponsor",
-                actor,
-                partial(SQLAlchemyGroupGrantRepository.sponsor, group_id=group_id, user_id=user_id),
-            )
-        )
-
-    async def revoke_sponsor(self, group_id: int, user_id: int, actor: ActorContext) -> bool:
-        """Revoke one relationship without touching other bases."""
-        return bool(
-            await self._mutate(
-                group_id,
-                "revoke_sponsor",
-                actor,
-                partial(SQLAlchemyGroupGrantRepository.revoke_sponsor, group_id=group_id, user_id=user_id),
             )
         )
 

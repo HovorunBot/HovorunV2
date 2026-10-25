@@ -181,7 +181,7 @@ async def test_fernet_derivation_cached_per_chat(
 
 
 # ==============================================================================
-# Startup Encryption Validation & Compatibility Tests (Block 003)
+# Startup Encryption Validation & Compatibility Tests
 # ==============================================================================
 
 
@@ -234,7 +234,7 @@ def test_existing_passphrase_format_decrypts_synthetic_salt_fixture() -> None:
 
 
 # ==============================================================================
-# Removal of Plaintext Cache Fallbacks (Block 004)
+# Removal of Plaintext Cache Fallbacks
 # ==============================================================================
 
 

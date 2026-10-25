@@ -33,7 +33,7 @@ class SQLAlchemyMembershipStore(MembershipStore):
             return await SQLAlchemyMembershipRepository(session).due_groups(now, limit)
 
     async def relevant_users(self, group_id: int, limit: int = 50) -> list[UserDB]:
-        """List only active sponsors and administrator candidates with a SQL bound."""
+        """List only active administrator candidates with a SQL bound."""
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).relevant_users(group_id, limit)
 

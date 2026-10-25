@@ -28,7 +28,6 @@ class TrustService:
 
         Actor origin and transport are trusted interface facts, never callback data.
         UserDB.trust_revision advances only on a change, in the audit transaction.
-        Downstream sponsorship checks must compare their observed revision to this value.
         """
         if actor.origin != ActorOrigin.CLI:
             user = await self._users.get_by_telegram_id(actor.actor_id) if actor.actor_id is not None else None

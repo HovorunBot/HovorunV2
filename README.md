@@ -143,7 +143,7 @@ Prepare an empty or existing database with `uv run alembic upgrade head`, then u
 uv run hovorun-admin role add 123456789 --role owner --reason "Initial bootstrap"
 uv run hovorun-admin role add @known_user --role admin
 uv run hovorun-admin role list
-uv run hovorun-admin trust grant @known_user --reason "Approved sponsor"
+uv run hovorun-admin trust grant @known_user --reason "Trusted user"
 uv run hovorun-admin trust revoke 123456789 --reason "Trust withdrawn"
 uv run hovorun-admin role list --role owner
 uv run hovorun-admin role remove 123456789 --yes --reason "Retired operator"
@@ -185,19 +185,21 @@ when that action needs them. There is no separate policy database or user-role m
 application-service path.
 
 Live role gates now use database authority through Casbin. Existing group approval/toggle behavior remains in place;
-Telegram membership verification, sponsor eligibility, additional ban types and feature/emergency guards remain separate
+additional ban enforcement and feature/emergency guards remain separate
 implementation stages. Request facts are internal application inputs, never proof supplied by callback payloads.
 
-Trust grant/revoke accepts an existing active numeric user ID or known public handle. It never creates or recovers identities. Trust remains separate from roles and beta eligibility; each actual change atomically records before/after values and advances the user trust revision for sponsorship reconciliation. Repeating the same setting produces no extra audit event or revision. Telegram service callers require current bot-admin authority and private transport; trust alone grants no administrative powers.
+Trust grant/revoke accepts an existing active numeric user ID or known public handle. It never creates or recovers identities. Trust remains separate from roles and beta eligibility; each actual change atomically records before/after values and advances the audited user trust revision. Repeating the same setting produces no extra audit event or revision. Telegram service callers require current bot-admin authority and private transport; trust alone grants no administrative powers.
 
 ### Identity and access storage
 
 Incoming interactions refresh only numeric identity and public usernames; groups also retain their public title and type. Identity ingestion does not restore deleted records, transfer authority when a username changes, or collect private profile fields.
 
-Independent ban records retain internal reasons separately from optional public explanations. `BanService` provides audited administration; Telegram menus, CLI ban commands, and runtime ban enforcement belong to later access workflows. Group approvals, sponsorships, and requests likewise store independent access bases without replacing current runtime authorization. Migration preserves legacy approved groups and existing feature selections, including an explicit marker for the historical empty-selection capture behavior.
+Independent ban records retain internal reasons separately from optional public explanations. `BanService` provides audited administration; Telegram menus, CLI ban commands, and runtime ban enforcement belong to later access workflows. Group approvals and requests likewise store independent access bases without replacing current runtime authorization. Migration preserves legacy approved groups and existing feature selections, including an explicit marker for the historical empty-selection capture behavior.
 
 ### Membership verification
 
-The bot subscribes to group member and bot membership updates. It retains evidence only for sponsors, human administrators, and unresolved former administrators. API errors produce unknown evidence; they do not revoke grants or prove someone left. Bot presence and individual administrator rights remain separate from approvals and bans.
+The bot subscribes to group member and bot membership updates. It retains evidence only for human administrators and unresolved former administrators. API errors produce unknown evidence; they do not revoke grants or prove someone left. Bot presence and individual administrator rights remain separate from approvals and bans.
 
-Evidence expires after five minutes. Startup and the existing SAQ worker refresh at most ten due groups per minute, with at most fifty relevant member checks per group and a thirty-second cycle deadline. Unprocessed evidence remains expired for the next cycle. Refreshes use ten-second Telegram request deadlines and coalesce simultaneous checks for the same group within a process. Ordinary messages do not trigger membership API calls. Full sponsorship and action authorization enforcement follows in the next access blocks.
+Evidence expires after five minutes. Startup and the existing SAQ worker refresh at most ten due groups per minute, with at most fifty relevant member checks per group and a thirty-second cycle deadline. Unprocessed evidence remains expired for the next cycle. Refreshes use ten-second Telegram request deadlines and coalesce simultaneous checks for the same group within a process. Ordinary messages do not trigger membership API calls. Action authorization enforcement follows in the next access blocks.
+
+The service uses a whitelist. The planned activation workflow lets explicitly trusted users enable the bot without individual owner approval, creating a durable group approval. Regular users require approval. Trust grants no bot-administrator role. Planned full user ban enforcement affects groups where that user is a Telegram administrator. There are no sponsorship relationships or planned paid features.

@@ -19,7 +19,7 @@ from hovorunv2.domain.enums import ActorOrigin, Role, TargetKind
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.config import DatabaseSettings
 from hovorunv2.interface.cli.roles import RoleArguments, RoleCLI, build_parser
-from tests.test_identity_migrations import migration_config
+from tests.migrations.helpers import migration_config
 
 
 def role_arguments(*arguments: str) -> RoleArguments:

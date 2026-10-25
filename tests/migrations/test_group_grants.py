@@ -20,7 +20,7 @@ def test_legacy_grants_preserve_all_statuses_and_configuration(
     """Only approved active groups acquire a legacy basis; configuration stays byte-for-byte."""
     database = tmp_path / "legacy_grants.db"
     monkeypatch.setenv("DB_PATH", str(database))
-    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     command.upgrade(config, "grant015")
     statuses = ["unauthorized", "pending", "approved", "rejected", "banned", "inactive"]
     with sqlite3.connect(database) as connection:
@@ -78,7 +78,7 @@ def test_migrated_grants_enforce_constraints_and_history(tmp_path: Path, monkeyp
     """Actual Alembic schema protects parent integrity and active grant/request uniqueness."""
     database = tmp_path / "grant_constraints.db"
     monkeypatch.setenv("DB_PATH", str(database))
-    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     command.upgrade(config, "legacy016")
     with sqlite3.connect(database) as connection:
         connection.execute("PRAGMA foreign_keys=ON")

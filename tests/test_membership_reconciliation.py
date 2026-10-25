@@ -10,7 +10,7 @@ from aioresponses import aioresponses
 from dishka import AsyncContainer
 
 from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.membership import MembershipStatus
+from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, TaskQueuePort, UserStore
 from hovorunv2.application.services import membership_reconciliation as reconciliation
@@ -21,14 +21,20 @@ from tests.test_membership_adapter import API, BOT_CREDENTIAL, GROUP_ID, USER_ID
 
 
 async def prepare_group(container: AsyncContainer) -> int:
-    """Create only a known group and its intentional synthetic sponsor."""
+    """Create only a known group and its verified synthetic administrator."""
     chats = await container.get(ChatStore)
     users = await container.get(UserStore)
     grants = await container.get(GroupGrantStore)
     group = await chats.get_or_create_chat(GROUP_ID)
     user = await users.ingest_user(USER_ID)
     assert user is not None
-    await grants.sponsor(group.id, user.id, ActorContext.cli())
+    await grants.approve(group.id, ActorContext.cli())
+    memberships = await container.get(MembershipStore)
+    verified_at = datetime.now(UTC) - timedelta(minutes=6)
+    await memberships.save_member(
+        group.id,
+        MembershipEvidence(GROUP_ID, USER_ID, MembershipStatus.ADMIN, verified_at, verified_at + timedelta(minutes=5)),
+    )
     return group.id
 
 
@@ -76,7 +82,7 @@ async def test_startup_failure_and_later_recovery_preserve_grants(test_container
         failed = await store.get_member(group_id, user.id)
         assert failed is not None
         assert failed.status == MembershipStatus.UNKNOWN
-        assert len(await (await test_container.get(GroupGrantStore)).sponsors(group_id)) == 1
+        assert len(await (await test_container.get(GroupGrantStore)).approvals(group_id)) == 1
         with aioresponses() as mocked:
             record_refresh(mocked)
             assert await service.run_cycle(datetime.now(UTC) + timedelta(minutes=6)) == 1
@@ -118,7 +124,10 @@ async def test_cycle_deadline_leaves_evidence_due_and_releases_coordination(
         with monkeypatch.context() as scoped:
             scoped.setattr(reconciliation, "CYCLE_TIMEOUT_SECONDS", 0)
             assert await service.run_cycle() == 0
-        assert await store.get_state(group_id) is None
+        state = await store.get_state(group_id)
+        assert state is not None
+        assert state.bot_verified_at is None
+        assert state.policy_revision == 1
         with aioresponses() as mocked:
             record_refresh(mocked)
             assert await service.run_cycle() == 1

@@ -9,7 +9,6 @@ from hovorunv2.domain.group_grant import (
     ApprovalBasis,
     GroupAccessRequestDB,
     GroupApprovalDB,
-    GroupSponsorDB,
     RequestStatus,
 )
 from hovorunv2.domain.handle import (
@@ -36,7 +35,6 @@ __all__ = [
     "GroupAccessRequestDB",
     "GroupApprovalDB",
     "GroupMembershipStateDB",
-    "GroupSponsorDB",
     "InvalidHandleError",
     "MemberEvidenceDB",
     "PublicHandleDB",

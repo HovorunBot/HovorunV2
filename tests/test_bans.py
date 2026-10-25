@@ -1,16 +1,11 @@
-"""Real SQLite restriction administration and migration acceptance tests."""
-
-import sqlite3
-from pathlib import Path
+"""Real SQLite restriction administration acceptance tests."""
 
 import pytest
-from alembic.config import Config
 from dishka import AsyncContainer
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from alembic import command
 from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.ports import UserStore
 from hovorunv2.application.services.ban_service import BanService
@@ -115,21 +110,3 @@ async def test_ban_audit_failure_rolls_back_and_deleted_targets_are_hidden(test_
     assert await bans.list_active(TargetKind.USER, 101) == []
     with pytest.raises(ValueError, match="active known"):
         await bans.revoke(TargetKind.USER, 101, BanKind.FULL, actor)
-
-
-def test_ban_migration_preserves_existing_records(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Actual Alembic upgrade adds empty bans without modifying existing approved groups."""
-    database = tmp_path / "bans.db"
-    monkeypatch.setenv("DB_PATH", str(database))
-    config = Config("alembic.ini")
-    command.upgrade(config, "trust013")
-    with sqlite3.connect(database) as connection:
-        connection.execute("INSERT INTO chats (chat_id, platform, status) VALUES (-101, 'telegram', 'approved')")
-        before = connection.execute("SELECT * FROM chats").fetchall()
-    command.upgrade(config, "ban014")
-    with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT * FROM chats").fetchall() == before
-        assert connection.execute("SELECT COUNT(*) FROM bans").fetchone() == (0,)
-    command.downgrade(config, "trust013")
-    with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT * FROM chats").fetchall() == before

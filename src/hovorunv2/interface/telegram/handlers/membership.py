@@ -12,7 +12,7 @@ from hovorunv2.interface.telegram.membership import MEMBERSHIP_FRESHNESS, member
 
 
 class MembershipEventHandler:
-    """Track sponsors/admins and physical bot presence without storing ordinary member lists."""
+    """Track administrators and physical bot presence without storing ordinary member lists."""
 
     def __init__(self, identities: GroupIdentityStore, memberships: MembershipStore) -> None:
         """Receive mandatory generation-aware identity and evidence boundaries."""

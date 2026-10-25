@@ -18,6 +18,7 @@ from hovorunv2.application.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.ports import UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus
@@ -45,7 +46,7 @@ def bot_evidence(status: MembershipStatus, now: datetime = NOW) -> BotCapability
 
 
 async def seed_membership_subjects(container: AsyncContainer) -> tuple[int, int]:
-    """Create a group and one known sponsor identity."""
+    """Create a group and one known user identity."""
     sessions = await container.get(async_sessionmaker)
     async with sessions() as session:
         group = ChatDB(chat_id=-100101, chat_type="supergroup", status=ChatStatus.BANNED)
@@ -56,21 +57,18 @@ async def seed_membership_subjects(container: AsyncContainer) -> tuple[int, int]
 
 
 @pytest.mark.asyncio
-async def test_sponsor_events_and_revision_reject_stale_evidence(test_container: AsyncContainer) -> None:
-    """Leave events invalidate without revoking sponsors; stale API results cannot restore membership."""
+async def test_admin_events_and_revision_reject_stale_evidence(test_container: AsyncContainer) -> None:
+    """Admin leave events invalidate evidence; stale API results cannot restore membership."""
     group_id, user_id = await seed_membership_subjects(test_container)
     store = await test_container.get(MembershipStore)
-    grants = await test_container.get(GroupGrantStore)
-    await grants.sponsor(group_id, user_id, ActorContext.cli())
-    assert await store.save_member(group_id, member_evidence(101, MembershipStatus.MEMBER))
+    assert await store.save_member(group_id, member_evidence(101, MembershipStatus.ADMIN))
     revision = (await store.get_state(group_id)).policy_revision
     later = NOW + timedelta(seconds=10)
     assert await store.save_member(group_id, member_evidence(101, MembershipStatus.LEFT, later))
     assert (await store.get_state(group_id)).policy_revision == revision + 1
     assert not await store.save_member(group_id, member_evidence(101, MembershipStatus.ADMIN))
-    assert (await store.get_member(group_id, user_id)).status == MembershipStatus.LEFT
-    assert len(await grants.sponsors(group_id)) == 1
-    assert [user.id for user in await store.relevant_users(group_id)] == [user_id]
+    assert await store.get_member(group_id, user_id) is None
+    assert not await store.relevant_users(group_id)
     with pytest.raises(ValueError, match="group identity"):
         await store.save_member(group_id, member_evidence(101, MembershipStatus.MEMBER, later, -100999))
     with pytest.raises(ValueError, match="aware"):
@@ -85,6 +83,10 @@ async def test_irrelevant_members_not_retained_and_demoted_admin_history_blocks_
     group_id, _ = await seed_membership_subjects(test_container)
     store = await test_container.get(MembershipStore)
     assert not await store.save_member(group_id, member_evidence(999, MembershipStatus.MEMBER))
+    users = await test_container.get(UserStore)
+    assert await users.set_trust(101, is_trusted=True, actor=ActorContext.cli())
+    assert not await store.save_member(group_id, member_evidence(101, MembershipStatus.MEMBER))
+    assert not await store.relevant_users(group_id)
     assert await store.save_member(group_id, member_evidence(202, MembershipStatus.ADMIN))
     assert await store.save_member(group_id, member_evidence(202, MembershipStatus.LEFT, NOW + timedelta(seconds=20)))
     assert not await store.save_member(
@@ -172,8 +174,6 @@ async def test_generation_binding_and_transactional_audit_failure(test_container
     """Late evidence cannot bind replacement user generations; failed audit cannot update revision/evidence."""
     group_id, user_id = await seed_membership_subjects(test_container)
     store = await test_container.get(MembershipStore)
-    grants = await test_container.get(GroupGrantStore)
-    await grants.sponsor(group_id, user_id, ActorContext.cli())
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:
         await session.execute(
@@ -185,7 +185,7 @@ async def test_generation_binding_and_transactional_audit_failure(test_container
         )
         await session.commit()
     with pytest.raises(IntegrityError, match="audit unavailable"):
-        await store.save_member(group_id, member_evidence(101, MembershipStatus.MEMBER))
+        await store.save_member(group_id, member_evidence(101, MembershipStatus.ADMIN))
     assert await store.get_member(group_id, user_id) is None
     assert await store.get_state(group_id) is None
     async with sessions() as session:
@@ -239,13 +239,12 @@ def telegram_member_update(user: User, status: str, date: datetime) -> ChatMembe
 async def test_real_member_and_bot_events_preserve_banned_group(test_container: AsyncContainer) -> None:
     """Event handlers persist relevant changes and bot rights without leaving banned groups."""
     group_id, user_id = await seed_membership_subjects(test_container)
-    grants = await test_container.get(GroupGrantStore)
-    await grants.sponsor(group_id, user_id, ActorContext.cli())
     handler = await test_container.get(MembershipEventHandler)
     store = await test_container.get(MembershipStore)
-    sponsor = User(id=101, is_bot=False, first_name="Synthetic sponsor")
-    await handler.handle_member(telegram_member_update(sponsor, "left", NOW))
-    assert (await store.get_member(group_id, user_id)).status == MembershipStatus.LEFT
+    administrator = User(id=101, is_bot=False, first_name="Synthetic administrator")
+    assert await store.save_member(group_id, member_evidence(101, MembershipStatus.ADMIN, NOW - timedelta(seconds=1)))
+    await handler.handle_member(telegram_member_update(administrator, "left", NOW))
+    assert await store.get_member(group_id, user_id) is None
     bot = Bot("777:synthetic-token")
     try:
         bot_join = await test_container.get(BotJoinHandler)
@@ -265,7 +264,7 @@ async def test_real_member_and_bot_events_preserve_banned_group(test_container: 
 
 
 @pytest.mark.asyncio
-async def test_due_groups_correlates_sponsors_to_the_selected_group(test_container: AsyncContainer) -> None:
+async def test_due_groups_correlates_administrators_to_the_selected_group(test_container: AsyncContainer) -> None:
     """Missing evidence in one group never makes an unrelated fresh group due."""
     group_id, user_id = await seed_membership_subjects(test_container)
     store = await test_container.get(MembershipStore)
@@ -286,8 +285,20 @@ async def test_due_groups_correlates_sponsors_to_the_selected_group(test_contain
         session.add(second)
         await session.commit()
         second_id = second.id
-    grants = await test_container.get(GroupGrantStore)
-    await grants.sponsor(second_id, user_id, ActorContext.cli())
-    assert [group.id for group in await store.due_groups(NOW + timedelta(seconds=1))] == [second_id]
+    second_bot = BotCapabilityEvidence(
+        member_evidence(777, MembershipStatus.MEMBER, group_id=-100202), False, False, False, False, False
+    )
+    await store.save_bot(second_id, second_bot)
+    await store.save_admins(
+        second_id,
+        AdministratorEvidence(-100202, known=True, members=(), verified_at=NOW, expires_at=NOW + FRESHNESS),
+    )
+    await store.save_member(
+        second_id,
+        MembershipEvidence(
+            -100202, 101, MembershipStatus.ADMIN, NOW + timedelta(seconds=1), NOW + timedelta(seconds=2)
+        ),
+    )
+    assert [group.id for group in await store.due_groups(NOW + timedelta(seconds=3))] == [second_id]
     assert not await store.relevant_users(group_id)
     assert [user.id for user in await store.relevant_users(second_id, limit=1)] == [user_id]

@@ -1,4 +1,4 @@
-"""Independent group approval, sponsorship and access-request history."""
+"""Independent group approval and access-request history."""
 
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -55,25 +55,6 @@ class GroupApprovalDB(GrantLifecycle, Base):
             "uq_group_approvals_active",
             "group_id",
             "basis",
-            unique=True,
-            sqlite_where=text("deleted_at IS NULL AND revoked_at IS NULL"),
-        ),
-    )
-
-
-class GroupSponsorDB(GrantLifecycle, Base):
-    """Intentional sponsorship; current validity depends on separately verified facts."""
-
-    __tablename__ = "group_sponsors"
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
-
-    __table_args__ = (
-        Index(
-            "uq_group_sponsors_active",
-            "group_id",
-            "user_id",
             unique=True,
             sqlite_where=text("deleted_at IS NULL AND revoked_at IS NULL"),
         ),

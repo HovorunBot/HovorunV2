@@ -5,8 +5,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import InstrumentedAttribute
-from sqlalchemy.sql.selectable import Exists
 
 from hovorunv2.application.membership import (
     AdministratorEvidence,
@@ -15,7 +13,6 @@ from hovorunv2.application.membership import (
     MembershipStatus,
 )
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.group_grant import GroupSponsorDB
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
@@ -48,25 +45,13 @@ class SQLAlchemyMembershipRepository:
         """Use caller-owned transaction."""
         self._session = session
 
-    def _sponsor_exists(self, group_id: int | InstrumentedAttribute[int]) -> Exists:
-        return exists(
-            select(GroupSponsorDB.id)
-            .where(
-                GroupSponsorDB.group_id == group_id,
-                GroupSponsorDB.user_id == UserDB.id,
-                GroupSponsorDB.deleted_at.is_(None),
-                GroupSponsorDB.revoked_at.is_(None),
-            )
-            .correlate(UserDB, ChatDB)
-        )
-
     async def due_groups(self, now: datetime, limit: int) -> list[ChatDB]:
         """Bound all work in SQL; unknown evidence retries on its expiry."""
         if limit < 1:
             return []
         relevant_expired = exists(
             select(UserDB.id)
-            .outerjoin(
+            .join(
                 MemberEvidenceDB,
                 (MemberEvidenceDB.user_id == UserDB.id)
                 & (MemberEvidenceDB.group_id == ChatDB.id)
@@ -75,11 +60,10 @@ class SQLAlchemyMembershipRepository:
             .where(
                 UserDB.deleted_at.is_(None),
                 or_(
-                    self._sponsor_exists(ChatDB.id),
                     MemberEvidenceDB.admin_candidate.is_(True),
                     MemberEvidenceDB.needs_verification.is_(True),
                 ),
-                or_(MemberEvidenceDB.id.is_(None), MemberEvidenceDB.expires_at <= now),
+                MemberEvidenceDB.expires_at <= now,
             )
             .correlate(ChatDB)
         )
@@ -105,12 +89,12 @@ class SQLAlchemyMembershipRepository:
         return list((await self._session.scalars(query)).all())
 
     async def relevant_users(self, group_id: int, limit: int) -> list[UserDB]:
-        """Bound sponsors/admin candidates and prioritize missing/expired records."""
+        """Bound current/pending administrator candidates, prioritizing expired records."""
         if limit < 1:
             return []
         query = (
             select(UserDB)
-            .outerjoin(
+            .join(
                 MemberEvidenceDB,
                 (MemberEvidenceDB.user_id == UserDB.id)
                 & (MemberEvidenceDB.group_id == group_id)
@@ -120,7 +104,6 @@ class SQLAlchemyMembershipRepository:
                 UserDB.deleted_at.is_(None),
                 exists(select(ChatDB.id).where(ChatDB.id == group_id, ChatDB.deleted_at.is_(None))),
                 or_(
-                    self._sponsor_exists(group_id),
                     MemberEvidenceDB.admin_candidate.is_(True),
                     MemberEvidenceDB.needs_verification.is_(True),
                 ),
@@ -185,22 +168,6 @@ class SQLAlchemyMembershipRepository:
             evidence_time(row.expires_at),
         )
 
-    async def _is_sponsor(self, group_id: int, user_id: int) -> bool:
-        return bool(
-            await self._session.scalar(
-                select(
-                    exists(
-                        select(GroupSponsorDB.id).where(
-                            GroupSponsorDB.group_id == group_id,
-                            GroupSponsorDB.user_id == user_id,
-                            GroupSponsorDB.deleted_at.is_(None),
-                            GroupSponsorDB.revoked_at.is_(None),
-                        )
-                    )
-                )
-            )
-        )
-
     async def _save_member(
         self,
         group: ChatDB,
@@ -227,8 +194,7 @@ class SQLAlchemyMembershipRepository:
         if user.generation > 1 and evidence.verified_at < evidence_time(user.created_at):
             return False
         row = await self._record(group.id, user.id)
-        sponsor = await self._is_sponsor(group.id, user.id)
-        if row is None and not sponsor and evidence.status != MembershipStatus.ADMIN:
+        if row is None and evidence.status != MembershipStatus.ADMIN:
             return False
         if row is not None and evidence.verified_at <= evidence_time(row.verified_at):
             return False
@@ -247,7 +213,7 @@ class SQLAlchemyMembershipRepository:
         if evidence.status != MembershipStatus.UNKNOWN:
             row.admin_candidate = evidence.status == MembershipStatus.ADMIN
             row.needs_verification = False
-            if not row.admin_candidate and not sponsor:
+            if not row.admin_candidate:
                 row.deleted_at = evidence.verified_at
         return True
 

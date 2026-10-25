@@ -16,7 +16,6 @@ from hovorunv2.domain.group_grant import (
     ApprovalBasis,
     GroupAccessRequestDB,
     GroupApprovalDB,
-    GroupSponsorDB,
     RequestStatus,
 )
 from hovorunv2.domain.user import UserDB
@@ -34,29 +33,27 @@ async def seed_grant_subjects(container: AsyncContainer) -> tuple[int, int, int]
 
 
 @pytest.mark.asyncio
-async def test_multiple_sponsors_idempotency_and_history(test_container: AsyncContainer) -> None:
-    """Sponsors coexist and revoke/regrant appends history without granting trust or authority."""
-    group_id, first_id, second_id = await seed_grant_subjects(test_container)
+async def test_approval_idempotency_and_regrant_history(test_container: AsyncContainer) -> None:
+    """Independent approval retains revoke/regrant history without user sponsorship."""
+    group_id, _, _ = await seed_grant_subjects(test_container)
     store = await test_container.get(GroupGrantStore)
     actor = ActorContext.cli()
-    assert await store.sponsor(group_id, first_id, actor)
-    assert not await store.sponsor(group_id, first_id, actor)
-    assert await store.sponsor(group_id, second_id, actor)
-    assert {row.user_id for row in await store.sponsors(group_id)} == {first_id, second_id}
-    assert await store.revoke_sponsor(group_id, first_id, actor)
-    assert not await store.revoke_sponsor(group_id, first_id, actor)
-    assert [row.user_id for row in await store.sponsors(group_id)] == [second_id]
-    assert await store.sponsor(group_id, first_id, actor)
+    assert await store.approve(group_id, actor)
+    assert not await store.approve(group_id, actor)
+    assert await store.revoke_approval(group_id, ApprovalBasis.EXPLICIT, actor)
+    assert not await store.revoke_approval(group_id, ApprovalBasis.EXPLICIT, actor)
+    assert not await store.approvals(group_id)
+    assert await store.approve(group_id, actor)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:
-        history = list((await session.scalars(select(GroupSponsorDB))).all())
-        assert len(history) == 3
+        history = list((await session.scalars(select(GroupApprovalDB))).all())
+        assert len(history) == 2
         assert sum(row.revoked_at is not None for row in history) == 1
         assert (await session.get(ChatDB, group_id)).status == ChatStatus.UNAUTHORIZED
         events = list(
             (await session.scalars(select(AuditEventDB).where(AuditEventDB.target_type == "group_grant"))).all()
         )
-        assert len(events) == 4
+        assert len(events) == 3
         assert all(event.actor_origin == actor.origin for event in events)
 
 
@@ -91,24 +88,19 @@ async def test_request_rejection_is_not_ban_and_approval_is_atomic(test_containe
 @pytest.mark.asyncio
 async def test_grant_queries_filter_deleted_parents_and_associations(test_container: AsyncContainer) -> None:
     """A deleted identity cannot preserve ordinary association visibility or accept mutations."""
-    group_id, first_id, second_id = await seed_grant_subjects(test_container)
+    group_id, first_id, _ = await seed_grant_subjects(test_container)
     store = await test_container.get(GroupGrantStore)
     actor = ActorContext.cli()
-    await store.sponsor(group_id, first_id, actor)
-    await store.sponsor(group_id, second_id, actor)
     await store.approve(group_id, actor)
     await store.request(group_id, first_id, actor)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:
         first = await session.get(UserDB, first_id)
         first.deleted_at = datetime.now(UTC)
-        second_sponsor = await session.scalar(select(GroupSponsorDB).where(GroupSponsorDB.user_id == second_id))
-        second_sponsor.deleted_at = datetime.now(UTC)
         await session.commit()
-    assert not await store.sponsors(group_id)
     assert not await store.requests(group_id)
     with pytest.raises(ValueError, match="active user"):
-        await store.sponsor(group_id, first_id, actor)
+        await store.request(group_id, first_id, actor)
     async with sessions() as session:
         group = await session.get(ChatDB, group_id)
         group.deleted_at = datetime.now(UTC)

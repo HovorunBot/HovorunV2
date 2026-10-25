@@ -1,4 +1,4 @@
-"""Tests for extended group/chat identity, lifecycle uniqueness, and migration safety (Block 008)."""
+"""Tests for extended group/chat identity, lifecycle uniqueness, and migration safety."""
 
 import sqlite3
 from pathlib import Path

@@ -4,26 +4,18 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from alembic import command
-
-LEGACY_REVISION = "b1c2d3e4f5a6"
-USER_REVISION = "d3e4f5a6b7c8"
-ASSIGNMENT_REVISION = "a1b2c3d4e5f6"
-ROLE_REVISION = "b2c3d4e5f6a7"
-CONSTRAINT_REVISION = "c3d4e5f6a7b8"
-TIER_REVISION = "d4e5f6a7b8c9"
-
-
-def migration_config(monkeypatch: pytest.MonkeyPatch, database: Path) -> Config:
-    """Point the real Alembic environment at a temporary database and synthetic settings."""
-    monkeypatch.setenv("DB_PATH", str(database))
-    monkeypatch.setenv("BOT_TOKEN", "123456:synthetic-migration-token")
-    monkeypatch.setenv("ADMIN_IDS", "[]")
-    monkeypatch.setenv("OWNERS", "[]")
-    return Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+from tests.migrations.helpers import (
+    ASSIGNMENT_REVISION,
+    CONSTRAINT_REVISION,
+    LEGACY_REVISION,
+    ROLE_REVISION,
+    TIER_REVISION,
+    USER_REVISION,
+    migration_config,
+)
 
 
 def test_actual_upgrade_preserves_legacy_group_configuration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -309,7 +301,7 @@ def test_integer_tier_migration_preserves_current_authority_and_history(
         identity = connection.execute(
             "SELECT id, telegram_id, generation, deleted_at FROM users ORDER BY id"
         ).fetchall()
-    command.upgrade(config, "head")
+    command.upgrade(config, TIER_REVISION)
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT role, typeof(role) FROM users ORDER BY id").fetchall() == [
             (1, "integer"),
@@ -334,7 +326,7 @@ def test_integer_tier_migration_preserves_current_authority_and_history(
             ("owner",),
             ("user",),
         ]
-    command.upgrade(config, "head")
+    command.upgrade(config, TIER_REVISION)
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT * FROM user_roles").fetchall() == history
         assert connection.execute("SELECT * FROM audit_events").fetchall() == audit

@@ -337,7 +337,7 @@ async def test_command_service_is_capture_allowed(test_container: AsyncContainer
 
 
 # ==============================================================================
-# Legacy Characterization Tests (Block 001)
+# Legacy Characterization Tests
 # ==============================================================================
 
 

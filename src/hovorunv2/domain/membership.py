@@ -35,7 +35,7 @@ class GroupMembershipStateDB(Base):
 
 
 class MemberEvidenceDB(Base):
-    """Evidence only for sponsors, administrators and unresolved former administrators."""
+    """Evidence only for administrators and unresolved former administrators."""
 
     __tablename__ = "member_evidence"
 

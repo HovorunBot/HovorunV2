@@ -16,7 +16,7 @@ def test_membership_upgrade_is_additive_and_enforces_active_evidence(
     """Upgrade old data, reject bad evidence, retain soft-deleted history, and reverse schema only."""
     database = tmp_path / "membership.db"
     monkeypatch.setenv("DB_PATH", str(database))
-    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     command.upgrade(config, "legacy016")
     with sqlite3.connect(database) as connection:
         connection.execute(

@@ -1,4 +1,4 @@
-"""Tests for audited transaction boundary, audit events, and sanitization (Block 005)."""
+"""Tests for audited transaction boundary, audit events, and sanitization."""
 
 from copy import deepcopy
 from functools import partial

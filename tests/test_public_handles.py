@@ -1,4 +1,4 @@
-"""Tests for public username resolution, case-insensitive uniqueness, and grant preservation (Block 009)."""
+"""Tests for public username resolution, case-insensitive uniqueness, and grant preservation."""
 
 import sqlite3
 from pathlib import Path

@@ -18,7 +18,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import Role, TargetKind
 from hovorunv2.interface.cli.roles import RoleArguments, build_parser
 from tests.conftest import provision_role
-from tests.test_identity_migrations import TIER_REVISION, migration_config
+from tests.migrations.helpers import migration_config
 
 
 @pytest.mark.asyncio
@@ -89,24 +89,6 @@ async def test_trust_resolves_active_handles_and_rejects_deleted_users(test_cont
     await users.soft_delete_user(second, actor=ActorContext.cli(), reason="synthetic cleanup")
     assert not await trust.set_trust(str(second), is_trusted=True, actor=ActorContext.cli())
     assert not await trust.set_trust("880099", is_trusted=True, actor=ActorContext.cli())
-
-
-def test_trust_revision_upgrade_preserves_existing_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Upgrade a real pre-trust database without changing trust or authority."""
-    database = tmp_path / "trust.db"
-    config = migration_config(monkeypatch, database)
-    command.upgrade(config, TIER_REVISION)
-    with sqlite3.connect(database) as connection:
-        connection.execute(
-            "INSERT INTO users (platform, telegram_id, role, is_trusted, generation, created_at, updated_at) "
-            "VALUES ('telegram', 880013, 10, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-        )
-    command.upgrade(config, "trust013")
-    with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT role, is_trusted, trust_revision FROM users").fetchone() == (10, 1, 0)
-    command.downgrade(config, TIER_REVISION)
-    with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT role, is_trusted FROM users").fetchone() == (10, 1)
 
 
 @pytest.mark.asyncio

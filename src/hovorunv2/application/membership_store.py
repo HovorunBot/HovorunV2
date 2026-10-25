@@ -18,7 +18,7 @@ class MembershipStore(Protocol):
         ...
 
     async def relevant_users(self, group_id: int, limit: int = 50) -> list[UserDB]:
-        """Return sponsors and relevant administrators, missing/stale evidence first."""
+        """Return current and unresolved former administrators, missing/stale evidence first."""
         ...
 
     async def get_member(self, group_id: int, user_id: int) -> MembershipEvidence | None:

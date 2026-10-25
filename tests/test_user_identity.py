@@ -1,4 +1,4 @@
-"""Tests for lifecycle-aware user identity records and persistence (Block 007)."""
+"""Tests for lifecycle-aware user identity records and persistence."""
 
 import pytest
 from dishka import AsyncContainer
