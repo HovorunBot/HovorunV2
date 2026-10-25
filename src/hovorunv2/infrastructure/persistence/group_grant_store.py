@@ -30,6 +30,11 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         async with self._session_maker() as session:
             return await SQLAlchemyGroupGrantRepository(session).approvals(group_id)
 
+    async def has_revoked_approval(self, group_id: int) -> bool:
+        """Check if group has any revoked approvals."""
+        async with self._session_maker() as session:
+            return await SQLAlchemyGroupGrantRepository(session).has_revoked_approval(group_id)
+
     async def requests(self, group_id: int) -> list[GroupAccessRequestDB]:
         """List visible request lifecycle records."""
         async with self._session_maker() as session:

@@ -13,6 +13,9 @@ class DecisionReason(StrEnum):
     ALLOWED = "allowed"
     ENTITY_UNAVAILABLE = "entity_unavailable"
     GROUP_BANNED = "group_banned"
+    ADMIN_FULL_BANNED = "admin_full_banned"
+    MEMBER_EVIDENCE_UNKNOWN = "member_evidence_unknown"
+    NOT_APPROVED = "not_approved"
     UNAUTHORIZED_MANAGEMENT = "unauthorized_management"
 
 

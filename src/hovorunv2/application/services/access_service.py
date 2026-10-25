@@ -1,9 +1,10 @@
 """Application service for unified access control and permissions."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from hovorunv2.application.permissions import AccessDecision, PermissionRequest
+from hovorunv2.application.permissions import AccessDecision, DecisionReason, PermissionRequest
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.permission_service import PermissionService
@@ -42,6 +43,10 @@ class AccessService:
     async def evaluate_permission(self, request: PermissionRequest) -> AccessDecision:
         """Evaluate explicit action/target guards beside legacy group-policy orchestration."""
         return await self._permission_service.evaluate(request)
+
+    async def evaluate_group_access(self, chat_id: int, now: datetime | None = None) -> AccessDecision:
+        """Evaluate durable approval, bans and administrator blockers for a group."""
+        return await self._chat_status_service.evaluate_access(chat_id, now=now)
 
     async def is_owner(self, user_id: int) -> bool:
         """Check if a user is an Owner (super admin)."""
@@ -86,7 +91,6 @@ class AccessService:
             True if allowed, False otherwise.
 
         """
-        # 1. Feature toggles apply to everyone, including admins.
         if (
             policy.is_toggleable
             and command_name
@@ -94,22 +98,21 @@ class AccessService:
         ):
             return False
 
-        is_admin = user_id is not None and await self.is_admin(user_id)
+        # Group bans always block everyone, including global admins.
+        if chat_id < 0:
+            decision = await self._chat_status_service.evaluate_access(chat_id)
+            if decision.reason == DecisionReason.GROUP_BANNED:
+                return False
 
-        # 2. Global Admin always has full access
-        if is_admin:
+        if user_id is not None and await self.is_admin(user_id):
             return True
 
-        # 3. Check if global admin is required
         if policy.requires_admin:
             return False
 
-        # 4. Group Admin check
-        if policy.requires_group_admin:
-            if not user_id or not bot:
-                return False
-            if not await self.is_group_admin(bot, chat_id, user_id):
-                return False
+        if policy.requires_group_admin and (
+            not user_id or not bot or not await self.is_group_admin(bot, chat_id, user_id)
+        ):
+            return False
 
-        # 5. Approval check
         return not (policy.requires_approval and not await self._chat_status_service.is_approved(chat_id))

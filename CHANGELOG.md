@@ -28,6 +28,7 @@
 
 ### Refactor
 
+- **access**: evaluate independent group access rules
 - **access**: remove sponsorship and organize migration tests
 - **roles**: replace configured administrator lists
 - **access**: convert CommandPolicy to frozen dataclass and BaseCommand to ABC

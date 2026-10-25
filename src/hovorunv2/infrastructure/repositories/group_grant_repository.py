@@ -57,6 +57,21 @@ class SQLAlchemyGroupGrantRepository:
         )
         return list((await self._session.scalars(query)).all())
 
+    async def has_revoked_approval(self, group_id: int) -> bool:
+        """Check whether any approval for this group was explicitly revoked."""
+        query = (
+            select(GroupApprovalDB.id)
+            .join(ChatDB, ChatDB.id == GroupApprovalDB.group_id)
+            .where(
+                GroupApprovalDB.group_id == group_id,
+                GroupApprovalDB.deleted_at.is_(None),
+                GroupApprovalDB.revoked_at.is_not(None),
+                ChatDB.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        return (await self._session.scalar(query)) is not None
+
     async def requests(self, group_id: int) -> list[GroupAccessRequestDB]:
         """Fetch visible request history with active parents."""
         query = (

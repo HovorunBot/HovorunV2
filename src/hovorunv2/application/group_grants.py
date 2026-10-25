@@ -18,6 +18,10 @@ class GroupGrantStore(Protocol):
         """List active approvals for an active group generation."""
         ...
 
+    async def has_revoked_approval(self, group_id: int) -> bool:
+        """Check if group has any explicitly revoked approvals."""
+        ...
+
     async def requests(self, group_id: int) -> list[GroupAccessRequestDB]:
         """List nondeleted requests for an active group generation."""
         ...
