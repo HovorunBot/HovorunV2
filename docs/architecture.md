@@ -51,6 +51,15 @@ Group callbacks bind the physical group and its internal identity/generation. Pr
 
 Use constant operation templates and pass dynamic values as logging arguments. The console and Telegram privacy formatter retains only known command/status labels, exception types and numeric arguments. External library messages become generic events. Tracebacks retain code locations without exception values, source text, locals or chains. yt-dlp and Instaloader adapters suppress their direct payload-bearing diagnostics. See [operator diagnostics](administration.md#diagnosing-failures).
 
+## Beta entitlements
+
+Beta eligibility uses `BetaEligibilityService`, the `BetaEntitlementStore` boundary and a session-bound repository.
+`BetaEntitlementDB` references internal user/group identities; an explicit `*` grant represents all beta features for a
+user. Group grants always name one feature. Reads filter revoked/deleted grants and deleted subjects. Typed,
+feature-bound `BetaEligibilityFacts` feed eligibility evaluation independently of selected activation. Grants remain in
+SQLite and are never mirrored into Casbin. The store reserves the SQLite writer before rechecking current actor
+role, private transport and exact target generation; entitlement mutation and minimal audit commit atomically.
+
 ## Feature definitions and selected activation
 
 `application/features.py` owns typed feature metadata independently of command presentation and authorization. Existing provider video/post keys remain canonical. Definitions declare scopes, direct/automatic triggers, release channel, introduction event, required bot capabilities, usage units, and policy references. Current media features require no blanket bot administrator capability. Registry metadata does not grant execution access.

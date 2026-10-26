@@ -66,6 +66,19 @@ Groups need approval and fresh, successful administrator verification. Missing, 
 
 Membership evidence expires after five minutes. Startup and the worker refresh up to ten due groups per minute, with up to fifty relevant member checks per group and a thirty-second cycle deadline. Telegram requests have ten-second deadlines. Unprocessed evidence remains expired; runtime full-ban checks cover all retained administrator candidates. Ordinary messages do not trigger administrator-list API calls.
 
+## Beta entitlements
+
+Beta eligibility is separate from trust, authority roles and selected features. The application administration service
+accepts all-beta or individual beta grants for an existing active user, and specific-feature overrides for an existing
+active group. Mutations require CLI origin or a current bot administrator acting in private transport. An all-beta user
+grant includes future beta definitions, with no introduction-date cutoff. A group override never grants all future beta
+features.
+
+Granting eligibility does not enable features, modify group approval, or bypass group restrictions. Revocation takes
+effect on the next eligibility read and retains grant and selection history. Deleted identities and deleted grants never
+provide eligibility. Public administration menus, CLI grant commands and group administrator enablers belong to later
+administration blocks; this release adds the audited service and storage foundation without a production beta feature.
+
 ## Feature selections
 
 Feature selection is explicit: disabling every media feature keeps capture disabled, including after repeated approval or restart. Existing migrated empty selections retain their documented compatibility until an intentional feature setting edit. Private and group configuration follows the same selection rules. Provider toggles control their video/post children; enabling one child does not enable the other.

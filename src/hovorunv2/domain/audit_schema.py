@@ -74,6 +74,8 @@ ACTIVATION_FIELDS: Final = {
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, AuditField]]] = {
+    ("beta_entitlement", "grant"): {"feature": TEXT, "granted": FLAG_PAIR, "generation": NUMBER},
+    ("beta_entitlement", "revoke"): {"feature": TEXT, "granted": FLAG_PAIR, "generation": NUMBER},
     ("group_activation", "enable"): ACTIVATION_FIELDS,
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
