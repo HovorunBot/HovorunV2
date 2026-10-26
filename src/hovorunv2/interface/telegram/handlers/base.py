@@ -11,6 +11,7 @@ from aiogram.types import Message
 from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.clients.base import BaseMediaClient
+from hovorunv2.application.features import FEATURE_REGISTRY
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
@@ -69,6 +70,8 @@ class RichMediaCommand(BaseCommand):
         media_delivery: TelegramMediaDelivery,
     ) -> None:
         """Initialize command with its provider client and shared pipeline/delivery services."""
+        FEATURE_REGISTRY.capture(primary_client.name, is_video=True)
+        FEATURE_REGISTRY.capture(primary_client.name, is_video=False)
         self._primary_client = primary_client
         self._pipeline = pipeline
         self._delivery = media_delivery

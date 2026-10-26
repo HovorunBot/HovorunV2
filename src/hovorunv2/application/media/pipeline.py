@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.features import FEATURE_REGISTRY
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.translation_service import TranslationService
@@ -37,6 +38,8 @@ class MediaPipeline:
         chat_id: int,
     ) -> RichMediaPayload | None:
         """Execute 4-tier extraction, verify capture permissions, and finalize payload."""
+        FEATURE_REGISTRY.capture(client.name, is_video=True)
+        FEATURE_REGISTRY.capture(client.name, is_video=False)
         cleaned_url = url.rstrip(".,")
 
         raw_payload = await self._extract_raw(client, cleaned_url)

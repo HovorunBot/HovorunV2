@@ -5,10 +5,11 @@ from functools import partial
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from hovorunv2.application.features import FEATURE_REGISTRY
 from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.command import CommandDB
-from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
+from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
 
@@ -21,14 +22,7 @@ INITIAL_COMMANDS: list[dict[str, str]] = [
     {"name": CommandName.HELP, "description": "Help information"},
     {"name": CommandName.FEEDBACK, "description": "Send feedback to bot developers"},
     {"name": CommandName.START, "description": "Start the bot"},
-    *[
-        entry
-        for provider, (video_cmd, post_cmd) in PROVIDER_SPLIT_COMMANDS.items()
-        for entry in (
-            {"name": video_cmd, "description": f"Process {provider.capitalize()} video links"},
-            {"name": post_cmd, "description": f"Process {provider.capitalize()} image/text links"},
-        )
-    ],
+    *[{"name": feature.key, "description": f"Process {feature.display_name}"} for feature in FEATURE_REGISTRY.all()],
 ]
 
 
