@@ -50,5 +50,7 @@ class SQLAlchemySystemStore(SystemStore):
             target_id=key,
             action="set_value",
             operation=operation,
-            changed_fields={key: value},
+            changed_fields={"last_notified_version": value}
+            if key == "last_notified_version"
+            else {"value_changed": True},
         )

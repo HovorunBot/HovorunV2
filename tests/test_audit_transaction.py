@@ -109,7 +109,7 @@ async def failing_op(session: AsyncSession, chat_id: int) -> None:
     session.add(chat)
     await session.flush()
     msg = "Synthetic failure inside transaction"
-    raise RuntimeError(msg)
+    raise ValueError(msg)
 
 
 async def noop_op(_session: AsyncSession) -> None:
@@ -129,12 +129,10 @@ async def test_audited_transaction_commits_mutation_and_audit_together(test_cont
         actor=actor,
         target_type="chat",
         target_id=chat_id,
-        action="approve",
+        action="set_encryption_salt",
         operation=partial(create_chat_op, chat_id=chat_id),
         changed_fields={
-            "status": "approved",
             "encryption_salt": "012345",
-            "details": [{"api_key": "synthetic secret", "count": 0}],
         },
     )
     assert result_chat.chat_id == chat_id
@@ -154,13 +152,11 @@ async def test_audited_transaction_commits_mutation_and_audit_together(test_cont
         event = events[0]
         assert event.actor_origin == ActorOrigin.TELEGRAM
         assert event.actor_id == 1001
-        assert event.action == "approve"
+        assert event.action == "set_encryption_salt"
         assert event.reason == "approve group"
         assert event.changed_fields is not None
-        assert event.changed_fields["status"] == "approved"
         # Salt must be redacted in persisted DB record
         assert event.changed_fields["encryption_salt"] == SENSITIVE_FIELD_MARKER
-        assert event.changed_fields["details"] == [{"api_key": SENSITIVE_FIELD_MARKER, "count": 0}]
 
 
 @pytest.mark.asyncio
@@ -172,14 +168,14 @@ async def test_audited_transaction_rolls_back_both_on_failure(test_container: As
     chat_id = 88002
     actor = ActorContext.cli(reason="failed batch import")
 
-    with pytest.raises(RuntimeError, match="Synthetic failure inside transaction"):
+    with pytest.raises(ValueError, match="Synthetic failure inside transaction"):
         await unit_of_work.execute(
             actor=actor,
             target_type="chat",
             target_id=chat_id,
             action="create",
             operation=partial(failing_op, chat_id=chat_id),
-            changed_fields={"status": "approved"},
+            changed_fields={"platform": "telegram"},
         )
 
     # Direct SQLite check: NEITHER the chat NOR the audit event exists
@@ -199,9 +195,6 @@ async def test_audited_transaction_forbids_recursive_audit(test_container: Async
     unit_of_work = await test_container.get(AuditedUnitOfWork)
 
     actor = ActorContext.system()
-
-    async def noop_op(_session: AsyncSession) -> None:
-        pass
 
     with pytest.raises(ValueError, match="Recursive audit logging of audit entities is forbidden"):
         await unit_of_work.execute(

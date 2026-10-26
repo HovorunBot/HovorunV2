@@ -17,6 +17,7 @@
 
 ### Fix
 
+- **audit**: validate entity and action fields atomically
 - **privacy**: keep payloads out of operational logs
 - **privacy**: minimize authorized message caching
 - **access**: separate trust from settings authority

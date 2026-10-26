@@ -155,7 +155,7 @@ async def test_salt_and_secrets_redacted_in_audit(test_container: AsyncContainer
             )
         ).scalar_one()
         assert token_audit.changed_fields is not None
-        assert token_audit.changed_fields["bot_api_token"] == "[REDACTED_CHANGED]"  # noqa: S105
+        assert token_audit.changed_fields == {"value_changed": True}
         assert "secret_value_xyz" not in str(token_audit.changed_fields)
 
         version_audit = (

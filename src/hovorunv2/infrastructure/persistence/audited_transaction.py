@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext, AuditEventDB, sanitize_audit_changes
+from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.infrastructure.repositories.audit_repository import SQLAlchemyAuditRepository
 
 
@@ -50,6 +51,8 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
         if target_type == "audit":
             msg = "Recursive audit logging of audit entities is forbidden."
             raise ValueError(msg)
+        validate_audit_changes(target_type, action, None)
+        validate_audit_reason(actor.reason)
 
         async with self._session_maker() as session:
             async with session.begin():
@@ -63,6 +66,7 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
                         raw_changes = changed_fields(result)
                     else:
                         raw_changes = None
+                    validate_audit_changes(target_type, action, raw_changes)
                     sanitized_changes = sanitize_audit_changes(raw_changes)
                     audit_repo = SQLAlchemyAuditRepository(session)
                     event = AuditEventDB(
