@@ -6,6 +6,7 @@ import pytest
 from aiogram import types
 from dishka import AsyncContainer
 
+from hovorunv2.application.ports import ChatStore
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import (
@@ -101,14 +102,18 @@ async def test_feedback_command_validation_and_delegation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reminder_service_send_prompt_cooldown(owner_notifier: OwnerNotifier) -> None:
+async def test_reminder_service_send_prompt_cooldown(
+    owner_notifier: OwnerNotifier, test_container: AsyncContainer
+) -> None:
     """Test ChatReminderService sets Valkey cooldown when sending unauthorized prompt."""
     chat_service = MagicMock()
     cache_service = MagicMock()
     cache_service.get = AsyncMock(return_value=None)
     cache_service.set = AsyncMock()
     task_queue = MagicMock(spec=TaskQueueService)
-    prompt_sender = TelegramUnauthorizedPromptSender()
+    chats = await test_container.get(ChatStore)
+    await chats.get_or_create_chat(-100444)
+    prompt_sender = TelegramUnauthorizedPromptSender(chats)
 
     reminder_service = ChatReminderService(chat_service, cache_service, task_queue, owner_notifier, prompt_sender)
 
@@ -129,7 +134,9 @@ async def test_reminder_service_send_prompt_cooldown(owner_notifier: OwnerNotifi
 
 
 @pytest.mark.asyncio
-async def test_reminder_service_maintenance_cycle(owner_notifier: OwnerNotifier) -> None:
+async def test_reminder_service_maintenance_cycle(
+    owner_notifier: OwnerNotifier, test_container: AsyncContainer
+) -> None:
     """Test maintenance cycle handles rejected chats and pending chats."""
     rejected_chat = MagicMock(spec=ChatDB, chat_id=-100111)
     pending_chat = MagicMock(spec=ChatDB, chat_id=-100222)
@@ -149,7 +156,7 @@ async def test_reminder_service_maintenance_cycle(owner_notifier: OwnerNotifier)
     cache_service.get = AsyncMock(return_value=None)
     cache_service.set = AsyncMock()
     task_queue = MagicMock(spec=TaskQueueService)
-    prompt_sender = TelegramUnauthorizedPromptSender()
+    prompt_sender = await test_container.get(TelegramUnauthorizedPromptSender)
 
     reminder_service = ChatReminderService(chat_service, cache_service, task_queue, owner_notifier, prompt_sender)
 

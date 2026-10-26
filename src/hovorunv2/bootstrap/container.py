@@ -7,6 +7,7 @@ import aiohttp
 from aiogram import Bot
 from dishka import Provider, Scope, alias, provide
 
+from hovorunv2.application.activation import ActivationStore
 from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
 from hovorunv2.application.clients.bluesky import BlueskyService
@@ -39,6 +40,7 @@ from hovorunv2.application.ports import (
     UserStore,
 )
 from hovorunv2.application.services.access_service import AccessService
+from hovorunv2.application.services.activation_service import GroupActivationService
 from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
@@ -72,6 +74,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemySystemStore,
     SQLAlchemyUserStore,
 )
+from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActivationStore
 from hovorunv2.infrastructure.persistence.ban_store import SQLAlchemyBanStore
 from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGroupGrantStore
 from hovorunv2.infrastructure.persistence.group_identity_store import SQLAlchemyGroupIdentityStore
@@ -158,6 +161,9 @@ class AppProvider(Provider):
         return await load_authorization_policy()
 
     chat_store_impl = provide(SQLAlchemyChatStore)
+    activation_store_impl = provide(SQLAlchemyActivationStore)
+    activation_store = alias(source=SQLAlchemyActivationStore, provides=ActivationStore)
+    group_activation_service = provide(GroupActivationService)
     membership_store_impl = provide(SQLAlchemyMembershipStore)
     membership_store = alias(source=SQLAlchemyMembershipStore, provides=MembershipStore)
     group_grant_store_impl = provide(SQLAlchemyGroupGrantStore)

@@ -4,15 +4,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import Bot
+from aioresponses import aioresponses
 from dishka import AsyncContainer
 
+from hovorunv2.application.ports import ChatStore
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import ChatStatus, CommandName, Role
-from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import create_mock_message, get_media_command, provision_role
+from tests.utils.activation import activation_runtime, group_message, stub_telegram
 
 
 @pytest.mark.asyncio
@@ -87,15 +89,15 @@ async def test_youtube_auto_enable_on_access(init_container: AsyncContainer) -> 
     await provision_role(init_container, user_id, Role.OWNER)
 
     # 1. Setup services
-    allow_cmd = await init_container.get(AccessCommand)
     command_service = await init_container.get(CommandService)
+    chats = await init_container.get(ChatStore)
+    await chats.get_or_create_chat(chat_id)
 
     # 2. Trigger /allow_chat as admin
-    message = create_mock_message("/allow_chat", chat_id=chat_id, user_id=user_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_message = AsyncMock()
-
-    await allow_cmd.handle(message, bot)
+    async with activation_runtime(init_container) as runtime:
+        with aioresponses() as http:
+            stub_telegram(http)
+            await runtime.command.handle(group_message(chat_id=chat_id, user_id=user_id).as_(runtime.bot), runtime.bot)
 
     # 3. Check if YouTube is enabled
     allowed = await command_service.get_allowed_commands(chat_id)

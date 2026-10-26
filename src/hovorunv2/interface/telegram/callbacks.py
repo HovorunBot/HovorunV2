@@ -35,6 +35,9 @@ class AccessCallback(CallbackData, prefix="access"):
 
     chat_id: int
     action: AccessAction
+    group_id: int = 0
+    generation: int = 0
+    request_id: int = 0
 
 
 class SettingsCallback(CallbackData, prefix="settings"):

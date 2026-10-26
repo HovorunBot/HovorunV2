@@ -1,40 +1,53 @@
-"""Access management command module."""
+"""Intentional group activation and private approval decisions."""
 
 import html
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 from aiogram import Bot, Router
+from aiogram.enums import ChatType
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, Message, User
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from hovorunv2.application.services.access_service import AccessService, CommandPolicy
-from hovorunv2.application.services.chat_status_service import ChatStatusService
+from hovorunv2.application.activation import ActivationAction, ActivationOutcome, ActivationResult
+from hovorunv2.application.permissions import PermissionTarget
+from hovorunv2.application.services.access_service import CommandPolicy
+from hovorunv2.application.services.activation_service import GroupActivationService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
-from hovorunv2.domain.enums import ChatStatus, CommandName
-from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 
 from .base import BaseCommand
 
-logger = get_logger(__name__)
+RESULT_TEXT = {
+    ActivationOutcome.APPROVED: "✅ Group approval saved. Processing remains subject to current access checks.",
+    ActivationOutcome.ALREADY_APPROVED: "ℹ️ This chat is already approved.",  # noqa: RUF001
+    ActivationOutcome.REQUESTED: "⏳ Access request saved for bot administrator review.",
+    ActivationOutcome.ALREADY_PENDING: "⏳ Approval is already pending.",
+    ActivationOutcome.REJECTED: "❌ Access request rejected.",
+    ActivationOutcome.DENIED: "❌ Trusted users can activate the bot. Other group admins can request approval.",
+    ActivationOutcome.UNAVAILABLE: "❌ Group or user unavailable. Run /allow_chat in the group to refresh.",
+    ActivationOutcome.GROUP_BANNED: "❌ This group is restricted. Approval cannot remove that restriction.",
+    ActivationOutcome.STALE_REQUEST: "❌ This request is no longer available.",
+}
+SUCCESS_OUTCOMES = {
+    ActivationOutcome.APPROVED,
+    ActivationOutcome.ALREADY_APPROVED,
+    ActivationOutcome.REQUESTED,
+    ActivationOutcome.ALREADY_PENDING,
+    ActivationOutcome.REJECTED,
+}
 
 
 class AccessCommand(BaseCommand):
-    """Command to handle chat access requests and approvals."""
+    """Activate through trust or submit a group-administrator request for private review."""
 
     POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
-    def __init__(
-        self,
-        chat_status_service: ChatStatusService,
-        access_service: AccessService,
-        owner_notifier: OwnerNotifier,
-    ) -> None:
-        """Initialize command with its dependencies."""
-        self._chat_status_service = chat_status_service
-        self._access_service = access_service
-        self._owner_notifier = owner_notifier
+    def __init__(self, activation_service: GroupActivationService, owner_notifier: OwnerNotifier) -> None:
+        """Receive mandatory activation and durable administrator-notification dependencies."""
+        self._activation = activation_service
+        self._notifier = owner_notifier
 
     @property
     def name(self) -> str:
@@ -56,146 +69,93 @@ class AccessCommand(BaseCommand):
         cmd_part = parts[0].lstrip("/").split("@")[0].lower()
         return cmd_part == CommandName.ALLOW_CHAT
 
-    async def handle(
-        self,
-        message: Message,
-        bot: Bot,
-        **kwargs: Any,
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+        """Bind activation to the known group carrying the authenticated human command."""
+        if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
+            await message.answer("Run /allow_chat in the group you want to activate.")
+            return
+        if message.from_user is None or message.from_user.is_bot or message.sender_chat is not None:
+            return
+        target = await self._activation.target(message.chat.id)
+        if target is None:
+            await message.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE])
+            return
+        result = await self._enable(message, message.from_user, bot, target)
+        await message.answer(RESULT_TEXT[result.outcome])
+
+    async def _enable(self, message: Message, actor: User, bot: Bot, target: PermissionTarget) -> ActivationResult:
+        result = await self._activation.enable(actor.id, target, message.chat.type)
+        if result.outcome == ActivationOutcome.REQUESTED and result.request_id is not None:
+            await self._notify_request(message, actor, bot, target, result.request_id)
+        return result
+
+    async def _notify_request(
+        self, message: Message, actor: User, bot: Bot, target: PermissionTarget, request_id: int
     ) -> None:
-        """Handle access command."""
-        user_id = message.from_user.id if message.from_user else 0
-        is_admin = await self._access_service.is_admin(user_id)
-
-        if is_admin:
-            await self._approve_immediately(message)
-            return
-
-        await self._send_access_request(message, bot)
-
-    async def _approve_immediately(self, message: Message) -> None:
-        """Approve the chat immediately for admins."""
-        chat_id = message.chat.id
-        await self._chat_status_service.approve(chat_id)
-
-        await message.answer("✅ Bot is now approved for this chat by administrator.")
-        logger.info("Bot approved in chat %d by admin %s", chat_id, message.from_user.id if message.from_user else "0")
-
-    async def _send_access_request(self, message: Message, bot: Bot, *, silent: bool = False) -> None:
-        """Send access request to bot owners."""
-        chat = message.chat
-        user = message.from_user
-        if not user:
-            return
-
-        chat_id = chat.id
-        status = await self._chat_status_service.get_status(chat_id)
-
-        if status == ChatStatus.APPROVED:
-            await message.answer("ℹ️ This chat is already approved.")  # noqa: RUF001
-            return
-
-        if status == ChatStatus.PENDING and not silent:
-            await message.answer("⏳ Approval is already pending. Owners have been notified.")
-            return
-
-        if status == ChatStatus.BANNED:
-            await message.answer("❌ This chat is forbidden from using this bot.")
-            await bot.leave_chat(chat_id)
-            return
-
-        # Set status to PENDING
-        await self._chat_status_service.set_status(chat_id, ChatStatus.PENDING)
-
-        # Notify group
-        if not silent:
-            await message.answer("⏳ <i>Request sent to bot owners for approval.</i>", parse_mode="HTML")
-
-        # Build request message for owners
+        """Notify current ADMIN/OWNER recipients once, using only public operational metadata."""
         request_text = (
             "🔔 <b>Access Request</b>\n\n"
-            f"<b>Group:</b> {html.escape(chat.title or 'Unknown')}\n"
-            f"<b>ID:</b> <code>{chat_id}</code>\n"
-            f"<b>Type:</b> {chat.type}\n\n"
-            f"<b>Requester:</b> {html.escape(user.full_name)}\n"
-            f"<b>User ID:</b> <code>{user.id}</code>\n"
-            f"<b>Username:</b> @{user.username or 'N/A'}"
+            f"<b>Group:</b> {html.escape(message.chat.title or 'Unknown')}\n"
+            f"<b>Group ID:</b> <code>{target.telegram_id}</code>\n"
+            f"<b>Requester ID:</b> <code>{actor.id}</code>\n"
+            f"<b>Username:</b> {html.escape('@' + actor.username) if actor.username else 'Unavailable'}"
         )
-
         builder = InlineKeyboardBuilder()
         builder.row(
-            InlineKeyboardButton(
-                text="✅ Approve",
-                callback_data=AccessCallback(chat_id=chat_id, action=AccessAction.APPROVE).pack(),
-            ),
-            InlineKeyboardButton(
-                text="❌ Reject", callback_data=AccessCallback(chat_id=chat_id, action=AccessAction.REJECT).pack()
-            ),
+            *[
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=AccessCallback(
+                        chat_id=message.chat.id,
+                        group_id=target.entity_id or 0,
+                        generation=target.generation,
+                        request_id=request_id,
+                        action=action,
+                    ).pack(),
+                )
+                for label, action in (("✅ Approve", AccessAction.APPROVE), ("❌ Reject", AccessAction.REJECT))
+            ]
         )
+        await self._notifier.broadcast(bot, request_text, reply_markup=builder.as_markup(), include_admins=True)
 
-        # Send to all owners
-        await self._owner_notifier.broadcast(bot, request_text, reply_markup=builder.as_markup())
-
-    async def handle_callback(self, query: Any, callback_data: AccessCallback, bot: Bot) -> None:
-        """Process owner's decision or join request from callback query."""
-        query = cast(CallbackQuery, query)
-        chat_id = callback_data.chat_id
-        action = callback_data.action
-
-        if action == AccessAction.REQUEST:
-            await self._handle_request_callback(query, bot)
+    async def handle_callback(self, query: CallbackQuery, callback_data: AccessCallback, bot: Bot) -> None:
+        """Use the callback actor and revalidate the exact selected group/request at mutation."""
+        message = query.message
+        if not isinstance(message, Message) or query.from_user.is_bot:
+            await query.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE], show_alert=True)
             return
-
-        if not await self._access_service.is_owner(query.from_user.id):
-            await query.answer("🚫 Owners only.", show_alert=True)
+        if callback_data.group_id <= 0 or callback_data.generation <= 0:
+            await query.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE], show_alert=True)
             return
-
-        owner = query.from_user
-
-        if action == AccessAction.APPROVE:
-            await self._chat_status_service.approve(chat_id)
-
-            status_text = f"✅ Approved by {owner.full_name}"
-            logger.info("Chat %d APPROVED by owner %d", chat_id, owner.id)
-            await bot.send_message(
-                chat_id=chat_id, text="🚀 <b>Bot has been approved for this chat!</b>", parse_mode="HTML"
-            )
+        target = PermissionTarget("group", callback_data.group_id, callback_data.generation, callback_data.chat_id)
+        if callback_data.action == AccessAction.REQUEST:
+            if (
+                message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}
+                or message.chat.id != callback_data.chat_id
+            ):
+                await query.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE], show_alert=True)
+                return
+            result = await self._enable(message, query.from_user, bot, target)
         else:
-            await self._chat_status_service.set_status(chat_id, ChatStatus.REJECTED)
-            status_text = f"❌ Rejected by {owner.full_name}"
-            logger.info("Chat %d REJECTED by owner %d", chat_id, owner.id)
-
-        # Update owner's message
-        if not query.message or not isinstance(query.message, Message):
-            return
-
-        curr_text = query.message.text or ""
-        new_text = f"{curr_text}\n\n<b>Status:</b> {status_text}" if curr_text else status_text
-        await query.message.edit_text(text=new_text, parse_mode="HTML", reply_markup=None)
-        await query.answer(f"Chat {action}ed.")
-
-    async def _handle_request_callback(self, query: CallbackQuery, bot: Bot) -> None:
-        """Handle request for access from inline button."""
-        if not query.message or not isinstance(query.message, Message):
-            return
-
-        # Check if user is admin in the chat
-        chat_id = query.message.chat.id
-        user_id = query.from_user.id
-        member = await bot.get_chat_member(chat_id, user_id)
-        if member.status not in ("creator", "administrator") and not await self._access_service.is_admin(user_id):
-            await query.answer("❌ Only administrators can request approval.", show_alert=True)
-            return
-
-        # Send request to owners
-        await self._send_access_request(query.message, bot, silent=True)
-
-        # Update message in group
-        await query.message.edit_text(
-            text="⏳ <b>Request sent to bot owners for approval.</b>",
-            parse_mode="HTML",
-            reply_markup=None,
-        )
-        await query.answer("Request sent.")
+            if message.chat.type != ChatType.PRIVATE or message.chat.id != query.from_user.id:
+                await query.answer("Bot administration requires a private chat.", show_alert=True)
+                return
+            action = (
+                ActivationAction.APPROVE if callback_data.action == AccessAction.APPROVE else ActivationAction.REJECT
+            )
+            result = await self._activation.decide(
+                query.from_user.id, target, callback_data.request_id, action, message.chat.type
+            )
+            if result.outcome == ActivationOutcome.APPROVED:
+                await bot.send_message(callback_data.chat_id, RESULT_TEXT[result.outcome])
+        if result.outcome in SUCCESS_OUTCOMES:
+            await bot.edit_message_text(
+                text=RESULT_TEXT[result.outcome],
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                reply_markup=None,
+            )
+        await query.answer(RESULT_TEXT[result.outcome], show_alert=result.outcome not in SUCCESS_OUTCOMES)
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
         """Register callback handlers with router."""

@@ -13,7 +13,8 @@ The project is in alpha.
 
 ## Using the bot
 
-Add the public instance to your group and use `/allow_chat` to request approval. Bot owners review requests based on capacity.
+Add the public instance to your group and use `/allow_chat` or the access button. Trusted users can activate it directly.
+Other group administrators can request approval, which bot administrators review privately.
 You can also host your own instance with Docker.
 
 ## Self-hosting

@@ -5,19 +5,22 @@ from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from hovorunv2.application.ports import ChatStore
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 
 logger = get_logger(__name__)
 
 
-def build_unauthorized_prompt(chat_id: int) -> tuple[str, InlineKeyboardBuilder]:
+def build_unauthorized_prompt(chat_id: int, group_id: int, generation: int) -> tuple[str, InlineKeyboardBuilder]:
     """Generate guidance text and approval button for unauthorized chats."""
     builder = InlineKeyboardBuilder()
     builder.add(
         InlineKeyboardButton(
-            text="🛡️ Request Approval",
-            callback_data=AccessCallback(chat_id=chat_id, action=AccessAction.REQUEST).pack(),
+            text="🛡️ Activate / Request Access",
+            callback_data=AccessCallback(
+                chat_id=chat_id, group_id=group_id, generation=generation, action=AccessAction.REQUEST
+            ).pack(),
         )
     )
 
@@ -26,8 +29,8 @@ def build_unauthorized_prompt(chat_id: int) -> tuple[str, InlineKeyboardBuilder]
         "I enhance group conversations with fast media processing and automatic translation.\n\n"
         "⚠️ <b>Chat Authorization Required:</b>\n"
         "To keep performance reliable, I only operate in approved chats.\n"
-        "A chat administrator can tap the button below or type <code>/allow_chat</code> "
-        "to request access from the bot owners.\n\n"
+        "A trusted user can activate the bot with the button below or <code>/allow_chat</code>. "
+        "Other group administrators can request approval.\n\n"
         "💬 <i>Need help or have questions? Type <code>/feedback &lt;message&gt;</code> to contact developers.</i>"
     )
     return text, builder
@@ -36,9 +39,15 @@ def build_unauthorized_prompt(chat_id: int) -> tuple[str, InlineKeyboardBuilder]
 class TelegramUnauthorizedPromptSender:
     """Delivers unauthorized guidance prompt to Telegram chats."""
 
+    def __init__(self, chats: ChatStore) -> None:
+        self._chats = chats
+
     async def send(self, bot: Bot, chat_id: int) -> bool:
         """Send prompt to chat. Returns True if sent, False if forbidden or on error."""
-        text, builder = build_unauthorized_prompt(chat_id)
+        chat = await self._chats.get_chat(chat_id)
+        if chat is None or chat.chat_type not in {"group", "supergroup"}:
+            return False
+        text, builder = build_unauthorized_prompt(chat_id, chat.id, chat.generation)
         try:
             await bot.send_message(
                 chat_id=chat_id,

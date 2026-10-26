@@ -60,9 +60,23 @@ REQUEST_STATUS: Final = AuditField((str,), choices=frozenset(RequestStatus))
 REQUEST_STATUS_PAIR: Final = AuditField((str,), AuditShape.PAIR, frozenset(RequestStatus))
 BASIS: Final = AuditField((str,), choices=frozenset(ApprovalBasis))
 BAN_KIND: Final = AuditField((str,), choices=frozenset(BanKind))
+ACTIVATION_FIELDS: Final = {
+    "group_id": NUMBER,
+    "generation": NUMBER,
+    "actor_user_id": NUMBER,
+    "status": AuditField((str,), AuditShape.PAIR, frozenset(ChatStatus)),
+    "request_id": NUMBER,
+    "request_status": AuditField((str, type(None)), AuditShape.PAIR, frozenset({None, *RequestStatus})),
+    "approval_added": FLAG,
+    "defaults_added": COMMAND_LIST,
+    "activation_basis": AuditField((str,), choices=frozenset({"trust", "administrator", "request"})),
+}
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, AuditField]]] = {
+    ("group_activation", "enable"): ACTIVATION_FIELDS,
+    ("group_activation", "approve"): ACTIVATION_FIELDS,
+    ("group_activation", "reject"): ACTIVATION_FIELDS,
     ("chat", "create"): {"platform": PLATFORM},
     ("chat", "delete"): {"deleted_at": TEXT, "reason": TEXT},
     ("chat", "update_status"): {"status": STATUS, "old_status": OLD_STATUS},

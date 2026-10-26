@@ -54,6 +54,14 @@ Logs exclude message URLs, arbitrary string arguments, exception values, source 
 
 ## Group access
 
+Use `/allow_chat` or the access button in the target group. Explicitly trusted users and bot administrators can activate it directly; trusted users need no Telegram administrator rights. Other Telegram administrators/creators submit an approval request. Ordinary untrusted members cannot submit one.
+
+New requests notify active bot ADMIN and OWNER recipients privately. Approve or reject using that notification; decisions recheck current authority, bans, group identity and pending request. Old buttons cannot authorize a different or recreated group. After upgrading from the older approval buttons, run `/allow_chat` in the group to refresh the request.
+
+Approval, request decisions, first-activation defaults and actor provenance are saved together. Repeated activation preserves feature selections, language settings and encryption salts. Later trust loss, departure, ban or deletion of the activating user does not revoke approval. A newly approved group still waits for required membership verification before processing features.
+
+Notifications are attempted after the database commit. Delivery failures do not undo the request, and repeated commands do not duplicate it or resend the initial notification. Pending-request reminders continue through the existing maintenance cycle; a durable delivery queue is not part of this workflow.
+
 Groups need approval and fresh, successful administrator verification. Missing, failed, future or expired evidence pauses processing without revoking approval. Group bans and full bans on current Telegram administrators suspend group processing for everyone. A ban on an ordinary member does not suspend unrelated members. Private bot administration remains available to authorized bot administrators, subject to any personal restriction applied through CLI.
 
 Membership evidence expires after five minutes. Startup and the worker refresh up to ten due groups per minute, with up to fifty relevant member checks per group and a thirty-second cycle deadline. Telegram requests have ten-second deadlines. Unprocessed evidence remains expired; runtime full-ban checks cover all retained administrator candidates. Ordinary messages do not trigger administrator-list API calls.

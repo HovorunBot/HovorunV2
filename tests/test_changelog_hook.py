@@ -15,6 +15,11 @@ async def run_command(repo: Path, *args: str) -> tuple[int, str]:
     process = await asyncio.create_subprocess_exec(
         *args,
         cwd=repo,
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith("GIT_") or key in {"GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL"}
+        },
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )

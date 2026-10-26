@@ -27,10 +27,11 @@ class OwnerNotifier:
         *,
         parse_mode: str = "HTML",
         disable_web_page_preview: bool = True,
+        include_admins: bool = False,
     ) -> int:
-        """Broadcast to one snapshot of active owners, returning successful send count."""
+        """Broadcast to active owners, optionally including bot admins for access-request review."""
         sent_count = 0
-        for owner in await self._roles.list_roles(Role.OWNER):
+        for owner in await self._roles.list_roles(None if include_admins else Role.OWNER):
             owner_id = owner.telegram_id
             try:
                 await bot.send_message(

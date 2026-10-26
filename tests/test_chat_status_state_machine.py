@@ -1,110 +1,108 @@
-"""Tests for the Access State Machine."""
+"""Access lifecycle through real stores, local Valkey and intercepted Telegram HTTP."""
 
-from unittest.mock import AsyncMock, MagicMock
+import json
+import secrets
+from datetime import UTC, datetime, timedelta
 
-import pytest
-from aiogram import Bot
-from aiogram.types import Chat, ChatMemberUpdated
+from aiogram.types import CallbackQuery, Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, Message, User
+from aioresponses import aioresponses
 from dishka import AsyncContainer
 
+from hovorunv2.application.ports import ChatStore, TaskQueuePort, UserStore
 from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.domain.enums import ChatStatus, Role
-from hovorunv2.interface.telegram.handlers.access import AccessCommand
+from hovorunv2.application.services.owner_notifier import OwnerNotifier
+from hovorunv2.application.services.reminder_service import ChatReminderService
+from hovorunv2.domain.enums import ChatStatus
+from hovorunv2.infrastructure.cache import CacheService
+from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
+from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
+from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
 from tests.conftest import provision_role
+from tests.utils.activation import ACTOR, ADMIN, BOT_ID, activation_runtime, group_message, sent_fields, stub_telegram
 
 
-@pytest.fixture
-async def chat_status_service(init_container: AsyncContainer) -> ChatStatusService:
-    """Provide ChatStatusService."""
-    return await init_container.get(ChatStatusService)
-
-
-@pytest.fixture
-async def bot_join_handler(init_container: AsyncContainer) -> BotJoinHandler:
-    """Provide BotJoinHandler."""
-    return await init_container.get(BotJoinHandler)
-
-
-@pytest.fixture
-async def access_command(init_container: AsyncContainer) -> AccessCommand:
-    """Provide AccessCommand."""
-    return await init_container.get(AccessCommand)
-
-
-def create_mock_event(chat_id: int, status: str) -> MagicMock:
-    """Create mock ChatMemberUpdated event."""
-    event = MagicMock(spec=ChatMemberUpdated)
-    event.chat = MagicMock(spec=Chat)
-    event.chat.id = chat_id
-    event.chat.type = "supergroup"
-    event.new_chat_member = MagicMock()
-    event.new_chat_member.status = status
-    return event
-
-
-@pytest.mark.asyncio
-async def test_state_machine_flow(
-    chat_status_service: ChatStatusService,
-    bot_join_handler: BotJoinHandler,
-    access_command: AccessCommand,
-    init_container: AsyncContainer,
-) -> None:
-    """Test full access state machine lifecycle."""
-    chat_id = 111
-    bot = MagicMock(spec=Bot)
-    bot.send_message = AsyncMock()
-    bot.leave_chat = AsyncMock()
-
-    # 1. Join UNAUTHORIZED
-    event = create_mock_event(chat_id, "member")
-    await bot_join_handler.handle_my_chat_member_update(event, bot)
-    assert await chat_status_service.get_status(chat_id) == ChatStatus.UNAUTHORIZED
-    bot.send_message.assert_called()
-
-    # 2. Request Approval -> PENDING (non-admin user ID)
-    message = MagicMock()
-    message.chat.id = chat_id
-    message.from_user.id = 999999
-    message.from_user.full_name = "User"
-    message.from_user.username = "user"
-    message.answer = AsyncMock()
-
-    await access_command.handle(message, bot)
-    assert await chat_status_service.get_status(chat_id) == ChatStatus.PENDING
-
-    # 3. Duplicate request should be handled
-    message.answer.reset_mock()
-    await access_command.handle(message, bot)
-    message.answer.assert_called_with("⏳ Approval is already pending. Owners have been notified.")
-
-    # 4. Kick preserves pending approval while physical presence is tracked separately
-    event_kick = create_mock_event(chat_id, "kicked")
-    await bot_join_handler.handle_my_chat_member_update(event_kick, bot)
-    assert await chat_status_service.get_status(chat_id) == ChatStatus.PENDING
-
-    # 5. Rejoin preserves pending approval without a duplicate prompt
-    bot.send_message.reset_mock()
-    await bot_join_handler.handle_my_chat_member_update(event, bot)
-    bot.send_message.assert_not_called()
-
-    # 6. Approve -> APPROVED
-    callback_data = MagicMock(chat_id=chat_id, action="approve")
-    query = MagicMock(
-        from_user=MagicMock(full_name="Owner", id=await provision_role(init_container, 201, Role.OWNER)),
-        message=MagicMock(text="Request", edit_text=AsyncMock()),
-        answer=AsyncMock(),
+def bot_event(chat_id: int, *, present: bool, date: datetime) -> ChatMemberUpdated:
+    """Create authentic event shapes for the synthetic bot without group-directory data."""
+    user = User(id=BOT_ID, is_bot=True, first_name="Bot")
+    return ChatMemberUpdated(
+        chat=Chat(id=chat_id, type="supergroup", title="Synthetic group"),
+        from_user=User(id=ACTOR, is_bot=False, first_name="Synthetic"),
+        date=date,
+        old_chat_member=ChatMemberLeft(user=user),
+        new_chat_member=ChatMemberMember(user=user) if present else ChatMemberLeft(user=user),
     )
 
-    await access_command.handle_callback(query, callback_data, bot)
-    assert await chat_status_service.get_status(chat_id) == ChatStatus.APPROVED
 
-    # 7. Join when APPROVED -> Silent
-    bot.send_message.reset_mock()
-    await bot_join_handler.handle_my_chat_member_update(event, bot)
-    bot.send_message.assert_not_called()
-
-    # 8. BANNED remains restricted without leaving
-    await chat_status_service.set_status(chat_id, ChatStatus.BANNED)
-    await bot_join_handler.handle_my_chat_member_update(event, bot)
-    bot.leave_chat.assert_not_called()
+async def test_state_machine_flow(init_container: AsyncContainer) -> None:
+    """Joining, requests, departure, private approval and restrictions preserve durable state."""
+    chat_id = -(secrets.randbelow(2**40) + 1)
+    cooldown_key = f"periodic:unauthorized_prompt:{chat_id}"
+    cache = CacheService("redis://localhost:6379/15")
+    chats = await init_container.get(ChatStore)
+    users = await init_container.get(UserStore)
+    await users.ingest_user(ACTOR)
+    await provision_role(init_container, ADMIN)
+    statuses = await init_container.get(ChatStatusService)
+    reminder = ChatReminderService(
+        chats,
+        cache,
+        await init_container.get(TaskQueuePort),
+        await init_container.get(OwnerNotifier),
+        TelegramUnauthorizedPromptSender(chats),
+    )
+    join = BotJoinHandler(statuses, reminder, await init_container.get(MembershipEventHandler))
+    now = datetime.now(UTC)
+    try:
+        async with activation_runtime(init_container) as runtime:
+            with aioresponses() as http:
+                stub_telegram(http)
+                await join.handle_my_chat_member_update(
+                    bot_event(chat_id, present=True, date=now - timedelta(minutes=2)), runtime.bot
+                )
+                assert await statuses.get_status(chat_id) == ChatStatus.UNAUTHORIZED
+                assert len(sent_fields(http, "sendMessage")) == 1
+                assert await cache.get(cooldown_key) == 1
+                message = group_message(chat_id=chat_id).as_(runtime.bot)
+                await runtime.command.handle(message, runtime.bot)
+                assert await statuses.get_status(chat_id) == ChatStatus.PENDING
+                count = len(sent_fields(http, "sendMessage"))
+                await runtime.command.handle(message, runtime.bot)
+                assert len(sent_fields(http, "sendMessage")) == count + 1
+                assert sent_fields(http, "sendMessage")[-1]["text"] == "⏳ Approval is already pending."
+                await join.handle_my_chat_member_update(
+                    bot_event(chat_id, present=False, date=now - timedelta(minutes=1)), runtime.bot
+                )
+                assert await statuses.get_status(chat_id) == ChatStatus.PENDING
+                count = len(sent_fields(http, "sendMessage"))
+                await join.handle_my_chat_member_update(
+                    bot_event(chat_id, present=True, date=now - timedelta(seconds=30)), runtime.bot
+                )
+                assert len(sent_fields(http, "sendMessage")) == count
+                notification = next(
+                    item
+                    for item in sent_fields(http, "sendMessage")
+                    if "reply_markup" in item and "Access Request" in item["text"]
+                )
+                data = AccessCallback.unpack(
+                    json.loads(notification["reply_markup"])["inline_keyboard"][0][0]["callback_data"]
+                )
+                assert data.action == AccessAction.APPROVE
+                query = CallbackQuery(
+                    id="decision",
+                    from_user=User(id=ADMIN, is_bot=False, first_name="Admin"),
+                    chat_instance="test",
+                    message=Message(message_id=2, date=now, chat=Chat(id=ADMIN, type="private"), text="Request"),
+                    data=data.pack(),
+                ).as_(runtime.bot)
+                await runtime.command.handle_callback(query, data, runtime.bot)
+                assert await statuses.get_status(chat_id) == ChatStatus.APPROVED
+                count = len(sent_fields(http, "sendMessage"))
+                await join.handle_my_chat_member_update(bot_event(chat_id, present=True, date=now), runtime.bot)
+                assert len(sent_fields(http, "sendMessage")) == count
+                await statuses.set_status(chat_id, ChatStatus.BANNED)
+                await join.handle_my_chat_member_update(bot_event(chat_id, present=True, date=now), runtime.bot)
+                assert not sent_fields(http, "leaveChat")
+    finally:
+        await cache.delete(cooldown_key)
+        await cache.close()
