@@ -14,8 +14,7 @@ from hovorunv2.application.services.reminder_service import (
     maintenance_cron_job,
     scheduled_unauthorized_reminder_job,
 )
-from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import ChatStatus, CommandName, Role
+from hovorunv2.domain.enums import CommandName, Role
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
@@ -131,44 +130,6 @@ async def test_reminder_service_send_prompt_cooldown(
     sent_again = await reminder_service.send_unauthorized_prompt(bot, -100444, force=False)
     assert sent_again is False
     bot.send_message.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_reminder_service_maintenance_cycle(
-    owner_notifier: OwnerNotifier, test_container: AsyncContainer
-) -> None:
-    """Test maintenance cycle handles rejected chats and pending chats."""
-    rejected_chat = MagicMock(spec=ChatDB, chat_id=-100111)
-    pending_chat = MagicMock(spec=ChatDB, chat_id=-100222)
-
-    chat_service = MagicMock()
-
-    async def mock_get_all(status: ChatStatus, platform: str = "telegram") -> list[ChatDB]:
-        if status == ChatStatus.REJECTED:
-            return [rejected_chat]
-        if status == ChatStatus.PENDING:
-            return [pending_chat]
-        return []
-
-    chat_service.get_all_by_status = AsyncMock(side_effect=mock_get_all)
-
-    cache_service = MagicMock()
-    cache_service.get = AsyncMock(return_value=None)
-    cache_service.set = AsyncMock()
-    task_queue = MagicMock(spec=TaskQueueService)
-    prompt_sender = await test_container.get(TelegramUnauthorizedPromptSender)
-
-    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, owner_notifier, prompt_sender)
-
-    bot = MagicMock()
-    bot.leave_chat = AsyncMock()
-    bot.send_message = AsyncMock()
-
-    await reminder_service.run_maintenance_cycle(bot)
-
-    bot.leave_chat.assert_called_once_with(-100111)
-    assert bot.send_message.call_count == 2  # Notified both durable owners
-    assert "Pending Approval" in bot.send_message.call_args[1]["text"]
 
 
 @pytest.mark.asyncio

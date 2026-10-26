@@ -65,3 +65,7 @@ Notifications are attempted after the database commit. Delivery failures do not 
 Groups need approval and fresh, successful administrator verification. Missing, failed, future or expired evidence pauses processing without revoking approval. Group bans and full bans on current Telegram administrators suspend group processing for everyone. A ban on an ordinary member does not suspend unrelated members. Private bot administration remains available to authorized bot administrators, subject to any personal restriction applied through CLI.
 
 Membership evidence expires after five minutes. Startup and the worker refresh up to ten due groups per minute, with up to fifty relevant member checks per group and a thirty-second cycle deadline. Telegram requests have ten-second deadlines. Unprocessed evidence remains expired; runtime full-ban checks cover all retained administrator candidates. Ordinary messages do not trigger administrator-list API calls.
+
+## Group restrictions
+
+Application bans and rejected access requests do not make the bot leave a group. Join, rejoin and maintenance preserve restrictions and approvals. Restricted groups cannot process features, even for bot administrators. A denied group message may receive fixed guidance to contact an administrator privately, limited to one attempt per group and restriction reason every 60 seconds. Internal ban reasons never appear in that guidance.

@@ -142,7 +142,7 @@ async def test_router_caches_only_authorized_messages(
     access = await test_container.get(AccessService)
     identity = await test_container.get(IdentityMiddleware)
     dispatcher = Dispatcher()
-    dispatcher.include_router(build_router([HelpCommand(settings)], service, access, settings, identity))
+    dispatcher.include_router(build_router([HelpCommand(settings)], service, access, settings, identity, cache))
     message = Message(
         message_id=1,
         date=datetime.now(UTC),

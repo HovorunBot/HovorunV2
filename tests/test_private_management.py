@@ -10,7 +10,7 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.ports import CachePort, ChatStore, UserStore
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
@@ -71,7 +71,7 @@ async def test_private_settings_require_selected_target(
     before = await commands.get_allowed_commands(target.chat_id)
     mutation = SettingsMutation(commands)
     access = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access)
+    middleware = AccessMiddleware(access, await test_container.get(CachePort))
     message = Message(
         message_id=1,
         date=now,
@@ -128,7 +128,9 @@ async def test_in_group_settings_keep_target_membership_check(test_container: As
             statuses = await test_container.get(ChatStatusService)
             await statuses.approve(-330001)
             assert (
-                await AccessMiddleware(access)(mutation, message, {"bot": bot, "policy": SettingsCommand.POLICY})
+                await AccessMiddleware(access, await test_container.get(CachePort))(
+                    mutation, message, {"bot": bot, "policy": SettingsCommand.POLICY}
+                )
                 == "changed"
             )
     assert mutation.calls == 1

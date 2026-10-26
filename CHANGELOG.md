@@ -35,6 +35,7 @@
 
 ### Refactor
 
+- **bans**: enforce restrictions without leaving groups
 - **access**: enforce action-specific authorization
 - **access**: evaluate independent group access rules
 - **access**: remove sponsorship and organize migration tests

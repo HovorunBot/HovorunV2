@@ -10,6 +10,7 @@ from dishka.integrations.aiogram import setup_dishka
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.crypto import verify_encryption_key
+from hovorunv2.application.ports import CachePort
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.membership_reconciliation import MembershipReconciliationService
@@ -72,6 +73,7 @@ async def run_bot() -> None:
             access_service=access_service,
             settings=settings,
             identity_middleware=await container.get(IdentityMiddleware),
+            cache=await container.get(CachePort),
             bot_join_handler=bot_join_handler,
         )
 

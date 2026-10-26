@@ -2,7 +2,7 @@
 
 from aiogram import Router
 
-from hovorunv2.application.ports import AppSettings
+from hovorunv2.application.ports import AppSettings, CachePort
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
@@ -21,6 +21,7 @@ def build_router(
     access_service: AccessService,
     settings: AppSettings,
     identity_middleware: IdentityMiddleware,
+    cache: CachePort,
     bot_join_handler: BotJoinHandler | None = None,
 ) -> Router:
     """Build and configure the main Telegram router with middlewares and handlers."""
@@ -38,8 +39,8 @@ def build_router(
     router.my_chat_member.outer_middleware(log_context_middleware)
 
     # Inner middlewares (run after filters, before handlers)
-    router.message.middleware(AccessMiddleware(access_service, settings))
-    router.callback_query.middleware(AccessMiddleware(access_service, settings))
+    router.message.middleware(AccessMiddleware(access_service, cache, settings))
+    router.callback_query.middleware(AccessMiddleware(access_service, cache, settings))
     router.message.middleware(MessageCacheMiddleware(message_service))
 
     # Register bot join/leave events

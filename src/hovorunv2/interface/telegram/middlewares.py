@@ -7,15 +7,19 @@ from aiogram import BaseMiddleware
 from aiogram.dispatcher.flags import get_flag
 from aiogram.dispatcher.middlewares.user_context import EVENT_CONTEXT_KEY, EventContext, UserContextMiddleware
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObject, Update
 
-from hovorunv2.application.ports import AppSettings
+from hovorunv2.application.permissions import DecisionReason
+from hovorunv2.application.ports import AppSettings, CachePort
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.infrastructure.logger import get_logger, set_log_context
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 
 logger = get_logger(__name__)
+
+DENIAL_COOLDOWN_SECONDS = 60
 
 
 class LogContextMiddleware(BaseMiddleware):
@@ -79,10 +83,11 @@ class MessageCacheMiddleware(BaseMiddleware):
 class AccessMiddleware(BaseMiddleware):
     """Unified middleware to handle all access control via CommandPolicy."""
 
-    def __init__(self, access_service: AccessService, settings: AppSettings | None = None) -> None:
+    def __init__(self, access_service: AccessService, cache: CachePort, settings: AppSettings | None = None) -> None:
         """Initialize middleware with dependencies."""
         super().__init__()
         self._access_service = access_service
+        self._cache = cache
         self._settings = settings
 
     async def _handle_private_chat(
@@ -151,6 +156,18 @@ class AccessMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         logger.info("Access denied for %s in chat %d by user %s", command_name or "callback", chat_id, user_id)
+        if isinstance(event, Message) and chat_id < 0:
+            decision = await self._access_service.evaluate_group_access(chat_id)
+            if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
+                key = f"access:denial:{chat_id}:{decision.reason}"
+                if not await self._cache.get(key):
+                    await self._cache.set(key, 1, expire=DENIAL_COOLDOWN_SECONDS)
+                    try:
+                        await event.answer(
+                            "🚫 Bot processing is unavailable in this group. Contact a bot administrator privately."
+                        )
+                    except TelegramAPIError:
+                        logger.warning("Could not deliver access guidance in group %d", chat_id)
         if isinstance(event, CallbackQuery):
             await event.answer("🚫 You don't have permission to do this.", show_alert=True)
         return None

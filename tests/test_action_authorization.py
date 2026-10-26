@@ -12,7 +12,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.group_grants import GroupGrantStore
 from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.ports import CachePort, ChatStore, UserStore
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.role_service import RoleService
@@ -46,7 +46,7 @@ async def test_missing_policy_denies_by_default(test_container: AsyncContainer) 
     """An event missing declarative command policy is denied by default."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
 
     message = make_message(100, 100, ChatType.PRIVATE)
     handler = AsyncMock()
@@ -68,7 +68,7 @@ async def test_personally_banned_user_direct_command_vs_automatic_media(
     bans = await test_container.get(BanService)
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100301)
@@ -107,7 +107,7 @@ async def test_private_chat_trusted_user_allowed_feature_use(
     trust = await test_container.get(TrustService)
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
     actor = ActorContext.cli(reason="operational audit")
 
     trusted_user = await users.ingest_user(402)
@@ -144,7 +144,7 @@ async def test_private_chat_banned_user_blocked(test_container: AsyncContainer) 
     bans = await test_container.get(BanService)
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
     actor = ActorContext.cli(reason="operational audit")
 
     user = await users.ingest_user(404)
@@ -171,7 +171,7 @@ async def test_private_chat_untrusted_group_admin_management_vs_feature(
     memberships = await test_container.get(MembershipStore)
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
     actor = ActorContext.cli(reason="operational audit")
 
     chat = await chats.get_or_create_chat(-100302)
@@ -214,7 +214,7 @@ async def test_bot_admin_commands_private_only(test_container: AsyncContainer) -
     roles = await test_container.get(RoleService)
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
     actor = ActorContext.cli(reason="operational audit")
 
     admin_id = 406

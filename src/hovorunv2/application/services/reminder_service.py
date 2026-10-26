@@ -36,7 +36,7 @@ class ChatReminderService:
 
     Orchestrates:
     - Dispatching unauthorized prompts with cooldown tracking in Valkey.
-    - Evicting bot from rejected chats.
+    - Preserving bot presence and restrictions in rejected chats.
     - Pinging bot owners about long-pending chat approvals.
     - Registering scheduled jobs with TaskQueueService.
     """
@@ -90,15 +90,6 @@ class ChatReminderService:
     async def run_maintenance_cycle(self, bot: Bot) -> None:
         """Execute full maintenance cycle across chats."""
         logger.info("Starting maintenance cycle")
-
-        # 1. Leave rejected chats
-        rejected_chats = await self._chat_service.get_all_by_status(ChatStatus.REJECTED)
-        for chat in rejected_chats:
-            try:
-                logger.info("Leaving rejected chat %d", chat.chat_id)
-                await bot.leave_chat(chat.chat_id)
-            except Exception:
-                logger.exception("Failed to leave rejected chat %d", chat.chat_id)
 
         # 2. Check unauthorized group chats
         unauthorized_chats = await self._chat_service.get_all_by_status(ChatStatus.UNAUTHORIZED)

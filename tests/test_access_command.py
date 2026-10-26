@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.activation import ActivationOutcome, ActivationRequest, ActivationStore
+from hovorunv2.application.ports import CachePort
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.message_service import MessageService
@@ -261,6 +262,7 @@ async def test_real_router_activates_trusted_user_in_unapproved_group(test_conta
             await test_container.get(AccessService),
             await test_container.get(Settings),
             await test_container.get(IdentityMiddleware),
+            await test_container.get(CachePort),
         )
         dispatcher = Dispatcher()
         dispatcher.include_router(router)

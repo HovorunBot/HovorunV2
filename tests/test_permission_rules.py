@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from hovorunv2.application.ports import CachePort
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
@@ -83,7 +84,7 @@ async def get_persisted_chat_and_commands(
 async def test_access_middleware_private_chat_admin(test_container: AsyncContainer) -> None:
     """Test that admins have access in private chats."""
     access_service = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access_service)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort))
 
     admin_id = await provision_role(test_container)
     message = create_mock_message(admin_id, admin_id, ChatType.PRIVATE)
@@ -104,7 +105,7 @@ async def test_access_middleware_private_chat_non_admin(test_container: AsyncCon
     """Test that non-admins are blocked in private chats and receive help text."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
 
     user_id = 999
     message = create_mock_message(user_id, user_id, ChatType.PRIVATE)
@@ -126,7 +127,7 @@ async def test_access_middleware_allowed_group(test_container: AsyncContainer) -
     """Test that allowed interaction in group proceeds to handler."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
 
     user_id = 999
     chat_id = 123
@@ -149,7 +150,7 @@ async def test_access_middleware_denied_group(test_container: AsyncContainer) ->
     """Test that denied interaction in group is blocked."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, settings)
+    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
 
     user_id = 999
     chat_id = 123

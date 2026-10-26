@@ -7,7 +7,7 @@ from aiogram import Bot
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
-from hovorunv2.application.ports import ChatStore
+from hovorunv2.application.ports import CachePort, ChatStore
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
@@ -112,7 +112,7 @@ async def test_access_middleware_enforcement(init_container: AsyncContainer) -> 
 
     # 1. Setup services and middleware
     access_service = await init_container.get(AccessService)
-    middleware = AccessMiddleware(access_service)
+    middleware = AccessMiddleware(access_service, await init_container.get(CachePort))
     youtube_cmd = await get_media_command(init_container, CommandName.YOUTUBE)
     chat_status_service = await init_container.get(ChatStatusService)
 
