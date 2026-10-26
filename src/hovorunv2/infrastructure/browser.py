@@ -182,7 +182,7 @@ class BrowserService:
                     return await self._fetch_url_content(url, wait_selector)
                 except (BaseError, Exception) as e:
                     if self._is_recoverable_error(e) and attempt == 0:
-                        logger.warning("Browser error, retrying: %s", e)
+                        logger.warning("Browser error, retrying (%s)", type(e))
                         await self._manager.close()
                         continue
                     raise
@@ -234,7 +234,7 @@ class BrowserService:
         cookies: list[dict[str, Any]] | None,
     ) -> tuple[Any, list[bytes]]:
         """Perform extraction and download synchronously in a tab."""
-        logger.info("Extracting and downloading via browser: %s", url)
+        logger.info("Extracting and downloading via browser")
         # Create tab but don't load URL yet if we need to set cookies
         tab = page.new_tab()
         try:
@@ -264,7 +264,7 @@ class BrowserService:
 
                 # Use the same tab/session to fetch the resource
                 clean_media_url = html.unescape(item.url)
-                logger.info("Downloading media via browser session: %s", clean_media_url)
+                logger.info("Downloading media via browser session")
 
                 assert isinstance(clean_media_url, str), "Media URL cannot be empty or None"
                 resp = tab.get(clean_media_url)
@@ -335,7 +335,7 @@ class BrowserService:
             HTML content.
 
         """
-        logger.info("Fetching content from %s", url)
+        logger.info("Fetching browser content")
         # new_tab creates a new tab object; get(url) loads the content
         tab = page.new_tab(url)
         try:
@@ -363,9 +363,7 @@ class BrowserService:
             tab.ele(selector, timeout=self.SELECTOR_TIMEOUT_S)
         except Exception:
             logger.warning(
-                "Timeout waiting for selector '%s' on %s, returning current content",
-                selector,
-                url,
+                "Timeout waiting for selector, returning current content",
             )
 
     async def close(self) -> None:

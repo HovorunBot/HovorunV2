@@ -41,14 +41,13 @@ class MediaPipeline:
 
         raw_payload = await self._extract_raw(client, cleaned_url)
         if not raw_payload:
-            logger.warning("Extraction returned empty payload for %s (%s)", cleaned_url, client.name)
+            logger.warning("Extraction returned empty payload for provider %s", client.name)
             return None
 
         if not await self._command_service.is_capture_allowed(chat_id, client.name, is_video=raw_payload.is_video):
             logger.info(
-                "Skipping %s link %s in chat %d (capture mode disabled for is_video=%s)",
+                "Skipping %s in chat %d (capture mode disabled for is_video=%s)",
                 client.name,
-                cleaned_url,
                 chat_id,
                 raw_payload.is_video,
             )
@@ -65,7 +64,7 @@ class MediaPipeline:
         # 2. Generic MediaExtractor (yt-dlp) - skip for explicit post/text URLs
         is_post_url = bool(client.config.post_url_pattern and client.config.post_url_pattern.search(url))
         if not is_post_url:
-            logger.info("%s direct API returned None for %s, trying yt-dlp", client.name, url)
+            logger.info("%s direct API returned no payload, trying yt-dlp", client.name)
             if payload := await self._extractor.extract(url, cookies=client.get_ytdlp_cookies()):
                 return payload
 

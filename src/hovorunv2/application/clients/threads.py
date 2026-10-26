@@ -68,7 +68,7 @@ class ThreadsService(BaseMediaClient):
         try:
             html_content = await self._browser.get_content(url, wait_selector="article")
         except Exception:
-            logger.exception("Failed to fetch Threads URL via BrowserService: %s", url)
+            logger.exception("Failed to fetch Threads via BrowserService")
             return None
 
         if not html_content:

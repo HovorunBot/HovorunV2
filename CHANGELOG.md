@@ -17,6 +17,7 @@
 
 ### Fix
 
+- **privacy**: keep payloads out of operational logs
 - **privacy**: minimize authorized message caching
 - **access**: separate trust from settings authority
 - **access**: require fresh administrator snapshots

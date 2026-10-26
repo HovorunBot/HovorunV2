@@ -19,7 +19,7 @@ class CacheService:
 
     def __init__(self, valkey_url: str) -> None:
         """Initialize cache service."""
-        logger.info("Initializing CacheService with Valkey at %s", valkey_url)
+        logger.info("Initializing CacheService")
         self._cache = redis.from_url(valkey_url)
 
     async def set(self, key: str, value: Any, expire: int | None = None) -> None:

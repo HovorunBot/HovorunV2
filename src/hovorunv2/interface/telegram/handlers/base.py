@@ -135,4 +135,4 @@ class RichMediaCommand(BaseCommand):
 
                 await self._delivery.deliver(bot, message, payload, self.platform_name)
             except Exception:
-                logger.exception("Failed to process link: %s", match.group(0))
+                logger.exception("Failed to process %s link", self.name)

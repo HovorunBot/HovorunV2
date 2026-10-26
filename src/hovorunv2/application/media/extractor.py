@@ -9,6 +9,7 @@ import yt_dlp
 from yt_dlp.utils import DownloadError
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.text import clean_caption_text, format_number
 
 logger = logging.getLogger(__name__)
@@ -32,14 +33,14 @@ class MediaExtractor:
             # yt-dlp is blocking, run in thread to keep event loop free
             info = await asyncio.to_thread(self._extract_info, url, cookies)
             if not info:
-                logger.error("yt-dlp failed to extract info for %s (returned None)", url)
+                logger.error("yt-dlp returned no extraction info")
                 return None
             return self._process_info(info, url)
         except DownloadError as exc:
-            logger.warning("yt-dlp failed to extract media from %s: %s", url, exc)
+            logger.warning("yt-dlp extraction failed (%s)", type(exc))
             return None
         except Exception:
-            logger.exception("Failed to extract media from %s using yt-dlp", url)
+            logger.exception("Failed to extract media using yt-dlp")
             return None
 
     extract_payload = extract
@@ -48,6 +49,7 @@ class MediaExtractor:
         """Sync extraction using yt-dlp."""
         ydl_opts = {
             "quiet": True,
+            "logger": MediaBackendLogger(),
             "no_warnings": True,
             "skip_download": True,
             "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
@@ -71,9 +73,9 @@ class MediaExtractor:
         display_text = clean_desc if len(clean_desc) > self.MIN_DESCRIPTION_LENGTH else title
 
         media_items = self._extract_media_items(info)
-        logger.info("Extracted %d media item(s) for %s", len(media_items), url)
+        logger.info("Extracted %d media item(s)", len(media_items))
         if media_items:
-            logger.debug("Media URL: %s", media_items[0].url)
+            logger.debug("Extraction contains media")
 
         likes = info.get("like_count") or 0
         views = info.get("view_count") or 0

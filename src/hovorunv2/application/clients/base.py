@@ -195,7 +195,7 @@ class BaseMediaClient:
             for item, content in zip(payload.media_items, media_bytes, strict=False):
                 item.data = content
         except Exception:
-            logger.exception("Browser fallback failed for %s", url)
+            logger.exception("Browser fallback failed for %s", self.name)
             return None
         else:
             return payload
@@ -220,7 +220,7 @@ class BaseMediaClient:
                 if isinstance(js_results, dict) and (js_results.get("video") or js_results.get("image")):
                     return self._build_browser_payload(js_results, url, b_cfg)
             except Exception:
-                logger.exception("JS extraction failed for %s", url)
+                logger.exception("JS extraction failed for %s", self.name)
 
         if script_results := self._extract_from_json_scripts(tab.html):
             return self._build_browser_payload(script_results, url, b_cfg)
@@ -339,11 +339,11 @@ class BaseMediaClient:
                 timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
             ) as resp:
                 if resp.status != HTTPStatus.OK:
-                    logger.warning("%s API returned HTTP %d for %s", self.platform_label, resp.status, url)
+                    logger.warning("%s API returned HTTP %d", self.name, resp.status)
                     return None
                 return await resp.json()
         except Exception:
-            logger.exception("Error fetching JSON for %s from %s", self.platform_label, url)
+            logger.exception("Error fetching provider JSON for %s", self.name)
             return None
 
     async def _fetch_html(
@@ -360,11 +360,11 @@ class BaseMediaClient:
                 timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
             ) as resp:
                 if resp.status != HTTPStatus.OK:
-                    logger.warning("%s fetch returned HTTP %d for %s", self.platform_label, resp.status, url)
+                    logger.warning("%s fetch returned HTTP %d", self.name, resp.status)
                     return None
                 return await resp.text()
         except Exception:
-            logger.exception("Error fetching HTML for %s from %s", self.platform_label, url)
+            logger.exception("Error fetching provider HTML for %s", self.name)
             return None
 
     async def _resolve_redirect(
@@ -383,7 +383,7 @@ class BaseMediaClient:
             ) as resp:
                 return str(resp.url)
         except Exception:
-            logger.exception("Failed to follow %s redirect for %s", self.platform_label, url)
+            logger.exception("Failed to follow provider redirect for %s", self.name)
             return None
 
     def _build_metrics_footer(

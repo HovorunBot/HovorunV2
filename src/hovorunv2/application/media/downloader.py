@@ -13,6 +13,7 @@ import yt_dlp
 from aiogram.types import BufferedInputFile
 
 from hovorunv2.application.dtos import MediaItem
+from hovorunv2.application.media.backend_logging import MediaBackendLogger
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class MediaDownloader:
                 url, timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS), headers=self.DEFAULT_HEADERS
             ) as resp:
                 if resp.status != HTTPStatus.OK:
-                    logger.error("Failed to download %s: HTTP %d", url, resp.status)
+                    logger.error("Media download failed: HTTP %d", resp.status)
                     return await self._handle_video_fallback(url, filename, is_video=is_video)
 
                 content = await resp.read()
@@ -86,7 +87,7 @@ class MediaDownloader:
 
                 return BufferedInputFile(content, filename=filename)
         except Exception:
-            logger.exception("Exception during media download: %s", url)
+            logger.exception("Exception during media download")
 
         return await self._handle_video_fallback(url, filename, is_video=is_video)
 
@@ -101,7 +102,7 @@ class MediaDownloader:
         """Fallback to yt-dlp for video downloads."""
         if not is_video:
             return None
-        logger.info("Falling back to yt-dlp for video download: %s", url)
+        logger.info("Falling back to yt-dlp for video download")
         return await self._download_with_ytdlp(url, filename)
 
     async def _download_with_ytdlp(self, url: str, filename: str) -> BufferedInputFile | None:
@@ -114,6 +115,7 @@ class MediaDownloader:
                     "format": "bestvideo+bestaudio/best",
                     "outtmpl": output_template,
                     "quiet": True,
+                    "logger": MediaBackendLogger(),
                     "no_warnings": True,
                 }
 
@@ -131,8 +133,8 @@ class MediaDownloader:
                 if content:
                     return BufferedInputFile(content, filename=filename)
 
-                logger.error("yt-dlp failed to download file from %s", url)
+                logger.error("yt-dlp failed to download media")
         except Exception:
-            logger.exception("Exception during yt-dlp download: %s", url)
+            logger.exception("Exception during yt-dlp download")
 
         return None

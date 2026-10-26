@@ -16,6 +16,15 @@ from hovorunv2.domain.enums import CommandName
 
 logger = logging.getLogger(__name__)
 
+
+class PrivateInstaloaderContext(instaloader.InstaloaderContext):
+    """Keep backend retry diagnostics out of stderr and retained error strings."""
+
+    def error(self, msg: str, repeat_at_end: bool = True) -> None:  # noqa: FBT001, FBT002
+        """Emit a stable operation identifier without the backend payload."""
+        logger.warning("Instagram backend request failed")
+
+
 INSTAGRAM_JS_EXTRACTOR = """
 () => {
     const getMeta = (prop) => {
@@ -110,7 +119,7 @@ class InstagramService(BaseMediaClient):
         """Initialize with required services."""
         super().__init__(config=INSTAGRAM_CONFIG, http=http, browser=browser)
         self._settings = settings
-        self._loader = instaloader.Instaloader(user_agent=self.DEFAULT_HEADERS["User-Agent"])
+        self._context = PrivateInstaloaderContext(quiet=True, user_agent=self.DEFAULT_HEADERS["User-Agent"])
         self._session_initialized = False
 
     def get_ytdlp_cookies(self) -> dict[str, str] | None:
@@ -137,7 +146,7 @@ class InstagramService(BaseMediaClient):
 
         try:
             await asyncio.to_thread(
-                self._loader.context._session.cookies.set,  # noqa: SLF001
+                self._context._session.cookies.set,  # noqa: SLF001
                 "sessionid",
                 sessionid,
                 domain=".instagram.com",
@@ -166,9 +175,9 @@ class InstagramService(BaseMediaClient):
             await self._ensure_session(self._settings.instagram_sessionid)
 
         try:
-            post = await asyncio.to_thread(instaloader.Post.from_shortcode, self._loader.context, shortcode)
+            post = await asyncio.to_thread(instaloader.Post.from_shortcode, self._context, shortcode)
         except Exception as e:
-            logger.warning("Instaloader failed for %s (%s)", shortcode, str(e))
+            logger.warning("Instaloader extraction failed (%s)", type(e))
             return None
 
         raw_text = post.caption or ""

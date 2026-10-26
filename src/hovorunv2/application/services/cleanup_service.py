@@ -114,7 +114,7 @@ class CleanupService:
                         await bot.delete_message(chat_id=chat_id, message_id=message_id)
                         logger.info("Successfully removed expired message %d in chat %d", message_id, chat_id)
                     except Exception as e:
-                        logger.warning("Could not delete message %d in chat %d: %s", message_id, chat_id, e)
+                        logger.warning("Could not delete message %d in chat %d (%s)", message_id, chat_id, type(e))
 
                 if expired_members:
                     await self._cache.zrem(self.CLEANUP_INDEX, *expired_members)
