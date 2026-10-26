@@ -6,11 +6,10 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ports import AuditedUnitOfWork, CommandStore
-from hovorunv2.domain.audit import ActorContext, AuditEventDB
+from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import ChatStatus, Platform
-from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 from hovorunv2.infrastructure.repositories.command_repository import SQLAlchemyCommandRepository
 
@@ -39,28 +38,14 @@ class SQLAlchemyCommandStore(CommandStore):
         await session.execute(text("BEGIN IMMEDIATE"))
         repository = SQLAlchemyChatRepository(session)
         chat = await repository.get_by_id(chat_id, platform)
-        if chat is None or chat.commands or chat.legacy_empty_capture:
-            return False
-        history = await session.scalar(
-            select(AuditEventDB.id)
-            .where(
-                AuditEventDB.target_type.in_(("command_association", "command_selection")),
-                (
-                    (AuditEventDB.changed_fields["chat_id"].as_integer() == chat.chat_id)
-                    | AuditEventDB.changed_fields["chat_id"]
-                    .as_integer()
-                    .in_(select(GroupRouteDB.telegram_id).where(GroupRouteDB.group_id == chat.id))
-                ),
-            )
-            .limit(1)
-        )
-        if history is not None:
+        if chat is None or chat.features_configured or chat.commands or chat.legacy_empty_capture:
             return False
         definitions = list((await session.scalars(select(CommandDB).where(CommandDB.name.in_(commands)))).all())
         if len(definitions) != len(commands):
             msg = "Default feature definitions are incomplete"
             raise ValueError(msg)
         chat.commands.extend(definitions)
+        chat.features_configured = True
         return True
 
     async def initialize_defaults(self, chat_id: int, commands: tuple[str, ...], platform: str = "telegram") -> None:
@@ -110,11 +95,13 @@ class SQLAlchemyCommandStore(CommandStore):
 
         legacy = bool(chat.legacy_empty_capture)
         chat.legacy_empty_capture = False
+        first_selection = not chat.features_configured
+        chat.features_configured = True
         chat_commands = await chat.awaitable_attrs.commands
         if command not in chat_commands:
             chat_commands.append(command)
             return True, True, legacy
-        return True, legacy, legacy
+        return True, legacy or first_selection, legacy
 
     async def _execute_disable_command(
         self,
@@ -133,27 +120,16 @@ class SQLAlchemyCommandStore(CommandStore):
             return False, False, False
         legacy = chat.legacy_empty_capture
         chat.legacy_empty_capture = False
+        first_selection = not chat.features_configured
+        chat.features_configured = True
 
         chat_commands = await chat.awaitable_attrs.commands
         for cmd in list(chat_commands):
             if cmd.name == command_name:
                 chat_commands.remove(cmd)
                 return True, legacy, True
-        history = await session.scalar(
-            select(AuditEventDB.id)
-            .where(
-                AuditEventDB.target_type.in_(("command_association", "command_selection")),
-                (
-                    (AuditEventDB.changed_fields["chat_id"].as_integer() == chat.chat_id)
-                    | AuditEventDB.changed_fields["chat_id"]
-                    .as_integer()
-                    .in_(select(GroupRouteDB.telegram_id).where(GroupRouteDB.group_id == chat.id))
-                ),
-            )
-            .limit(1)
-        )
         # A first explicit off selection must prevent later default initialization.
-        return legacy, legacy, legacy or history is None
+        return legacy, legacy, legacy or first_selection
 
     async def enable_command(
         self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None

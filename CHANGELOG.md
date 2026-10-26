@@ -37,6 +37,7 @@
 
 ### Refactor
 
+- **features**: decouple selection state from audit history
 - **features**: make activation state explicit
 - **features**: introduce stable feature registry
 - **bans**: enforce restrictions without leaving groups

@@ -30,6 +30,7 @@ def upgrade() -> None:
         msg = "Cannot preserve legacy access: duplicate active group identity"
         raise ValueError(msg)
     op.add_column("chats", sa.Column("legacy_empty_capture", sa.Boolean(), nullable=False, server_default=sa.false()))
+    op.add_column("chats", sa.Column("features_configured", sa.Boolean(), nullable=False, server_default=sa.false()))
     groups = (
         connection.execute(
             sa.text(
@@ -60,9 +61,16 @@ def upgrade() -> None:
                 ),
                 {"now": timestamp, "id": str(group["id"]), "changes": json.dumps(changed)},
             )
+    connection.execute(
+        sa.text(
+            "UPDATE chats SET features_configured = 1 WHERE legacy_empty_capture = 1 "
+            "OR EXISTS (SELECT 1 FROM chat_commands WHERE chat_commands.chat_id = chats.id)"
+        )
+    )
 
 
 def downgrade() -> None:
     """Remove migration-created bases while retaining append-only audit history."""
     op.execute(sa.text("DELETE FROM group_approvals WHERE basis = 'legacy'"))
+    op.drop_column("chats", "features_configured")
     op.drop_column("chats", "legacy_empty_capture")

@@ -43,7 +43,7 @@ def test_legacy_grants_preserve_all_statuses_and_configuration(
             command_id = connection.execute("SELECT id FROM commands ORDER BY id LIMIT 1").fetchone()[0]
             connection.executemany(
                 "INSERT INTO chat_commands (chat_id, command_id) VALUES (?, ?)",
-                [(index, command_id) for index in range(1, 7)],
+                [(index, command_id) for index in (*range(1, 7), 100)],
             )
         chats_before = connection.execute("SELECT * FROM chats ORDER BY id").fetchall()
         commands_before = connection.execute("SELECT * FROM chat_commands ORDER BY chat_id").fetchall()
@@ -51,8 +51,9 @@ def test_legacy_grants_preserve_all_statuses_and_configuration(
     command.upgrade(config, "legacy016")
     with sqlite3.connect(database) as connection:
         chats_after = connection.execute("SELECT * FROM chats ORDER BY id").fetchall()
-        assert [row[:-1] for row in chats_after] == chats_before
-        assert [row[-1] for row in chats_after] == [int(not selected)] * len(statuses) + [0, 0]
+        assert [row[:-2] for row in chats_after] == chats_before
+        assert [row[-2] for row in chats_after] == [int(not selected)] * len(statuses) + [0, 0]
+        assert [row[-1] for row in chats_after] == [1] * len(statuses) + [int(selected), 0]
         assert connection.execute("SELECT * FROM chat_commands ORDER BY chat_id").fetchall() == commands_before
         assert connection.execute("SELECT group_id, basis FROM group_approvals").fetchall() == [(3, "legacy")]
         assert connection.execute("SELECT COUNT(*) FROM group_sponsors").fetchone() == (0,)
@@ -72,6 +73,14 @@ def test_legacy_grants_preserve_all_statuses_and_configuration(
     command.upgrade(config, "legacy016")
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT group_id, basis FROM group_approvals").fetchall() == [(3, "legacy")]
+        connection.execute(
+            "INSERT INTO chats (id, chat_id, platform, status) VALUES (102, -100102, 'telegram', 'unauthorized')"
+        )
+        assert connection.execute(
+            "SELECT features_configured, legacy_empty_capture FROM chats WHERE id = 102"
+        ).fetchone() == (0, 0)
+        with pytest.raises(sqlite3.IntegrityError, match="NOT NULL"):
+            connection.execute("UPDATE chats SET features_configured = NULL WHERE id = 102")
 
 
 def test_migrated_grants_enforce_constraints_and_history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

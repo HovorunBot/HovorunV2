@@ -7,12 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.application.activation import ActivationAction, ActivationOutcome, ActivationRequest, ActivationResult
-from hovorunv2.domain.audit import AuditEventDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, ChatStatus
 from hovorunv2.domain.group_grant import GroupAccessRequestDB, GroupApprovalDB, RequestStatus
-from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.group_grant_repository import SQLAlchemyGroupGrantRepository
 
@@ -50,20 +48,7 @@ class SQLAlchemyActivationRepository:
         history = await self._session.scalar(
             select(GroupApprovalDB.id).where(GroupApprovalDB.group_id == chat.id).limit(1)
         )
-        configured = await self._session.scalar(
-            select(AuditEventDB.id)
-            .where(
-                AuditEventDB.target_type.in_(("command_association", "command_selection")),
-                (
-                    (AuditEventDB.changed_fields["chat_id"].as_integer() == chat.chat_id)
-                    | AuditEventDB.changed_fields["chat_id"]
-                    .as_integer()
-                    .in_(select(GroupRouteDB.telegram_id).where(GroupRouteDB.group_id == chat.id))
-                ),
-            )
-            .limit(1)
-        )
-        if history is not None or configured is not None or chat.commands or chat.legacy_empty_capture:
+        if history is not None or chat.features_configured or chat.commands or chat.legacy_empty_capture:
             return []
         names = {str(command) for commands in PROVIDER_SPLIT_COMMANDS.values() for command in commands}
         commands = list((await self._session.scalars(select(CommandDB).where(CommandDB.name.in_(names)))).all())
@@ -71,6 +56,7 @@ class SQLAlchemyActivationRepository:
             msg = "Default media command definitions are incomplete"
             raise ValueError(msg)
         chat.commands.extend(commands)
+        chat.features_configured = True
         return sorted(names)
 
     def _close_request(self, pending: GroupAccessRequestDB, status: RequestStatus, actor_id: int) -> None:
