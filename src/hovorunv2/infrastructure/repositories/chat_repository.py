@@ -2,12 +2,13 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform
+from hovorunv2.domain.group_route import GroupRouteDB
 
 
 class SQLAlchemyChatRepository:
@@ -22,7 +23,10 @@ class SQLAlchemyChatRepository:
         stmt = (
             select(ChatDB)
             .where(
-                ChatDB.chat_id == chat_id,
+                or_(
+                    ChatDB.chat_id == chat_id,
+                    ChatDB.id.in_(select(GroupRouteDB.group_id).where(GroupRouteDB.telegram_id == chat_id)),
+                ),
                 ChatDB.platform == Platform(platform),
                 ChatDB.deleted_at.is_(None),
             )
@@ -36,7 +40,10 @@ class SQLAlchemyChatRepository:
         stmt = (
             select(ChatDB)
             .where(
-                ChatDB.chat_id == chat_id,
+                or_(
+                    ChatDB.chat_id == chat_id,
+                    ChatDB.id.in_(select(GroupRouteDB.group_id).where(GroupRouteDB.telegram_id == chat_id)),
+                ),
                 ChatDB.platform == Platform(platform),
                 ChatDB.deleted_at.is_not(None),
             )

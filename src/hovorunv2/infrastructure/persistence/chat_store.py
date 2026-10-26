@@ -3,12 +3,14 @@
 from datetime import UTC, datetime
 from functools import partial
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ports import AuditedUnitOfWork, ChatStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform
+from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 
 
@@ -85,6 +87,12 @@ class SQLAlchemyChatStore(ChatStore):
             audit_if=bool,
         )
 
+    async def _check_historical_route(self, session: AsyncSession, chat_id: int) -> None:
+        """Never provision a second identity from a historical routing alias."""
+        if await session.scalar(select(GroupRouteDB.group_id).where(GroupRouteDB.telegram_id == chat_id)) is not None:
+            msg = "Historical routing belongs to an unavailable group generation."
+            raise ValueError(msg)
+
     async def _execute_update_status(
         self,
         session: AsyncSession,
@@ -100,6 +108,7 @@ class SQLAlchemyChatStore(ChatStore):
             old_status = chat.status
             chat.status = status
         else:
+            await self._check_historical_route(session, chat_id)
             chat = ChatDB(chat_id=chat_id, platform=Platform(platform), status=status)
             repo.add(chat)
         return old_status
@@ -116,6 +125,7 @@ class SQLAlchemyChatStore(ChatStore):
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(chat_id, platform)
         if not chat:
+            await self._check_historical_route(session, chat_id)
             chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
             repo.add(chat)
 
@@ -133,6 +143,7 @@ class SQLAlchemyChatStore(ChatStore):
         existing = await repo.get_by_id(chat_id, platform)
         if existing:
             return existing, False
+        await self._check_historical_route(session, chat_id)
         new_chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
         repo.add(new_chat)
         return new_chat, True
@@ -148,6 +159,7 @@ class SQLAlchemyChatStore(ChatStore):
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(chat_id, platform)
         if not chat:
+            await self._check_historical_route(session, chat_id)
             chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
             repo.add(chat)
         chat.encryption_salt = salt

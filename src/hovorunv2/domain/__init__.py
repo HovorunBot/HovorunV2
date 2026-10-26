@@ -11,6 +11,7 @@ from hovorunv2.domain.group_grant import (
     GroupApprovalDB,
     RequestStatus,
 )
+from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.handle import (
     InvalidHandleError,
     PublicHandleDB,
@@ -35,6 +36,7 @@ __all__ = [
     "GroupAccessRequestDB",
     "GroupApprovalDB",
     "GroupMembershipStateDB",
+    "GroupRouteDB",
     "InvalidHandleError",
     "MemberEvidenceDB",
     "PublicHandleDB",

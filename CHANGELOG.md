@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **groups**: preserve permissions across Telegram group migration
 - **access**: activate groups through explicit trust
 - **access**: preserve group grants and reconcile membership evidence
 - **trust**: add audited trust administration

@@ -18,6 +18,7 @@ from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.clients.youtube import YoutubeService
 from hovorunv2.application.group_grants import GroupGrantStore
+from hovorunv2.application.group_migration import GroupMigrationStore
 from hovorunv2.application.identity import GroupIdentityStore
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.extractor import MediaExtractor
@@ -78,6 +79,7 @@ from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActi
 from hovorunv2.infrastructure.persistence.ban_store import SQLAlchemyBanStore
 from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGroupGrantStore
 from hovorunv2.infrastructure.persistence.group_identity_store import SQLAlchemyGroupIdentityStore
+from hovorunv2.infrastructure.persistence.group_migration_store import SQLAlchemyGroupMigrationStore
 from hovorunv2.infrastructure.persistence.membership_store import SQLAlchemyMembershipStore
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
@@ -170,6 +172,8 @@ class AppProvider(Provider):
     group_grant_store = alias(source=SQLAlchemyGroupGrantStore, provides=GroupGrantStore)
     group_identity_store_impl = provide(SQLAlchemyGroupIdentityStore)
     group_identity_store = alias(source=SQLAlchemyGroupIdentityStore, provides=GroupIdentityStore)
+    group_migration_store_impl = provide(SQLAlchemyGroupMigrationStore)
+    group_migration_store = alias(source=SQLAlchemyGroupMigrationStore, provides=GroupMigrationStore)
     identity_middleware = provide(IdentityMiddleware)
     membership_event_handler = provide(MembershipEventHandler)
     command_store_impl = provide(SQLAlchemyCommandStore)

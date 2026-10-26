@@ -42,6 +42,8 @@ class SQLAlchemyGroupIdentityStore:
             repo.add(chat)
             await session.flush()
             return chat, {"telegram_id": telegram_id, "title": title, "chat_type": chat_type}
+        if chat.chat_id != telegram_id:
+            return chat, None
         if chat.title == title and chat.chat_type == chat_type:
             return chat, None
         changes = {"title": [chat.title, title], "chat_type": [chat.chat_type, chat_type]}

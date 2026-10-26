@@ -77,6 +77,7 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, AuditField]]] = {
     ("group_activation", "enable"): ACTIVATION_FIELDS,
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
+    ("chat", "migrate_route"): {"group_id": NUMBER, "telegram_id": NUMBER_PAIR},
     ("chat", "create"): {"platform": PLATFORM},
     ("chat", "delete"): {"deleted_at": TEXT, "reason": TEXT},
     ("chat", "update_status"): {"status": STATUS, "old_status": OLD_STATUS},

@@ -81,6 +81,7 @@ class SQLAlchemyActivationStore(ActivationStore):
             actor is None
             or chat is None
             or target.kind != "group"
+            or chat.chat_id != target.telegram_id
             or chat.id != target.entity_id
             or chat.generation != target.generation
             or chat.chat_type not in {"group", "supergroup"}
