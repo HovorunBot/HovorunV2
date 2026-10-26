@@ -33,7 +33,7 @@ Trust grant/revoke accepts an existing active numeric user ID or known public ha
 
 ## Audit boundary
 
-`domain/audit_schema.py` enumerates fields and flat value shapes for each supported entity/action pair. `SQLAlchemyAuditedTransaction` validates the event and explicit operational reason, runs the mutation, validates result-derived fields, sanitizes sensitive values, and appends the event in the same SQLite transaction. Unsupported fields, actions, values or nested containers fail the transaction. Add an explicit schema when introducing a new mutation. Existing history is preserved.
+`domain/audit_schema.py` declares allowed fields for each business event using strict Pydantic type adapters. Standard Python scalar, list, nullable and annotated pair types replace a separate field/shape validation language. Identical event payloads share declarations. `SQLAlchemyAuditedTransaction` validates the event and explicit operational reason, runs the mutation, validates result-derived fields, sanitizes sensitive values, and appends the event in the same SQLite transaction. Unsupported fields, actions, values or nested containers fail the transaction. Declare allowed fields when introducing a new mutation; reuse existing adapters and payload declarations where applicable. Existing history is preserved.
 
 Known release-version settings retain their audit value. Other generic system settings record only `value_changed`, while their configured value remains in the system store. Secret-bearing fields such as encryption salts retain only a redacted change marker.
 

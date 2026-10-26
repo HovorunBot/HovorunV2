@@ -37,6 +37,7 @@
 
 ### Refactor
 
+- **audit**: use standard strict payload validation
 - **features**: decouple selection state from audit history
 - **features**: make activation state explicit
 - **features**: introduce stable feature registry

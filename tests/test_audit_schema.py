@@ -11,6 +11,8 @@ from hovorunv2.application.ports import AuditedUnitOfWork, SystemStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.enums import ChatStatus, CommandName, Platform, Role
+from hovorunv2.domain.group_grant import RequestStatus
 from tests.test_audit_transaction import create_chat_op
 
 
@@ -34,6 +36,18 @@ async def create_flushed_chat(session: AsyncSession, chat_id: int) -> ChatDB:
         ("user_role", "set_role", {"role": [1, 100, 10]}),
         ("user_role", "set_role", {"role": [1, 999]}),
         ("user", "create", {"telegram_id": True}),
+        ("user", "create", {"telegram_id": "88050"}),
+        ("user_role", "set_role", {"role": [True, Role.OWNER]}),
+        ("user_role", "set_role", {"role": [None, "100"]}),
+        ("user_role", "set_role", {"role": (None, Role.OWNER)}),
+        ("user_role", "set_role", {"role": [Role.USER]}),
+        ("user", "set_trust", {"is_trusted": [0, 1]}),
+        ("user", "set_trust", {"is_trusted": None}),
+        ("chat", "update_status", {"status": None}),
+        ("chat", "update_translation_settings", {"ignored_langs": ("uk", "en")}),
+        ("chat", "observe_identity", {"title": ["before", "after", "third"]}),
+        ("chat", "observe_identity", {"title": ["before", 42]}),
+        ("command_selection", "initialize_defaults", {"commands": ["unknown"]}),
         ("unknown", "create", None),
         ("chat", "unknown", None),
     ],
@@ -54,6 +68,8 @@ async def test_unsupported_audit_data_rolls_back_mutation(
             changed_fields=changes,
         )
     assert "synthetic-private-content" not in str(error.value)
+    assert error.value.__context__ is None
+    assert error.value.__cause__ is None
     async with sessions() as session:
         assert await session.scalar(select(ChatDB).where(ChatDB.chat_id == 88050)) is None
         assert await session.scalar(select(AuditEventDB).where(AuditEventDB.target_id == "88050")) is None
@@ -119,6 +135,48 @@ def test_approved_flat_before_after_values() -> None:
     validate_audit_changes("user_role", "set_role", {"role": [None, 100], "user_id": 1})
     validate_audit_changes("user", "set_trust", {"is_trusted": [False, True], "trust_revision": [0, 1]})
     validate_audit_changes("chat", "update_translation_settings", {"target_lang": "uk", "ignored_langs": ["uk", "en"]})
+
+
+@pytest.mark.parametrize(
+    ("target", "action", "changes"),
+    [
+        ("chat", "create", {"platform": Platform.TELEGRAM}),
+        ("chat", "update_status", {"status": ChatStatus.APPROVED, "old_status": None}),
+        ("user_role", "set_role", {"role": [Role.USER, Role.OWNER]}),
+        ("user_role", "set_role", {"role": [None, None]}),
+        ("chat", "observe_identity", {"title": None, "chat_type": [None, "group"]}),
+        ("chat", "observe_identity", {"title": "Synthetic public group"}),
+        ("public_handle", "sync", {"handle": [None, "synthetic_handle"]}),
+        ("command_selection", "initialize_defaults", {"commands": [CommandName.TWITTER_VIDEO]}),
+        ("command_selection", "initialize_defaults", {"commands": []}),
+        ("group_grant", "decide_request", {"status": [RequestStatus.PENDING, RequestStatus.APPROVED]}),
+        ("group_activation", "enable", {"request_status": [None, RequestStatus.APPROVED]}),
+        ("chat", "create", {}),
+        ("chat", "create", None),
+    ],
+)
+def test_standard_validation_preserves_accepted_payloads(
+    target: str, action: str, changes: dict[str, object] | None
+) -> None:
+    """Preserve enum objects, wire values, nullable fields and intentionally partial payloads."""
+    validate_audit_changes(target, action, changes)
+
+
+async def test_unknown_event_rejected_even_when_no_audit_would_be_written(test_container: AsyncContainer) -> None:
+    """Keep event allowlisting ahead of operation execution and no-op suppression."""
+    unit = await test_container.get(AuditedUnitOfWork)
+    sessions = await test_container.get(async_sessionmaker)
+    with pytest.raises(ValueError, match="Unsupported audit entity/action"):
+        await unit.execute(
+            actor=ActorContext.cli(),
+            target_type="chat",
+            target_id=88053,
+            action="unknown",
+            operation=partial(create_flushed_chat, chat_id=88053),
+            audit_if=lambda _result: False,
+        )
+    async with sessions() as session:
+        assert await session.scalar(select(ChatDB).where(ChatDB.chat_id == 88053)) is None
 
 
 @pytest.mark.parametrize("reason", [{"message": "synthetic-private-content"}, ["synthetic-private-content"], 42])

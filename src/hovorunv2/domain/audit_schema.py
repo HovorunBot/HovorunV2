@@ -1,109 +1,84 @@
 """Explicit entity/action audit payload schemas for current durable mutations."""
 
-from dataclasses import dataclass
-from enum import Enum, auto
-from typing import Final
+from enum import Enum
+from functools import partial
+from typing import Annotated, Final, Literal
+
+from pydantic import AfterValidator, ConfigDict, Field, StrictBool, StrictInt, StrictStr, TypeAdapter, ValidationError
 
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ChatStatus, CommandName, Platform, Role
 from hovorunv2.domain.group_grant import ApprovalBasis, RequestStatus
 
-
-class AuditShape(Enum):
-    """Permitted flat value shapes; arbitrary nested containers are forbidden."""
-
-    SCALAR = auto()
-    PAIR = auto()
-    LIST = auto()
-    SCALAR_OR_PAIR = auto()
+type Pair[T] = Annotated[list[T], Field(min_length=2, max_length=2)]
+type StatusValue = Annotated[StrictStr, AfterValidator(partial(_enum, kind=ChatStatus))]
+type CommandValue = Annotated[StrictStr, AfterValidator(partial(_enum, kind=CommandName))]
+type RequestStatusValue = Annotated[StrictStr, AfterValidator(partial(_enum, kind=RequestStatus))]
 
 
-@dataclass(frozen=True, slots=True)
-class AuditField:
-    """Validate a scalar or explicitly permitted flat collection of scalars."""
-
-    types: tuple[type, ...]
-    shape: AuditShape = AuditShape.SCALAR
-    choices: frozenset[object] | None = None
-
-    def accepts(self, value: object) -> bool:
-        """Reject nested values and invalid before/after shapes without serializing them."""
-        if isinstance(value, list):
-            if self.shape == AuditShape.SCALAR:
-                return False
-            if self.shape != AuditShape.LIST and len(value) != 2:  # noqa: PLR2004 - before/after pair
-                return False
-            return all(self._accepts_scalar(item) for item in value)
-        return self.shape in (AuditShape.SCALAR, AuditShape.SCALAR_OR_PAIR) and self._accepts_scalar(value)
-
-    def _accepts_scalar(self, value: object) -> bool:
-        if isinstance(value, bool) and bool not in self.types:
-            return False
-        return isinstance(value, self.types) and (self.choices is None or value in self.choices)
+def _enum(value: str | int, *, kind: type[Enum]) -> Enum:
+    return kind(value)
 
 
-TEXT: Final = AuditField((str,))
-NUMBER: Final = AuditField((int,))
-FLAG: Final = AuditField((bool,))
-FLAG_PAIR: Final = AuditField((bool,), AuditShape.PAIR)
-NUMBER_PAIR: Final = AuditField((int,), AuditShape.PAIR)
-ROLE_PAIR: Final = AuditField((int, type(None)), AuditShape.PAIR, frozenset({None, *Role}))
-PLATFORM: Final = AuditField((str,), choices=frozenset(Platform))
-STATUS: Final = AuditField((str,), choices=frozenset(ChatStatus))
-OLD_STATUS: Final = AuditField((str, type(None)), choices=frozenset({None, *ChatStatus}))
-PUBLIC_TEXT: Final = AuditField((str, type(None)), AuditShape.SCALAR_OR_PAIR)
-HANDLE_PAIR: Final = AuditField((str, type(None)), AuditShape.PAIR)
-COMMAND: Final = AuditField((str,), choices=frozenset(CommandName))
-COMMAND_LIST: Final = AuditField((str,), AuditShape.LIST, frozenset(CommandName))
-LANGUAGE_LIST: Final = AuditField((str,), AuditShape.LIST)
-REQUEST_STATUS: Final = AuditField((str,), choices=frozenset(RequestStatus))
-REQUEST_STATUS_PAIR: Final = AuditField((str,), AuditShape.PAIR, frozenset(RequestStatus))
-BASIS: Final = AuditField((str,), choices=frozenset(ApprovalBasis))
-BAN_KIND: Final = AuditField((str,), choices=frozenset(BanKind))
+def _adapter(annotation: object) -> TypeAdapter[object]:
+    return TypeAdapter(annotation, config=ConfigDict(strict=True, hide_input_in_errors=True))
+
+
+TEXT: Final = _adapter(StrictStr)
+NUMBER: Final = _adapter(StrictInt)
+FLAG: Final = _adapter(StrictBool)
+FLAG_PAIR: Final = _adapter(Pair[StrictBool])
+NUMBER_PAIR: Final = _adapter(Pair[StrictInt])
+ROLE_PAIR: Final = _adapter(Pair[Annotated[StrictInt, AfterValidator(partial(_enum, kind=Role))] | None])
+PLATFORM: Final = _adapter(Annotated[StrictStr, AfterValidator(partial(_enum, kind=Platform))])
+STATUS: Final = _adapter(StatusValue)
+OLD_STATUS: Final = _adapter(StatusValue | None)
+PUBLIC_TEXT: Final = _adapter(StrictStr | None | Pair[StrictStr | None])
+HANDLE_PAIR: Final = _adapter(Pair[StrictStr | None])
+COMMAND: Final = _adapter(CommandValue)
+COMMAND_LIST: Final = _adapter(list[CommandValue])
+LANGUAGE_LIST: Final = _adapter(list[StrictStr])
+REQUEST_STATUS: Final = _adapter(RequestStatusValue)
+REQUEST_STATUS_PAIR: Final = _adapter(Pair[RequestStatusValue])
+BASIS: Final = _adapter(Annotated[StrictStr, AfterValidator(partial(_enum, kind=ApprovalBasis))])
+BAN_KIND: Final = _adapter(Annotated[StrictStr, AfterValidator(partial(_enum, kind=BanKind))])
 ACTIVATION_FIELDS: Final = {
     "group_id": NUMBER,
     "generation": NUMBER,
     "actor_user_id": NUMBER,
-    "status": AuditField((str,), AuditShape.PAIR, frozenset(ChatStatus)),
+    "status": _adapter(Pair[StatusValue]),
     "request_id": NUMBER,
-    "request_status": AuditField((str, type(None)), AuditShape.PAIR, frozenset({None, *RequestStatus})),
+    "request_status": _adapter(Pair[RequestStatusValue | None]),
     "approval_added": FLAG,
     "defaults_added": COMMAND_LIST,
-    "activation_basis": AuditField((str,), choices=frozenset({"trust", "administrator", "request"})),
+    "activation_basis": _adapter(Literal["trust", "administrator", "request"]),
 }
+BETA_FIELDS: Final = {"feature": TEXT, "granted": FLAG_PAIR, "generation": NUMBER}
+SELECTION_FIELDS: Final = {"chat_id": NUMBER, "platform": PLATFORM, "command": COMMAND, "legacy_empty_capture": FLAG}
+DELETION_FIELDS: Final = {"deleted_at": TEXT, "reason": TEXT}
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
-AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, AuditField]]] = {
-    ("beta_entitlement", "grant"): {"feature": TEXT, "granted": FLAG_PAIR, "generation": NUMBER},
-    ("beta_entitlement", "revoke"): {"feature": TEXT, "granted": FLAG_PAIR, "generation": NUMBER},
+AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
+    ("beta_entitlement", "grant"): BETA_FIELDS.copy(),
+    ("beta_entitlement", "revoke"): BETA_FIELDS.copy(),
     ("group_activation", "enable"): ACTIVATION_FIELDS,
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
     ("chat", "migrate_route"): {"group_id": NUMBER, "telegram_id": NUMBER_PAIR},
     ("chat", "create"): {"platform": PLATFORM},
-    ("chat", "delete"): {"deleted_at": TEXT, "reason": TEXT},
+    ("chat", "delete"): DELETION_FIELDS.copy(),
     ("chat", "update_status"): {"status": STATUS, "old_status": OLD_STATUS},
     ("chat", "update_translation_settings"): {"target_lang": TEXT, "ignored_langs": LANGUAGE_LIST},
     ("chat", "set_encryption_salt"): {"encryption_salt": TEXT},
     ("chat", "observe_identity"): {"telegram_id": NUMBER, "title": PUBLIC_TEXT, "chat_type": PUBLIC_TEXT},
     ("user", "create"): {"telegram_id": NUMBER, "platform": PLATFORM, "generation": NUMBER},
-    ("user", "delete"): {"deleted_at": TEXT, "reason": TEXT},
+    ("user", "delete"): DELETION_FIELDS.copy(),
     ("user", "set_trust"): {"is_trusted": FLAG_PAIR, "trust_revision": NUMBER_PAIR},
     ("user_role", "set_role"): {"role": ROLE_PAIR, "user_id": NUMBER},
     ("public_handle", "sync"): {"handle": HANDLE_PAIR, "display": HANDLE_PAIR, "status": TEXT},
     ("public_handle", "delete"): {"handle": HANDLE_PAIR, "status": TEXT},
-    ("command_association", "enable_command"): {
-        "chat_id": NUMBER,
-        "platform": PLATFORM,
-        "command": COMMAND,
-        "legacy_empty_capture": FLAG,
-    },
-    ("command_association", "disable_command"): {
-        "chat_id": NUMBER,
-        "platform": PLATFORM,
-        "command": COMMAND,
-        "legacy_empty_capture": FLAG,
-    },
+    ("command_association", "enable_command"): SELECTION_FIELDS.copy(),
+    ("command_association", "disable_command"): SELECTION_FIELDS.copy(),
     ("command_selection", "initialize_defaults"): {"chat_id": NUMBER, "platform": PLATFORM, "commands": COMMAND_LIST},
     ("command_fixture", "seed"): {"added_commands": COMMAND_LIST},
     ("system_setting", "set_value"): {"last_notified_version": TEXT, "value_changed": FLAG},
@@ -148,7 +123,14 @@ def validate_audit_changes(target_type: str, action: str, changes: dict[str, obj
         raise TypeError(msg)
     for field, value in changes.items():
         specification = schema.get(field)
-        if specification is None or not specification.accepts(value):
+        valid = False
+        if specification is not None:
+            try:
+                specification.validate_python(value)
+                valid = True
+            except ValidationError:
+                pass
+        if not valid:
             msg = "Unsupported audit field or value shape"
             raise ValueError(msg)
 
