@@ -1,215 +1,67 @@
 # HovorunV2
 
-**The ultimate wingman for your Telegram group chats — making them smarter, faster, and way more fun.**
+HovorunV2 is a Telegram group bot that expands media links, translates content and provides per-chat settings.
+The project is in alpha.
 
-HovorunV2 is a feature-rich Telegram chatbot designed to level up your group conversations with smart utilities, dynamic
-translations, and seamless media integrations.
+## Features
 
----
+- **Media previews:** Twitter (X), Instagram, TikTok, Reddit, YouTube, Threads, Bluesky and Facebook. Supported formats include videos, images, carousels and quoted posts, depending on the provider.
+- **Translation:** Translate foreign-language content into the chat's target language, Ukrainian by default. Configure languages to leave unchanged.
+- **Chat settings:** Use `/settings` to choose languages and toggle video or post/image capture independently for each provider.
+- **Self-cleaning menus:** Configuration windows expire after 30 seconds of inactivity.
+- **Release notifications:** Approved groups receive updates when new user-facing changes are deployed.
 
-## 🚀 Project Status: Alpha
+## Using the bot
 
-HovorunV2 is currently in its **Alpha** stage.
+Add the public instance to your group and use `/allow_chat` to request approval. Bot owners review requests based on capacity.
+You can also host your own instance with Docker.
 
-### How to use Hovorun:
+## Self-hosting
 
-1. **Public Instance**: You can add the bot to your group and use `/allow_chat` to join our **waiting list**. Bot owners
-   will review and approve requests based on current capacity.
-2. **Self-Hosting**: If you don't want to wait or prefer full control over your data, you can host your own instance
-   using Docker.
-
----
-
-## ✨ Features for Users
-
-### 📼 Universal Media Extraction
-
-Stop clicking links! Hovorun automatically detects and expands content from major platforms:
-
-* **Twitter (X)**: Rich previews with full text, media carousels, quoted posts, and engagement metrics.
-* **Instagram**: Native support for Reels and **mixed-media carousels** (Photos + Videos).
-* **TikTok**: High-quality video previews and image slideshows.
-* **Reddit**: Full support for text posts, images, multi-image galleries, videos, crossposts, and shortlinks (`/s/`, `redd.it`).
-* **YouTube**: Seamless expansion for videos (`/watch`, `youtu.be`), Shorts, and **Community Posts** (text and multi-image attachments).
-* **Threads, Bluesky, Facebook**: Clean, descriptive previews for posts, videos, and quoted threads.
-
-### 🌍 Dynamic Translation
-
-Keep the conversation flowing regardless of the language. Hovorun automatically translates foreign-language content into
-the chat's target language (default: Ukrainian).
-
-* **Ignore List**: Configure specific languages to be left as-is.
-
-### ⚙️ Interactive Configuration & Privacy
-
-* **`/settings`**: A unified interactive menu to configure language settings and independently toggle **Video (`🎬`)** vs. **Post/Image (`🖼️`)** capture for every media provider in your chat.
-* **⌛ Self-Cleaning UI**: Configuration windows automatically self-destruct after 30 seconds of inactivity to keep your
-  chat history clean.
-* **🔐 Encrypted Message Cache**: Ephemeral cached messages in Valkey are encrypted per chat using unique salts and Fernet symmetric encryption.
-
-### 🚀 Auto-Update Notifications
-
-Stay in the loop! Approved groups automatically receive "What's New" alerts whenever we deploy new features.
-
----
-
-## 🛠️ Getting Started (Self-Hosting)
-
-If you choose to self-host, deployment is fully automated via `Make` and `Docker`.
-
-### Prerequisites
-
-* `docker` & `docker compose`
-* `make`
-
-### Quick Start
-
-1. **Prepare**: `make setup` (initializes repo and builds optimized images).
-2. **Configure**: Edit the `.env` file created during setup:
-   ```env
-   BOT_TOKEN=...
-   CACHE_ENCRYPTION_KEY=... # Required encryption passphrase
-   ```
-3. **Provision an owner**: `docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role add 123456789 --role owner` (replace the synthetic ID with your numeric Telegram user ID).
-4. **Launch**: `make run`
-
----
-
-## 💻 For Developers
-
-### Tech Stack
-
-* **Runtime**: Python 3.15+ (latest features)
-* **Framework**: [aiogram 3.x](https://github.com/aiogram/aiogram)
-* **DI Container**: [dishka](https://github.com/reagento/dishka) for constructor injection
-* **Persistence**: SQLAlchemy 2.0 (Async) + SQLite
-* **Caching**: Valkey (Async) for session state, TTLs, and encrypted message cache
-* **Automation**: [DrissionPage](https://github.com/g1879/DrissionPage) for advanced scraping
-
-### Key Principles
-
-* **Strict Typing**: Zero `ty:ignore` policy with Python 3.15+ deferred evaluation.
-* **Layered Onion Architecture**: Strict Ports & Adapters enforced via `import-linter`.
-  * `domain`: Pure SQLAlchemy models and enums.
-  * `application`: Protocols (`ports.py`), orchestration services (`services/`), resilient 4-tier media processing (`media/pipeline.py`), and extraction clients (`clients/`).
-  * `infrastructure`: Adapters and stores (`persistence/`, Valkey `CacheService`, `BrowserService`, `TaskQueueService`).
-  * `interface`: Telegram delivery adapter (`TelegramMediaDelivery`), declarative commands (`BaseCommand(ABC)`), and handlers.
-  * `bootstrap`: Centralized composition root (`bootstrap/container.py`).
-* **Zero Runtime Leaks**: Mandatory dependency injection; pure queries without scattered transaction logic.
-
-### Development Commands
-
-* `make run-dev`: Local bot execution with Valkey in Docker.
-* `uv run ty check src`: Strict type verification.
-* `uv run ruff check .`: Linting and formatting.
-* `uv run lint-imports`: Enforce onion architecture layer contracts.
-* `PYTHONPATH=src uv run pytest`: Run unit and integration test suite.
-* `make install-hooks`: Install quality, Conventional Commit, and post-commit changelog hooks.
-
-After each commit, the post-commit hook generates `CHANGELOG.md` with Commitizen and amends
-that file into the same commit if needed. The amendment preserves the message, author, and
-unrelated staged changes; hooks are disabled only for that generated-file amendment to avoid
-recursion. Install hooks in each checkout before committing.
-
-The hook refuses to overwrite local changelog edits or amend a tagged commit. A post-commit
-failure leaves the original commit in place: resolve the reported issue, run `make changelog`,
-review the generated changes, and amend the commit before tagging or pushing.
-
----
-
-## 🤝 AI Assistance Policy
-
-Using AI tools (Copilot, ChatGPT, Claude, Cursor, etc.) for writing code is allowed. However:
-**The commit author takes full and absolute responsibility for the code.** You must review, understand, and test every
-line generated by AI. "The AI wrote it" is not an acceptable excuse for architectural flaws, hallucinations, or failing
-pipelines. Treat AI as an assistant, but *you* are the engineer.
-
----
-
-## 📄 License
-
-Released under the **BSD 3-Clause License**. See `LICENSE` for details.
-
-Developed with ❤️ by TwilightSparkle42
-
-### Offline role and trust administration
-
-Authority uses ordered `Role` integer values: `USER = 1`, `ADMIN = 10`, `OWNER = 100`. Minimum authority checks use
-`role >= Role.ADMIN`; exact role checks remain available. Trust, bans, group membership and feature access stay separate.
-
-Prepare an empty or existing database with `uv run alembic upgrade head`, then use the standalone CLI:
+Install Docker with Compose and `make`, then run:
 
 ```bash
-uv run hovorun-admin role add 123456789 --role owner --reason "Initial bootstrap"
-uv run hovorun-admin role add @known_user --role admin
-uv run hovorun-admin role list
-uv run hovorun-admin trust grant @known_user --reason "Trusted user"
-uv run hovorun-admin trust revoke 123456789 --reason "Trust withdrawn"
-uv run hovorun-admin role list --role owner
-uv run hovorun-admin role remove 123456789 --yes --reason "Retired operator"
+make setup
 ```
 
-The example ID is synthetic. Numeric provisioning works before the user contacts the bot. Handles must already resolve to
-an active stored user; group, unknown, and deleted-user handles are rejected. Removing authority sets the user's role to
-`USER`. Both removal and replacing an `OWNER` with `ADMIN` require `--yes`. Repeating an assignment does not duplicate audit
-entries. Role changes record CLI origin and the optional reason in the same transaction.
+Edit the generated `.env` file:
 
-Only CLI-origin operations may change `ADMIN`/`OWNER` authority or apply/revoke personal restrictions against them.
-Non-CLI deletion cannot remove their authority. Group bans and suspension caused by a full-banned current Telegram
-administrator still block feature processing in that group for everyone, including bot administrators and owners.
-Those group restrictions preserve administrators' private communication and authorized private administration;
-explicit personal restrictions applied through CLI remain effective.
+```dotenv
+BOT_TOKEN=...
+CACHE_ENCRYPTION_KEY=...
+```
 
-The CLI and migrations require only `DB_PATH` (default `data/bot.db`, relative to the project root). They do not authenticate
-to Telegram, start polling, initialize browsers, or require Valkey or encryption credentials. Run migrations before
-administration; the CLI does not create schema or restore deleted users.
-
-To administer the persistent database without starting the bot or Valkey:
+Both values are required. Provision an owner using your numeric Telegram user ID; the example ID below is synthetic:
 
 ```bash
 docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role add 123456789 --role owner
-docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role list
-docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role remove 123456789 --yes
+make run
 ```
 
-The container entrypoint applies migrations first. Use `docker compose exec bot uv run hovorun-admin ...` when the bot
-container is already running. Live administrator and owner checks use these database roles through Casbin. No owner/admin IDs are imported from
-configuration; legacy `ADMIN_IDS` and `OWNERS` values are ignored and can be removed. An empty role registry grants nobody
-administrator access. Owner notifications and optional error DMs follow current active OWNER rows without restarting.
+The container entrypoint applies database migrations. CLI administration can run before the bot starts and does not require Telegram or Valkey connections.
 
-### Permission policy foundation
+| Command | Purpose |
+| --- | --- |
+| `make run` | Start the bot and Valkey |
+| `make stop` | Stop services |
+| `make update` | Pull changes and rebuild |
+| `make migrate` | Apply database migrations in Docker |
 
-Protected actions can be evaluated through `AccessService.evaluate_permission` with an application-owned `PermissionRequest`.
-The service reads current database authority on each call, checks active identities and group generations/bans, and then
-uses the packaged Casbin policy. Group administrator evidence is scoped to the actor, target generation and validity window;
-missing or stale evidence grants no group administrator authority. Trust never grants settings authority. Until target-bound private group menus are implemented, ordinary users must manage settings inside the group, where current membership is checked. Bot administration requires explicit private transport.
+See [administration](docs/administration.md) for role and trust commands, access rules and troubleshooting.
 
-Static capabilities live in `src/hovorunv2/infrastructure/authorization/policies/`. The initial actions are
-`bot:administer` and `group:settings`; unmatched actions deny. Policies use the existing integer authority tiers and remain
-immutable after loading. Add a policy row and focused tests for a new action; introduce new domain facts and guards only
-when that action needs them. There is no separate policy database or user-role mirror. CLI bootstrap keeps its explicit
-application-service path.
+## Access and privacy
 
-Live role gates now use database authority through Casbin. Existing group approval/toggle behavior remains in place;
-additional ban enforcement and feature/emergency guards remain separate
-implementation stages. Request facts are internal application inputs, never proof supplied by callback payloads.
+Bot authority, trust and group approval are separate. Only CLI operations can change bot-administrator authority or their personal restrictions.
+Group bans and full bans on current Telegram administrators suspend group processing for everyone. Group processing also requires fresh administrator evidence.
 
-Trust grant/revoke accepts an existing active numeric user ID or known public handle. It never creates or recovers identities. Trust remains separate from roles and beta eligibility; each actual change atomically records before/after values and advances the audited user trust revision. Repeating the same setting produces no extra audit event or revision. Telegram service callers require current bot-admin authority and private transport; trust alone grants no administrative powers.
+The bot retains the identity and operational data needed for access control and its features. Temporary message cache entries are encrypted per chat and exclude contacts, locations, user profiles, forwarding metadata and nested replies.
+Operational logs omit message URLs, exception contents and credentials while retaining operation names, exception types and code locations for debugging.
 
-### Identity and access storage
+## Development
 
-Incoming interactions refresh only numeric identity and public usernames; groups also retain their public title and type. Identity ingestion does not restore deleted records, transfer authority when a username changes, or collect private profile fields.
+Built with Python 3.15+, aiogram, SQLAlchemy/SQLite, Valkey, Dishka and DrissionPage.
+See the [contributor guide](CONTRIBUTING.md) for setup, checks and contribution conventions, and [architecture](docs/architecture.md) for implementation details.
 
-Independent ban records retain internal reasons separately from optional public explanations. `BanService` provides audited administration; Telegram menus, CLI ban commands, and runtime ban enforcement belong to later access workflows. Group approvals and requests likewise store independent access bases without replacing current runtime authorization. Migration preserves legacy approved groups and existing feature selections, including an explicit marker for the historical empty-selection capture behavior.
+## License
 
-### Membership verification
-
-Group feature execution requires a complete, successful administrator snapshot within its validity window. Missing, failed, future, or expired verification suspends processing until refreshed, without revoking approval. Full-ban checks cover every retained administrator candidate.
-
-The bot subscribes to group member and bot membership updates. It retains evidence only for human administrators and unresolved former administrators. API errors produce unknown evidence; they do not revoke grants or prove someone left. Bot presence and individual administrator rights remain separate from approvals and bans.
-
-Evidence expires after five minutes. Startup and the existing SAQ worker refresh at most ten due groups per minute, with at most fifty relevant member checks per group and a thirty-second cycle deadline. Unprocessed evidence remains expired for the next cycle. Refreshes use ten-second Telegram request deadlines and coalesce simultaneous checks for the same group within a process. Ordinary messages do not trigger membership API calls. Action authorization enforcement follows in the next access blocks.
-
-The service uses a whitelist. The planned activation workflow lets explicitly trusted users enable the bot without individual owner approval, creating a durable group approval. Regular users require approval. Trust grants no bot-administrator role. Planned full user ban enforcement affects groups where that user is a Telegram administrator. There are no sponsorship relationships or planned paid features.
-
-Message cache stores only encrypted text/captions, link entities, message/chat references, and technical media handles for authorized handlers. Contact/location data, user profiles, forwarding metadata, and nested replies are excluded. Legacy encrypted entries are minimized on read; existing salts and 24-hour expiry remain unchanged. Provider-extracted quoted media does not depend on Telegram reply caching.
+[BSD 3-Clause](LICENSE).
