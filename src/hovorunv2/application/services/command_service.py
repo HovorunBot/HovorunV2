@@ -1,8 +1,8 @@
 """Application service for managing allowed commands per chat."""
 
+from hovorunv2.application.features import COMMAND_PRESENTATION, FEATURE_REGISTRY
 from hovorunv2.application.ports import CommandStore
 from hovorunv2.domain.enums import (
-    DEFAULT_COMMANDS,
     PROVIDER_SPLIT_COMMANDS,
     CommandName,
 )
@@ -31,7 +31,8 @@ class CommandService:
             True if allowed, False otherwise.
 
         """
-        if command_name in DEFAULT_COMMANDS:
+        presentation = COMMAND_PRESENTATION.get(command_name)
+        if presentation is not None and not presentation.toggleable:
             return True
 
         allowed = set(await self._command_data_service.get_allowed_commands(chat_id))
@@ -61,16 +62,12 @@ class CommandService:
             True if capture mode is allowed for the provider in the chat.
 
         """
+        feature = FEATURE_REGISTRY.capture(provider, is_video=is_video)
         allowed = await self.get_allowed_commands(chat_id)
         if not allowed:
-            return True
+            return await self._command_data_service.legacy_capture_allowed(chat_id)
 
-        if provider not in PROVIDER_SPLIT_COMMANDS:
-            return await self.is_command_allowed(chat_id, provider)
-
-        video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[provider]
-        target_cmd = video_cmd if is_video else post_cmd
-        return await self.is_command_allowed(chat_id, target_cmd)
+        return await self.is_command_allowed(chat_id, feature.key)
 
     async def enable_defaults(self, chat_id: int) -> None:
         """Enable all default media split commands for an approved chat.
@@ -79,9 +76,8 @@ class CommandService:
             chat_id: The ID of the chat.
 
         """
-        for video_cmd, post_cmd in PROVIDER_SPLIT_COMMANDS.values():
-            await self._command_data_service.enable_command(chat_id, str(video_cmd))
-            await self._command_data_service.enable_command(chat_id, str(post_cmd))
+        defaults = tuple(feature.key for feature in FEATURE_REGISTRY.all() if feature.default_enabled)
+        await self._command_data_service.initialize_defaults(chat_id, defaults)
 
     async def enable_command(self, chat_id: int, command_name: CommandName | str) -> bool:
         """Enable specific command for a chat.
@@ -119,7 +115,8 @@ class CommandService:
             True if operation succeeded, False if command is protected.
 
         """
-        if command_name in DEFAULT_COMMANDS:
+        presentation = COMMAND_PRESENTATION.get(command_name)
+        if presentation is not None and not presentation.toggleable:
             return False
 
         cmd_str = str(command_name)

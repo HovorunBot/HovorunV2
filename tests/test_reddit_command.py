@@ -13,7 +13,7 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.domain.enums import ChatStatus, CommandName
+from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import create_mock_message, get_media_command
 
@@ -80,7 +80,7 @@ async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, init
         yield resp
 
     chat_status_service = await init_container.get(ChatStatusService)
-    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+    await chat_status_service.approve(chat_id)
 
     message = create_mock_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
@@ -130,7 +130,7 @@ async def test_handle_reddit_video_post_respects_split_toggle(
 
     chat_status_service = await init_container.get(ChatStatusService)
     command_service = await init_container.get(CommandService)
-    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+    await chat_status_service.approve(chat_id)
     await command_service.enable_command(chat_id, CommandName.REDDIT)
     await command_service.disable_command(chat_id, CommandName.REDDIT_VIDEO)
 
@@ -162,7 +162,7 @@ async def test_handle_reddit_post_vcr(reddit_command: RichMediaCommand, init_con
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
-    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+    await chat_status_service.approve(chat_id)
 
     await reddit_command.handle(message, cast("Bot", bot))
 

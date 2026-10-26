@@ -325,9 +325,9 @@ async def test_command_service_is_capture_allowed(test_container: AsyncContainer
     command_service = await test_container.get(CommandService)
     chat_id = 998877
 
-    # When no explicit commands configured in chat, allowed by default
-    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is True
-    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is True
+    # New empty configurations are disabled until an intentional selection.
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True) is False
+    assert await command_service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=False) is False
 
     # Enable twitter_post only (now chat has explicit configuration)
     await command_service.enable_command(chat_id, CommandName.TWITTER_POST)
@@ -433,6 +433,10 @@ async def test_characterize_legacy_empty_command_set_capture(test_container: Asy
     chat_id = 20001
     await verify_group_admins(test_container, chat_id)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+    # Represent the compatibility marker produced by the real legacy016 migration.
+    async with session_maker.begin() as session:
+        chat = (await session.execute(select(ChatDB).where(ChatDB.chat_id == chat_id))).scalar_one()
+        chat.legacy_empty_capture = True
 
     # 1. Assert real SQLite state: chat exists, but has 0 associated commands
     persisted_status, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)

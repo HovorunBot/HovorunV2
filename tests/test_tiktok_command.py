@@ -8,7 +8,7 @@ from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.domain.enums import ChatStatus, CommandName
+from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import create_mock_message, get_media_command
 
@@ -62,7 +62,7 @@ async def test_handle_tiktok_video(tiktok_command: RichMediaCommand, init_contai
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
-    await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
+    await chat_status_service.approve(chat_id)
 
     await tiktok_command.handle(message, cast("Bot", bot))
 

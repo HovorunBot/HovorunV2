@@ -12,6 +12,7 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, ChatStatus
 from hovorunv2.domain.group_grant import GroupAccessRequestDB, GroupApprovalDB, RequestStatus
+from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.group_grant_repository import SQLAlchemyGroupGrantRepository
 
@@ -52,8 +53,13 @@ class SQLAlchemyActivationRepository:
         configured = await self._session.scalar(
             select(AuditEventDB.id)
             .where(
-                AuditEventDB.target_type == "command_association",
-                AuditEventDB.changed_fields["chat_id"].as_integer() == chat.chat_id,
+                AuditEventDB.target_type.in_(("command_association", "command_selection")),
+                (
+                    (AuditEventDB.changed_fields["chat_id"].as_integer() == chat.chat_id)
+                    | AuditEventDB.changed_fields["chat_id"]
+                    .as_integer()
+                    .in_(select(GroupRouteDB.telegram_id).where(GroupRouteDB.group_id == chat.id))
+                ),
             )
             .limit(1)
         )

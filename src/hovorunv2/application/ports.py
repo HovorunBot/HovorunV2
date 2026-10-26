@@ -288,6 +288,14 @@ class ChatStore(Protocol):
 class CommandStore(Protocol):
     """Protocol for command allowance and association operations."""
 
+    async def legacy_capture_allowed(self, chat_id: int, platform: str = "telegram") -> bool:
+        """Allow empty capture only for an active migrated compatibility configuration."""
+        ...
+
+    async def initialize_defaults(self, chat_id: int, commands: tuple[str, ...], platform: str = "telegram") -> None:
+        """Initialize defaults once without overwriting deliberate selections or legacy state."""
+        ...
+
     async def get_allowed_commands(self, chat_id: int, platform: str = "telegram") -> list[str]:
         """Fetch allowed commands for a chat."""
         ...

@@ -36,6 +36,7 @@
 
 ### Refactor
 
+- **features**: make activation state explicit
 - **features**: introduce stable feature registry
 - **bans**: enforce restrictions without leaving groups
 - **access**: enforce action-specific authorization
