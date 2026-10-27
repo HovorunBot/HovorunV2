@@ -64,7 +64,9 @@ class FeatureAccessService:
         self._beta = beta
         self._group_beta = group_beta
 
-    async def _manager(self, actor_id: int | None, target: PermissionTarget, now: datetime) -> bool:
+    async def _manager(
+        self, actor_id: int | None, target: PermissionTarget, now: datetime, *, inspection: bool = False
+    ) -> bool:
         if actor_id is None:
             return False
         user = await self._users.get_by_telegram_id(actor_id)
@@ -74,11 +76,16 @@ class FeatureAccessService:
         member = await self._memberships.get_member(target.entity_id or 0, user.id)
         evidence = None
         if (
-            state is not None
-            and state.admins_known
-            and state.admins_verified_at is not None
-            and state.admins_expires_at is not None
-            and evidence_time(state.admins_verified_at) <= now < evidence_time(state.admins_expires_at)
+            (
+                inspection
+                or (
+                    state is not None
+                    and state.admins_known
+                    and state.admins_verified_at is not None
+                    and state.admins_expires_at is not None
+                    and evidence_time(state.admins_verified_at) <= now < evidence_time(state.admins_expires_at)
+                )
+            )
             and member is not None
             and member.status == MembershipStatus.ADMIN
         ):
@@ -215,7 +222,11 @@ class FeatureAccessService:
             return None
         now = datetime.now(UTC)
         target = PermissionTarget("group", chat.id, chat.generation, chat_id)
-        if not await self._manager(actor_id, target, now):
+        manager = await self._manager(actor_id, target, now, inspection=True)
+        inspector = not await self._bans.list_active(
+            TargetKind.USER, actor_id
+        ) and await self._permissions.has_authority(actor_id, "bot:administer")
+        if not manager and not inspector:
             return None
         state = await self._memberships.get_state(chat.id)
         verified = bool(

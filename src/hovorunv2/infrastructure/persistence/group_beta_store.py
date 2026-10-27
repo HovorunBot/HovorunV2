@@ -73,10 +73,8 @@ class SQLAlchemyGroupBetaStore(GroupBetaStore):
             raise PermissionError(msg)
         bot_admin = self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
         local_admin = await repository.is_admin(target.entity_id or 0, user.id, now)
-        if (
-            transport_kind not in {"private", "group", "supergroup"}
-            or (transport_kind == "private" and not bot_admin)
-            or not self._policy.is_allowed(PermissionFacts(user.role, "group:settings", target, local_admin))
+        if transport_kind not in {"private", "group", "supergroup"} or not self._policy.is_allowed(
+            PermissionFacts(user.role, "group:settings", target, local_admin)
         ):
             msg = "Group beta changes require current settings authority in the selected transport."
             raise PermissionError(msg)
@@ -111,7 +109,7 @@ class SQLAlchemyGroupBetaStore(GroupBetaStore):
             local_support = (
                 user is not None
                 and local_admin
-                and transport_kind in {"group", "supergroup"}
+                and transport_kind in {"private", "group", "supergroup"}
                 and await repository.user_eligible(user.id, feature)
             )
             if local_support:

@@ -16,6 +16,8 @@ class AccessAction(StrEnum):
 class SettingsMenu(StrEnum):
     """Menu identifiers for settings."""
 
+    GROUPS = "groups"
+    GROUP_SELECT = "group_select"
     ACCESS = "access"
     CLOSE = "close"
     MAIN = "main"

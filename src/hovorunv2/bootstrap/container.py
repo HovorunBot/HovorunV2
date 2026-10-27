@@ -53,6 +53,7 @@ from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.group_beta_service import GroupBetaService
+from hovorunv2.application.services.group_management_service import GroupManagementService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.services.message_service import MessageService
@@ -249,6 +250,7 @@ class AppProvider(Provider):
     # Utility Commands & Handlers
     help_command = provide(HelpCommand)
     feedback_command = provide(FeedbackCommand)
+    group_management = provide(GroupManagementService)
     settings_sessions = provide(SettingsSessionService)
     settings_command = provide(SettingsCommand)
     bot_join_handler = provide(BotJoinHandler)

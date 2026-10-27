@@ -238,7 +238,7 @@ async def test_activation_rechecks_current_membership_instead_of_replayed_author
     assert not (await runtime.service.facts(runtime.target, BETA.key)).selected
 
 
-async def test_eligible_regular_member_and_private_local_admin_cannot_replay_activation(
+async def test_eligible_regular_member_and_invalid_transport_cannot_replay_activation(
     test_container: AsyncContainer,
 ) -> None:
     """Possessing feature eligibility or another actor's intended action grants no group administration."""
@@ -249,7 +249,7 @@ async def test_eligible_regular_member_and_private_local_admin_cannot_replay_act
         await enable_local(runtime, MEMBER)
     with pytest.raises(PermissionError):
         await runtime.service.set_enabled(
-            runtime.target, BETA.key, enabled=True, actor=ActorContext.telegram(FIRST), transport_kind="private"
+            runtime.target, BETA.key, enabled=True, actor=ActorContext.telegram(FIRST), transport_kind="channel"
         )
     with pytest.raises(PermissionError):
         await runtime.service.set_enabled(runtime.target, BETA.key, enabled=True, actor=ActorContext.system())

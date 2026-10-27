@@ -15,7 +15,7 @@ from hovorunv2.application.permissions import DecisionReason
 from hovorunv2.application.ports import AppSettings, CachePort
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS
+from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger, set_log_context
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 
@@ -99,6 +99,7 @@ class AccessMiddleware(BaseMiddleware):
         data: dict[str, Any],
         user_id: int | None,
         policy: CommandPolicy,
+        command_name: str | None,
     ) -> Any:
         """Authorize private features without treating trust as group management authority."""
         if not user_id or await self._access_service.is_banned(user_id):
@@ -108,15 +109,18 @@ class AccessMiddleware(BaseMiddleware):
         if await self._access_service.is_admin(user_id):
             return await handler(event, data)
 
-        if policy.requires_admin:
+        settings_entry = (
+            policy.requires_group_admin
+            and command_name == CommandName.SETTINGS
+            and not policy.is_toggleable
+            and not policy.requires_admin
+        )
+        if policy.requires_admin or (policy.requires_group_admin and not settings_entry):
             await self._deny_private_chat(event)
             return None
-
-        if policy.requires_group_admin:
-            # Current settings use the transport chat as target. Private group
-            # management needs a selected group and generation-bound authorization.
-            await self._deny_private_chat(event)
-            return None
+        if settings_entry:
+            # Only the real settings entry dispatches; the handler verifies every selected target.
+            return await handler(event, data)
 
         if await self._access_service.is_trusted(user_id):
             return await handler(event, data)
@@ -222,7 +226,7 @@ class AccessMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         if is_private:
-            return await self._handle_private_chat(handler, event, data, user_id, policy)
+            return await self._handle_private_chat(handler, event, data, user_id, policy, command_name)
 
         return await self._handle_group_chat(handler, event, data, user_id, chat_id, policy, command_name)
 

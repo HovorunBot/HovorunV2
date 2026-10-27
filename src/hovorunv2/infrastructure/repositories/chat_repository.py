@@ -35,6 +35,22 @@ class SQLAlchemyChatRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def list_groups(self, after_id: int, limit: int, *, present_only: bool) -> list[ChatDB]:
+        """Bound candidate discovery and exclude private/deleted identities and route aliases."""
+        if limit < 1:
+            return []
+        query = select(ChatDB).where(
+            ChatDB.id > after_id,
+            ChatDB.chat_id < 0,
+            ChatDB.chat_type.in_(("group", "supergroup")),
+            ChatDB.platform == Platform.TELEGRAM,
+            ChatDB.deleted_at.is_(None),
+        )
+        if present_only:
+            query = query.where(ChatDB.is_bot_present.is_(True))
+        rows = await self.session.scalars(query.order_by(ChatDB.id).limit(limit))
+        return list(rows.all())
+
     async def get_deleted_by_chat_id(self, chat_id: int, platform: str = "telegram") -> ChatDB | None:
         """Fetch latest soft-deleted chat tombstone."""
         stmt = (

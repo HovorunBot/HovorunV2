@@ -11,15 +11,17 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
 from hovorunv2.application.features import FeatureChannel
-from hovorunv2.application.permissions import DecisionReason
+from hovorunv2.application.permissions import DecisionReason, PermissionTarget
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.group_management_service import GroupManagementService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.settings_session_service import (
     SETTINGS_SESSION_TTL,
     SettingsContext,
     SettingsSessionService,
+    SettingsTarget,
 )
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
@@ -53,6 +55,7 @@ class SettingsCommand(BaseCommand):
         access_service: AccessService,
         cleanup_service: CleanupService,
         sessions: SettingsSessionService,
+        groups: GroupManagementService,
     ) -> None:
         """Initialize command."""
         self._language_service = language_service
@@ -60,6 +63,7 @@ class SettingsCommand(BaseCommand):
         self._access_service = access_service
         self._cleanup_service = cleanup_service
         self._sessions = sessions
+        self._groups = groups
 
     @property
     def name(self) -> str:
@@ -86,9 +90,14 @@ class SettingsCommand(BaseCommand):
         if message.sender_chat or not message.from_user or message.from_user.is_bot:
             return
         try:
-            context = await self._sessions.prepare(
-                message.chat.id, message.from_user.id, message.chat.id, message.message_id
-            )
+            if message.chat.id > 0:
+                context = await self._sessions.prepare_listing(
+                    message.from_user.id, message.chat.id, message.message_id
+                )
+            else:
+                context = await self._sessions.prepare(
+                    message.chat.id, message.from_user.id, message.chat.id, message.message_id
+                )
         except ValueError:
             return
         if not await self._authorized(message.from_user.id, context, bot):
@@ -98,12 +107,24 @@ class SettingsCommand(BaseCommand):
         await self._cleanup_service.replace_singleton_window(
             bot, msg.chat.id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
         )
-        await self._show_main_menu(msg, context)
+        if context.target is None:
+            await self._show_groups_menu(msg, message.from_user.id, context)
+        else:
+            await self._show_main_menu(msg, context)
 
     async def _authorized(self, actor_id: int, context: SettingsContext, bot: Bot) -> bool:
         """Recheck current actor restrictions and target-specific Telegram/bot authority."""
         if await self._access_service.is_banned(actor_id):
             return False
+        if context.target is None:
+            return context.actor_id == actor_id == context.transport_chat_id
+        if context.transport_chat_id > 0 and context.target_chat_id < 0:
+            return await self._groups.can_manage(
+                actor_id,
+                PermissionTarget(
+                    "group", context.target.entity_id, context.target.generation, context.target.telegram_id
+                ),
+            )
         if context.target_chat_id > 0:
             return context.target_chat_id == actor_id and await self._access_service.is_admin(actor_id)
         return await self._access_service.is_allowed(actor_id, context.target_chat_id, self.POLICY, bot)
@@ -135,6 +156,63 @@ class SettingsCommand(BaseCommand):
             message.chat.id, message.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
         )
 
+    async def _show_groups_menu(
+        self, message: Message, actor_id: int, context: SettingsContext, after_id: int = 0
+    ) -> None:
+        """Render only verified groups; callback values are slots in server-side choices."""
+        page = await self._groups.list_groups(actor_id, after_id)
+        choices = [
+            SettingsTarget(entity_id=group.entity_id, generation=group.generation, telegram_id=group.telegram_id)
+            for group in page.groups
+        ]
+        listing = context.model_copy(update={"target": None, "choices": choices})
+        builder = InlineKeyboardBuilder()
+        for index, group in enumerate(page.groups):
+            builder.row(
+                InlineKeyboardButton(
+                    text=group.title or f"Group {group.telegram_id}",
+                    callback_data=SettingsCallback(menu=SettingsMenu.GROUP_SELECT, value=str(index)).pack(),
+                )
+            )
+        if page.next_after is not None:
+            builder.row(
+                InlineKeyboardButton(
+                    text="More groups ➡️",
+                    callback_data=SettingsCallback(menu=SettingsMenu.GROUPS, page=page.next_after).pack(),
+                )
+            )
+        if after_id:
+            builder.row(
+                InlineKeyboardButton(text="First page", callback_data=SettingsCallback(menu=SettingsMenu.GROUPS).pack())
+            )
+        builder.row(
+            InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
+        )
+        text = "👥 <b>Manage groups</b>\n\nSelect a group to configure. Authority is checked again for every action."
+        if not page.groups:
+            text += "\n\nNo verified groups on this page. Only known groups you can currently manage are shown."
+        await self._render(message, text, builder, listing)
+
+    async def _select_group(self, query: CallbackQuery, callback: SettingsCallback, context: SettingsContext) -> None:
+        """Resolve an opaque list slot, preserving the original absolute session deadline."""
+        if (
+            not isinstance(query.message, Message)
+            or query.bot is None
+            or callback.value is None
+            or not callback.value.isdecimal()
+        ):
+            return
+        index = int(callback.value)
+        if index >= len(context.choices):
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
+        target = context.choices[index]
+        selected = context.model_copy(update={"target": target, "choices": []})
+        if not await self._authorized(query.from_user.id, selected, query.bot):
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
+        await self._show_main_menu(query.message, selected)
+
     async def _show_main_menu(self, message: Message, context: SettingsContext) -> None:
         """Show the top-level settings menu."""
         builder = InlineKeyboardBuilder()
@@ -151,7 +229,16 @@ class SettingsCommand(BaseCommand):
         builder.row(
             InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
         )
-        await self._render(message, "⚙️ <b>Hovorun Settings</b>\n\nSelect a category to configure:", builder, context)
+        if context.transport_chat_id > 0:
+            builder.row(
+                InlineKeyboardButton(
+                    text="👥 Other groups", callback_data=SettingsCallback(menu=SettingsMenu.GROUPS).pack()
+                )
+            )
+        text = "⚙️ <b>Hovorun Settings</b>\n\nSelect a category to configure:"
+        if context.target_chat_id < 0:
+            text += f"\nGroup: <code>{context.target_chat_id}</code>"
+        await self._render(message, text, builder, context)
 
     async def _show_access_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
         """Explain operational access without revealing private ban or entitlement records."""
@@ -353,7 +440,20 @@ class SettingsCommand(BaseCommand):
         if context is None:
             await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
             return
+        await self._dispatch_callback(query, callback_data, context)
+
+    async def _dispatch_callback(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
+        """Route only validated and consumed settings operations."""
+        msg = query.message
+        if not isinstance(msg, Message):
+            return
         match callback_data.menu:
+            case SettingsMenu.GROUPS:
+                await self._show_groups_menu(msg, query.from_user.id, context, callback_data.page)
+            case SettingsMenu.GROUP_SELECT:
+                await self._select_group(query, callback_data, context)
             case SettingsMenu.MAIN:
                 await self._show_main_menu(msg, context)
             case SettingsMenu.ACCESS:

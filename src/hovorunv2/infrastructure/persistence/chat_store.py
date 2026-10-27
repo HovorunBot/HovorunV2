@@ -32,6 +32,11 @@ class SQLAlchemyChatStore(ChatStore):
             repo = SQLAlchemyChatRepository(session)
             return await repo.get_by_id(chat_id, platform)
 
+    async def list_groups(self, after_id: int, limit: int, *, present_only: bool) -> list[ChatDB]:
+        """Read one bounded page of active canonical group candidates."""
+        async with self._session_maker() as session:
+            return await SQLAlchemyChatRepository(session).list_groups(after_id, limit, present_only=present_only)
+
     async def get_all_by_status(self, status: ChatStatus, platform: str = "telegram") -> list[ChatDB]:
         """Fetch all chats with a specific status from database."""
         async with self._session_maker() as session:

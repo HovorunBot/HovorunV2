@@ -245,6 +245,10 @@ class ChatStore(Protocol):
         """Fetch chat from database."""
         ...
 
+    async def list_groups(self, after_id: int, limit: int, *, present_only: bool) -> list[ChatDB]:
+        """Page canonical active Telegram groups without exposing rows to the caller directly."""
+        ...
+
     async def get_or_create_chat(
         self, chat_id: int, platform: str = "telegram", actor: ActorContext | None = None
     ) -> ChatDB:

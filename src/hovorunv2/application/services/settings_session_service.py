@@ -11,20 +11,37 @@ from hovorunv2.application.ports import CachePort, ChatStore, UserStore
 SETTINGS_SESSION_TTL: Final = 30
 
 
+class SettingsTarget(BaseModel):
+    """Immutable selected group identity kept server-side rather than in callback values."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    entity_id: int
+    generation: int
+    telegram_id: int
+
+
 class SettingsContext(BaseModel):
     """Minimal target, transport and operation facts; never message contents."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
-    target_id: int
-    target_generation: int
-    target_chat_id: int
+    target: SettingsTarget | None
+    choices: list[SettingsTarget] = []
     transport_chat_id: int
     message_id: int
     actor_id: int | None
     actor_generation: int | None
     expires_at: float
     operations: list[str] = []
+
+    @property
+    def target_chat_id(self) -> int:
+        """Require an explicit selection before reading or mutating group settings."""
+        if self.target is None:
+            msg = "No settings target is selected."
+            raise ValueError(msg)
+        return self.target.telegram_id
 
 
 class SettingsSessionService:
@@ -51,13 +68,26 @@ class SettingsSessionService:
             msg = "Settings require an active actor and canonical target."
             raise ValueError(msg)
         return SettingsContext(
-            target_id=chat.id,
-            target_generation=chat.generation,
-            target_chat_id=target_chat_id,
+            target=SettingsTarget(entity_id=chat.id, generation=chat.generation, telegram_id=target_chat_id),
             transport_chat_id=transport_chat_id,
             message_id=message_id,
             actor_id=actor_id if transport_chat_id > 0 else None,
             actor_generation=user.generation if transport_chat_id > 0 else None,
+            expires_at=time.time() + SETTINGS_SESSION_TTL,
+        )
+
+    async def prepare_listing(self, actor_id: int, transport_chat_id: int, message_id: int) -> SettingsContext:
+        """Bind private group discovery to an active user without inventing a group target."""
+        user = await self._users.get_by_telegram_id(actor_id)
+        if user is None or actor_id != transport_chat_id or transport_chat_id <= 0:
+            msg = "Private group discovery requires its active human actor."
+            raise ValueError(msg)
+        return SettingsContext(
+            target=None,
+            actor_id=actor_id,
+            actor_generation=user.generation,
+            transport_chat_id=transport_chat_id,
+            message_id=message_id,
             expires_at=time.time() + SETTINGS_SESSION_TTL,
         )
 
@@ -93,8 +123,6 @@ class SettingsSessionService:
         """Validate one permitted operation against live identity, generation and transport."""
         key = f"settings:session:{token}"
         raw = await self._cache.pop(key) if consume else await self._cache.get(key)
-        if raw is None:
-            return None
         try:
             context = SettingsContext.model_validate(raw)
         except ValidationError:
@@ -108,15 +136,17 @@ class SettingsSessionService:
             or await self._cache.get(f"settings:window:{transport_chat_id}") != token
         ):
             return None
-        chat = await self._chats.get_chat(context.target_chat_id)
         user = await self._users.get_by_telegram_id(actor_id)
+        if user is None or (context.actor_generation is not None and user.generation != context.actor_generation):
+            return None
+        if context.target is None:
+            return context if context.actor_id == actor_id == transport_chat_id and transport_chat_id > 0 else None
+        chat = await self._chats.get_chat(context.target_chat_id)
         if (
             chat is None
-            or chat.id != context.target_id
-            or chat.generation != context.target_generation
+            or chat.id != context.target.entity_id
+            or chat.generation != context.target.generation
             or chat.chat_id != context.target_chat_id
-            or user is None
-            or (context.actor_generation is not None and user.generation != context.actor_generation)
         ):
             return None
         return context

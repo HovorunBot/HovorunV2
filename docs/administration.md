@@ -111,3 +111,11 @@ Every settings action checks the current actor and target again. Group administr
 Private selected-group context is available to later management menus. It binds the private actor, selected internal group identity and generation independently of the private transport chat. This does not add group-selection menus or broaden existing private management access.
 
 Group settings include an Access & permissions view for current managers. It explains processing availability, bot verification and eligible feature capability requirements without disclosing internal restriction reasons. Modules retains language-independent video/post controls and explicit eligible beta activation. Bot-wide trust, ban and role controls are not exposed in groups.
+
+## Private group management
+
+Use `/settings` privately to select a known group. Ordinary users see only groups where the bot is present and Telegram currently verifies them as an administrator. Bot administrators can inspect all known active groups, including restricted groups and groups where the bot is absent. Private chats, channels and deleted group identities are excluded.
+
+Group discovery scans at most eight candidates per page. A page can be empty while More groups leads to later candidates. Selection and every later action recheck the current actor and exact group; demotion, departure, failed verification, deletion or routing/generation changes invalidate the relevant action. The menu expires after its original 30-second deadline.
+
+Private group settings reuse the same language, feature selection and audited beta activation operations as in-group settings. Private group-administration access does not grant private media access or bypass group processing restrictions. Eligible current group administrators can explicitly support group beta activation in either transport; bot administrators without local qualifying support still need an explicit group feature grant. No role-assignment controls are added.
