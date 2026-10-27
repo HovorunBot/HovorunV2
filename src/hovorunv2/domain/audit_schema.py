@@ -53,6 +53,14 @@ ACTIVATION_FIELDS: Final = {
     "defaults_added": COMMAND_LIST,
     "activation_basis": _adapter(Literal["trust", "administrator", "request"]),
 }
+USAGE_POLICY_FIELDS: Final = {
+    "bucket": TEXT,
+    "unit": TEXT,
+    "window_seconds": NUMBER,
+    "revision": NUMBER,
+    "removed": FLAG,
+    **{name: _adapter(Pair[StrictInt | None]) for name in ("limit", "burst", "concurrency", "pending")},
+}
 BETA_FIELDS: Final = {"feature": TEXT, "granted": FLAG_PAIR, "generation": NUMBER}
 SELECTION_FIELDS: Final = {"chat_id": NUMBER, "platform": PLATFORM, "command": COMMAND, "legacy_empty_capture": FLAG}
 DELETION_FIELDS: Final = {"deleted_at": TEXT, "reason": TEXT}
@@ -73,6 +81,8 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("beta_entitlement", "revoke"): BETA_FIELDS.copy(),
     ("group_activation", "enable"): ACTIVATION_FIELDS,
     ("group_activation", "grant"): ACTIVATION_FIELDS,
+    ("usage_override", "set"): USAGE_POLICY_FIELDS,
+    ("usage_override", "remove"): USAGE_POLICY_FIELDS,
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
     ("chat", "migrate_route"): {"group_id": NUMBER, "telegram_id": NUMBER_PAIR},

@@ -71,6 +71,8 @@ from hovorunv2.application.services.translation_providers import (
 )
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.services.trust_service import TrustService
+from hovorunv2.application.services.usage_policy_service import UsagePolicyService
+from hovorunv2.application.usage import UsagePolicyStore, UsageSafetyCaps
 from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
 from hovorunv2.infrastructure.browser import BrowserService
@@ -93,6 +95,7 @@ from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGro
 from hovorunv2.infrastructure.persistence.group_identity_store import SQLAlchemyGroupIdentityStore
 from hovorunv2.infrastructure.persistence.group_migration_store import SQLAlchemyGroupMigrationStore
 from hovorunv2.infrastructure.persistence.membership_store import SQLAlchemyMembershipStore
+from hovorunv2.infrastructure.persistence.usage_policy_store import SQLAlchemyUsagePolicyStore
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
@@ -254,6 +257,15 @@ class AppProvider(Provider):
     help_command = provide(HelpCommand)
     feedback_command = provide(FeedbackCommand)
     group_management = provide(GroupManagementService)
+    usage_policy_store_impl = provide(SQLAlchemyUsagePolicyStore)
+    usage_policy_store = alias(source=SQLAlchemyUsagePolicyStore, provides=UsagePolicyStore)
+    usage_policy_service = provide(UsagePolicyService)
+
+    @provide
+    def usage_safety_caps(self) -> UsageSafetyCaps:
+        """Provide application ceilings separately from ordinary quota overrides."""
+        return UsageSafetyCaps()
+
     administration_service = provide(AdministrationService)
     admin_sessions = provide(AdminSessionService)
     administration_command = provide(AdministrationCommand)

@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **limits**: define scoped feature usage policies
 - **cli**: add access and feature administration
 - **admin**: manage access and beta grants privately
 - **settings**: manage groups from private bot chat
