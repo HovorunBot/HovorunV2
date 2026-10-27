@@ -15,7 +15,7 @@ from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
-from tests.conftest import create_mock_message, get_media_command
+from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ async def test_is_triggered(
     expected: bool,
 ) -> None:
     """Test the is_triggered method with various inputs."""
-    message = create_mock_message(text)
+    message = create_private_media_message(text)
     assert await twitter_command.is_triggered(message) == expected
 
 
@@ -51,12 +51,13 @@ async def test_handle_twitter_post(twitter_command: RichMediaCommand, init_conta
     """Test handling a real Twitter post using VCR."""
     chat_id = 456
     url = "https://x.com/elonmusk/status/2053586034743705773"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await twitter_command.handle(message, cast("Bot", bot))
 
@@ -80,6 +81,7 @@ async def test_twitter_split_video_vs_post_toggles(
     chat_status_service = await init_container.get(ChatStatusService)
     command_service = await init_container.get(CommandService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
     await command_service.enable_command(chat_id, CommandName.TWITTER)
     await command_service.disable_command(chat_id, CommandName.TWITTER_POST)
 
@@ -117,14 +119,14 @@ async def test_twitter_split_video_vs_post_toggles(
             resp.json = AsyncMock(return_value=[[[""]], None, "en"])
         yield resp
 
-    msg_post = create_mock_message(text_tweet_url, chat_id=chat_id)
+    msg_post = create_private_media_message(text_tweet_url, chat_id=chat_id)
     with patch.object(aiohttp.ClientSession, "get", side_effect=mock_get):
         await twitter_command.handle(msg_post, cast("Bot", bot))
 
     bot.send_media_group.assert_not_called()
     msg_post.answer.assert_not_called()
 
-    msg_video = create_mock_message(video_tweet_url, chat_id=chat_id)
+    msg_video = create_private_media_message(video_tweet_url, chat_id=chat_id)
     with patch.object(aiohttp.ClientSession, "get", side_effect=mock_get):
         await twitter_command.handle(msg_video, cast("Bot", bot))
 

@@ -16,8 +16,9 @@ from sqlalchemy.pool import StaticPool
 
 from hovorunv2.application.membership import AdministratorEvidence
 from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore
+from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.services.role_service import RoleService
+from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.base import Base
@@ -163,3 +164,18 @@ async def verify_group_admins(container: AsyncContainer, telegram_id: int) -> No
     await memberships.save_admins(
         group.id, AdministratorEvidence(telegram_id, True, (), now, now + timedelta(minutes=10)), ActorContext.cli()
     )
+
+
+def create_private_media_message(text: str | None, *, chat_id: int = 456, is_bot: bool = False) -> MagicMock:
+    """Use a consistent private Telegram transport and matching actor identity."""
+    message = create_mock_message(text, chat_id=chat_id, user_id=chat_id, is_bot=is_bot)
+    message.chat.type = "private"
+    return message
+
+
+async def authorize_private_media(container: AsyncContainer, telegram_id: int) -> None:
+    """Seed actual private-access identity and trust before exercising extraction."""
+    users = await container.get(UserStore)
+    await users.ingest_user(telegram_id)
+    trust = await container.get(TrustService)
+    await trust.set_trust(str(telegram_id), is_trusted=True, actor=ActorContext.cli())

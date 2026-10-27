@@ -21,6 +21,7 @@
 
 ### Fix
 
+- **features**: enforce eligibility across discovery and execution
 - **audit**: validate entity and action fields atomically
 - **privacy**: keep payloads out of operational logs
 - **privacy**: minimize authorized message caching

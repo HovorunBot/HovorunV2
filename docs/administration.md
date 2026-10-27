@@ -88,7 +88,11 @@ standard media settings stay independent.
 A specific group grant supplies eligibility independently of local enablers. A bot administrator or CLI must still select
 the feature explicitly; grants never enable all future beta features. Group bans, full-banned administrators, uncertain group
 verification and emergency disablement still block availability. Explicitly disabling a beta feature revokes recorded support,
-so a later local activation records supporting administrators again. Menus and delivery integration remain separate work.
+so a later local activation records supporting administrators again. Settings and help now filter feature discovery through the same application policy used by execution. Guessing a
+feature command or an old module callback cannot bypass current eligibility, selection or group restrictions. An eligible
+administrator can configure an inactive beta feature; ordinary users see available selected features. Missing bot rights or
+access verification produce guidance only for authorized managers. Public help, approval requests and feedback links remain
+available even when no feature can be used.
 
 ## Feature selections
 

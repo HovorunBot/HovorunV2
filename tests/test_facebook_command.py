@@ -10,7 +10,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
-from tests.conftest import create_mock_message, get_media_command
+from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ async def test_is_triggered(
     expected: bool,
 ) -> None:
     """Test the is_triggered method with various inputs."""
-    message = create_mock_message(text)
+    message = create_private_media_message(text)
     assert await facebook_command.is_triggered(message) == expected
 
 
@@ -51,12 +51,13 @@ async def test_handle_facebook_photo_post(facebook_command: RichMediaCommand, in
     """Test handling a Facebook photo post using real extraction and VCR."""
     chat_id = 789
     url = "https://www.facebook.com/share/p/1B37pk4bUf/"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await facebook_command.handle(message, cast("Bot", bot))
 
@@ -75,12 +76,13 @@ async def test_handle_facebook_video_fallback(
     """Test handling a Facebook video using real extraction and VCR (yt-dlp fallback)."""
     chat_id = 789
     url = "https://www.facebook.com/share/v/1NBDyTuecs/"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await facebook_command.handle(message, cast("Bot", bot))
 

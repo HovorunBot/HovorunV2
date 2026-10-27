@@ -16,7 +16,7 @@ from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
-from tests.conftest import create_mock_message, get_media_command
+from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ async def test_is_triggered(
     expected: bool,
 ) -> None:
     """Test YouTube URL pattern matching for videos, Shorts, and Community posts."""
-    message = create_mock_message(text)
+    message = create_private_media_message(text)
     assert await youtube_command.is_triggered(message) == expected
 
 
@@ -96,8 +96,9 @@ async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, 
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
@@ -125,6 +126,7 @@ async def test_youtube_split_video_vs_post_toggles(
     chat_status_service = await init_container.get(ChatStatusService)
     command_service = await init_container.get(CommandService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
     await command_service.enable_command(chat_id, CommandName.YOUTUBE)
     await command_service.disable_command(chat_id, CommandName.YOUTUBE_VIDEO)
 
@@ -145,7 +147,7 @@ async def test_youtube_split_video_vs_post_toggles(
         resp.json = AsyncMock(return_value=[[[""]], None, "en"])
         yield resp
 
-    message = create_mock_message(video_url, chat_id=chat_id)
+    message = create_private_media_message(video_url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
@@ -199,8 +201,9 @@ async def test_handle_youtube_community_post_canonicalization(
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
@@ -221,6 +224,7 @@ async def test_youtube_community_post_skips_ytdlp(
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     @asynccontextmanager
     async def mock_get(_req_url: str, **_kwargs: Any) -> AsyncGenerator[MagicMock]:
@@ -229,7 +233,7 @@ async def test_youtube_community_post_skips_ytdlp(
         resp.text = AsyncMock(return_value="Not found")
         yield resp
 
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 

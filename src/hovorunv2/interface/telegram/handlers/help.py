@@ -7,7 +7,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from hovorunv2.application.ports import AppSettings
-from hovorunv2.application.services.access_service import CommandPolicy
+from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
@@ -23,9 +23,10 @@ class HelpCommand(BaseCommand):
 
     POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
-    def __init__(self, settings: AppSettings) -> None:
+    def __init__(self, settings: AppSettings, access_service: AccessService) -> None:
         """Initialize help command."""
         self._settings = settings
+        self._access = access_service
 
     @property
     def name(self) -> str:
@@ -50,7 +51,20 @@ class HelpCommand(BaseCommand):
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle help command."""
         logger.info("Providing help info to user %s", message.from_user.id if message.from_user else "unknown")
-        await message.answer(self.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+        visible: list[str] = []
+        actor_id = message.from_user.id if message.from_user and not message.sender_chat else None
+        for definition in self._access.features.registry.all():
+            for trigger in definition.triggers:
+                decision = await self._access.features.evaluate(
+                    definition.key, message.chat.id, actor_id, trigger=trigger
+                )
+                if decision.visible:
+                    visible.append(definition.display_name)
+                    break
+        text = self.get_help_text()
+        if visible:
+            text += "\n\n<b>Available Features</b>\n" + "\n".join(visible)
+        await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
 
     def get_help_text(self) -> str:
         """Generate formatted help text."""
@@ -67,8 +81,6 @@ class HelpCommand(BaseCommand):
             "<b>⚙️ Configuration (Group Admins only)</b>\n"
             "• /settings — Interactive menu for Modules and Languages.\n"
             "• <i>Configuration windows self-destruct after 30s of inactivity.</i>\n\n"
-            "<b>🚀 Supported Platforms</b>\n"
-            "Send links from: Twitter/X, Instagram, TikTok, Threads, Bluesky, Facebook, YouTube, Reddit.\n\n"
             "<b>Project Links:</b>\n"
             f"• <a href='{self._settings.github_url}'>GitHub Repository</a>\n"
             f"• <a href='{self._settings.issue_tracker_url}'>Issue Tracker</a>\n\n"

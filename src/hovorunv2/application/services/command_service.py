@@ -2,6 +2,7 @@
 
 from hovorunv2.application.features import COMMAND_PRESENTATION, FEATURE_REGISTRY
 from hovorunv2.application.ports import CommandStore
+from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
     PROVIDER_SPLIT_COMMANDS,
     CommandName,
@@ -79,12 +80,15 @@ class CommandService:
         defaults = tuple(feature.key for feature in FEATURE_REGISTRY.all() if feature.default_enabled)
         await self._command_data_service.initialize_defaults(chat_id, defaults)
 
-    async def enable_command(self, chat_id: int, command_name: CommandName | str) -> bool:
+    async def enable_command(
+        self, chat_id: int, command_name: CommandName | str, *, actor: ActorContext | None = None
+    ) -> bool:
         """Enable specific command for a chat.
 
         Args:
             chat_id: The ID of the chat.
             command_name: The name of the command to enable.
+            actor: Authenticated actor for the transactional audit event.
 
         Returns:
             True if operation succeeded.
@@ -94,22 +98,25 @@ class CommandService:
         try:
             cmd_enum = CommandName(cmd_str)
         except ValueError:
-            return await self._command_data_service.enable_command(chat_id, cmd_str)
+            return await self._command_data_service.enable_command(chat_id, cmd_str, actor=actor)
 
         if cmd_enum in PROVIDER_SPLIT_COMMANDS:
             video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[cmd_enum]
-            res_video = await self._command_data_service.enable_command(chat_id, str(video_cmd))
-            res_post = await self._command_data_service.enable_command(chat_id, str(post_cmd))
+            res_video = await self._command_data_service.enable_command(chat_id, str(video_cmd), actor=actor)
+            res_post = await self._command_data_service.enable_command(chat_id, str(post_cmd), actor=actor)
             return res_video and res_post
 
-        return await self._command_data_service.enable_command(chat_id, cmd_str)
+        return await self._command_data_service.enable_command(chat_id, cmd_str, actor=actor)
 
-    async def disable_command(self, chat_id: int, command_name: CommandName | str) -> bool:
+    async def disable_command(
+        self, chat_id: int, command_name: CommandName | str, *, actor: ActorContext | None = None
+    ) -> bool:
         """Disable specific command for a chat.
 
         Args:
             chat_id: The ID of the chat.
             command_name: The name of the command to disable.
+            actor: Authenticated actor for the transactional audit event.
 
         Returns:
             True if operation succeeded, False if command is protected.
@@ -123,22 +130,23 @@ class CommandService:
         try:
             cmd_enum = CommandName(cmd_str)
         except ValueError:
-            return await self._command_data_service.disable_command(chat_id, cmd_str)
+            return await self._command_data_service.disable_command(chat_id, cmd_str, actor=actor)
 
         if cmd_enum in PROVIDER_SPLIT_COMMANDS:
             video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[cmd_enum]
-            res_video = await self._command_data_service.disable_command(chat_id, str(video_cmd))
-            res_post = await self._command_data_service.disable_command(chat_id, str(post_cmd))
+            res_video = await self._command_data_service.disable_command(chat_id, str(video_cmd), actor=actor)
+            res_post = await self._command_data_service.disable_command(chat_id, str(post_cmd), actor=actor)
             return res_video or res_post
 
-        return await self._command_data_service.disable_command(chat_id, cmd_str)
+        return await self._command_data_service.disable_command(chat_id, cmd_str, actor=actor)
 
-    async def toggle(self, chat_id: int, command_name: CommandName | str) -> bool:
+    async def toggle(self, chat_id: int, command_name: CommandName | str, *, actor: ActorContext | None = None) -> bool:
         """Toggle command between enabled and disabled, returning new state.
 
         Args:
             chat_id: The ID of the chat.
             command_name: The name of the command to toggle.
+            actor: Authenticated actor for the transactional audit event.
 
         Returns:
             True if command is now enabled, False if disabled.
@@ -146,9 +154,9 @@ class CommandService:
         """
         is_allowed = await self.is_command_allowed(chat_id, command_name)
         if is_allowed:
-            await self.disable_command(chat_id, command_name)
+            await self.disable_command(chat_id, command_name, actor=actor)
             return False
-        await self.enable_command(chat_id, command_name)
+        await self.enable_command(chat_id, command_name, actor=actor)
         return True
 
     async def get_allowed_commands(self, chat_id: int) -> set[str]:

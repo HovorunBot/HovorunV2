@@ -15,7 +15,7 @@ from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
-from tests.conftest import create_mock_message, get_media_command
+from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 
 EXPECTED_GALLERY_COUNT: int = 2
 
@@ -47,7 +47,7 @@ async def test_is_triggered(
     expected: bool,
 ) -> None:
     """Test Reddit URL pattern matching."""
-    message = create_mock_message(text)
+    message = create_private_media_message(text)
     assert await reddit_command.is_triggered(message) == expected
 
 
@@ -81,8 +81,9 @@ async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, init
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
@@ -131,10 +132,11 @@ async def test_handle_reddit_video_post_respects_split_toggle(
     chat_status_service = await init_container.get(ChatStatusService)
     command_service = await init_container.get(CommandService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
     await command_service.enable_command(chat_id, CommandName.REDDIT)
     await command_service.disable_command(chat_id, CommandName.REDDIT_VIDEO)
 
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
@@ -157,12 +159,13 @@ async def test_handle_reddit_post_vcr(reddit_command: RichMediaCommand, init_con
     """Test handling a real Reddit post via vxReddit using VCR."""
     chat_id = 456
     url = "https://www.reddit.com/r/DotA2/comments/1xbq3id/please_bring_back_blood_mist_aghs_for_seeker_and/"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await reddit_command.handle(message, cast("Bot", bot))
 

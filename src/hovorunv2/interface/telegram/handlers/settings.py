@@ -10,13 +10,13 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
+from hovorunv2.application.features import FeatureChannel
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.language_service import LanguageService
+from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
-    MEDIA_PROVIDER_COMMANDS,
-    PROVIDER_SPLIT_COMMANDS,
     CommandName,
 )
 from hovorunv2.infrastructure.logger import get_logger
@@ -223,30 +223,30 @@ class SettingsCommand(BaseCommand):
         chat_id = msg.chat.id
         builder = InlineKeyboardBuilder()
 
-        for provider_cmd in MEDIA_PROVIDER_COMMANDS:
-            video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[provider_cmd]
-            video_enabled = await self._command_service.is_command_allowed(chat_id, video_cmd)
-            post_enabled = await self._command_service.is_command_allowed(chat_id, post_cmd)
-            provider_label = provider_cmd.capitalize()
-
+        guidance: set[str] = set()
+        for definition in self._access_service.features.registry.all():
+            decision = await self._access_service.features.evaluate(
+                definition.key, chat_id, query.from_user.id, configure=True
+            )
+            if decision.guidance:
+                guidance.add(decision.guidance)
+            if not decision.visible:
+                continue
             builder.row(
                 InlineKeyboardButton(
-                    text=f"{'✅' if video_enabled else '❌'} 🎬 {provider_label}",
+                    text=f"{'✅' if decision.selected else '❌'} {definition.display_name}",
                     callback_data=SettingsCallback(
-                        menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=video_cmd
+                        menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=definition.key
                     ).pack(),
-                ),
-                InlineKeyboardButton(
-                    text=f"{'✅' if post_enabled else '❌'} 🖼️ {provider_label}",
-                    callback_data=SettingsCallback(
-                        menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=post_cmd
-                    ).pack(),
-                ),
+                )
             )
 
+        builder.adjust(2)
         builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
 
         text = "⚙️ <b>Modules Settings</b>\n\nToggle Video (🎬) and Image/Text (🖼️) capture per platform:"
+        if guidance:
+            text += "\n\n" + "\n".join(sorted(guidance))
         await msg.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
         await self._cleanup_service.reset_ttl(
             chat_id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
@@ -279,7 +279,26 @@ class SettingsCommand(BaseCommand):
         chat_id = msg.chat.id
         if callback_data.action == SettingsAction.TOGGLE and callback_data.value:
             cmd_name = callback_data.value
-            is_enabled = await self._command_service.toggle(chat_id, cmd_name)
+            decision = await self._access_service.features.evaluate(
+                cmd_name, chat_id, query.from_user.id, configure=True
+            )
+            if not decision.allowed:
+                await query.answer(decision.guidance or "Feature unavailable.", show_alert=True)
+                return
+            definition = self._access_service.features.registry.require(cmd_name)
+            if definition.channel == FeatureChannel.BETA and chat_id < 0:
+                try:
+                    await self._access_service.features.set_group_beta(
+                        cmd_name, chat_id, query.from_user.id, enabled=not decision.selected
+                    )
+                except PermissionError, ValueError:
+                    await query.answer("Feature unavailable.", show_alert=True)
+                    return
+                is_enabled = not decision.selected
+            else:
+                is_enabled = await self._command_service.toggle(
+                    chat_id, cmd_name, actor=ActorContext.telegram(query.from_user.id)
+                )
             await query.answer(f"{cmd_name} {'enabled' if is_enabled else 'disabled'}")
         await self._show_modules_menu(query)
 

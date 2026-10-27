@@ -12,7 +12,7 @@ from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
-from tests.conftest import create_mock_message, get_media_command
+from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ async def test_is_triggered(
     expected: bool,
 ) -> None:
     """Test the is_triggered method with various inputs."""
-    message = create_mock_message(text)
+    message = create_private_media_message(text)
     assert await instagram_command.is_triggered(message) == expected
 
 
@@ -50,12 +50,13 @@ async def test_handle_instagram_post(instagram_command: RichMediaCommand, init_c
     """Test handling an Instagram post using real extraction and VCR."""
     chat_id = 789
     url = "https://www.instagram.com/p/DYPIeHDoZ-w/"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await instagram_command.handle(message, cast("Bot", bot))
 
@@ -73,12 +74,13 @@ async def test_handle_instagram_reel(instagram_command: RichMediaCommand, init_c
     """Test handling an Instagram reel using real extraction and VCR."""
     chat_id = 789
     url = "https://www.instagram.com/reels/DVMKxZHggx7/"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await instagram_command.handle(message, cast("Bot", bot))
 
@@ -96,12 +98,13 @@ async def test_handle_instagram_browser_fallback(
     """Test handling an Instagram post using browser fallback when other services fail."""
     chat_id = 789
     url = "https://www.instagram.com/p/C-2v0r0nQ1A/"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     session = await init_container.get(aiohttp.ClientSession)
 

@@ -10,7 +10,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
-from tests.conftest import create_mock_message, get_media_command
+from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ async def test_is_triggered(
     expected: bool,
 ) -> None:
     """Test the is_triggered method."""
-    message = create_mock_message(text)
+    message = create_private_media_message(text)
     assert await tiktok_command.is_triggered(message) == expected
 
 
@@ -47,7 +47,7 @@ async def test_is_triggered(
 async def test_is_triggered_by_bot(tiktok_command: RichMediaCommand) -> None:
     """Test that it's not triggered by bot messages."""
     text = "https://www.tiktok.com/@fueltothe_max/video/7397394517311212818"
-    message = create_mock_message(text, is_bot=True)
+    message = create_private_media_message(text, is_bot=True)
     assert await tiktok_command.is_triggered(message) is False
 
 
@@ -57,12 +57,13 @@ async def test_handle_tiktok_video(tiktok_command: RichMediaCommand, init_contai
     """Test handling a TikTok video link using real extraction and VCR."""
     chat_id = 456
     url = "https://www.tiktok.com/@fueltothe_max/video/7397394517311212818"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await tiktok_command.handle(message, cast("Bot", bot))
 

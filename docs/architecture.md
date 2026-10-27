@@ -74,6 +74,20 @@ and membership. Existing group access evaluation applies group bans, full-banned
 Availability requires an explicit emergency-disabled guard, with no permissive default. Emergency persistence and protected
 execution/menu integration are separate follow-up blocks; current registry definitions remain standard media features.
 
+`FeatureAccessService` is the shared application evaluator for feature discovery, settings and execution. It checks
+registry scope/trigger, current identities and restrictions, private access or live group approval, beta eligibility,
+explicit selection and independently declared bot capabilities. Group execution uses current group beta support rather
+than requiring a personal grant for every member. Automatic group work retains group-owned access when its sender has a
+personal restriction; explicit commands and callbacks check the human actor.
+
+Telegram middleware rejects unknown protected feature keys and checks provider split availability before dispatch.
+`MediaPipeline` checks availability before extraction and rechecks the identified split after extraction, before translation
+and delivery. Settings filter registry definitions using configuration authority and eligibility; guessed or stale toggles
+repeat the same application check. Group beta changes retain the transactional 029 store checks. Standard toggles propagate
+the authenticated actor into existing transactional audit events. Public help and approval/feedback links remain available;
+feature listings include only currently executable definitions. Missing capability/access guidance is exposed only to a
+currently authorized manager. No feature emergency-state storage or queued-worker implementation is introduced here.
+
 ## Feature definitions and selected activation
 
 `application/features.py` owns typed feature metadata independently of command presentation and authorization. Existing provider video/post keys remain canonical. Definitions declare scopes, direct/automatic triggers, release channel, introduction event, required bot capabilities, usage units, and policy references. Current media features require no blanket bot administrator capability. Registry metadata does not grant execution access.

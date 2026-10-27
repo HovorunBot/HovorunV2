@@ -50,6 +50,7 @@ from hovorunv2.application.services.beta_service import BetaEligibilityService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.group_beta_service import GroupBetaService
 from hovorunv2.application.services.language_service import LanguageService
@@ -180,6 +181,7 @@ class AppProvider(Provider):
     group_beta_store_impl = provide(SQLAlchemyGroupBetaStore)
     group_beta_store = alias(source=SQLAlchemyGroupBetaStore, provides=GroupBetaStore)
     group_beta_service = provide(GroupBetaService)
+    feature_access = provide(FeatureAccessService)
 
     chat_store_impl = provide(SQLAlchemyChatStore)
     activation_store_impl = provide(SQLAlchemyActivationStore)

@@ -6,9 +6,9 @@ from typing import ClassVar
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.features import FEATURE_REGISTRY
+from hovorunv2.application.features import TriggerKind
 from hovorunv2.application.media.extractor import MediaExtractor
-from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.translation_service import TranslationService
 from hovorunv2.application.text import clean_caption_text
 
@@ -24,22 +24,30 @@ class MediaPipeline:
         self,
         extractor: MediaExtractor,
         translation_service: TranslationService,
-        command_service: CommandService,
+        feature_access: FeatureAccessService,
     ) -> None:
         """Initialize pipeline with shared extractor, translation, and permission services."""
         self._extractor = extractor
         self._translation_service = translation_service
-        self._command_service = command_service
+        self._features = feature_access
 
     async def process(
         self,
         client: BaseMediaClient,
         url: str,
         chat_id: int,
+        *,
+        actor_id: int | None,
+        trigger: TriggerKind,
     ) -> RichMediaPayload | None:
         """Execute 4-tier extraction, verify capture permissions, and finalize payload."""
-        FEATURE_REGISTRY.capture(client.name, is_video=True)
-        FEATURE_REGISTRY.capture(client.name, is_video=False)
+        definitions = tuple(self._features.registry.capture(client.name, is_video=video) for video in (True, False))
+        admitted = False
+        for definition in definitions:
+            decision = await self._features.evaluate(definition.key, chat_id, actor_id, trigger=trigger)
+            admitted = admitted or decision.allowed
+        if not admitted:
+            return None
         cleaned_url = url.rstrip(".,")
 
         raw_payload = await self._extract_raw(client, cleaned_url)
@@ -47,7 +55,9 @@ class MediaPipeline:
             logger.warning("Extraction returned empty payload for provider %s", client.name)
             return None
 
-        if not await self._command_service.is_capture_allowed(chat_id, client.name, is_video=raw_payload.is_video):
+        feature = self._features.registry.capture(client.name, is_video=raw_payload.is_video)
+        decision = await self._features.evaluate(feature.key, chat_id, actor_id, trigger=trigger)
+        if not decision.allowed:
             logger.info(
                 "Skipping %s in chat %d (capture mode disabled for is_video=%s)",
                 client.name,

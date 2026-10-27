@@ -10,10 +10,12 @@ from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObject, Update
 
+from hovorunv2.application.features import TriggerKind
 from hovorunv2.application.permissions import DecisionReason
 from hovorunv2.application.ports import AppSettings, CachePort
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
+from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS
 from hovorunv2.infrastructure.logger import get_logger, set_log_context
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 
@@ -211,10 +213,43 @@ class AccessMiddleware(BaseMiddleware):
         if not chat_id:
             return None
 
+        feature_allowed = await self._feature_allowed(event, chat_id, user_id, command_name, policy)
+        if feature_allowed is False:
+            if isinstance(event, CallbackQuery):
+                await event.answer("Feature unavailable.", show_alert=True)
+            return None
+        if feature_allowed and not policy.requires_admin and not policy.requires_group_admin:
+            return await handler(event, data)
+
         if is_private:
             return await self._handle_private_chat(handler, event, data, user_id, policy)
 
         return await self._handle_group_chat(handler, event, data, user_id, chat_id, policy, command_name)
+
+    async def _feature_allowed(
+        self,
+        event: TelegramObject,
+        chat_id: int,
+        user_id: int | None,
+        command_name: str | None,
+        policy: CommandPolicy,
+    ) -> bool | None:
+        """Return no feature decision for public/management actions; unknown features fail closed."""
+        if not isinstance(command_name, str):
+            return None
+        registry = self._access_service.features.registry
+        keys = (command_name,) if registry.get(command_name) else PROVIDER_SPLIT_COMMANDS.get(command_name, ())
+        if not keys:
+            return False if policy.is_toggleable else None
+        direct = isinstance(event, CallbackQuery) or (
+            isinstance(event, Message) and bool(event.text and event.text.startswith("/"))
+        )
+        trigger = TriggerKind.DIRECT if direct else TriggerKind.AUTOMATIC
+        for key in keys:
+            decision = await self._access_service.features.evaluate(str(key), chat_id, user_id, trigger=trigger)
+            if decision.allowed:
+                return True
+        return False
 
     def _extract_event_context(self, event: TelegramObject) -> tuple[int | None, int, bool]:
         """Extract user_id, chat_id, and private chat flag from a Telegram event."""
@@ -234,7 +269,7 @@ class AccessMiddleware(BaseMiddleware):
         """Send landing page or access denied alert to non-admin private chat users."""
         if isinstance(event, Message):
             if self._settings:
-                help_cmd = HelpCommand(self._settings)
+                help_cmd = HelpCommand(self._settings, self._access_service)
                 await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
             else:
                 await event.answer("🚫 Access denied.")

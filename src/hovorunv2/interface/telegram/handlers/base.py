@@ -11,7 +11,7 @@ from aiogram.types import Message
 from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.clients.base import BaseMediaClient
-from hovorunv2.application.features import FEATURE_REGISTRY
+from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
@@ -132,7 +132,14 @@ class RichMediaCommand(BaseCommand):
 
         for match in matches:
             try:
-                payload = await self._pipeline.process(self._primary_client, match.group(0), message.chat.id)
+                direct = message.text.startswith("/")
+                payload = await self._pipeline.process(
+                    self._primary_client,
+                    match.group(0),
+                    message.chat.id,
+                    actor_id=message.from_user.id if not message.sender_chat else None,
+                    trigger=TriggerKind.DIRECT if direct else TriggerKind.AUTOMATIC,
+                )
                 if not payload:
                     continue
 

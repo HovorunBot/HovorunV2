@@ -5,11 +5,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import Bot, types
-from aiogram.types import Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, User
+from aiogram.types import CallbackQuery, Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, Message, User
 from aioresponses import aioresponses
 from dishka import AsyncContainer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.ports import ChatStore
+from hovorunv2.application.services.chat_status_service import ChatStatusService
+from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.domain.audit import AuditEventDB
 from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.interface.telegram.callbacks import (
     SettingsAction,
@@ -18,7 +23,8 @@ from hovorunv2.interface.telegram.callbacks import (
 )
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
-from tests.conftest import create_mock_message
+from tests.conftest import create_mock_message, provision_role, verify_group_admins
+from tests.test_membership_adapter import RecordedResponse
 
 
 @pytest.fixture
@@ -92,7 +98,7 @@ async def test_bot_join_prompt(test_container: AsyncContainer) -> None:
     )
     bot = Bot("777:synthetic-token")
     try:
-        with aioresponses() as responses:
+        with aioresponses(response_class=RecordedResponse) as responses:
             responses.post(
                 "https://api.telegram.org/bot777:synthetic-token/sendMessage",
                 payload={
@@ -192,50 +198,59 @@ async def test_settings_language_menu(
 
 
 @pytest.mark.asyncio
-async def test_settings_modules_toggle(
-    mock_language_service: MagicMock,
-    mock_command_service: MagicMock,
-    mock_access_service: MagicMock,
-    mock_cleanup_service: MagicMock,
-) -> None:
-    """Test that toggling a module works in settings."""
-    command = SettingsCommand(
-        mock_language_service,
-        mock_command_service,
-        mock_access_service,
-        mock_cleanup_service,
+async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
+    """Only registered split features are configurable, using current real authority."""
+    command = await test_container.get(SettingsCommand)
+    chats = await test_container.get(ChatStore)
+    await chats.get_or_create_chat(-100777)
+    await verify_group_admins(test_container, -100777)
+    status = await test_container.get(ChatStatusService)
+    await status.approve(-100777)
+    await provision_role(test_container, 456)
+    message = Message(
+        message_id=789,
+        date=datetime.now(UTC),
+        chat=Chat(id=-100777, type="supergroup"),
     )
-
-    chat_id = 123
-    cmd_name = CommandName.TWITTER
-    callback_data = SettingsCallback(menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=cmd_name)
-
-    query = MagicMock(spec=types.CallbackQuery)
-    query.from_user = MagicMock()
-    query.from_user.id = 456
-    query.message = MagicMock(spec=types.Message)
-    query.message.chat = MagicMock()
-    query.message.chat.id = chat_id
-    query.message.message_id = 789
-    query.message.edit_text = AsyncMock()
-    query.answer = AsyncMock()
-
-    # Mock toggle returning False (disabled)
-    mock_command_service.toggle.return_value = False
-
-    await command.handle_callback(query, callback_data)
-
-    # Verify command was toggled
-    mock_command_service.toggle.assert_called_once_with(chat_id, cmd_name)
-    query.answer.assert_called_once()
-    assert "disabled" in query.answer.call_args[0][0]
-
-    # Verify dual buttons per provider row in Modules menu
-    reply_markup = query.message.edit_text.call_args[1]["reply_markup"]
-    first_provider_row = reply_markup.inline_keyboard[0]
-    assert len(first_provider_row) == 2
-    assert "🎬" in first_provider_row[0].text
-    assert "🖼️" in first_provider_row[1].text
+    bot = Bot("777:synthetic-token")
+    query = CallbackQuery(
+        id="synthetic",
+        from_user=User(id=456, first_name="Synthetic", is_bot=False),
+        chat_instance="synthetic",
+        message=message.as_(bot),
+    ).as_(bot)
+    try:
+        with aioresponses(response_class=RecordedResponse) as responses:
+            responses.post(
+                "https://api.telegram.org/bot777:synthetic-token/answerCallbackQuery",
+                payload={"ok": True, "result": True},
+                response_class=RecordedResponse,
+            )
+            responses.post(
+                "https://api.telegram.org/bot777:synthetic-token/editMessageText",
+                payload={"ok": True, "result": True},
+                response_class=RecordedResponse,
+            )
+            await command.handle_callback(
+                query,
+                SettingsCallback(
+                    menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=CommandName.TWITTER_POST
+                ),
+            )
+        commands = await test_container.get(CommandService)
+        assert not await commands.is_command_allowed(-100777, CommandName.TWITTER_POST)
+        assert await commands.is_command_allowed(-100777, CommandName.TWITTER_VIDEO)
+        sessions = await test_container.get(async_sessionmaker)
+        async with sessions() as session:
+            event = await session.scalar(
+                select(AuditEventDB).where(
+                    AuditEventDB.target_id == "-100777:twitter_post", AuditEventDB.action == "disable_command"
+                )
+            )
+            assert event is not None
+            assert event.actor_id == 456
+    finally:
+        await bot.session.close()
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
-from tests.conftest import create_mock_message, get_media_command
+from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ async def test_is_triggered(
     expected: bool,
 ) -> None:
     """Test the is_triggered method with various inputs."""
-    message = create_mock_message(text)
+    message = create_private_media_message(text)
     assert await bluesky_command.is_triggered(message) == expected
 
 
@@ -46,12 +46,13 @@ async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, init_conta
     """Test handling a Bluesky post using real extraction and VCR."""
     chat_id = 789
     url = "https://bsky.app/profile/josiahcohen.bsky.social/post/3mlmib6xdbc2a"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await bluesky_command.handle(message, cast("Bot", bot))
 
@@ -70,12 +71,13 @@ async def test_handle_bluesky_quote_with_media(
     """Test handling a Bluesky quote post with media using real extraction and VCR."""
     chat_id = 789
     url = "https://bsky.app/profile/hikkifox.bsky.social/post/3mlnxm3on6s2x"
-    message = create_mock_message(url, chat_id=chat_id)
+    message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
     chat_status_service = await init_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
+    await authorize_private_media(init_container, chat_id)
 
     await bluesky_command.handle(message, cast("Bot", bot))
 

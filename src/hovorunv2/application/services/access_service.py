@@ -10,6 +10,7 @@ from hovorunv2.application.permissions import AccessDecision, DecisionReason, Pe
 from hovorunv2.application.ports import UserStore
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
+from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.domain.enums import TargetKind
 
@@ -42,6 +43,7 @@ class AccessService:
         ban_store: BanStore,
         user_store: UserStore,
         membership_store: MembershipStore,
+        feature_access: FeatureAccessService,
     ) -> None:
         """Initialize service with dependencies."""
         self._chat_status_service = chat_status_service
@@ -50,6 +52,7 @@ class AccessService:
         self._ban_store = ban_store
         self._user_store = user_store
         self._membership_store = membership_store
+        self.features = feature_access
 
     async def evaluate_permission(self, request: PermissionRequest) -> AccessDecision:
         """Evaluate explicit action/target guards beside legacy group-policy orchestration."""
