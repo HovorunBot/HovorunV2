@@ -61,6 +61,7 @@ from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.application.services.role_service import RoleService
+from hovorunv2.application.services.settings_session_service import SettingsSessionService
 from hovorunv2.application.services.translation_providers import (
     BaseTranslationService,
     GoogleTranslationService,
@@ -248,6 +249,7 @@ class AppProvider(Provider):
     # Utility Commands & Handlers
     help_command = provide(HelpCommand)
     feedback_command = provide(FeedbackCommand)
+    settings_sessions = provide(SettingsSessionService)
     settings_command = provide(SettingsCommand)
     bot_join_handler = provide(BotJoinHandler)
     debug_command = provide(DebugCommand)

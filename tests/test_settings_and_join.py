@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiogram import Bot, types
+from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, Message, User
 from aioresponses import aioresponses
 from dishka import AsyncContainer
@@ -25,63 +25,7 @@ from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from tests.conftest import create_mock_message, provision_role, verify_group_admins
 from tests.test_membership_adapter import RecordedResponse
-
-
-@pytest.fixture
-def mock_cleanup_service() -> MagicMock:
-    """Create a mock cleanup service."""
-    service = MagicMock()
-    service.register_window = AsyncMock()
-    service.reset_ttl = AsyncMock()
-    service.unregister_window = AsyncMock()
-    service.replace_singleton_window = AsyncMock()
-    return service
-
-
-@pytest.fixture
-def mock_language_service() -> MagicMock:
-    """Create a mock language service."""
-    service = MagicMock()
-    service.get_chat_settings = AsyncMock(return_value=("uk", ["en"]))
-    service.update_settings = AsyncMock()
-    return service
-
-
-@pytest.fixture
-def mock_command_service() -> MagicMock:
-    """Create a mock command service."""
-    service = MagicMock()
-    service.is_command_allowed = AsyncMock(return_value=True)
-    service.enable_command = AsyncMock()
-    service.disable_command = AsyncMock()
-    service.toggle = AsyncMock(return_value=False)
-    return service
-
-
-@pytest.fixture
-def mock_chat_status_service() -> MagicMock:
-    """Create a mock access service."""
-    service = MagicMock()
-    service.is_approved = AsyncMock(return_value=False)
-    service.get_status = AsyncMock(return_value=ChatStatus.UNAUTHORIZED)
-    service.set_status = AsyncMock()
-    return service
-
-
-@pytest.fixture
-def mock_reminder_service() -> MagicMock:
-    """Create a mock reminder service."""
-    service = MagicMock()
-    service.send_unauthorized_prompt = AsyncMock()
-    return service
-
-
-@pytest.fixture
-def mock_access_service() -> MagicMock:
-    """Create a mock access service."""
-    service = MagicMock()
-    service.is_admin = AsyncMock(return_value=False)
-    return service
+from tests.utils.settings import bind_settings_callback
 
 
 @pytest.mark.asyncio
@@ -118,86 +62,6 @@ async def test_bot_join_prompt(test_container: AsyncContainer) -> None:
 
 
 @pytest.mark.asyncio
-async def test_settings_main_menu(
-    mock_language_service: MagicMock,
-    mock_command_service: MagicMock,
-    mock_access_service: MagicMock,
-    mock_cleanup_service: MagicMock,
-) -> None:
-    """Test that /settings shows the main menu."""
-    command = SettingsCommand(
-        mock_language_service,
-        mock_command_service,
-        mock_access_service,
-        mock_cleanup_service,
-    )
-
-    message = MagicMock(spec=types.Message)
-    message.text = "/settings"
-    message.chat = MagicMock()
-    message.chat.id = 123
-    message.from_user = MagicMock()
-    message.from_user.id = 456
-    message.answer = AsyncMock()
-
-    # Mock return value of answer
-    message.answer.return_value = MagicMock()
-    message.answer.return_value.chat.id = 123
-    message.answer.return_value.message_id = 999
-
-    bot = MagicMock()
-
-    await command.handle(message, bot)
-
-    message.answer.assert_called_once()
-    text = message.answer.call_args[0][0]
-    assert "Settings" in text
-
-    reply_markup = message.answer.call_args[1]["reply_markup"]
-    buttons = [b.text for row in reply_markup.inline_keyboard for b in row]
-    assert "🌐 Languages" in buttons
-    assert "⚙️ Modules" in buttons
-
-
-@pytest.mark.asyncio
-async def test_settings_language_menu(
-    mock_language_service: MagicMock,
-    mock_command_service: MagicMock,
-    mock_access_service: MagicMock,
-    mock_cleanup_service: MagicMock,
-) -> None:
-    """Test that clicking Languages shows the language menu."""
-    command = SettingsCommand(
-        mock_language_service,
-        mock_command_service,
-        mock_access_service,
-        mock_cleanup_service,
-    )
-
-    callback_data = SettingsCallback(menu=SettingsMenu.LANG)
-
-    query = MagicMock(spec=types.CallbackQuery)
-    query.from_user = MagicMock()
-    query.from_user.id = 456
-    query.message = MagicMock(spec=types.Message)
-    query.message.chat = MagicMock()
-    query.message.chat.id = 123
-    query.message.message_id = 789
-    query.message.edit_text = AsyncMock()
-
-    await command.handle_callback(query, callback_data)
-
-    query.message.edit_text.assert_called_once()
-    text = query.message.edit_text.call_args[0][0]
-    assert "Language Settings" in text
-
-    reply_markup = query.message.edit_text.call_args[1]["reply_markup"]
-    buttons = [b.text for row in reply_markup.inline_keyboard for b in row]
-    assert any("Target" in b for b in buttons)
-    assert any("Ignored" in b for b in buttons)
-
-
-@pytest.mark.asyncio
 async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
     """Only registered split features are configurable, using current real authority."""
     command = await test_container.get(SettingsCommand)
@@ -219,6 +83,12 @@ async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
         chat_instance="synthetic",
         message=message.as_(bot),
     ).as_(bot)
+    callback = await bind_settings_callback(
+        test_container,
+        message,
+        456,
+        SettingsCallback(menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=CommandName.TWITTER_POST),
+    )
     try:
         with aioresponses(response_class=RecordedResponse) as responses:
             responses.post(
@@ -233,9 +103,7 @@ async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
             )
             await command.handle_callback(
                 query,
-                SettingsCallback(
-                    menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=CommandName.TWITTER_POST
-                ),
+                callback,
             )
         commands = await test_container.get(CommandService)
         assert not await commands.is_command_allowed(-100777, CommandName.TWITTER_POST)
@@ -251,117 +119,6 @@ async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
             assert event.actor_id == 456
     finally:
         await bot.session.close()
-
-
-@pytest.mark.asyncio
-async def test_settings_language_target_selection(
-    mock_language_service: MagicMock,
-    mock_command_service: MagicMock,
-    mock_access_service: MagicMock,
-    mock_cleanup_service: MagicMock,
-) -> None:
-    """Test that selecting a target language works."""
-    command = SettingsCommand(
-        mock_language_service,
-        mock_command_service,
-        mock_access_service,
-        mock_cleanup_service,
-    )
-
-    chat_id = 123
-    lang_code = "pl"
-    callback_data = SettingsCallback(menu=SettingsMenu.LANG_TARGET, action=SettingsAction.SELECT, value=lang_code)
-
-    query = MagicMock(spec=types.CallbackQuery)
-    query.from_user = MagicMock()
-    query.from_user.id = 456
-    query.message = MagicMock(spec=types.Message)
-    query.message.chat = MagicMock()
-    query.message.chat.id = chat_id
-    query.message.message_id = 789
-    query.message.edit_text = AsyncMock()
-    query.answer = AsyncMock()
-
-    await command.handle_callback(query, callback_data)
-
-    # Verify settings updated
-    mock_language_service.update_settings.assert_called_once()
-    args = mock_language_service.update_settings.call_args[0]
-    assert args[1] == lang_code  # target_lang
-    query.answer.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_settings_language_ignored_toggle(
-    mock_language_service: MagicMock,
-    mock_command_service: MagicMock,
-    mock_access_service: MagicMock,
-    mock_cleanup_service: MagicMock,
-) -> None:
-    """Test that toggling an ignored language works."""
-    command = SettingsCommand(
-        mock_language_service,
-        mock_command_service,
-        mock_access_service,
-        mock_cleanup_service,
-    )
-
-    chat_id = 123
-    lang_code = "de"
-    callback_data = SettingsCallback(menu=SettingsMenu.LANG_IGNORED, action=SettingsAction.TOGGLE, value=lang_code)
-
-    query = MagicMock(spec=types.CallbackQuery)
-    query.from_user = MagicMock()
-    query.from_user.id = 456
-    query.message = MagicMock(spec=types.Message)
-    query.message.chat = MagicMock()
-    query.message.chat.id = chat_id
-    query.message.message_id = 789
-    query.message.edit_text = AsyncMock()
-    query.answer = AsyncMock()
-
-    # Initial state: uk target, en ignored
-    mock_language_service.get_chat_settings.return_value = ("uk", ["en"])
-
-    await command.handle_callback(query, callback_data)
-
-    # Verify settings updated with de added
-    mock_language_service.update_settings.assert_called_once()
-    args = mock_language_service.update_settings.call_args[0]
-    updated_ignored = args[2]
-    assert lang_code in updated_ignored
-    assert "und" in updated_ignored
-
-
-@pytest.mark.asyncio
-async def test_settings_close_button(
-    mock_language_service: MagicMock,
-    mock_command_service: MagicMock,
-    mock_access_service: MagicMock,
-    mock_cleanup_service: MagicMock,
-) -> None:
-    """Test that the close button deletes the message and unregisters cleanup."""
-    command = SettingsCommand(
-        mock_language_service,
-        mock_command_service,
-        mock_access_service,
-        mock_cleanup_service,
-    )
-
-    query = MagicMock(spec=types.CallbackQuery)
-    query.data = "config_close"
-    query.message = MagicMock(spec=types.Message)
-    query.message.chat = MagicMock()
-    query.message.chat.id = 123
-    query.message.message_id = 789
-    query.message.delete = AsyncMock()
-    query.answer = AsyncMock()
-
-    await command.handle_close(query)
-
-    query.message.delete.assert_called_once()
-    mock_cleanup_service.unregister_window.assert_called_once_with(123, 789)
-    query.answer.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -47,6 +47,7 @@ from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.test_group_beta import BETA, FIRST, FUTURE, GROUP, MEMBER, REGISTRY, group_beta_runtime
 from tests.test_membership_adapter import BOT_CREDENTIAL, RecordedResponse
 from tests.utils.activation import sent_fields, stub_telegram
+from tests.utils.settings import bind_settings_callback
 
 CAPABLE = FeatureDefinition(
     "capability_feature", "Capability feature", required_bot_capabilities=frozenset({"can_pin_messages"})
@@ -155,7 +156,10 @@ async def test_help_and_modules_hide_future_beta_and_guessed_toggle_writes_nothi
     try:
         with aioresponses(response_class=RecordedResponse) as http:
             stub_telegram(http)
-            await command.handle_callback(query, SettingsCallback(menu=SettingsMenu.MODULES))
+            callback = await bind_settings_callback(
+                test_container, menu, FIRST, SettingsCallback(menu=SettingsMenu.MODULES)
+            )
+            await command.handle_callback(query, callback)
             markup = json.loads(sent_fields(http, "editMessageText")[-1]["reply_markup"])
             callbacks = [button["callback_data"] for row in markup["inline_keyboard"] for button in row]
             assert any(BETA.key in value for value in callbacks)
@@ -170,7 +174,7 @@ async def test_help_and_modules_hide_future_beta_and_guessed_toggle_writes_nothi
                 query,
                 SettingsCallback(menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value="guessed_unknown"),
             )
-            assert sent_fields(http, "answerCallbackQuery")[-1]["text"] == "Feature unavailable."
+            assert sent_fields(http, "answerCallbackQuery")[-1]["text"] == "Settings unavailable. Reopen /settings."
         async with sessions() as session:
             assert len((await session.scalars(select(AuditEventDB))).all()) == before
         await service.set_group_beta(BETA.key, GROUP, FIRST, enabled=True)

@@ -48,6 +48,11 @@ class CacheService:
         else:
             return value
 
+    async def pop(self, key: str) -> Any:
+        """Consume a cached value atomically, including concurrent UI requests."""
+        raw = await self._cache.getdel(key)
+        return json.loads(raw) if raw is not None else None
+
     async def delete(self, key: str) -> None:
         """Delete a key from the cache."""
         await self._cache.delete(key)

@@ -16,6 +16,7 @@ class AccessAction(StrEnum):
 class SettingsMenu(StrEnum):
     """Menu identifiers for settings."""
 
+    CLOSE = "close"
     MAIN = "main"
     LANG = "lang"
     MODULES = "modules"
@@ -44,6 +45,7 @@ class SettingsCallback(CallbackData, prefix="settings"):
     """Callback for unified settings menu."""
 
     menu: SettingsMenu
+    token: str = ""
     page: int = 0
     action: SettingsAction | None = None
     value: str | None = None

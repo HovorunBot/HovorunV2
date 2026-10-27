@@ -199,7 +199,9 @@ class FeatureAccessService:
             guidance="Bot permissions are missing or need verification." if manager and not capable else None,
         )
 
-    async def set_group_beta(self, key: str, chat_id: int, actor_id: int, *, enabled: bool) -> bool:
+    async def set_group_beta(
+        self, key: str, chat_id: int, actor_id: int, *, enabled: bool, transport_kind: str = "group"
+    ) -> bool:
         """Use the existing transactional authority and eligibility boundary for group selection."""
         definition = self.registry.require(key)
         chat = await self._chats.get_chat(chat_id)
@@ -211,5 +213,5 @@ class FeatureAccessService:
             key,
             enabled=enabled,
             actor=ActorContext.telegram(actor_id),
-            transport_kind="group",
+            transport_kind=transport_kind,
         )

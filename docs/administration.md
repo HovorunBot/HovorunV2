@@ -101,3 +101,11 @@ Feature selection is explicit: disabling every media feature keeps capture disab
 ## Group restrictions
 
 Application bans and rejected access requests do not make the bot leave a group. Join, rejoin and maintenance preserve restrictions and approvals. Restricted groups cannot process features, even for bot administrators. A denied group message may receive fixed guidance to contact an administrator privately, limited to one attempt per group and restriction reason every 60 seconds. Internal ban reasons never appear in that guidance.
+
+## Settings windows
+
+Settings windows expire after 30 seconds. Reopen `/settings` after expiry or a bot restart that clears the cache. Each click consumes the current menu token and replaces the keyboard; old or copied buttons cannot change another group or window. Opening a new settings window invalidates the previous window in that chat.
+
+Every settings action checks the current actor and target again. Group administrators lose access immediately when Telegram reports demotion; bot administrators use their current persisted authority. Anonymous sender-chat identities cannot open user-specific settings. Language and feature changes retain the authenticated actor in their transactional audit.
+
+Private selected-group context is available to later management menus. It binds the private actor, selected internal group identity and generation independently of the private transport chat. This does not add group-selection menus or broaden existing private management access.

@@ -3,6 +3,7 @@
 import logging
 
 from hovorunv2.application.ports import AppSettings, ChatStore
+from hovorunv2.domain.audit import ActorContext
 
 logger = logging.getLogger(__name__)
 
@@ -39,15 +40,18 @@ class LanguageService:
 
         return target_lang, ignored_langs
 
-    async def update_settings(self, chat_id: int, target_lang: str, ignored_langs: list[str]) -> None:
+    async def update_settings(
+        self, chat_id: int, target_lang: str, ignored_langs: list[str], *, actor: ActorContext | None = None
+    ) -> None:
         """Update language settings for a chat.
 
         Args:
             chat_id: The ID of the chat.
             target_lang: The new target language code.
             ignored_langs: List of language codes to ignore.
+            actor: Authenticated caller for the transactional audit.
 
         """
         await self._chat_service.update_translation_settings(
-            chat_id=chat_id, target_lang=target_lang, ignored_langs=ignored_langs
+            chat_id=chat_id, target_lang=target_lang, ignored_langs=ignored_langs, actor=actor
         )

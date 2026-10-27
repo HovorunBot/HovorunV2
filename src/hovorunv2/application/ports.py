@@ -24,6 +24,10 @@ class CachePort(Protocol):
         """Store a value in the cache with optional TTL."""
         ...
 
+    async def pop(self, key: str) -> Any:
+        """Atomically retrieve and delete a cached value; return None when absent."""
+        ...
+
     async def delete(self, key: str) -> None:
         """Delete a key from the cache."""
         ...

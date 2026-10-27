@@ -21,6 +21,7 @@
 
 ### Fix
 
+- **settings**: bind callbacks to verified target context
 - **features**: enforce eligibility across discovery and execution
 - **audit**: validate entity and action fields atomically
 - **privacy**: keep payloads out of operational logs

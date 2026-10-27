@@ -15,6 +15,11 @@ from hovorunv2.application.services.access_service import AccessService, Command
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.language_service import LanguageService
+from hovorunv2.application.services.settings_session_service import (
+    SETTINGS_SESSION_TTL,
+    SettingsContext,
+    SettingsSessionService,
+)
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
     CommandName,
@@ -26,7 +31,7 @@ from .base import BaseCommand
 
 logger = get_logger(__name__)
 
-CONFIG_WINDOW_TTL: Final = 30
+CONFIG_WINDOW_TTL: Final = SETTINGS_SESSION_TTL
 LANGS_PER_PAGE: Final = 10
 
 
@@ -46,12 +51,14 @@ class SettingsCommand(BaseCommand):
         command_service: CommandService,
         access_service: AccessService,
         cleanup_service: CleanupService,
+        sessions: SettingsSessionService,
     ) -> None:
         """Initialize command."""
         self._language_service = language_service
         self._command_service = command_service
         self._access_service = access_service
         self._cleanup_service = cleanup_service
+        self._sessions = sessions
 
     @property
     def name(self) -> str:
@@ -75,42 +82,77 @@ class SettingsCommand(BaseCommand):
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Handle /settings command."""
-        await self._show_main_menu(message, bot)
+        if message.sender_chat or not message.from_user or message.from_user.is_bot:
+            return
+        try:
+            context = await self._sessions.prepare(
+                message.chat.id, message.from_user.id, message.chat.id, message.message_id
+            )
+        except ValueError:
+            return
+        if not await self._authorized(message.from_user.id, context, bot):
+            return
+        msg = await message.answer("⚙️ <b>Hovorun Settings</b>", parse_mode="HTML")
+        context = context.model_copy(update={"message_id": msg.message_id})
+        await self._cleanup_service.replace_singleton_window(
+            bot, msg.chat.id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
+        )
+        await self._show_main_menu(msg, context)
 
-    async def _show_main_menu(self, message: Message | CallbackQuery, bot: Bot | None) -> None:
+    async def _authorized(self, actor_id: int, context: SettingsContext, bot: Bot) -> bool:
+        """Recheck current actor restrictions and target-specific Telegram/bot authority."""
+        if await self._access_service.is_banned(actor_id):
+            return False
+        if context.target_chat_id > 0:
+            return context.target_chat_id == actor_id and await self._access_service.is_admin(actor_id)
+        return await self._access_service.is_allowed(actor_id, context.target_chat_id, self.POLICY, bot)
+
+    async def _render(
+        self, message: Message, text: str, builder: InlineKeyboardBuilder, context: SettingsContext
+    ) -> None:
+        """Bind every action to this exact window and invalidate the previous render."""
+        callbacks = [
+            SettingsCallback.unpack(button.callback_data)
+            for row in builder.export()
+            for button in row
+            if button.callback_data and button.callback_data.startswith("settings:")
+        ]
+        try:
+            token = await self._sessions.issue(context, [callback.pack() for callback in callbacks])
+        except ValueError:
+            await message.edit_text("Settings expired. Reopen /settings.", reply_markup=None)
+            return
+        markup = builder.as_markup()
+        for row in markup.inline_keyboard:
+            for button in row:
+                if button.callback_data and button.callback_data.startswith("settings:"):
+                    callback = SettingsCallback.unpack(button.callback_data)
+                    callback.token = token
+                    button.callback_data = callback.pack()
+        await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+        await self._cleanup_service.reset_ttl(
+            message.chat.id, message.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
+        )
+
+    async def _show_main_menu(self, message: Message, context: SettingsContext) -> None:
         """Show the top-level settings menu."""
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(text="🌐 Languages", callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()),
             InlineKeyboardButton(text="⚙️ Modules", callback_data=SettingsCallback(menu=SettingsMenu.MODULES).pack()),
         )
-        builder.row(InlineKeyboardButton(text="❌ Close", callback_data="config_close"))
-
-        text = "⚙️ <b>Hovorun Settings</b>\n\nSelect a category to configure:"
-
-        if isinstance(message, Message):
-            msg = await message.answer(text, parse_mode="HTML", reply_markup=builder.as_markup())
-            if bot:
-                await self._cleanup_service.replace_singleton_window(
-                    bot, msg.chat.id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
-                )
-            return
-
-        msg = message.message
-        if not isinstance(msg, Message):
-            return
-        await msg.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
-        await self._cleanup_service.reset_ttl(
-            msg.chat.id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
+        builder.row(
+            InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
         )
+        await self._render(message, "⚙️ <b>Hovorun Settings</b>\n\nSelect a category to configure:", builder, context)
 
-    async def _show_lang_menu(self, query: CallbackQuery) -> None:
+    async def _show_lang_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
         """Show language configuration menu."""
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
 
-        chat_id = msg.chat.id
+        chat_id = context.target_chat_id
         target, ignored = await self._language_service.get_chat_settings(chat_id)
 
         target_lang = LANGUAGES.get(target)
@@ -132,14 +174,13 @@ class SettingsCommand(BaseCommand):
         builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
 
         text = "🌐 <b>Language Settings</b>\n\nConfigure translation target and ignored languages:"
-        await msg.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
-        await self._cleanup_service.reset_ttl(
-            chat_id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
-        )
+        await self._render(msg, text, builder, context)
 
-    async def _show_lang_picker(self, message: Message, menu_type: SettingsMenu, page: int) -> None:
+    async def _show_lang_picker(
+        self, message: Message, menu_type: SettingsMenu, page: int, context: SettingsContext
+    ) -> None:
         """Show paginated language picker with smart sorting."""
-        chat_id = message.chat.id
+        chat_id = context.target_chat_id
         target, ignored = await self._language_service.get_chat_settings(chat_id)
 
         # Smart sorting logic
@@ -209,18 +250,15 @@ class SettingsCommand(BaseCommand):
             if menu_type == SettingsMenu.LANG_TARGET
             else "🚫 <b>Toggle Ignored Languages</b>"
         )
-        await message.edit_text(title, parse_mode="HTML", reply_markup=builder.as_markup())
-        await self._cleanup_service.reset_ttl(
-            chat_id, message.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
-        )
+        await self._render(message, title, builder, context)
 
-    async def _show_modules_menu(self, query: CallbackQuery) -> None:
+    async def _show_modules_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
         """Show modules (commands) configuration menu with split Video and Post toggles."""
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
 
-        chat_id = msg.chat.id
+        chat_id = context.target_chat_id
         builder = InlineKeyboardBuilder()
 
         guidance: set[str] = set()
@@ -247,10 +285,7 @@ class SettingsCommand(BaseCommand):
         text = "⚙️ <b>Modules Settings</b>\n\nToggle Video (🎬) and Image/Text (🖼️) capture per platform:"
         if guidance:
             text += "\n\n" + "\n".join(sorted(guidance))
-        await msg.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
-        await self._cleanup_service.reset_ttl(
-            chat_id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
-        )
+        await self._render(msg, text, builder, context)
 
     async def handle_callback(self, query: CallbackQuery, callback_data: SettingsCallback) -> None:
         """Route callbacks to appropriate menu handlers."""
@@ -258,25 +293,45 @@ class SettingsCommand(BaseCommand):
         if not msg or not isinstance(msg, Message):
             return
 
+        if query.from_user.is_bot or query.bot is None:
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
+        operation = callback_data.model_copy(update={"token": ""}).pack()
+        context = await self._sessions.resolve(
+            callback_data.token, operation, query.from_user.id, msg.chat.id, msg.message_id
+        )
+        if context is None or not await self._authorized(query.from_user.id, context, query.bot):
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
+        context = await self._sessions.resolve(
+            callback_data.token, operation, query.from_user.id, msg.chat.id, msg.message_id, consume=True
+        )
+        if context is None:
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
         match callback_data.menu:
             case SettingsMenu.MAIN:
-                await self._show_main_menu(query, None)
+                await self._show_main_menu(msg, context)
             case SettingsMenu.LANG:
-                await self._show_lang_menu(query)
+                await self._show_lang_menu(query, context)
             case SettingsMenu.MODULES:
-                await self._handle_modules_callback(query, callback_data)
+                await self._handle_modules_callback(query, callback_data, context)
             case SettingsMenu.LANG_TARGET:
-                await self._handle_lang_target_callback(query, callback_data)
+                await self._handle_lang_target_callback(query, callback_data, context)
             case SettingsMenu.LANG_IGNORED:
-                await self._handle_lang_ignored_callback(query, callback_data)
+                await self._handle_lang_ignored_callback(query, callback_data, context)
+            case SettingsMenu.CLOSE:
+                await self.handle_close(query)
 
-    async def _handle_modules_callback(self, query: CallbackQuery, callback_data: SettingsCallback) -> None:
+    async def _handle_modules_callback(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
         """Handle module toggle callbacks."""
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
 
-        chat_id = msg.chat.id
+        chat_id = context.target_chat_id
         if callback_data.action == SettingsAction.TOGGLE and callback_data.value:
             cmd_name = callback_data.value
             decision = await self._access_service.features.evaluate(
@@ -289,7 +344,11 @@ class SettingsCommand(BaseCommand):
             if definition.channel == FeatureChannel.BETA and chat_id < 0:
                 try:
                     await self._access_service.features.set_group_beta(
-                        cmd_name, chat_id, query.from_user.id, enabled=not decision.selected
+                        cmd_name,
+                        chat_id,
+                        query.from_user.id,
+                        enabled=not decision.selected,
+                        transport_kind="private" if context.transport_chat_id > 0 else "group",
                     )
                 except PermissionError, ValueError:
                     await query.answer("Feature unavailable.", show_alert=True)
@@ -300,31 +359,37 @@ class SettingsCommand(BaseCommand):
                     chat_id, cmd_name, actor=ActorContext.telegram(query.from_user.id)
                 )
             await query.answer(f"{cmd_name} {'enabled' if is_enabled else 'disabled'}")
-        await self._show_modules_menu(query)
+        await self._show_modules_menu(query, context)
 
-    async def _handle_lang_target_callback(self, query: CallbackQuery, callback_data: SettingsCallback) -> None:
+    async def _handle_lang_target_callback(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
         """Handle target language selection callbacks."""
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
 
-        chat_id = msg.chat.id
-        if callback_data.action == SettingsAction.SELECT and callback_data.value:
+        chat_id = context.target_chat_id
+        if callback_data.action == SettingsAction.SELECT and callback_data.value in LANGUAGES:
             _target, ignored = await self._language_service.get_chat_settings(chat_id)
-            await self._language_service.update_settings(chat_id, callback_data.value, ignored)
+            await self._language_service.update_settings(
+                chat_id, callback_data.value, ignored, actor=ActorContext.telegram(query.from_user.id)
+            )
             await query.answer(f"Target set to {callback_data.value}")
-            await self._show_lang_menu(query)
+            await self._show_lang_menu(query, context)
         else:
-            await self._show_lang_picker(msg, SettingsMenu.LANG_TARGET, callback_data.page)
+            await self._show_lang_picker(msg, SettingsMenu.LANG_TARGET, callback_data.page, context)
 
-    async def _handle_lang_ignored_callback(self, query: CallbackQuery, callback_data: SettingsCallback) -> None:
+    async def _handle_lang_ignored_callback(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
         """Handle ignored language toggle callbacks."""
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
 
-        chat_id = msg.chat.id
-        if callback_data.action == SettingsAction.TOGGLE and callback_data.value:
+        chat_id = context.target_chat_id
+        if callback_data.action == SettingsAction.TOGGLE and callback_data.value in LANGUAGES:
             target, ignored = await self._language_service.get_chat_settings(chat_id)
             if callback_data.value in ignored:
                 ignored.remove(callback_data.value)
@@ -334,9 +399,11 @@ class SettingsCommand(BaseCommand):
             if "und" not in ignored:
                 ignored.append("und")
 
-            await self._language_service.update_settings(chat_id, target, ignored)
+            await self._language_service.update_settings(
+                chat_id, target, ignored, actor=ActorContext.telegram(query.from_user.id)
+            )
             await query.answer(f"Toggled {callback_data.value}")
-        await self._show_lang_picker(msg, SettingsMenu.LANG_IGNORED, callback_data.page)
+        await self._show_lang_picker(msg, SettingsMenu.LANG_IGNORED, callback_data.page, context)
 
     async def handle_close(self, query: CallbackQuery) -> None:
         """Handle close button by deleting the window and unregistering from cleanup."""
@@ -353,4 +420,3 @@ class SettingsCommand(BaseCommand):
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
         """Register settings callbacks."""
         router.callback_query.register(self.handle_callback, SettingsCallback.filter(), flags=flags)
-        router.callback_query.register(self.handle_close, lambda c: c.data == "config_close", flags=flags)
