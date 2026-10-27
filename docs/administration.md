@@ -109,3 +109,5 @@ Settings windows expire after 30 seconds. Reopen `/settings` after expiry or a b
 Every settings action checks the current actor and target again. Group administrators lose access immediately when Telegram reports demotion; bot administrators use their current persisted authority. Anonymous sender-chat identities cannot open user-specific settings. Language and feature changes retain the authenticated actor in their transactional audit.
 
 Private selected-group context is available to later management menus. It binds the private actor, selected internal group identity and generation independently of the private transport chat. This does not add group-selection menus or broaden existing private management access.
+
+Group settings include an Access & permissions view for current managers. It explains processing availability, bot verification and eligible feature capability requirements without disclosing internal restriction reasons. Modules retains language-independent video/post controls and explicit eligible beta activation. Bot-wide trust, ban and role controls are not exposed in groups.

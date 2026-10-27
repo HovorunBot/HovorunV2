@@ -11,6 +11,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
 from hovorunv2.application.features import FeatureChannel
+from hovorunv2.application.permissions import DecisionReason
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
@@ -141,10 +142,52 @@ class SettingsCommand(BaseCommand):
             InlineKeyboardButton(text="🌐 Languages", callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()),
             InlineKeyboardButton(text="⚙️ Modules", callback_data=SettingsCallback(menu=SettingsMenu.MODULES).pack()),
         )
+        if context.target_chat_id < 0:
+            builder.row(
+                InlineKeyboardButton(
+                    text="🔎 Access & permissions", callback_data=SettingsCallback(menu=SettingsMenu.ACCESS).pack()
+                )
+            )
         builder.row(
             InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
         )
         await self._render(message, "⚙️ <b>Hovorun Settings</b>\n\nSelect a category to configure:", builder, context)
+
+    async def _show_access_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
+        """Explain operational access without revealing private ban or entitlement records."""
+        message = query.message
+        if not isinstance(message, Message):
+            return
+        status = await self._access_service.features.group_settings_status(context.target_chat_id, query.from_user.id)
+        if status is None:
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
+        explanations = {
+            DecisionReason.ALLOWED: "Group processing is available.",
+            DecisionReason.NOT_APPROVED: "Group activation is required. Use /allow_chat.",
+            DecisionReason.MEMBER_EVIDENCE_UNKNOWN: "Administrator verification is unavailable or expired.",
+            DecisionReason.ADMIN_FULL_BANNED: "Group processing is suspended. Contact a bot administrator privately.",
+            DecisionReason.GROUP_BANNED: "Group processing is restricted. Contact a bot administrator privately.",
+            DecisionReason.ENTITY_UNAVAILABLE: "This group is unavailable.",
+        }
+        verification = (
+            "Bot permission verification is current."
+            if status.bot_verified
+            else "Bot permission verification is unavailable or expired. Administrator rights can help verification."
+        )
+        text = "🔎 <b>Access & permissions</b>\n\n" + explanations.get(
+            status.access_reason, "Group access is unavailable."
+        )
+        text += "\n\n" + verification
+        if status.guidance:
+            text += "\n\n" + "\n".join(status.guidance)
+        text += (
+            "\n\nOnly features that require administrator rights need those rights. "
+            "Beta activation is explicit in Modules."
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
+        await self._render(message, text, builder, context)
 
     async def _show_lang_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
         """Show language configuration menu."""
@@ -283,6 +326,7 @@ class SettingsCommand(BaseCommand):
         builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
 
         text = "⚙️ <b>Modules Settings</b>\n\nToggle Video (🎬) and Image/Text (🖼️) capture per platform:"
+        text += "\nEligible beta features start disabled. Select a feature to explicitly enable or disable it."
         if guidance:
             text += "\n\n" + "\n".join(sorted(guidance))
         await self._render(msg, text, builder, context)
@@ -312,6 +356,8 @@ class SettingsCommand(BaseCommand):
         match callback_data.menu:
             case SettingsMenu.MAIN:
                 await self._show_main_menu(msg, context)
+            case SettingsMenu.ACCESS:
+                await self._show_access_menu(query, context)
             case SettingsMenu.LANG:
                 await self._show_lang_menu(query, context)
             case SettingsMenu.MODULES:

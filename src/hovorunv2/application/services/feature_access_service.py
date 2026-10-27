@@ -8,7 +8,7 @@ from hovorunv2.application.features import FeatureChannel, FeatureRegistry, Feat
 from hovorunv2.application.group_beta import GroupBetaStore
 from hovorunv2.application.membership import MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.permissions import GroupAdminEvidence, PermissionRequest, PermissionTarget
+from hovorunv2.application.permissions import DecisionReason, GroupAdminEvidence, PermissionRequest, PermissionTarget
 from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.services.beta_service import BetaEligibilityService
 from hovorunv2.application.services.chat_status_service import ChatStatusService, evidence_time
@@ -26,6 +26,15 @@ class FeatureDecision:
     allowed: bool = False
     selected: bool = False
     guidance: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GroupSettingsStatus:
+    """Operational guidance for a current manager, without internal restriction reasons."""
+
+    access_reason: DecisionReason
+    bot_verified: bool
+    guidance: tuple[str, ...]
 
 
 class FeatureAccessService:
@@ -198,6 +207,31 @@ class FeatureAccessService:
             selected=selected,
             guidance="Bot permissions are missing or need verification." if manager and not capable else None,
         )
+
+    async def group_settings_status(self, chat_id: int, actor_id: int) -> GroupSettingsStatus | None:
+        """Explain current access and eligible capability requirements only to managers."""
+        chat = await self._chats.get_chat(chat_id)
+        if chat is None or chat.chat_id != chat_id or chat_id >= 0:
+            return None
+        now = datetime.now(UTC)
+        target = PermissionTarget("group", chat.id, chat.generation, chat_id)
+        if not await self._manager(actor_id, target, now):
+            return None
+        state = await self._memberships.get_state(chat.id)
+        verified = bool(
+            state is not None
+            and state.bot_verified_at is not None
+            and state.bot_expires_at is not None
+            and evidence_time(state.bot_verified_at) <= now < evidence_time(state.bot_expires_at)
+            and state.bot_status in {MembershipStatus.ADMIN, MembershipStatus.MEMBER}
+        )
+        guidance: set[str] = set()
+        for definition in self.registry.all():
+            decision = await self.evaluate(definition.key, chat_id, actor_id, configure=True)
+            if decision.guidance:
+                guidance.add(decision.guidance)
+        access = await self._chat_status.evaluate_access(chat_id, now)
+        return GroupSettingsStatus(access.reason, verified, tuple(sorted(guidance)))
 
     async def set_group_beta(
         self, key: str, chat_id: int, actor_id: int, *, enabled: bool, transport_kind: str = "group"
