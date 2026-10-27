@@ -34,3 +34,36 @@ No override stores application safety caps, private messages, resource prompts o
 The current policy foundation defines admission inputs; live reservation, queue admission,
 workers, reconciliation, and user-facing limit controls are implemented in later blocks.
 No resource provider, AI product, billing or paid access tier is introduced.
+
+## Durable accounting
+
+`UsageLedgerStore` records successful measured consumption in bounded batches. Each technical
+completion or resource checkpoint has a global event ID and a fingerprint of its accounting fields.
+Replaying the same event has no effect, even when charge order changes. Reusing its ID for
+different subject, timestamp or charges rejects and rolls back the entire batch.
+
+Aggregates use platform, user/group kind, stable numeric Telegram identity, feature/family bucket,
+unit, window duration and UTC window start. Internal entity IDs and generations are excluded,
+so deleting and recreating a subject cannot reset the current-period budget. Known historical
+identities may receive delayed accounting without being recreated or authorized to execute work.
+Accounting aggregates and replay receipts are retained independently of soft-deleted configuration.
+Unknown subjects cannot be provisioned through accounting.
+
+A single serialized SQLite transaction commits replay receipts, aggregate increments and one
+payload-free audit summary. Failed audit insertion rolls back all three; retries can safely use
+the same event ID. Resource amounts are aggregated at completion/checkpoint boundaries, without
+one receipt or audit per token. Summary `units_added` counts aggregate increments across dimensions;
+feature and family counters each receive the relevant consumption.
+
+Batches contain at most 256 events, each with at most 256 distinct bucket/unit/window charges.
+Amounts and timestamps use bounded integers; overflow fails instead of losing integer precision.
+Only trusted system/CLI accounting paths may mutate these records. They store operational
+counter dimensions, technical replay IDs, fingerprints and timestamps, without request contents,
+URLs, prompts, message data, provider credentials or executable jobs.
+
+Apply additive Alembic revisions before running code that uses these stores: `limits036`
+creates policy overrides and `usage037` creates accounting tables. No accounting history is
+backfilled from messages. Downgrading `usage037` discards its accounting tables and history.
+Runtime Valkey reservations and SQLite accounting do not share a transaction. Live admission,
+worker integration, crash/restart reconciliation and checkpoint scheduling remain later work;
+this foundation makes no cross-store atomicity or exactly-once delivery claim.

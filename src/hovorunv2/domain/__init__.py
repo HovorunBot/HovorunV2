@@ -25,6 +25,7 @@ from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.role import UserRoleDB
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.domain.usage import UsageOverrideDB
+from hovorunv2.domain.usage_accounting import UsageAccountingEventDB, UsageAggregateDB
 from hovorunv2.domain.user import UserDB
 
 __all__ = [
@@ -49,6 +50,8 @@ __all__ = [
     "RequestStatus",
     "SystemStateDB",
     "UnknownHandleError",
+    "UsageAccountingEventDB",
+    "UsageAggregateDB",
     "UsageOverrideDB",
     "UserDB",
     "UserRoleDB",

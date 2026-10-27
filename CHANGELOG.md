@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **usage**: persist idempotent usage aggregates
 - **limits**: define scoped feature usage policies
 - **cli**: add access and feature administration
 - **admin**: manage access and beta grants privately

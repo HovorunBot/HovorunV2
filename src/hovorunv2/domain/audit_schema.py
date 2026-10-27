@@ -81,6 +81,7 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("beta_entitlement", "revoke"): BETA_FIELDS.copy(),
     ("group_activation", "enable"): ACTIVATION_FIELDS,
     ("group_activation", "grant"): ACTIVATION_FIELDS,
+    ("usage_batch", "apply"): {"events_applied": NUMBER, "aggregates_updated": NUMBER, "units_added": NUMBER},
     ("usage_override", "set"): USAGE_POLICY_FIELDS,
     ("usage_override", "remove"): USAGE_POLICY_FIELDS,
     ("group_activation", "approve"): ACTIVATION_FIELDS,
