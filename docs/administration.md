@@ -152,3 +152,28 @@ Specific beta grants use a registered beta feature key; group grants require a s
 Eligibility never activates a feature or grants ordinary group approval.
 Approval does not remove an independent group ban or bypass processing restrictions.
 Limit controls, emergency actions, broadcasts, and recovery remain separate later workflows.
+
+The offline `hovorun-admin access` topic accepts the same action, target kind, target reference
+and options as private `/admin`. It calls the same application services with CLI audit origin.
+It requires database/host access, needs no Telegram authentication, Valkey, bot token or
+message-encryption credentials, and works before the first bot administrator exists.
+It performs no network lookup or membership fabrication. Existing role and trust topics remain supported.
+
+```sh
+uv run hovorun-admin access inspect user 900001
+uv run hovorun-admin access inspect group -900001
+uv run hovorun-admin access trust user @known_user
+uv run hovorun-admin access ban user 900001 --reason 'operator investigation'
+uv run hovorun-admin access unban user 900001 --reason 'restriction resolved'
+uv run hovorun-admin access requests group -900001
+uv run hovorun-admin access accept group -900001 --request-id 12
+uv run hovorun-admin access approve group -900001
+uv run hovorun-admin access beta-grant user 900001 --feature '*'
+```
+
+Access commands print structured JSON containing operational state or mutation results.
+Unknown/wrong-kind/deleted targets, unknown feature keys and stale request decisions fail
+with a nonzero exit status. Failed validation never prints submitted internal reasons.
+Inspect output excludes internal restriction notes, keys, salts and private payloads.
+CLI retains the existing protected-role safeguards and can manage protected personal restrictions
+where Telegram administration cannot. No new command changes authority roles indirectly.

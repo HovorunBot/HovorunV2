@@ -6,7 +6,24 @@ import sys
 from dishka import Scope, alias, make_async_container, provide
 from sqlalchemy.exc import SQLAlchemyError
 
-from hovorunv2.application.ports import AuditedUnitOfWork, AuthorizationPolicy, PublicHandleStore, RoleStore, UserStore
+from hovorunv2.application.activation import ActivationStore
+from hovorunv2.application.administration import AdminRequest
+from hovorunv2.application.ban_ports import BanStore
+from hovorunv2.application.beta import BetaEntitlementStore
+from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry
+from hovorunv2.application.group_grants import GroupGrantStore
+from hovorunv2.application.ports import (
+    AuditedUnitOfWork,
+    AuthorizationPolicy,
+    ChatStore,
+    PublicHandleStore,
+    RoleStore,
+    UserStore,
+)
+from hovorunv2.application.services.administration_service import AdministrationService
+from hovorunv2.application.services.ban_service import BanService
+from hovorunv2.application.services.beta_service import BetaEligibilityService
+from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.bootstrap.database import DatabaseProvider
@@ -18,7 +35,13 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyPublicHandleStore,
     SQLAlchemyRoleStore,
 )
+from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActivationStore
+from hovorunv2.infrastructure.persistence.ban_store import SQLAlchemyBanStore
+from hovorunv2.infrastructure.persistence.beta_store import SQLAlchemyBetaEntitlementStore
+from hovorunv2.infrastructure.persistence.chat_store import SQLAlchemyChatStore
+from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGroupGrantStore
 from hovorunv2.infrastructure.persistence.user_store import SQLAlchemyUserStore
+from hovorunv2.interface.cli.access import AccessCLI
 from hovorunv2.interface.cli.roles import RoleArguments, RoleCLI, build_parser
 
 
@@ -43,6 +66,26 @@ class AdminProvider(DatabaseProvider):
     user_store_impl = provide(SQLAlchemyUserStore)
     user_store = alias(source=SQLAlchemyUserStore, provides=UserStore)
     trust_service = provide(TrustService)
+    chat_store_impl = provide(SQLAlchemyChatStore)
+    chat_store = alias(source=SQLAlchemyChatStore, provides=ChatStore)
+    ban_store_impl = provide(SQLAlchemyBanStore)
+    ban_store = alias(source=SQLAlchemyBanStore, provides=BanStore)
+    ban_service = provide(BanService)
+    permission_service = provide(PermissionService)
+    beta_store_impl = provide(SQLAlchemyBetaEntitlementStore)
+    beta_store = alias(source=SQLAlchemyBetaEntitlementStore, provides=BetaEntitlementStore)
+    beta_service = provide(BetaEligibilityService)
+    activation_store_impl = provide(SQLAlchemyActivationStore)
+    activation_store = alias(source=SQLAlchemyActivationStore, provides=ActivationStore)
+    grants_impl = provide(SQLAlchemyGroupGrantStore)
+    grants = alias(source=SQLAlchemyGroupGrantStore, provides=GroupGrantStore)
+    administration_service = provide(AdministrationService)
+    access_cli = provide(AccessCLI)
+
+    @provide
+    def feature_registry(self) -> FeatureRegistry:
+        """Share code-defined eligibility keys without starting bot infrastructure."""
+        return FEATURE_REGISTRY
 
     @provide
     async def authorization_policy(self) -> AuthorizationPolicy:
@@ -54,6 +97,20 @@ async def run_admin(arguments: RoleArguments) -> str:
     """Execute once and close all owned resources without polling or starting workers."""
     container = make_async_container(AdminProvider())
     try:
+        if arguments.topic == "access":
+            request = AdminRequest.model_validate(
+                {
+                    "action": arguments.action,
+                    "kind": arguments.kind,
+                    "target": arguments.target,
+                    "reason": arguments.reason,
+                    "public_explanation": arguments.public_explanation,
+                    "ban_kind": arguments.ban_kind,
+                    "feature": arguments.feature,
+                    "request_id": arguments.request_id,
+                }
+            )
+            return await (await container.get(AccessCLI)).execute(request)
         if arguments.topic == "trust":
             if arguments.target is None:
                 msg = "A target user is required."
@@ -81,7 +138,7 @@ def main() -> None:
     arguments = parser.parse_args(namespace=RoleArguments())
     try:
         output = asyncio.run(run_admin(arguments))
-    except ValueError as error:
+    except (ValueError, PermissionError) as error:
         parser.error(str(error))
     except SQLAlchemyError:
         parser.error("Database operation failed. Check DB_PATH and apply Alembic migrations before administration.")

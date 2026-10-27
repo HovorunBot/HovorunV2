@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **cli**: add access and feature administration
 - **admin**: manage access and beta grants privately
 - **settings**: manage groups from private bot chat
 - **settings**: expose group feature and access settings

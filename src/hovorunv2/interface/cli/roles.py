@@ -6,6 +6,7 @@ from hovorunv2.application.ports import PublicHandleStore
 from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import Role, TargetKind
+from hovorunv2.interface.access_arguments import add_access_arguments
 
 MAX_USER_ID = (1 << 63) - 1
 
@@ -13,6 +14,12 @@ MAX_USER_ID = (1 << 63) - 1
 class RoleArguments(argparse.Namespace):
     """Typed namespace populated by the administrative parser."""
 
+    action: str
+    kind: str
+    public_explanation: str | None
+    ban_kind: str
+    feature: str
+    request_id: int | None
     topic: str
     operation: str
     target: str | None
@@ -46,6 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
         command = trust_operations.add_parser(operation)
         command.add_argument("target", help="Existing numeric Telegram user ID or known @username.")
         command.add_argument("--reason")
+    access = topics.add_parser("access", help="Inspect known identities and manage access and beta eligibility.")
+    add_access_arguments(access)
     return parser
 
 

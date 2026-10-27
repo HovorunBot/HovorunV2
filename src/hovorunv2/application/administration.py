@@ -26,7 +26,7 @@ class AdminAction(StrEnum):
 class AdminRequest(BaseModel):
     """Explicit operational fields; never a stored Telegram message or profile."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
     action: AdminAction
     kind: TargetKind
@@ -63,7 +63,7 @@ class AdminRequest(BaseModel):
 class AdminTarget(BaseModel):
     """Immutable lifecycle identity displayed before a consequential change."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
     kind: TargetKind
     telegram_id: int
