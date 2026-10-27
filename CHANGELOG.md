@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **beta**: authorize whole-group feature activation
 - **beta**: add explicit feature eligibility grants
 - **groups**: preserve permissions across Telegram group migration
 - **access**: activate groups through explicit trust

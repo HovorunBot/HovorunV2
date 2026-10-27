@@ -50,7 +50,7 @@ class BetaEligibilityService:
         if target.kind not in {"user", "group"}:
             msg = "Eligibility target must be a user or group."
             raise ValueError(msg)
-        scope = FeatureScope.PRIVATE if target.kind == "user" else FeatureScope.GROUP
-        if scope not in definition.scopes:
+        # User eligibility may underpin group activation without allowing private execution.
+        if target.kind == "group" and FeatureScope.GROUP not in definition.scopes:
             msg = "Feature does not support this target scope."
             raise ValueError(msg)

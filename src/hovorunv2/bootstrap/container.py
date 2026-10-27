@@ -19,6 +19,7 @@ from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.clients.youtube import YoutubeService
 from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry
+from hovorunv2.application.group_beta import GroupBetaStore
 from hovorunv2.application.group_grants import GroupGrantStore
 from hovorunv2.application.group_migration import GroupMigrationStore
 from hovorunv2.application.identity import GroupIdentityStore
@@ -50,6 +51,7 @@ from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.feedback_service import FeedbackService
+from hovorunv2.application.services.group_beta_service import GroupBetaService
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.services.message_service import MessageService
@@ -81,6 +83,7 @@ from hovorunv2.infrastructure.persistence import (
 from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActivationStore
 from hovorunv2.infrastructure.persistence.ban_store import SQLAlchemyBanStore
 from hovorunv2.infrastructure.persistence.beta_store import SQLAlchemyBetaEntitlementStore
+from hovorunv2.infrastructure.persistence.group_beta_store import SQLAlchemyGroupBetaStore
 from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGroupGrantStore
 from hovorunv2.infrastructure.persistence.group_identity_store import SQLAlchemyGroupIdentityStore
 from hovorunv2.infrastructure.persistence.group_migration_store import SQLAlchemyGroupMigrationStore
@@ -174,6 +177,9 @@ class AppProvider(Provider):
     beta_store_impl = provide(SQLAlchemyBetaEntitlementStore)
     beta_store = alias(source=SQLAlchemyBetaEntitlementStore, provides=BetaEntitlementStore)
     beta_service = provide(BetaEligibilityService)
+    group_beta_store_impl = provide(SQLAlchemyGroupBetaStore)
+    group_beta_store = alias(source=SQLAlchemyGroupBetaStore, provides=GroupBetaStore)
+    group_beta_service = provide(GroupBetaService)
 
     chat_store_impl = provide(SQLAlchemyChatStore)
     activation_store_impl = provide(SQLAlchemyActivationStore)

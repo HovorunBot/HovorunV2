@@ -60,6 +60,20 @@ feature-bound `BetaEligibilityFacts` feed eligibility evaluation independently o
 SQLite and are never mirrored into Casbin. The store reserves the SQLite writer before rechecking current actor
 role, private transport and exact target generation; entitlement mutation and minimal audit commit atomically.
 
+`GroupBetaService` keeps group beta selection separate from current eligibility. An eligible, currently verified Telegram
+administrator can select a beta feature and record their own support. Other eligible administrators can add support to the
+same selection. Reads require a current user grant and fresh administrator evidence for at least one recorded enabler;
+membership or eligibility loss suspends only that feature without changing selection, group approval or standard features.
+An explicit group entitlement can supply eligibility independently of local enablers, but never selects a feature by itself.
+Bot administrators and CLI can select using that entitlement; bot-admin authority alone supplies no beta eligibility.
+
+Selection changes recheck current actor, exact group identity/generation, grants, membership and Casbin settings authority
+inside the audited SQLite transaction. Disabling revokes the selection's supporting enablers; later local activation records
+support again. Personal bans prevent human configuration changes, while existing group-owned support follows eligibility
+and membership. Existing group access evaluation applies group bans, full-banned administrators, verification and approval.
+Availability requires an explicit emergency-disabled guard, with no permissive default. Emergency persistence and protected
+execution/menu integration are separate follow-up blocks; current registry definitions remain standard media features.
+
 ## Feature definitions and selected activation
 
 `application/features.py` owns typed feature metadata independently of command presentation and authorization. Existing provider video/post keys remain canonical. Definitions declare scopes, direct/automatic triggers, release channel, introduction event, required bot capabilities, usage units, and policy references. Current media features require no blanket bot administrator capability. Registry metadata does not grant execution access.

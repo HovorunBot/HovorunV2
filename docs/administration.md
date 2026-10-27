@@ -76,8 +76,19 @@ features.
 
 Granting eligibility does not enable features, modify group approval, or bypass group restrictions. Revocation takes
 effect on the next eligibility read and retains grant and selection history. Deleted identities and deleted grants never
-provide eligibility. Public administration menus, CLI grant commands and group administrator enablers belong to later
-administration blocks; this release adds the audited service and storage foundation without a production beta feature.
+provide eligibility. Public administration menus and CLI grant commands belong to later administration blocks; the
+application services and storage do not introduce a production beta feature.
+
+Whole-group beta selection records supporting eligible Telegram administrators. Once selected and supported, ordinary
+members need no personal beta grant to use that group feature. If the final supporting administrator loses eligibility or
+current administrator status, the feature pauses while its selection stays saved. Another recorded qualifying enabler keeps
+it available. Restored eligibility and verified administrator evidence restore availability automatically. Group approval and
+standard media settings stay independent.
+
+A specific group grant supplies eligibility independently of local enablers. A bot administrator or CLI must still select
+the feature explicitly; grants never enable all future beta features. Group bans, full-banned administrators, uncertain group
+verification and emergency disablement still block availability. Explicitly disabling a beta feature revokes recorded support,
+so a later local activation records supporting administrators again. Menus and delivery integration remain separate work.
 
 ## Feature selections
 

@@ -56,9 +56,19 @@ ACTIVATION_FIELDS: Final = {
 BETA_FIELDS: Final = {"feature": TEXT, "granted": FLAG_PAIR, "generation": NUMBER}
 SELECTION_FIELDS: Final = {"chat_id": NUMBER, "platform": PLATFORM, "command": COMMAND, "legacy_empty_capture": FLAG}
 DELETION_FIELDS: Final = {"deleted_at": TEXT, "reason": TEXT}
+GROUP_BETA_FIELDS: Final = {
+    "feature": TEXT,
+    "generation": NUMBER,
+    "selected": FLAG_PAIR,
+    "enabler_user_id": NUMBER,
+    "enabler_added": FLAG,
+    "enablers_revoked": NUMBER,
+}
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
+    ("group_beta", "enable"): GROUP_BETA_FIELDS.copy(),
+    ("group_beta", "disable"): GROUP_BETA_FIELDS.copy(),
     ("beta_entitlement", "grant"): BETA_FIELDS.copy(),
     ("beta_entitlement", "revoke"): BETA_FIELDS.copy(),
     ("group_activation", "enable"): ACTIVATION_FIELDS,
