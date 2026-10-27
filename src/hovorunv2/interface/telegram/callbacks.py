@@ -52,3 +52,10 @@ class SettingsCallback(CallbackData, prefix="settings"):
     page: int = 0
     action: SettingsAction | None = None
     value: str | None = None
+
+
+class AdminCallback(CallbackData, prefix="admin"):
+    """Opaque private confirmation; target and operation stay encrypted server-side."""
+
+    token: str
+    cancel: bool = False

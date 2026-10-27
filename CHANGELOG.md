@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **admin**: manage access and beta grants privately
 - **settings**: manage groups from private bot chat
 - **settings**: expose group feature and access settings
 - **beta**: authorize whole-group feature activation

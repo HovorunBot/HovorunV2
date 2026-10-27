@@ -59,13 +59,13 @@ class SQLAlchemyActivationRepository:
         chat.features_configured = True
         return sorted(names)
 
-    def _close_request(self, pending: GroupAccessRequestDB, status: RequestStatus, actor_id: int) -> None:
+    def _close_request(self, pending: GroupAccessRequestDB, status: RequestStatus, actor_id: int | None) -> None:
         pending.status = status
         pending.decided_at = datetime.now(UTC)
         pending.decision_actor_id = actor_id
         pending.decision_reason = "group_activation"
 
-    async def approve(self, chat: ChatDB, actor: UserDB, basis: str) -> ActivationMutation:
+    async def approve(self, chat: ChatDB, actor: UserDB | None, basis: str) -> ActivationMutation:
         """Persist approval, first-activation defaults and any pending request decision together."""
         approved = await self._approved(chat)
         pending = await self._pending(chat.id)
@@ -82,7 +82,7 @@ class SQLAlchemyActivationRepository:
             "status": [old_status.value, chat.status.value],
         }
         if pending is not None:
-            self._close_request(pending, RequestStatus.APPROVED, actor.telegram_id)
+            self._close_request(pending, RequestStatus.APPROVED, actor.telegram_id if actor is not None else None)
             changes.update(
                 request_id=pending.id, request_status=[RequestStatus.PENDING.value, RequestStatus.APPROVED.value]
             )
@@ -107,7 +107,7 @@ class SQLAlchemyActivationRepository:
             },
         )
 
-    async def decide(self, request: ActivationRequest, chat: ChatDB, actor: UserDB) -> ActivationMutation:
+    async def decide(self, request: ActivationRequest, chat: ChatDB, actor: UserDB | None) -> ActivationMutation:
         """Persist a decision only for the selected active pending request and requester."""
         pending = await self._pending(chat.id)
         if pending is None or pending.id != request.request_id:
@@ -120,7 +120,7 @@ class SQLAlchemyActivationRepository:
         old_status = chat.status
         if not await self._approved(chat):
             chat.status = ChatStatus.REJECTED
-        self._close_request(pending, RequestStatus.REJECTED, actor.telegram_id)
+        self._close_request(pending, RequestStatus.REJECTED, actor.telegram_id if actor is not None else None)
         return ActivationMutation(
             ActivationResult(ActivationOutcome.REJECTED, pending.id),
             {

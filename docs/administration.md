@@ -119,3 +119,36 @@ Use `/settings` privately to select a known group. Ordinary users see only group
 Group discovery scans at most eight candidates per page. A page can be empty while More groups leads to later candidates. Selection and every later action recheck the current actor and exact group; demotion, departure, failed verification, deletion or routing/generation changes invalidate the relevant action. The menu expires after its original 30-second deadline.
 
 Private group settings reuse the same language, feature selection and audited beta activation operations as in-group settings. Private group-administration access does not grant private media access or bypass group processing restrictions. Eligible current group administrators can explicitly support group beta activation in either transport; bot administrators without local qualifying support still need an explicit group feature grant. No role-assignment controls are added.
+
+Private access administration is available to current bot administrators through `/admin`.
+Use `/admin inspect user 900001` or `/admin inspect group -900001` to inspect an existing identity.
+Known public handles may replace numeric IDs. Unknown handles never create records.
+
+Mutations first display the exact numeric target and generation, then require a single-use
+confirmation within 30 seconds. The confirmation belongs to that private actor and message;
+current authority and target identity are checked again. Pending confirmation data is encrypted.
+Role assignment and demotion remain available only through the offline CLI.
+
+Examples use synthetic IDs:
+
+```text
+/admin trust user 900001
+/admin untrust user @known_user
+/admin ban user 900001 --ban-kind personal --reason "operator investigation" --public "Contact administrators"
+/admin unban user 900001 --ban-kind personal --reason "restriction resolved"
+/admin ban group -900001 --reason "operator investigation"
+/admin requests group -900001
+/admin accept group -900001 --request-id 12
+/admin reject group -900001 --request-id 12
+/admin approve group -900001
+/admin beta-grant user 900001 --feature '*'
+/admin beta-revoke user 900001 --feature '*'
+```
+
+User bans support `personal` and `full`; groups support only `full`.
+Internal reasons remain private operational records. Only `--public` supplies an optional
+public-safe explanation. Inspection excludes internal reasons, encryption material, and message contents.
+Specific beta grants use a registered beta feature key; group grants require a specific feature.
+Eligibility never activates a feature or grants ordinary group approval.
+Approval does not remove an independent group ban or bypass processing restrictions.
+Limit controls, emergency actions, broadcasts, and recovery remain separate later workflows.

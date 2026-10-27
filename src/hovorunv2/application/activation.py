@@ -5,12 +5,14 @@ from enum import StrEnum
 from typing import Protocol
 
 from hovorunv2.application.permissions import GroupAdminEvidence, PermissionTarget
+from hovorunv2.domain.audit import ActorContext
 
 
 class ActivationAction(StrEnum):
     """Intentional group activation or private request administration."""
 
     ENABLE = "enable"
+    GRANT = "grant"
     APPROVE = "approve"
     REJECT = "reject"
 
@@ -39,6 +41,7 @@ class ActivationRequest:
     action: ActivationAction = ActivationAction.ENABLE
     request_id: int | None = None
     group_admin: GroupAdminEvidence | None = None
+    administrator_actor: ActorContext | None = None
 
 
 @dataclass(frozen=True, slots=True)

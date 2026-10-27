@@ -72,6 +72,7 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("beta_entitlement", "grant"): BETA_FIELDS.copy(),
     ("beta_entitlement", "revoke"): BETA_FIELDS.copy(),
     ("group_activation", "enable"): ACTIVATION_FIELDS,
+    ("group_activation", "grant"): ACTIVATION_FIELDS,
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
     ("chat", "migrate_route"): {"group_id": NUMBER, "telegram_id": NUMBER_PAIR},

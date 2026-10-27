@@ -37,6 +37,7 @@ class TargetKind(StrEnum):
 class CommandName(StrEnum):
     """Names of all bot commands."""
 
+    ADMIN = "admin"
     DEBUG = "debug"
     ALLOW_CHAT = "allow_chat"
     SETTINGS = "settings"

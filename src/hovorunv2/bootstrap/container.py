@@ -45,6 +45,8 @@ from hovorunv2.application.ports import (
 )
 from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.activation_service import GroupActivationService
+from hovorunv2.application.services.admin_session_service import AdminSessionService
+from hovorunv2.application.services.administration_service import AdministrationService
 from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.beta_service import BetaEligibilityService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
@@ -94,6 +96,7 @@ from hovorunv2.infrastructure.persistence.membership_store import SQLAlchemyMemb
 from hovorunv2.infrastructure.queue import TaskQueueService
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
+from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
@@ -251,6 +254,9 @@ class AppProvider(Provider):
     help_command = provide(HelpCommand)
     feedback_command = provide(FeedbackCommand)
     group_management = provide(GroupManagementService)
+    administration_service = provide(AdministrationService)
+    admin_sessions = provide(AdminSessionService)
+    administration_command = provide(AdministrationCommand)
     settings_sessions = provide(SettingsSessionService)
     settings_command = provide(SettingsCommand)
     bot_join_handler = provide(BotJoinHandler)
@@ -316,6 +322,7 @@ class AppProvider(Provider):
         feedback_command: FeedbackCommand,
         settings_command: SettingsCommand,
         debug_command: DebugCommand,
+        administration_command: AdministrationCommand,
     ) -> UtilityCommands:
         """Provide list of utility/infrastructure commands."""
         return UtilityCommands(
@@ -324,6 +331,7 @@ class AppProvider(Provider):
                 feedback_command,
                 settings_command,
                 debug_command,
+                administration_command,
             ]
         )
 
