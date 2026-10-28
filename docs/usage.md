@@ -67,3 +67,24 @@ backfilled from messages. Downgrading `usage037` discards its accounting tables 
 Runtime Valkey reservations and SQLite accounting do not share a transaction. Live admission,
 worker integration, crash/restart reconciliation and checkpoint scheduling remain later work;
 this foundation makes no cross-store atomicity or exactly-once delivery claim.
+
+## Execution reservations
+
+BudgetService uses an injected clock and durable usage totals to seed missing runtime windows.
+ValkeyBudgetStore atomically checks every fixed-window quota, token-bucket burst allowance and
+concurrency set before acquiring any capacity. Subject keys use stable numeric identity and
+feature/family/unit/window dimensions. Global concurrency remains independent of ordinary quota
+bypass, and group quota cannot be bypassed by an administrator sender.
+
+Reservations have technical IDs and immutable operation fingerprints. An identical retry returns
+the existing state without another debit; conflicting reuse fails. Settlement commits actual
+consumption up to its estimate, refunds unused units, and releases concurrency exactly once.
+Zero actual consumption releases the reservation. Resource estimates must be increased through
+a future explicit reservation before consumption exceeds the reserved amount.
+
+Waiting returns a next retry time immediately; concurrency hints ask the scheduler to recheck
+rather than guarantee availability. No worker sleeps here. Valkey errors or missing state pause work.
+Active reservations retain their capacity after deadline until explicit settlement/recovery;
+expiry must not silently permit overlapping execution. Terminal receipts remain for one hour,
+longer than request deadlines. Orphan recovery belongs to the terminal/reconciliation blocks.
+SQLite accounting and runtime settlement remain separate replayable operations.

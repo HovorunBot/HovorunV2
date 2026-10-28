@@ -10,6 +10,7 @@ from dishka import Provider, Scope, alias, provide
 from hovorunv2.application.activation import ActivationStore
 from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.beta import BetaEntitlementStore
+from hovorunv2.application.budgets import BudgetPort, Clock, RuntimeNamespace, WallClock
 from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
 from hovorunv2.application.clients.bluesky import BlueskyService
 from hovorunv2.application.clients.instagram import InstagramService
@@ -49,6 +50,7 @@ from hovorunv2.application.services.admin_session_service import AdminSessionSer
 from hovorunv2.application.services.administration_service import AdministrationService
 from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.beta_service import BetaEligibilityService
+from hovorunv2.application.services.budget_service import BudgetService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
@@ -77,6 +79,7 @@ from hovorunv2.application.usage_ledger import UsageLedgerStore
 from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
 from hovorunv2.infrastructure.browser import BrowserService
+from hovorunv2.infrastructure.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import DatabaseSettings, Settings
 from hovorunv2.infrastructure.persistence import (
@@ -259,6 +262,17 @@ class AppProvider(Provider):
     help_command = provide(HelpCommand)
     feedback_command = provide(FeedbackCommand)
     group_management = provide(GroupManagementService)
+
+    @provide
+    def runtime_namespace(self) -> RuntimeNamespace:
+        """Keep runtime atomic operations in an isolated common hash slot."""
+        return RuntimeNamespace()
+
+    clock_impl = provide(WallClock)
+    clock = alias(source=WallClock, provides=Clock)
+    budget_store_impl = provide(ValkeyBudgetStore)
+    budget_store = alias(source=ValkeyBudgetStore, provides=BudgetPort)
+    budget_service = provide(BudgetService)
     usage_ledger_store_impl = provide(SQLAlchemyUsageLedgerStore)
     usage_ledger_store = alias(source=SQLAlchemyUsageLedgerStore, provides=UsageLedgerStore)
     usage_policy_store_impl = provide(SQLAlchemyUsagePolicyStore)
