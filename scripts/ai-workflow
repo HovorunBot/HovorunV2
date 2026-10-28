@@ -1,32 +1,89 @@
 #!/usr/bin/env bash
-# Apply the same project boundary and approval intent to both assistants.
+# Multi-tool assistant launcher for HovorunV2.
 set -euo pipefail
 
 workflow_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 workflow_cache="${UV_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/uv}"
+AGY_DEFAULT_MODEL="${AGY_DEFAULT_MODEL:-gemini-4-argon-medium}"
+
+dry_run=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=1
+    shift
+fi
+
 workflow_assistant="${1:-}"
 if [[ $# -gt 0 ]]; then
     shift
 fi
 
-case "$workflow_assistant" in
-    codex|gemini|agy) ;;
-    *)
-        printf 'Usage: %s {codex|gemini} [CLI arguments...]\n' "$0" >&2
-        exit 2
-        ;;
-esac
+if [[ "${1:-}" == "--" ]]; then
+    shift
+fi
 
-# Both CLIs treat these directories as writable alongside the project.
 mkdir -p -- "$workflow_cache"
 workflow_cache="$(cd -- "$workflow_cache" && pwd)"
 cd -- "$workflow_root"
 
+export HOVORUN_ROOT="$workflow_root"
+export UV_CACHE_DIR="$workflow_cache"
+export HOVORUN_AGENTS_DIR="$workflow_root/.agents"
+
 case "$workflow_assistant" in
     codex)
-        exec codex --approve-for-me --add-dir "$workflow_cache" "$@"
+        tool_bin="codex"
+        argv=("$tool_bin" --approve-for-me --add-dir "$workflow_cache")
+        if [[ -n "${AI_MODEL:-}" ]]; then
+            argv+=(-m "$AI_MODEL")
+        fi
+        argv+=("$@")
         ;;
-    gemini|agy)
-        exec agy --sandbox --mode auto --add-dir "$workflow_cache" "$@"
+    agy|gemini)
+        tool_bin="agy"
+        model_name="${AI_MODEL:-$AGY_DEFAULT_MODEL}"
+        argv=("$tool_bin" --sandbox --mode auto)
+        if [[ -n "$model_name" ]]; then
+            argv+=(--model "$model_name")
+        fi
+        argv+=(--add-dir "$workflow_cache" "$@")
+        ;;
+    claude)
+        tool_bin="claude"
+        # verified: docs https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview 2026-10-28
+        argv=("$tool_bin" --add-dir "$workflow_cache")
+        if [[ -n "${AI_MODEL:-}" ]]; then
+            argv+=(--model "$AI_MODEL")
+        fi
+        argv+=("$@")
+        ;;
+    custom)
+        if [[ -z "${AI_RUNNER:-}" ]]; then
+            printf 'ai-workflow: AI_RUNNER environment variable must be set for custom tool\n' >&2
+            exit 2
+        fi
+        tool_bin="$AI_RUNNER"
+        argv=("$tool_bin" "$@")
+        ;;
+    *)
+        printf 'Usage: %s [--dry-run] {codex|agy|gemini|claude|custom} [--] [args...]\n' "$0" >&2
+        printf 'Environment variables:\n' >&2
+        printf '  AI_MODEL          Model override for codex, agy, claude\n' >&2
+        printf '  AGY_DEFAULT_MODEL Default model for agy (default: gemini-4-argon-medium)\n' >&2
+        printf '  AI_RUNNER         Executable required for custom assistant profile\n' >&2
+        printf '  UV_CACHE_DIR      Cache directory exposed to assistants\n' >&2
+        exit 2
         ;;
 esac
+
+if [[ "$dry_run" -eq 1 ]]; then
+    printf '%q ' "${argv[@]}"
+    printf '\n'
+    exit 0
+fi
+
+if ! command -v "$tool_bin" >/dev/null 2>&1; then
+    printf 'ai-workflow: assistant binary not found: %s\n' "$tool_bin" >&2
+    exit 127
+fi
+
+exec "${argv[@]}"
