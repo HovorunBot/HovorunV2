@@ -6,7 +6,7 @@ local old = redis.call('GET', KEYS[1])
 if old then
   local r = cjson.decode(old)
   if r.fingerprint ~= p.fingerprint then return {'conflict'} end
-  if r.state == 'reserved' and p.now >= r.deadline then return {'expired'} end
+  if r.state == 'reserved' and p.now >= p.deadline then return {'expired'} end
   return {r.state}
 end
 if p.deadline <= p.now then return {'expired'} end

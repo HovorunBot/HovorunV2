@@ -110,3 +110,32 @@ FeatureWorkerBridge convert executor exceptions and results into fixed outcome c
 also strips arbitrary metadata and sanitizes result/error fields before persistence and finish logs.
 The feature queue uses SET with expiry for terminal persistence. No feature worker starts in this
 foundation; worker cutover must also address the stock SAQ 0.26.4 deprecated coroutine probe.
+
+## Bounded admission and queue handoff
+
+AdmissionService checks current actor/target generations, canonical routing, feature access and
+resolved policy before accepting work. Deduplication hashes stable incoming action metadata
+(platform, target, actor, message, trigger and feature), never a URL or message body.
+ValkeyAdmissionStore atomically checks subject pending count, per-sender ingress count, global
+pending count, per-payload ciphertext size and total ciphertext bytes. Only then does it store
+ciphertext, reserve counters and create an accepted ticket. Overflow leaves accepted work untouched.
+Duplicates return their original envelope and do not reserve capacity or store another payload.
+
+Initial ingress cap is ten pending jobs per sender in a group, further bounded by subject policy.
+Counts share stable subjects across features. Personal administrator quota bypass does not remove
+pending/ingress/global/byte safety bounds. Actual ciphertext blob bytes are counted once; tickets
+contain no duplicate ciphertext. Original envelope JSON remains verbatim inside the ticket so Lua
+JSON number formatting cannot change deadlines, large numeric identities or SAQ replay checks.
+
+Acceptance and SAQ enqueue are two phases. Accepted tickets appear in a bounded recovery index.
+A retry enqueues by the original stable job ID, accepts an existing identical SAQ job, then marks
+the ticket enqueued. Failure before enqueue or after enqueue/before acknowledgement leaves a
+recoverable accepted ticket with capacity held. No cross-system transaction is promised.
+
+Only verified terminal completion/cancellation may release counters and remove ciphertext.
+Terminal release is idempotent; changed terminal outcomes fail. Empty subject/ingress counters
+are removed. Active tickets/dedupe/capacity do not silently expire while work might still run.
+Expired accepted work retains capacity for the separate terminal sweeper; recovery skips it rather
+than blocking live tickets. Terminal ticket/dedupe receipts retain one hour. Callers must preserve
+original acceptance/deadline on retry. Fair scheduling, live media cutover, terminal sweeping and
+restart reconciliation remain later implementation steps.

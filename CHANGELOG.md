@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **queue**: bound and deduplicate work admission
 - **limits**: reserve execution budgets atomically
 - **usage**: persist idempotent usage aggregates
 - **limits**: define scoped feature usage policies

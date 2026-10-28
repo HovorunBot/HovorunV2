@@ -1,5 +1,6 @@
 """Typed SAQ feature adapter with payload-free serialization and safe worker results."""
 
+import contextlib
 import math
 
 import redis.asyncio as redis
@@ -42,6 +43,29 @@ class SafeFeatureQueue(RedisQueue):
                 else JobOutcome.FAILED.value
             )
         return super().serialize(job)
+
+    async def abort(self, job: Job, error: str, ttl: float = 5) -> None:
+        """Preserve SAQ cancellation flags without its deprecated SETEX path."""
+        if not math.isfinite(ttl) or ttl <= 0:
+            msg = "Cancellation retention must be positive and finite."
+            raise ValueError(msg)
+        async with self._op_sem:
+            async with self.redis.pipeline(transaction=True) as pipe:
+                job.status = Status.ABORTING
+                job.error = "feature_job_cancelled"
+                dequeued, *_ = await (
+                    pipe.lrem(self._queued, 0, job.id)
+                    .zrem(self._incomplete, job.id)
+                    .set(job.id, self.serialize(job))
+                    .set(job.abort_id, "feature_job_cancelled", ex=math.ceil(ttl))
+                    .publish(job.id, job.status)
+                    .execute()
+                )
+            if dequeued:
+                await self.finish(job, Status.ABORTED, error="feature_job_cancelled")
+                await self.redis.delete(job.abort_id)
+            else:
+                await self.redis.lrem(self._active, 0, job.id)
 
     async def _finish(
         self,
@@ -132,7 +156,11 @@ class SAQFeatureQueue(FeatureQueuePort):
 
     async def close(self) -> None:
         """Close the dedicated SAQ connection without touching operational queues."""
-        await self._queue.disconnect()
+        try:
+            with contextlib.suppress(RedisError, OSError):
+                await self._queue.disconnect()
+        finally:
+            await self._queue.redis.aclose()
 
 
 class FeatureWorkerBridge:

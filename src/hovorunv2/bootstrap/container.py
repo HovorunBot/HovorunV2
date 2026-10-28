@@ -8,6 +8,7 @@ from aiogram import Bot
 from dishka import Provider, Scope, alias, provide
 
 from hovorunv2.application.activation import ActivationStore
+from hovorunv2.application.admission import AdmissionPort
 from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.beta import BetaEntitlementStore
 from hovorunv2.application.budgets import BudgetPort, Clock, RuntimeNamespace, WallClock
@@ -49,6 +50,7 @@ from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.activation_service import GroupActivationService
 from hovorunv2.application.services.admin_session_service import AdminSessionService
 from hovorunv2.application.services.administration_service import AdministrationService
+from hovorunv2.application.services.admission_service import AdmissionService
 from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.beta_service import BetaEligibilityService
 from hovorunv2.application.services.budget_service import BudgetService
@@ -78,6 +80,7 @@ from hovorunv2.application.services.usage_policy_service import UsagePolicyServi
 from hovorunv2.application.usage import UsagePolicyStore, UsageSafetyCaps
 from hovorunv2.application.usage_ledger import UsageLedgerStore
 from hovorunv2.bootstrap.database import DatabaseProvider
+from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.budgets import ValkeyBudgetStore
@@ -286,6 +289,9 @@ class AppProvider(Provider):
 
     clock_impl = provide(WallClock)
     clock = alias(source=WallClock, provides=Clock)
+    admission_store_impl = provide(ValkeyAdmissionStore)
+    admission_store = alias(source=ValkeyAdmissionStore, provides=AdmissionPort)
+    admission_service = provide(AdmissionService)
     payload_store_impl = provide(ValkeyPayloadStore)
     payload_store = alias(source=ValkeyPayloadStore, provides=PayloadPort)
     budget_store_impl = provide(ValkeyBudgetStore)

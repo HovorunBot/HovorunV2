@@ -145,3 +145,15 @@ async def test_deadline_impossible_estimate_and_partial_settlement(test_containe
         two = (UnitAmount(UsageUnit.REQUESTS, 2),)
         assert (await store.reserve(BudgetRequest("refund", usage, two, 400), 121, (0, 0))).allowed
         assert (await store.finish("refund", ZERO, 121)).state == ReservationState.RELEASED
+
+
+async def test_fractional_deadline_replay_does_not_use_lua_rounded_timestamp(test_container: AsyncContainer) -> None:
+    """Stored Lua metadata may round floats; a retry must compare its exact bound original deadline."""
+    await usage_subjects(test_container)
+    usage = await (await test_container.get(UsagePolicyService)).resolve(FEATURE, TriggerKind.DIRECT, USER)
+    async with runtime_cache(test_container) as (cache, namespace):
+        store = ValkeyBudgetStore(cache, namespace)
+        deadline = 1_700_000_000.1234567
+        request = BudgetRequest("fractional", usage, ONE, deadline)
+        assert (await store.reserve(request, deadline - 1, (0, 0))).allowed
+        assert (await store.reserve(request, deadline, (0, 0))).state == ReservationState.EXPIRED

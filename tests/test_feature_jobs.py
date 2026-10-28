@@ -154,6 +154,8 @@ async def test_real_saq_result_exception_error_and_serialization_are_payload_fre
         finally:
             await raw_queue.disconnect()
             await queue.close()
+    async with redis.from_url(settings.valkey_url) as client:
+        assert not [key async for key in client.scan_iter(match="*" + namespace.value + "*")]
 
 
 async def test_missing_encryption_and_actual_ciphertext_bound_fail_before_write(test_container: AsyncContainer) -> None:
