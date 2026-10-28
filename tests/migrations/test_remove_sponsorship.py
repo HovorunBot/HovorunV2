@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ def test_remove_sponsorship_preserves_independent_access_and_history(
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     config.attributes["sqlite_path"] = database
     command.upgrade(config, "member019")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             "INSERT INTO chats (id, chat_id, platform, status, chat_type, target_lang, ignored_langs, encryption_salt) "
             "VALUES (1, -100101, 'telegram', 'approved', 'supergroup', 'uk', '[\"en\"]', 'synthetic-salt')"
@@ -73,7 +74,7 @@ def test_remove_sponsorship_preserves_independent_access_and_history(
         audit_before = connection.execute("SELECT * FROM audit_events ORDER BY id").fetchall()
     command.upgrade(config, "a8c7f6d5e4b3")
     command.upgrade(config, "a8c7f6d5e4b3")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT name FROM sqlite_master WHERE name = 'group_sponsors'").fetchall() == []
         assert {query: connection.execute(query).fetchall() for query in preserved_queries} == before
         audit_after = connection.execute("SELECT * FROM audit_events ORDER BY id").fetchall()
@@ -88,7 +89,7 @@ def test_remove_sponsorship_preserves_independent_access_and_history(
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     if downgrade_again:
         command.downgrade(config, "member019")
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection, connection:
             assert connection.execute("SELECT COUNT(*) FROM group_sponsors").fetchone() == (0,)
             assert {query: connection.execute(query).fetchall() for query in preserved_queries} == before
             assert connection.execute("SELECT * FROM audit_events ORDER BY id").fetchall() == audit_after

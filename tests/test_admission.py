@@ -1,4 +1,4 @@
-"""Bounded real-Valkey admission and crash-recoverable handoff to real SAQ."""
+"""Bounded real-Valkey admission and crash-recoverable handoff to real Celery."""
 
 import asyncio
 import time
@@ -9,7 +9,7 @@ import redis.asyncio as redis
 from dishka import AsyncContainer
 
 from hovorunv2.application.admission import AdmissionLimits, AdmissionState, TicketState, incoming_action_key
-from hovorunv2.application.feature_jobs import JobOutcome, JobTarget, PayloadState
+from hovorunv2.application.feature_jobs import JobOutcome, JobStatus, JobTarget, PayloadState
 from hovorunv2.application.features import TriggerKind
 from hovorunv2.application.ports import ChatStore, CommandStore, UserStore
 from hovorunv2.application.services.admission_service import AdmissionService
@@ -21,7 +21,7 @@ from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from hovorunv2.infrastructure.feature_queue import SAQFeatureQueue
+from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
 from tests.test_feature_jobs import PRIVATE_BODY, job_envelope
 from tests.test_usage_policies import FEATURE
 from tests.utils.runtime import ManualClock, runtime_cache
@@ -151,7 +151,7 @@ async def test_automatic_group_ingress_is_per_sender_and_shared_across_features(
 
 
 async def admission_service(
-    container: AsyncContainer, store: ValkeyAdmissionStore, queue: SAQFeatureQueue, clock: ManualClock
+    container: AsyncContainer, store: ValkeyAdmissionStore, queue: CeleryFeatureQueue, clock: ManualClock
 ) -> AdmissionService:
     """Compose the real application service and its real stores/adapters."""
     return AdmissionService(
@@ -168,14 +168,14 @@ async def admission_service(
 async def test_handoff_recovers_crashes_before_enqueue_and_before_acknowledgement(
     test_container: AsyncContainer,
 ) -> None:
-    """Accepted tickets retain capacity until real SAQ enqueue succeeds and its acknowledgement is replayed."""
+    """Accepted tickets retain capacity until real Celery enqueue succeeds and its acknowledgement is replayed."""
     settings = await test_container.get(Settings)
     clock = ManualClock(time.time())
     async with runtime_cache(test_container) as (cache, namespace):
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
         store = ValkeyAdmissionStore(cache, namespace)
-        queue = SAQFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
-        unavailable = SAQFeatureQueue(
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        unavailable = CeleryFeatureQueue(
             settings.model_copy(update={"valkey_url": "redis://127.0.0.1:1/0"}), clock, namespace, UsageSafetyCaps()
         )
         try:
@@ -198,7 +198,7 @@ async def test_handoff_recovers_crashes_before_enqueue_and_before_acknowledgemen
             assert (await recovered.handoff(envelope.job_id)).state == AdmissionState.ENQUEUED
             assert (await queue.inspect(envelope.job_id)).envelope == envelope
             assert await queue.cancel(envelope.job_id)
-            assert (await queue.inspect(envelope.job_id)).status == "aborted"
+            assert (await queue.inspect(envelope.job_id)).status == JobStatus.TERMINAL
             await store.finish(envelope.job_id, JobOutcome.CANCELLED)
             assert (await recovered.handoff(envelope.job_id)).state == AdmissionState.TERMINAL
         finally:
@@ -220,7 +220,7 @@ async def test_application_admission_rechecks_actor_target_access_and_original_d
     async with runtime_cache(test_container) as (cache, namespace):
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
         store = ValkeyAdmissionStore(cache, namespace)
-        queue = SAQFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
         try:
             service = await admission_service(test_container, store, queue, clock)
             sealed = await payloads.seal("private-action", PRIVATE_BODY, clock.now() + 300)

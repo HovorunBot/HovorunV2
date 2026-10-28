@@ -10,6 +10,7 @@ from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.repositories.policy_queries import exact_target
 
 
 class SQLAlchemyBetaEntitlementRepository:
@@ -19,29 +20,9 @@ class SQLAlchemyBetaEntitlementRepository:
         self._session = session
 
     async def target(self, target: PermissionTarget) -> UserDB | ChatDB | None:
-        """Require the exact selected lifecycle identity, including its current numeric routing ID."""
-        if target.kind == "user":
-            return await self._session.scalar(
-                select(UserDB).where(
-                    UserDB.id == target.entity_id,
-                    UserDB.telegram_id == target.telegram_id,
-                    UserDB.generation == target.generation,
-                    UserDB.platform == "telegram",
-                    UserDB.deleted_at.is_(None),
-                )
-            )
-        if target.kind == "group":
-            return await self._session.scalar(
-                select(ChatDB).where(
-                    ChatDB.id == target.entity_id,
-                    ChatDB.chat_id == target.telegram_id,
-                    ChatDB.generation == target.generation,
-                    ChatDB.platform == "telegram",
-                    ChatDB.chat_type.in_(("group", "supergroup")),
-                    ChatDB.deleted_at.is_(None),
-                )
-            )
-        return None
+        """Require the exact current active lifecycle and canonical numeric route."""
+        statement = exact_target(target)
+        return await self._session.scalar(statement) if statement is not None else None
 
     async def facts(self, target: PermissionTarget, feature: str) -> BetaEligibilityFacts:
         """Read current effective entitlements and filter deleted lifecycle subjects."""

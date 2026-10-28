@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.ban_ports import BanStore
-from hovorunv2.application.beta import BetaEntitlementStore
 from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.features import (
     FeatureChannel,
@@ -27,11 +26,10 @@ from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.policy_facts import FeatureFactStore
 from hovorunv2.application.ports import CachePort, ChatStore, CommandStore, UserStore
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
-from hovorunv2.application.services.beta_service import BetaEligibilityService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.application.services.translation_service import TranslationService
@@ -64,10 +62,9 @@ async def feature_runtime(container: AsyncContainer, registry: FeatureRegistry =
         await container.get(BanStore),
         await container.get(MembershipStore),
         await container.get(PermissionService),
-        await container.get(CommandService),
         await container.get(ChatStatusService),
-        BetaEligibilityService(await container.get(BetaEntitlementStore), registry),
         await container.get(GroupBetaStore),
+        await container.get(FeatureFactStore),
     )
     access = await container.get(AccessService)
     access.features = service

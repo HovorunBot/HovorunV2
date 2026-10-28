@@ -1,4 +1,4 @@
-"""Safe worker boundary preventing request-bearing exceptions/results from reaching SAQ."""
+"""Safe worker boundary preventing request-bearing exceptions/results from reaching the broker."""
 
 from hovorunv2.application.budgets import Clock
 from hovorunv2.application.feature_jobs import FeatureExecutor, JobEnvelope, JobOutcome, PayloadPort, PayloadState

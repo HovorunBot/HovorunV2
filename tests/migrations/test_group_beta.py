@@ -1,6 +1,7 @@
 """Real predecessor upgrade, lifecycle constraints and downgrade for group beta state."""
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ def test_group_beta_upgrade_preserves_data_and_enforces_active_identity_constrai
     database = tmp_path / "group-beta.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, "beta028")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             "INSERT INTO chats (id, chat_id, platform, status, encryption_salt) "
             "VALUES (1, -290001, 'telegram', 'approved', 'synthetic-salt')"
@@ -30,7 +31,7 @@ def test_group_beta_upgrade_preserves_data_and_enforces_active_identity_constrai
         before_audit = connection.execute("SELECT * FROM audit_events").fetchall()
     command.upgrade(config, "groupbeta029")
     command.upgrade(config, "groupbeta029")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute("PRAGMA foreign_keys=ON")
         assert connection.execute("SELECT * FROM chats").fetchall() == before_chats
         assert connection.execute("SELECT * FROM users").fetchall() == before_users
@@ -64,7 +65,7 @@ def test_group_beta_upgrade_preserves_data_and_enforces_active_identity_constrai
         connection.execute("INSERT INTO group_beta_features (group_id, feature) VALUES (1, 'synthetic_beta')")
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     command.downgrade(config, "beta028")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM chats").fetchall() == before_chats
         assert connection.execute("SELECT * FROM users").fetchall() == before_users
         assert connection.execute("SELECT * FROM audit_events").fetchall() == before_audit
@@ -75,6 +76,6 @@ def test_group_beta_upgrade_preserves_data_and_enforces_active_identity_constrai
             == []
         )
     command.upgrade(config, "groupbeta029")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM group_beta_features").fetchall() == []
         assert connection.execute("SELECT * FROM group_beta_enablers").fetchall() == []

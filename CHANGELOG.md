@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **workers**: add native persistence and Celery foundations
 - **database**: migrate persistence to PostgreSQL
 - **queue**: define encrypted feature job envelopes
 - **audit**: use standard strict payload validation

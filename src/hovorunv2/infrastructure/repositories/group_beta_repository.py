@@ -5,7 +5,6 @@ from datetime import datetime
 
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.selectable import Exists
 
 from hovorunv2.application.group_beta import GroupBetaFacts
 from hovorunv2.application.membership import MembershipStatus
@@ -13,9 +12,10 @@ from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.group_beta import GroupBetaEnablerDB, GroupBetaFeatureDB
-from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
+from hovorunv2.domain.membership import MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.beta_repository import SQLAlchemyBetaEntitlementRepository
+from hovorunv2.infrastructure.repositories.policy_queries import fresh_admins, group_support
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,20 +70,10 @@ class SQLAlchemyGroupBetaRepository:
                         MemberEvidenceDB.needs_verification.is_(False),
                         MemberEvidenceDB.verified_at <= now,
                         MemberEvidenceDB.expires_at > now,
-                        self._fresh_admins(group_id, now),
+                        fresh_admins(group_id, now),
                     )
                 )
             )
-        )
-
-    def _fresh_admins(self, group_id: int, now: datetime) -> Exists:
-        """Honor snapshot invalidation, including Telegram routing migrations."""
-        return exists().where(
-            GroupMembershipStateDB.group_id == group_id,
-            GroupMembershipStateDB.deleted_at.is_(None),
-            GroupMembershipStateDB.admins_known.is_(True),
-            GroupMembershipStateDB.admins_verified_at <= now,
-            GroupMembershipStateDB.admins_expires_at > now,
         )
 
     async def user_eligible(self, user_id: int, feature: str) -> bool:
@@ -102,36 +92,7 @@ class SQLAlchemyGroupBetaRepository:
         )
 
     async def _has_support(self, selection: GroupBetaFeatureDB, now: datetime) -> bool:
-        eligible = exists().where(
-            BetaEntitlementDB.user_id == UserDB.id,
-            BetaEntitlementDB.feature.in_((selection.feature, ALL_BETA)),
-            BetaEntitlementDB.revoked_at.is_(None),
-            BetaEntitlementDB.deleted_at.is_(None),
-        )
-        query = (
-            select(GroupBetaEnablerDB.id)
-            .join(UserDB, UserDB.id == GroupBetaEnablerDB.user_id)
-            .join(
-                MemberEvidenceDB,
-                (MemberEvidenceDB.user_id == UserDB.id) & (MemberEvidenceDB.group_id == selection.group_id),
-            )
-            .where(
-                GroupBetaEnablerDB.selection_id == selection.id,
-                GroupBetaEnablerDB.revoked_at.is_(None),
-                GroupBetaEnablerDB.deleted_at.is_(None),
-                UserDB.deleted_at.is_(None),
-                UserDB.platform == "telegram",
-                MemberEvidenceDB.deleted_at.is_(None),
-                MemberEvidenceDB.status == MembershipStatus.ADMIN,
-                MemberEvidenceDB.needs_verification.is_(False),
-                MemberEvidenceDB.verified_at <= now,
-                MemberEvidenceDB.expires_at > now,
-                self._fresh_admins(selection.group_id, now),
-                eligible,
-            )
-            .limit(1)
-        )
-        return await self._session.scalar(query) is not None
+        return await self._session.scalar(group_support(selection, now)) is not None
 
     async def facts(self, target: PermissionTarget, feature: str, now: datetime) -> GroupBetaFacts:
         """Read current support without caching a prior eligibility or membership result."""

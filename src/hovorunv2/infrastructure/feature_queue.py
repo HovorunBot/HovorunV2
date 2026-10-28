@@ -1,12 +1,15 @@
-"""Typed SAQ feature adapter with payload-free serialization and safe worker results."""
+"""Celery feature publication with Valkey-owned execution facts and exclusive runner claims."""
 
-import contextlib
+import asyncio
+import json
 import math
+import secrets
+from datetime import UTC, datetime
 
 import redis.asyncio as redis
+from celery import Celery
+from kombu.exceptions import OperationalError
 from redis.exceptions import RedisError
-from saq.job import Job, Status
-from saq.queue.redis import RedisQueue
 
 from hovorunv2.application.budgets import RUNTIME_RETENTION_SECONDS, TECHNICAL_ID, Clock, RuntimeNamespace
 from hovorunv2.application.feature_jobs import (
@@ -15,160 +18,188 @@ from hovorunv2.application.feature_jobs import (
     FeatureQueuePort,
     JobEnvelope,
     JobOutcome,
+    JobStatus,
     QueuedFeature,
 )
 from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.usage import UsageSafetyCaps
 from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.feature_queue_scripts import (
+    CANCEL_FEATURE,
+    CLAIM_FEATURE,
+    FINISH_FEATURE,
+    REGISTER_FEATURE,
+)
+
+BROKER_VISIBILITY_SECONDS = 2 * RUNTIME_RETENTION_SECONDS
+BROKER_SOCKET_SECONDS = 2
 
 
-class SafeFeatureQueue(RedisQueue):
-    """Sanitize SAQ's persisted result/error and debug rendering at the serialization boundary."""
-
-    def serialize(self, job: Job) -> bytes | str:
-        """Reject arbitrary kwargs and strip exception strings before SAQ persistence or finish logging."""
-        kwargs = job.kwargs or {}
-        if job.function != FEATURE_JOB_FUNCTION or set(kwargs) != {"envelope"}:
-            msg = "Feature queue accepts only typed envelope jobs."
-            raise ValueError(msg)
-        envelope = JobEnvelope.model_validate(kwargs["envelope"])
-        job.kwargs = {"envelope": envelope.model_dump(mode="json")}
-        job.meta = {}
-        if job.error is not None:
-            job.error = "feature_job_failed"
-        if job.result is not None:
-            job.result = (
-                JobOutcome(job.result).value
-                if isinstance(job.result, str) and job.result in set(JobOutcome)
-                else JobOutcome.FAILED.value
-            )
-        return super().serialize(job)
-
-    async def abort(self, job: Job, error: str, ttl: float = 5) -> None:
-        """Preserve SAQ cancellation flags without its deprecated SETEX path."""
-        if not math.isfinite(ttl) or ttl <= 0:
-            msg = "Cancellation retention must be positive and finite."
-            raise ValueError(msg)
-        async with self._op_sem:
-            async with self.redis.pipeline(transaction=True) as pipe:
-                job.status = Status.ABORTING
-                job.error = "feature_job_cancelled"
-                dequeued, *_ = await (
-                    pipe.lrem(self._queued, 0, job.id)
-                    .zrem(self._incomplete, job.id)
-                    .set(job.id, self.serialize(job))
-                    .set(job.abort_id, "feature_job_cancelled", ex=math.ceil(ttl))
-                    .publish(job.id, job.status)
-                    .execute()
-                )
-            if dequeued:
-                await self.finish(job, Status.ABORTED, error="feature_job_cancelled")
-                await self.redis.delete(job.abort_id)
-            else:
-                await self.redis.lrem(self._active, 0, job.id)
-
-    async def _finish(
-        self,
-        job: Job,
-        status: Status,
-        *,
-        result: object = None,
-        error: str | None = None,
-    ) -> None:
-        """Preserve SAQ terminal cleanup using SET with expiry instead of deprecated SETEX."""
-        async with self.redis.pipeline(transaction=True) as pipe:
-            pipe.lrem(self._active, 1, job.id).zrem(self._incomplete, job.id)
-            if job.ttl > 0:
-                pipe.set(job.id, self.serialize(job), ex=job.ttl)
-            elif job.ttl == 0:
-                pipe.set(job.id, self.serialize(job))
-            else:
-                pipe.delete(job.id)
-            await pipe.execute()
-            await self.notify(job)
+def _envelope_json(envelope: JobEnvelope) -> str:
+    return json.dumps(envelope.model_dump(mode="json"), separators=(",", ":"))
 
 
-class SAQFeatureQueue(FeatureQueuePort):
-    """Own a dedicated feature queue; generic operational TaskQueueService stays separate."""
+class CeleryFeatureQueue(FeatureQueuePort):
+    """Keep publication uncertainty separate from exclusive execution and verified terminal outcomes.
+
+    Celery task IDs are correlation identifiers, not a deduplication facility. A lost publish
+    acknowledgement can produce duplicate broker messages. Every consumer must use claim()
+    before invoking an executor. A running claim is never reclaimed on a timer.
+    """
 
     def __init__(self, settings: Settings, clock: Clock, namespace: RuntimeNamespace, safety: UsageSafetyCaps) -> None:
         self._clock = clock
         self._safety = safety
-        self._queue = SafeFeatureQueue(redis.from_url(settings.valkey_url), name=namespace.value + "features")
+        self._prefix = namespace.value + "feature-job:"
+        self._client = redis.from_url(settings.valkey_url, decode_responses=True)
+        self._queue_name = namespace.value + "features"
+        self._app = Celery("hovorun_features", broker=settings.valkey_url)
+        self._app.conf.update(
+            task_default_queue=self._queue_name,
+            task_serializer="json",
+            accept_content=["json"],
+            task_ignore_result=True,
+            task_store_errors_even_if_ignored=False,
+            task_send_sent_event=False,
+            worker_send_task_events=False,
+            task_acks_late=True,
+            task_reject_on_worker_lost=False,
+            worker_prefetch_multiplier=1,
+            broker_connection_timeout=BROKER_SOCKET_SECONDS,
+            broker_transport_options={
+                "global_keyprefix": namespace.value,
+                "visibility_timeout": BROKER_VISIBILITY_SECONDS,
+                "socket_connect_timeout": BROKER_SOCKET_SECONDS,
+                "socket_timeout": BROKER_SOCKET_SECONDS,
+                "retry_policy": {"max_retries": 0},
+            },
+        )
 
     async def enqueue(self, envelope: JobEnvelope, *, not_before: float = 0) -> EnqueueState:
-        """SAQ timeout limits execution; envelope deadline remains absolute acceptance-to-terminal time."""
+        """Retry uncertain publication with original metadata; the consumer claim blocks duplicate execution."""
         now = self._clock.now()
         if not math.isfinite(not_before) or not_before < 0:
             msg = "Scheduled feature time must be finite and nonnegative."
             raise ValueError(msg)
         if now >= envelope.deadline or not_before >= envelope.deadline:
             return EnqueueState.EXPIRED
-        timeout = max(1, math.ceil(min(self._safety.execution_seconds, envelope.deadline - max(now, not_before))))
+        key = self._key(envelope.job_id)
         try:
-            existing = await self._queue.job(envelope.job_id)
-            if existing is not None:
-                if existing.kwargs != {"envelope": envelope.model_dump(mode="json")}:
-                    msg = "Feature job ID conflicts with another envelope."
-                    raise ValueError(msg)
-                return EnqueueState.EXISTS
-            job = await self._queue.enqueue(
-                FEATURE_JOB_FUNCTION,
-                key=envelope.job_id,
-                envelope=envelope.model_dump(mode="json"),
-                scheduled=not_before,
-                timeout=timeout,
-                ttl=RUNTIME_RETENTION_SECONDS,
-                retries=0,
+            registered = await self._client.execute_command(
+                "EVAL", REGISTER_FEATURE, 1, key, _envelope_json(envelope), repr(not_before)
             )
-        except RedisError, OSError:
-            return EnqueueState.UNAVAILABLE
-        if job is None:
-            winner = await self._queue.job(envelope.job_id)
-            if winner is None or winner.kwargs != {"envelope": envelope.model_dump(mode="json")}:
+            if registered == -1:
                 msg = "Feature job ID conflicts with another envelope."
                 raise ValueError(msg)
-        return EnqueueState.ENQUEUED if job is not None else EnqueueState.EXISTS
+            if registered == 0:
+                return EnqueueState.EXISTS
+            # Read the original schedule, not a retry's potentially changed scheduling request.
+            original_schedule = await self._client.execute_command("HGET", key, "not_before")
+            if original_schedule is None:
+                return EnqueueState.UNAVAILABLE
+            if not await asyncio.to_thread(self._publish, envelope, float(original_schedule)):
+                return EnqueueState.EXPIRED
+            await self._client.execute_command("HSET", key, "published", "1")
+        except RedisError, OperationalError, OSError:
+            return EnqueueState.UNAVAILABLE
+        return EnqueueState.ENQUEUED if registered == 1 else EnqueueState.EXISTS
 
-    async def inspect(self, job_id: str) -> QueuedFeature | None:
-        """Return operational metadata only; raw SAQ error strings never leave infrastructure."""
-        self._validate_id(job_id)
-        job = await self._queue.job(job_id)
-        if job is None:
-            return None
-        envelope = JobEnvelope.model_validate((job.kwargs or {}).get("envelope"))
-        outcome = JobOutcome(job.result) if isinstance(job.result, str) and job.result in set(JobOutcome) else None
-        return QueuedFeature(envelope, job.status.value, outcome)
-
-    async def cancel(self, job_id: str) -> bool:
-        """Use a fixed operational cancellation reason, never a request-bearing exception."""
-        self._validate_id(job_id)
-        job = await self._queue.job(job_id)
-        if job is None:
+    def _publish(self, envelope: JobEnvelope, not_before: float) -> bool:
+        """Run synchronous broker I/O only through to_thread; never share async resources with that thread."""
+        remaining = envelope.deadline - max(self._clock.now(), not_before)
+        if remaining <= 0:
             return False
-        await self._queue.abort(job, "feature_job_cancelled")
+        with self._app.connection_for_write() as connection, self._app.amqp.Producer(connection) as producer:
+            self._app.send_task(
+                FEATURE_JOB_FUNCTION,
+                kwargs={"envelope": envelope.model_dump(mode="json")},
+                task_id=envelope.job_id,
+                producer=producer,
+                queue=self._queue_name,
+                eta=datetime.fromtimestamp(not_before, UTC) if not_before else None,
+                expires=datetime.fromtimestamp(envelope.deadline, UTC),
+                time_limit=max(1, math.ceil(min(self._safety.execution_seconds, remaining))),
+                ignore_result=True,
+                retry=False,
+                argsrepr="()",
+                kwargsrepr="<feature envelope>",
+            )
         return True
 
-    def _validate_id(self, job_id: str) -> None:
+    async def inspect(self, job_id: str) -> QueuedFeature | None:
+        """Read application facts; Celery PENDING cannot distinguish unknown, queued and lost jobs."""
+        record = await self._client.execute_command("HGETALL", self._key(job_id))
+        if not record:
+            return None
+        return QueuedFeature(
+            JobEnvelope.model_validate_json(record["envelope"]),
+            JobStatus(record["state"]),
+            JobOutcome(record["outcome"]) if "outcome" in record else None,
+        )
+
+    async def claim(self, envelope: JobEnvelope) -> str | None:
+        """Acquire one execution owner; duplicates, missing state, cancellation and expiry cannot execute."""
+        token = secrets.token_hex(16)
+        claimed = await self._client.execute_command(
+            "EVAL",
+            CLAIM_FEATURE,
+            1,
+            self._key(envelope.job_id),
+            _envelope_json(envelope),
+            repr(self._clock.now()),
+            repr(envelope.deadline),
+            token,
+            RUNTIME_RETENTION_SECONDS,
+        )
+        return token if claimed == 1 else None
+
+    async def finish(self, job_id: str, token: str, outcome: JobOutcome) -> bool:
+        """Only the actual execution owner may record a safe outcome; never settle admission or budgets here."""
+        if not isinstance(outcome, JobOutcome):
+            msg = "Feature completion requires a safe typed outcome."
+            raise TypeError(msg)
+        return (
+            await self._client.execute_command(
+                "EVAL", FINISH_FEATURE, 1, self._key(job_id), token, outcome.value, RUNTIME_RETENTION_SECONDS
+            )
+            == 1
+        )
+
+    async def cancel(self, job_id: str) -> bool:
+        """Tombstone queued work atomically; running work retains its claim pending cooperative cancellation."""
+        return (
+            await self._client.execute_command("EVAL", CANCEL_FEATURE, 1, self._key(job_id), RUNTIME_RETENTION_SECONDS)
+            == 1
+        )
+
+    def _key(self, job_id: str) -> str:
         if TECHNICAL_ID.fullmatch(job_id) is None:
             msg = "Invalid feature job identity."
             raise ValueError(msg)
+        return self._prefix + job_id
 
     async def close(self) -> None:
-        """Close the dedicated SAQ connection without touching operational queues."""
+        """Close owned clients without starting a worker or touching other queues."""
         try:
-            with contextlib.suppress(RedisError, OSError):
-                await self._queue.disconnect()
+            await asyncio.to_thread(self._app.close)
         finally:
-            await self._queue.redis.aclose()
+            await self._client.aclose()
 
 
 class FeatureWorkerBridge:
-    """Adapt a mandatory application runner to SAQ without putting private bytes into job state."""
+    """Mandatory consumer boundary; compose the real runner and queue inside each executing process."""
 
-    def __init__(self, runner: FeatureJobRunner) -> None:
+    def __init__(self, runner: FeatureJobRunner, queue: CeleryFeatureQueue) -> None:
         self._runner = runner
+        self._queue = queue
 
-    async def run_feature_job(self, context: object, envelope: dict[str, object]) -> str:
-        """Return only the runner's safe outcome code to the queue framework."""
-        return await self._runner.run(envelope)
+    async def run_feature_job(self, envelope: dict[str, object]) -> str:
+        """Claim before loading private bytes; duplicate deliveries never invoke the runner twice."""
+        job = JobEnvelope.model_validate(envelope)
+        token = await self._queue.claim(job)
+        if token is None:
+            existing = await self._queue.inspect(job.job_id)
+            return existing.outcome.value if existing and existing.outcome else JobOutcome.FAILED.value
+        outcome = JobOutcome(await self._runner.run(envelope))
+        await self._queue.finish(job.job_id, token, outcome)
+        return outcome.value

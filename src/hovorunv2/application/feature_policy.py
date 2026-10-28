@@ -1,0 +1,92 @@
+"""Pure feature decisions shared by async ingress and native worker execution."""
+
+from dataclasses import dataclass
+
+from hovorunv2.application.features import FeatureDefinition, FeatureScope, TriggerKind
+from hovorunv2.application.permissions import DecisionReason
+
+
+@dataclass(frozen=True, slots=True)
+class FeatureDecision:
+    """Safe discovery and execution result; guidance is restricted to managers."""
+
+    visible: bool = False
+    allowed: bool = False
+    selected: bool = False
+    guidance: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FeatureFacts:
+    """Fresh typed inputs; these facts are never serialized as an authority grant."""
+
+    scope: FeatureScope
+    target_active: bool = False
+    actor_active: bool = False
+    actor_restricted: bool = False
+    private_access: bool = False
+    access_reason: DecisionReason = DecisionReason.ENTITY_UNAVAILABLE
+    manager: bool = False
+    eligible: bool = False
+    selected: bool = False
+    supported: bool = False
+    capable: bool = False
+
+
+def feature_entry_allowed(
+    definition: FeatureDefinition,
+    scope: FeatureScope,
+    *,
+    actor_active: bool,
+    actor_restricted: bool,
+    trigger: TriggerKind,
+    configure: bool,
+) -> bool:
+    """Automatic group work uses group authority; human actions require a current actor."""
+    if scope not in definition.scopes or (not configure and trigger not in definition.triggers):
+        return False
+    automatic = scope == FeatureScope.GROUP and trigger == TriggerKind.AUTOMATIC and not configure
+    return automatic or (actor_active and not actor_restricted)
+
+
+def evaluate_feature(
+    definition: FeatureDefinition, facts: FeatureFacts, *, trigger: TriggerKind, configure: bool = False
+) -> FeatureDecision:
+    """Apply existing private/group rules independently of fact-loading I/O."""
+    if not facts.target_active or not feature_entry_allowed(
+        definition,
+        facts.scope,
+        actor_active=facts.actor_active,
+        actor_restricted=facts.actor_restricted,
+        trigger=trigger,
+        configure=configure,
+    ):
+        return FeatureDecision()
+    if facts.scope == FeatureScope.PRIVATE:
+        return _private_decision(facts, configure=configure)
+    if configure and not facts.manager:
+        return FeatureDecision()
+    if facts.access_reason != DecisionReason.ALLOWED:
+        return FeatureDecision(
+            guidance="Group access is unavailable. Check approval and administrator verification."
+            if facts.manager
+            else None
+        )
+    if not facts.eligible:
+        return FeatureDecision()
+    return FeatureDecision(
+        visible=configure or (facts.selected and facts.supported and facts.capable),
+        allowed=facts.capable and (configure or (facts.selected and facts.supported)),
+        selected=facts.selected,
+        guidance="Bot permissions are missing or need verification." if facts.manager and not facts.capable else None,
+    )
+
+
+def _private_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecision:
+    if not facts.private_access or not facts.eligible:
+        return FeatureDecision()
+    return FeatureDecision(
+        visible=configure or (facts.selected and facts.capable),
+        allowed=facts.capable and (configure or facts.selected),
+        selected=facts.selected,
+    )

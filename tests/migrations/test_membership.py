@@ -1,6 +1,7 @@
 """Actual additive membership migration preserves access and enforces evidence integrity."""
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,7 @@ def test_membership_upgrade_is_additive_and_enforces_active_evidence(
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     config.attributes["sqlite_path"] = database
     command.upgrade(config, "legacy016")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             "INSERT INTO chats (id, chat_id, platform, status) VALUES (1, -100101, 'telegram', 'banned')"
         )
@@ -29,7 +30,7 @@ def test_membership_upgrade_is_additive_and_enforces_active_evidence(
         before = connection.execute("SELECT * FROM chats").fetchall()
     command.upgrade(config, "member019")
     command.upgrade(config, "member019")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute("PRAGMA foreign_keys=ON")
         assert connection.execute("SELECT * FROM chats").fetchall() == before
         assert connection.execute("SELECT COUNT(*) FROM member_evidence").fetchone() == (0,)
@@ -53,6 +54,6 @@ def test_membership_upgrade_is_additive_and_enforces_active_evidence(
         connection.execute(insert, (1, 1, "left"))
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     command.downgrade(config, "legacy016")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM chats").fetchall() == before
     command.upgrade(config, "member019")

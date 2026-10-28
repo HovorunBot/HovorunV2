@@ -11,6 +11,7 @@ from hovorunv2.application.usage import UsagePolicy, UsageUnit, UsageWindow
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.usage import UsageOverrideDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.repositories.policy_queries import exact_target
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,28 +29,9 @@ class SQLAlchemyUsagePolicyRepository:
         self._session = session
 
     async def target(self, target: PermissionTarget) -> UserDB | ChatDB | None:
-        """Reject deleted parents, recycled identities and obsolete routing references."""
-        if target.entity_id is None:
-            return None
-        if target.kind == "user":
-            entity = await self._session.get(UserDB, target.entity_id)
-            telegram_id = entity.telegram_id if entity is not None else None
-        elif target.kind == "group":
-            entity = await self._session.get(ChatDB, target.entity_id)
-            telegram_id = entity.chat_id if entity is not None else None
-            if entity is not None and entity.chat_type not in {"group", "supergroup"}:
-                return None
-        else:
-            return None
-        if (
-            entity is None
-            or entity.deleted_at is not None
-            or entity.generation != target.generation
-            or telegram_id != target.telegram_id
-            or entity.platform != "telegram"
-        ):
-            return None
-        return entity
+        """Require the exact current active lifecycle and canonical numeric route."""
+        statement = exact_target(target)
+        return await self._session.scalar(statement) if statement is not None else None
 
     async def rows(self, target: PermissionTarget) -> list[UsageOverrideDB]:
         """Never expose overrides whose subject generation is no longer active."""

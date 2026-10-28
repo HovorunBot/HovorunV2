@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.domain.enums import Platform
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.repositories.policy_queries import active_user
 
 
 class SQLAlchemyUserRepository:
@@ -24,11 +25,7 @@ class SQLAlchemyUserRepository:
 
     async def get_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> UserDB | None:
         """Fetch active user by platform and numeric Telegram ID."""
-        stmt = select(UserDB).where(
-            UserDB.platform == Platform(platform),
-            UserDB.telegram_id == telegram_id,
-            UserDB.deleted_at.is_(None),
-        )
+        stmt = active_user(telegram_id, platform)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 

@@ -6,9 +6,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from hovorunv2.application.features import FeatureRegistry
 from hovorunv2.application.usage import UsageUnit, UsageWindow
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.domain.enums import TargetKind
+from hovorunv2.domain.enums import ActorOrigin, TargetKind
 
 MAX_USAGE_BATCH = 256
 MAX_ACCOUNTING_INTEGER = (1 << 63) - 1
@@ -122,3 +123,24 @@ class UsageLedgerStore(Protocol):
     ) -> int:
         """Read a stable subject's applicable UTC window across internal generations."""
         ...
+
+
+def validate_usage_batch(registry: FeatureRegistry, events: tuple[UsageEvent, ...], actor: ActorContext) -> None:
+    """Validate trusted accounting origin and supported dimensions in either runtime."""
+    if actor.origin not in {ActorOrigin.SYSTEM, ActorOrigin.CLI}:
+        msg = "Accounting mutations require trusted system or CLI origin."
+        raise PermissionError(msg)
+    if len(events) > MAX_USAGE_BATCH:
+        msg = "Accounting batch exceeds its bound."
+        raise ValueError(msg)
+    for event in events:
+        for charge in event.charges:
+            scope, _, key = charge.bucket.partition(":")
+            definitions = (
+                (registry.require(key),)
+                if scope == "feature"
+                else tuple(definition for definition in registry.all() if definition.usage_policy == key)
+            )
+            if not definitions or not any(charge.unit in definition.units for definition in definitions):
+                msg = "Accounting bucket or unit is unsupported by the feature registry."
+                raise ValueError(msg)

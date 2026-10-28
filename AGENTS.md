@@ -121,9 +121,7 @@ Explicit user instructions take precedence. Distinguish mandatory business rules
 
 `AGENTS.md` is the canonical instruction file for Codex and Gemini/Antigravity. `GEMINI.md` links to this file for compatibility. Keep shared instructions here rather than maintaining separate copies.
 
-Use the project-local `caveman` skill at `.agents/skills/caveman/SKILL.md` for every response unless the user requests normal mode. This local skill takes precedence over global copies with the same name. Preserve technical facts and use normal prose in persisted code, comments, and documentation.
-
-Run `make install-ai-skills` to download or update the shared skill from `JuliusBrussee/caveman`. Set `CAVEMAN_REF` to a tag or commit to select an upstream revision. Downloaded skills under `.agents/skills/` and the `.import_linter_cache/` directory are Git-ignored.
+Use the global `caveman` skill for every response unless the user requests normal mode. Preserve technical facts and use normal prose in persisted code, comments, and documentation.
 
 Launch either assistant from this project with `./scripts/ai-workflow codex` or `./scripts/ai-workflow gemini`. The launcher applies the same workspace, writable uv cache, sandbox, and automatic review intent through each CLI's supported flags. Safe commands can run automatically; actions requiring review remain subject to the CLI's permission checks. Network access is not globally enabled. Additional arguments are forwarded to the selected CLI.
 

@@ -19,7 +19,7 @@ from hovorunv2.domain.enums import TargetKind
 
 
 class AdmissionService:
-    """Acceptance and SAQ enqueue are separate durable runtime phases, never one promised transaction."""
+    """Acceptance and broker enqueue are separate durable runtime phases, never one promised transaction."""
 
     def __init__(
         self,

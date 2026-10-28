@@ -107,7 +107,7 @@ class ValkeyAdmissionStore(AdmissionPort):
         return AdmissionResult(AdmissionState(state), self._ticket(result[1]) if len(result) > 1 else None)
 
     async def get(self, job_id: str) -> AdmissionTicket | None:
-        """Read the stored immutable envelope, never ciphertext or SAQ implementation fields."""
+        """Read the stored immutable envelope, never ciphertext or broker implementation fields."""
         raw = await self._cache.get(self._id(job_id))
         return self._ticket(raw) if raw is not None else None
 

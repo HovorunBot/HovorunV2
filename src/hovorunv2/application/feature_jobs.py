@@ -109,7 +109,7 @@ class SealedPayload:
 
 @dataclass(frozen=True, slots=True)
 class LoadedPayload:
-    """Private in-process bytes; never a SAQ result or envelope field."""
+    """Private in-process bytes; never a queue result or envelope field."""
 
     state: PayloadState
     data: bytes | None = None
@@ -144,12 +144,21 @@ class EnqueueState(StrEnum):
     EXPIRED = "expired"
 
 
+class JobStatus(StrEnum):
+    """Application-owned execution facts, independent of broker acknowledgement or result states."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    CANCELLING = "cancelling"
+    TERMINAL = "terminal"
+
+
 @dataclass(frozen=True, slots=True)
 class QueuedFeature:
-    """Minimal inspection result without SAQ objects or sensitive error strings."""
+    """Minimal inspection result without backend objects or sensitive error strings."""
 
     envelope: JobEnvelope
-    status: str
+    status: JobStatus
     outcome: JobOutcome | None
 
 

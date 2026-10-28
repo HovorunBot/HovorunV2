@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ def make_source(path: Path, revision: str = RELEASE_021_REVISION) -> str:
     config = migration_config()
     config.attributes["sqlite_path"] = path
     command.upgrade(config, revision)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             "INSERT INTO chats (id, chat_id, platform, status, target_lang, ignored_langs, encryption_salt) "
             "VALUES (123, -1001234567890, 'telegram', 'approved', 'uk', '[\"en\",\"pl\"]', 'synthetic-salt')"
@@ -82,7 +83,7 @@ async def test_new_postgres_migration_failure_rolls_back_entire_transfer(
     """Duplicate legacy identities fail the actual PostgreSQL upgrade after copy without leaving imported tables."""
     source = tmp_path / "duplicate.db"
     await asyncio.to_thread(make_source, source)
-    with sqlite3.connect(source) as connection:
+    with closing(sqlite3.connect(source)) as connection, connection:
         connection.execute(
             "INSERT INTO chats (chat_id, platform, status) VALUES (-1001234567890, 'telegram', 'approved')"
         )
@@ -111,7 +112,7 @@ async def test_source_before_021_is_upgraded_only_in_the_dump(tmp_path: Path, po
     counts = await transfer(source, DatabaseSettings(_env_file=None, database_url=postgres_database_url))
     assert counts["chats"] == 1
     assert hashlib.sha256(source.read_bytes()).hexdigest() == original
-    with sqlite3.connect(source) as connection:
+    with closing(sqlite3.connect(source)) as connection, connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("2c01ece4472f",)
 
 
@@ -122,7 +123,7 @@ async def test_unmapped_source_data_is_rejected_without_partial_import(
     """Unknown source storage must never be silently skipped during the one-time transfer."""
     source = tmp_path / "extra.db"
     await asyncio.to_thread(make_source, source)
-    with sqlite3.connect(source) as connection:
+    with closing(sqlite3.connect(source)) as connection, connection:
         connection.execute(
             "CREATE TABLE extra_data (id INTEGER PRIMARY KEY)"
             if extra == "table"

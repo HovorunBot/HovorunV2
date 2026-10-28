@@ -21,11 +21,10 @@ TAG ?=
 VERSION ?= $(TAG)
 INCREMENT ?=
 MESSAGE ?=
-CAVEMAN_REF ?= main
 
 .PHONY: all setup run stop update deploy help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
-        test lint format type-check lint-imports check install-hooks install-ai-skills
+        test lint format type-check lint-imports check install-hooks
 
 # Each command uses one complete environment file, never an overlay.
 ## Run setup, then start the selected Docker stack.
@@ -69,7 +68,6 @@ help:
 	@printf '  VERSION=vX.Y.Z                     Select a setup/update version or explicit release version.\n'
 	@printf '  INCREMENT=patch|minor|major         Choose the release increment instead of VERSION.\n'
 	@printf '  MESSAGE="Release notes"             Set the annotated release-tag message.\n'
-	@printf '  CAVEMAN_REF=tag-or-commit           Select the shared skill revision (default: main).\n'
 
 # 1. Check whether git is installed.
 ## Check that Git is installed; fail if it is unavailable.
@@ -231,20 +229,6 @@ run-dev:
 ## Remove development containers/network and orphans; preserve data volumes.
 stop-dev:
 	@$(MAKE) COMPOSE_ENV=dev stop
-
-## Download/update the project-local caveman skill at CAVEMAN_REF.
-install-ai-skills:
-	@set -eu; \
-		skill_stage=$$(mktemp -d); \
-		trap 'rm -f "$$skill_stage/SKILL.md" "$$skill_stage/README.md"; rmdir "$$skill_stage"' EXIT; \
-		for skill_file in SKILL.md README.md; do \
-			curl --fail --silent --show-error --location --retry 3 \
-				"https://raw.githubusercontent.com/JuliusBrussee/caveman/$(CAVEMAN_REF)/skills/caveman/$$skill_file" \
-				--output "$$skill_stage/$$skill_file"; \
-		done; \
-		mkdir -p .agents/skills/caveman; \
-		cp "$$skill_stage/SKILL.md" "$$skill_stage/README.md" .agents/skills/caveman/; \
-		echo "Installed caveman from $(CAVEMAN_REF) into .agents/skills/caveman/"
 
 ## Install quality, commit-message and changelog Git hooks in this checkout.
 install-hooks:

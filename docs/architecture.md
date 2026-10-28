@@ -118,3 +118,31 @@ Shared values include PermissionRequest/PermissionTarget/PermissionFacts/AccessD
 The versioned job boundary contains only bounded feature/trigger, actor when applicable, target identity/generation, charged subject, message/deduplication identifiers, original acceptance/deadline and encrypted-payload references. It contains no Message/Bot, ORM entity, session, browser, copied allow decision or plaintext private content. Direct work requires an active human identity; automatic group work is group-owned. FeatureAccessService accepts actor_id=None for automatic group policy, while the current JobEnvelope/AdmissionService requires a human actor. RichMediaCommand passes None when sender_chat is present, but its trigger rejects absent/bot from_user. Preserve those ingress filters; do not claim general anonymous/channel support or invent a Telegram user. R06 must reconcile the supported automatic-origin boundary before cutover.
 
 Current removal owners are explicit: R06 consolidates feature_queue.py receipt state into admission; R09 replaces FeatureWorkerBridge with native execution; R10 replaces direct handler media execution and bot-owned browser work; R12 moves all queue.py/TaskQueuePort callback and cron consumers before draining/removing SAQ and bot startup/shutdown worker loops. R13 removes entrypoint.sh and build-sentinel wiring. Immediate interactive replies remain with the bot. No current consumer is removed by documenting this ownership.
+
+### Shared policy persistence and worker database ownership
+
+`FeatureAccessService` evaluates immutable `FeatureFacts` using pure feature rules. The bot's
+`SQLAlchemyFeatureFactStore` reads those facts through SQLAlchemy `AsyncSession.run_sync`: statements still use the async
+psycopg driver, without blocking I/O or a second event loop. Native `WorkerPolicyStore` uses the same session-bound
+`PolicyFactReader` and evaluator with synchronous SQLAlchemy sessions. Current user roles, active identities, group
+approval/blockers, beta support, selections and capabilities come from PostgreSQL on each call. Historical role rows and
+previous allow results never grant authority. Permission and usage resolution rules are also shared pure functions.
+
+`bootstrap.worker_database.WorkerDatabase` is the native database composition boundary. Constructing it opens no engine
+or connection. Enter its context inside the worker child, retain it for that child's lifetime, and exit it on shutdown.
+It owns a synchronous engine with one pooled connection and no overflow, native policy/accounting adapters and packaged
+Casbin policy. Access outside the open owning process, including retained adapter references after fork or shutdown, fails.
+Contexts are single-use. No bot container, polling loop or browser package is needed by this composition. Celery lifecycle
+signal wiring and task executors remain subsequent implementation work; this boundary starts no worker by itself.
+
+`WorkerPolicyStore.active_target` validates exact identity, generation and canonical route using the same statements as
+bot beta/usage persistence. Worker execution must bind envelope references and recheck current policy at its required
+execution/delivery boundaries; a discovery result alone is not an execution authorization. No job contract changes here.
+
+Both runtimes use one session-bound accounting repository for receipt claims, replay fingerprint checks and guarded atomic
+aggregate upserts. Their transaction owners commit receipt, totals and one allowlisted audit summary together. Only
+serialization/deadlock failures retry the database-only transaction, at most three times with fresh sessions. Synchronous
+accounting uses the same trusted-origin and supported-dimension validation; no external effect runs in its transaction.
+Accounting for retained deleted identities remains supported without restoring their access. These reads add no private
+payload, profile data or new persistence state. AsyncAttrs remains on the ORM base because the existing bot command store
+still has three awaitable relationship consumers; native fact reads use explicit eager statements.

@@ -74,7 +74,7 @@ class CasbinAuthorizationPolicy:
         return bool(self._enforcer.enforce(facts.role, facts.action, facts.target, facts.group_admin))
 
 
-def _load_packaged_policy() -> CasbinAuthorizationPolicy:
+def load_packaged_policy() -> CasbinAuthorizationPolicy:
     """Read resources through importlib so installed and zipped wheels both work."""
     assets = files("hovorunv2.infrastructure.authorization").joinpath("policies")
     return CasbinAuthorizationPolicy(
@@ -85,4 +85,4 @@ def _load_packaged_policy() -> CasbinAuthorizationPolicy:
 
 async def load_authorization_policy() -> CasbinAuthorizationPolicy:
     """Perform policy file reads and initialization off the application's event loop."""
-    return await asyncio.to_thread(_load_packaged_policy)
+    return await asyncio.to_thread(load_packaged_policy)

@@ -31,6 +31,7 @@ from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.membership import MembershipPort
 from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.policy_facts import FeatureFactStore
 from hovorunv2.application.ports import (
     AppSettings,
     AuditedUnitOfWork,
@@ -87,7 +88,7 @@ from hovorunv2.infrastructure.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import DatabaseSettings, Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from hovorunv2.infrastructure.feature_queue import SAQFeatureQueue
+from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyAuditedTransaction,
     SQLAlchemyChatStore,
@@ -100,6 +101,7 @@ from hovorunv2.infrastructure.persistence import (
 from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActivationStore
 from hovorunv2.infrastructure.persistence.ban_store import SQLAlchemyBanStore
 from hovorunv2.infrastructure.persistence.beta_store import SQLAlchemyBetaEntitlementStore
+from hovorunv2.infrastructure.persistence.feature_fact_store import SQLAlchemyFeatureFactStore
 from hovorunv2.infrastructure.persistence.group_beta_store import SQLAlchemyGroupBetaStore
 from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGroupGrantStore
 from hovorunv2.infrastructure.persistence.group_identity_store import SQLAlchemyGroupIdentityStore
@@ -178,7 +180,7 @@ class InfrastructureProvider(DatabaseProvider):
         safety: UsageSafetyCaps,
     ) -> AsyncIterable[FeatureQueuePort]:
         """Own a separate typed feature queue connection without starting a worker prematurely."""
-        queue = SAQFeatureQueue(config, clock, namespace, safety)
+        queue = CeleryFeatureQueue(config, clock, namespace, safety)
         yield queue
         await queue.close()
 
@@ -213,6 +215,7 @@ class AppProvider(Provider):
     group_beta_store_impl = provide(SQLAlchemyGroupBetaStore)
     group_beta_store = alias(source=SQLAlchemyGroupBetaStore, provides=GroupBetaStore)
     group_beta_service = provide(GroupBetaService)
+    feature_fact_store = provide(SQLAlchemyFeatureFactStore, provides=FeatureFactStore)
     feature_access = provide(FeatureAccessService)
 
     chat_store_impl = provide(SQLAlchemyChatStore)

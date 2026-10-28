@@ -4,11 +4,11 @@ from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform
 from hovorunv2.domain.group_route import GroupRouteDB
+from hovorunv2.infrastructure.repositories.policy_queries import active_chat
 
 
 class SQLAlchemyChatRepository:
@@ -20,18 +20,7 @@ class SQLAlchemyChatRepository:
 
     async def get_by_id(self, chat_id: int, platform: str = "telegram") -> ChatDB | None:
         """Fetch active chat from database."""
-        stmt = (
-            select(ChatDB)
-            .where(
-                or_(
-                    ChatDB.chat_id == chat_id,
-                    ChatDB.id.in_(select(GroupRouteDB.group_id).where(GroupRouteDB.telegram_id == chat_id)),
-                ),
-                ChatDB.platform == Platform(platform),
-                ChatDB.deleted_at.is_(None),
-            )
-            .options(selectinload(ChatDB.commands))
-        )
+        stmt = active_chat(chat_id, platform)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

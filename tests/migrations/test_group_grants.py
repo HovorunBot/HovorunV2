@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,7 @@ def test_legacy_grants_preserve_all_statuses_and_configuration(
     config.attributes["sqlite_path"] = database
     command.upgrade(config, "grant015")
     statuses = ["unauthorized", "pending", "approved", "rejected", "banned", "inactive"]
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         for index, status in enumerate(statuses, start=1):
             connection.execute(
                 "INSERT INTO chats (id, chat_id, platform, status, target_lang, ignored_langs, "
@@ -50,7 +51,7 @@ def test_legacy_grants_preserve_all_statuses_and_configuration(
         commands_before = connection.execute("SELECT * FROM chat_commands ORDER BY chat_id").fetchall()
     command.upgrade(config, "legacy016")
     command.upgrade(config, "legacy016")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         chats_after = connection.execute("SELECT * FROM chats ORDER BY id").fetchall()
         assert [row[:-2] for row in chats_after] == chats_before
         assert [row[-2] for row in chats_after] == [int(not selected)] * len(statuses) + [0, 0]
@@ -68,11 +69,11 @@ def test_legacy_grants_preserve_all_statuses_and_configuration(
         assert approved_event["approval_basis"] == "legacy"
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     command.downgrade(config, "grant015")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM chats ORDER BY id").fetchall() == chats_before
         assert connection.execute("SELECT COUNT(*) FROM group_approvals").fetchone() == (0,)
     command.upgrade(config, "legacy016")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT group_id, basis FROM group_approvals").fetchall() == [(3, "legacy")]
         connection.execute(
             "INSERT INTO chats (id, chat_id, platform, status) VALUES (102, -100102, 'telegram', 'unauthorized')"
@@ -91,7 +92,7 @@ def test_migrated_grants_enforce_constraints_and_history(tmp_path: Path, monkeyp
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     config.attributes["sqlite_path"] = database
     command.upgrade(config, "legacy016")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute(
             "INSERT INTO chats (id, chat_id, platform, status) VALUES (1, -100101, 'telegram', 'unauthorized')"

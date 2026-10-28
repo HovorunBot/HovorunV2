@@ -4,13 +4,13 @@ from datetime import UTC, datetime
 
 from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.group_grants import GroupGrantStore
+from hovorunv2.application.group_policy import GroupAccessFacts, group_access
 from hovorunv2.application.membership import MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.permissions import AccessDecision, DecisionReason
+from hovorunv2.application.permissions import AccessDecision
 from hovorunv2.application.ports import ChatStore
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.ban import BanKind
-from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 
 
@@ -60,70 +60,34 @@ class ChatStatusService:
         await self.set_status(chat_id, ChatStatus.APPROVED)
         await self._command_service.enable_defaults(chat_id)
 
-    async def _check_group_ban(self, chat: ChatDB) -> AccessDecision | None:
-        """Group bans have absolute precedence and cannot be bypassed."""
-        if chat.status == ChatStatus.BANNED:
-            return AccessDecision(allowed=False, reason=DecisionReason.GROUP_BANNED)
-        group_bans = await self._ban_store.list_active(TargetKind.GROUP, chat.chat_id)
-        if any(b.kind == BanKind.FULL.value for b in group_bans):
-            return AccessDecision(allowed=False, reason=DecisionReason.GROUP_BANNED)
-        return None
-
-    async def _check_admin_blockers(self, group_id: int, current_time: datetime) -> AccessDecision | None:
-        """Check administrator evidence freshness and full-ban suspension on current admins."""
-        state = await self._membership_store.get_state(group_id)
-        if (
-            state is None
-            or not state.admins_known
-            or state.admins_verified_at is None
-            or state.admins_expires_at is None
-            or evidence_time(state.admins_verified_at) > current_time
-            or evidence_time(state.admins_expires_at) <= current_time
-        ):
-            return AccessDecision(allowed=False, reason=DecisionReason.MEMBER_EVIDENCE_UNKNOWN)
-
-        blocker = await self._membership_store.full_banned_admin_status(group_id, current_time)
-        if blocker == MembershipStatus.ADMIN:
-            return AccessDecision(allowed=False, reason=DecisionReason.ADMIN_FULL_BANNED)
-        if blocker == MembershipStatus.UNKNOWN:
-            return AccessDecision(allowed=False, reason=DecisionReason.MEMBER_EVIDENCE_UNKNOWN)
-        return None
-
-    async def _check_approvals(self, chat: ChatDB) -> AccessDecision:
-        """Verify durable explicit or legacy approval validity."""
-        approvals = await self._grant_store.approvals(chat.id)
-        if approvals:
-            return AccessDecision(allowed=True, reason=DecisionReason.ALLOWED)
-
-        has_revoked = await self._grant_store.has_revoked_approval(chat.id)
-        if not has_revoked and chat.status == ChatStatus.APPROVED:
-            return AccessDecision(allowed=True, reason=DecisionReason.ALLOWED)
-
-        return AccessDecision(allowed=False, reason=DecisionReason.NOT_APPROVED)
-
     async def evaluate_access(self, chat_id: int, now: datetime | None = None) -> AccessDecision:
-        """Evaluate durable approval, bans and administrator blockers for a group.
-
-        Order of evaluation:
-        1. Target entity active generation check.
-        2. Group ban precedence (independent of requesting actor or approvals).
-        3. Administrator evidence freshness and full-ban suspension on current admins.
-        4. Durable explicit or legacy approval validity.
-        """
+        """Collect current group facts and apply the shared approval/blocker precedence."""
         current_time = now if now is not None else datetime.now(UTC)
         chat = await self._chat_service.get_chat(chat_id)
-        if chat is None or chat.deleted_at is not None:
-            return AccessDecision(allowed=False, reason=DecisionReason.ENTITY_UNAVAILABLE)
-
-        ban_decision = await self._check_group_ban(chat)
-        if ban_decision is not None:
-            return ban_decision
-
-        admin_decision = await self._check_admin_blockers(chat.id, current_time)
-        if admin_decision is not None:
-            return admin_decision
-
-        return await self._check_approvals(chat)
+        if chat is None:
+            return group_access(GroupAccessFacts())
+        bans = await self._ban_store.list_active(TargetKind.GROUP, chat.chat_id)
+        state = await self._membership_store.get_state(chat.id)
+        fresh = bool(
+            state is not None
+            and state.admins_known
+            and state.admins_verified_at is not None
+            and state.admins_expires_at is not None
+            and evidence_time(state.admins_verified_at) <= current_time < evidence_time(state.admins_expires_at)
+        )
+        blocker = await self._membership_store.full_banned_admin_status(chat.id, current_time)
+        approvals = await self._grant_store.approvals(chat.id)
+        revoked = await self._grant_store.has_revoked_approval(chat.id)
+        return group_access(
+            GroupAccessFacts(
+                active=chat.deleted_at is None,
+                banned=chat.status == ChatStatus.BANNED or any(b.kind == BanKind.FULL for b in bans),
+                admins_fresh=fresh,
+                banned_admin=blocker == MembershipStatus.ADMIN,
+                unknown_admin=blocker == MembershipStatus.UNKNOWN,
+                approved=bool(approvals) or (not revoked and chat.status == ChatStatus.APPROVED),
+            )
+        )
 
     async def is_approved(self, chat_id: int) -> bool:
         """Check if chat is approved and free of active blockers."""

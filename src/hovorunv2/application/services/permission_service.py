@@ -3,12 +3,11 @@
 from datetime import UTC, datetime
 
 from hovorunv2.application.ban_ports import BanStore
+from hovorunv2.application.permission_policy import authority_allowed, permission_decision
 from hovorunv2.application.permissions import (
     AccessDecision,
     DecisionReason,
-    PermissionFacts,
     PermissionRequest,
-    PermissionTarget,
 )
 from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
 from hovorunv2.domain.ban import BanKind
@@ -33,7 +32,7 @@ class PermissionService:
     async def has_authority(self, actor_id: int, action: str) -> bool:
         """Query current bot authority for legacy gates; execution still needs action/target guards."""
         user = await self._users.get_by_telegram_id(actor_id)
-        return user is not None and self._policy.is_allowed(PermissionFacts(user.role, action, PermissionTarget("bot")))
+        return authority_allowed(self._policy, user.role if user is not None else None, action)
 
     async def _check_target_entity(self, request: PermissionRequest) -> AccessDecision | None:
         target = request.target
@@ -60,10 +59,11 @@ class PermissionService:
         target_decision = await self._check_target_entity(request)
         if target_decision is not None:
             return target_decision
-        is_group_admin = (
-            request.target.kind == "group"
-            and request.group_admin is not None
-            and request.group_admin.applies_to(request.actor_id, request.target, datetime.now(UTC))
+        return permission_decision(
+            request,
+            user.role,
+            self._policy,
+            datetime.now(UTC),
+            target_active=True,
+            group_banned=False,
         )
-        allowed = self._policy.is_allowed(PermissionFacts(user.role, request.action, request.target, is_group_admin))
-        return AccessDecision(allowed, DecisionReason.ALLOWED if allowed else DecisionReason.UNAUTHORIZED_MANAGEMENT)

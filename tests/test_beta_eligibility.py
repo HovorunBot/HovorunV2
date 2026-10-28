@@ -1,6 +1,7 @@
 """Real SQLite eligibility, current authority, lifecycle and atomic audit regressions."""
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -200,14 +201,14 @@ def test_beta_upgrade_preserves_existing_data_and_constraints(tmp_path: Path, mo
     database = tmp_path / "beta-upgrade.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, "group025_routing_aliases")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             "INSERT INTO users (platform, telegram_id, role, is_trusted, generation, created_at, updated_at) "
             "VALUES ('telegram', 880286, 10, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
         )
         before = connection.execute("SELECT * FROM users").fetchall()
     command.upgrade(config, "beta028")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM users").fetchall() == before
         assert connection.execute("SELECT COUNT(*) FROM beta_entitlements").fetchone() == (0,)
         for feature in ("*", BETA.key):

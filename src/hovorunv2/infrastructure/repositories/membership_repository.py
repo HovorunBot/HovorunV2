@@ -12,11 +12,10 @@ from hovorunv2.application.membership import (
     MembershipEvidence,
     MembershipStatus,
 )
-from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import TargetKind
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.repositories.policy_queries import banned_admin_queries
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 
 
@@ -120,38 +119,10 @@ class SQLAlchemyMembershipRepository:
 
     async def full_banned_admin_status(self, group_id: int, now: datetime) -> MembershipStatus | None:
         """Use existence queries so an authorization decision never truncates candidates."""
-        candidates = (
-            select(MemberEvidenceDB.id)
-            .join(UserDB, UserDB.id == MemberEvidenceDB.user_id)
-            .join(ChatDB, ChatDB.id == MemberEvidenceDB.group_id)
-            .join(BanDB, (BanDB.telegram_id == UserDB.telegram_id) & (BanDB.platform == UserDB.platform))
-            .where(
-                MemberEvidenceDB.group_id == group_id,
-                MemberEvidenceDB.deleted_at.is_(None),
-                UserDB.deleted_at.is_(None),
-                ChatDB.deleted_at.is_(None),
-                BanDB.target_kind == TargetKind.USER,
-                BanDB.kind == BanKind.FULL,
-                BanDB.deleted_at.is_(None),
-                BanDB.revoked_at.is_(None),
-                or_(MemberEvidenceDB.admin_candidate.is_(True), MemberEvidenceDB.needs_verification.is_(True)),
-            )
-        )
-        verified = candidates.where(
-            MemberEvidenceDB.status == MembershipStatus.ADMIN,
-            MemberEvidenceDB.verified_at <= now,
-            MemberEvidenceDB.expires_at > now,
-        )
-        if await self._session.scalar(verified.limit(1)) is not None:
+        verified, unknown = banned_admin_queries(group_id, now)
+        if await self._session.scalar(verified) is not None:
             return MembershipStatus.ADMIN
-        unknown = candidates.where(
-            or_(
-                MemberEvidenceDB.status == MembershipStatus.UNKNOWN,
-                MemberEvidenceDB.verified_at > now,
-                MemberEvidenceDB.expires_at <= now,
-            )
-        )
-        if await self._session.scalar(unknown.limit(1)) is not None:
+        if await self._session.scalar(unknown) is not None:
             return MembershipStatus.UNKNOWN
         return None
 

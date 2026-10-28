@@ -1,6 +1,7 @@
 """Exercise actual identity and role revisions against isolated legacy databases."""
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ def test_actual_upgrade_preserves_legacy_group_configuration(tmp_path: Path, mon
     database = tmp_path / "legacy.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, LEGACY_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             "INSERT INTO chats (id, chat_id, platform, status, target_lang, ignored_langs, encryption_salt) "
             "VALUES (1, -100123, 'telegram', 'approved', 'uk', '[\"en\"]', 'preserved-test-salt')"
@@ -34,7 +35,7 @@ def test_actual_upgrade_preserves_legacy_group_configuration(tmp_path: Path, mon
             "SELECT id, chat_id, platform, status, target_lang, ignored_langs, encryption_salt FROM chats"
         ).fetchall()
     command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert (
             connection.execute(
                 "SELECT id, chat_id, platform, status, target_lang, ignored_langs, encryption_salt FROM chats"
@@ -53,7 +54,7 @@ def test_actual_upgrade_preserves_legacy_group_configuration(tmp_path: Path, mon
             connection.execute("INSERT INTO chats (chat_id, platform, status) VALUES (-100123, 'telegram', 'approved')")
 
     command.downgrade(config, LEGACY_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert (
             connection.execute(
                 "SELECT id, chat_id, platform, status, target_lang, ignored_langs, encryption_salt FROM chats"
@@ -62,7 +63,7 @@ def test_actual_upgrade_preserves_legacy_group_configuration(tmp_path: Path, mon
         )
         assert connection.execute("SELECT chat_id, command_id FROM chat_commands").fetchall() == [(1, command_id)]
     command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert (
             connection.execute(
                 "SELECT id, chat_id, platform, status, target_lang, ignored_langs, encryption_salt FROM chats"
@@ -77,14 +78,14 @@ def test_actual_group_upgrade_rejects_duplicate_identity(tmp_path: Path, monkeyp
     database = tmp_path / "duplicates.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, USER_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.executemany(
             "INSERT INTO chats (chat_id, platform, status) VALUES (-100123, 'telegram', ?)",
             [("approved",), ("unauthorized",)],
         )
     with pytest.raises(ValueError, match="duplicate active chats"):
         command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT status FROM chats ORDER BY id").fetchall() == [
             ("approved",),
             ("unauthorized",),
@@ -99,7 +100,7 @@ def test_actual_role_upgrade_preserves_assignments_and_generations(
     database = tmp_path / "roles.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, ASSIGNMENT_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.executemany(
             "INSERT INTO users (id, telegram_id, generation, created_at, updated_at, deleted_at) "
             "VALUES (?, ?, ?, '2026-01-01', '2026-01-01', ?)",
@@ -112,7 +113,7 @@ def test_actual_role_upgrade_preserves_assignments_and_generations(
         )
         assignments = connection.execute("SELECT * FROM user_roles ORDER BY id").fetchall()
     command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT id, role FROM users ORDER BY id").fetchall() == [
             (1, 100),
             (2, 1),
@@ -127,7 +128,7 @@ def test_actual_role_upgrade_preserves_assignments_and_generations(
         assert connection.execute("SELECT role FROM users WHERE telegram_id = 104").fetchone() == (1,)
     command.downgrade(config, ASSIGNMENT_REVISION)
     command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM user_roles ORDER BY id").fetchall() == assignments
 
 
@@ -137,7 +138,8 @@ def test_actual_upgrade_enforces_authority_role_constraint(tmp_path: Path, monke
     config = migration_config(monkeypatch, database)
     command.upgrade(config, "head")
     with (
-        sqlite3.connect(database) as connection,
+        closing(sqlite3.connect(database)) as connection,
+        connection,
         pytest.raises(sqlite3.IntegrityError, match="ck_users_valid_role"),
     ):
         connection.execute(
@@ -154,7 +156,7 @@ def test_actual_upgrade_preserves_active_identity_uniqueness(
     database = tmp_path / "active-identities.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         insert = {
             "users": (
                 "INSERT INTO users (telegram_id, generation, deleted_at, created_at, updated_at) "
@@ -175,7 +177,7 @@ def test_actual_upgrade_enforces_association_foreign_keys(tmp_path: Path, monkey
     database = tmp_path / "foreign-keys.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute("PRAGMA foreign_keys=ON")
         assert connection.execute("PRAGMA foreign_keys").fetchone() == (1,)
         connection.execute(
@@ -207,7 +209,7 @@ def test_actual_upgrade_enforces_shared_handle_uniqueness(tmp_path: Path, monkey
     database = tmp_path / "handles.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         insert = (
             "INSERT INTO public_handles "
             "(handle_normalized, handle_display, target_kind, target_id, created_at, updated_at) "
@@ -228,7 +230,7 @@ def test_role_constraint_migration_preserves_current_state_and_history(
     database = tmp_path / "constraint-preservation.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, ROLE_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.executemany(
             "INSERT INTO users "
             "(id, telegram_id, role, generation, created_at, updated_at, deleted_at, deleted_reason) "
@@ -244,7 +246,7 @@ def test_role_constraint_migration_preserves_current_state_and_history(
     command.upgrade(config, CONSTRAINT_REVISION)
     command.downgrade(config, ROLE_REVISION)
     command.upgrade(config, CONSTRAINT_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM users ORDER BY id").fetchall() == users
         assert connection.execute("SELECT * FROM user_roles ORDER BY id").fetchall() == history
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -261,7 +263,7 @@ def test_role_constraint_migration_rejects_invalid_existing_state(
     database = tmp_path / "invalid-role.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, ROLE_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             "INSERT INTO users (telegram_id, role, created_at, updated_at) "
             "VALUES (101, 'superadmin', '2026-01-01', '2026-01-01')"
@@ -269,7 +271,7 @@ def test_role_constraint_migration_rejects_invalid_existing_state(
         before = connection.execute("SELECT * FROM users").fetchall()
     with pytest.raises(ValueError, match="invalid authority roles"):
         command.upgrade(config, "head")
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM users").fetchall() == before
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (ROLE_REVISION,)
         assert connection.execute("SELECT name FROM sqlite_master WHERE name LIKE '_alembic_tmp_%'").fetchall() == []
@@ -282,7 +284,7 @@ def test_integer_tier_migration_preserves_current_authority_and_history(
     database = tmp_path / "integer-tiers.db"
     config = migration_config(monkeypatch, database)
     command.upgrade(config, CONSTRAINT_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.executemany(
             "INSERT INTO users (id, telegram_id, role, generation, created_at, updated_at, deleted_at) "
             "VALUES (?, ?, ?, ?, '2026-01-01', '2026-01-01', ?)",
@@ -302,7 +304,7 @@ def test_integer_tier_migration_preserves_current_authority_and_history(
             "SELECT id, telegram_id, generation, deleted_at FROM users ORDER BY id"
         ).fetchall()
     command.upgrade(config, TIER_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT role, typeof(role) FROM users ORDER BY id").fetchall() == [
             (1, "integer"),
             (10, "integer"),
@@ -319,7 +321,7 @@ def test_integer_tier_migration_preserves_current_authority_and_history(
             "integer",
         )
     command.downgrade(config, CONSTRAINT_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT role FROM users ORDER BY id").fetchall() == [
             ("user",),
             ("admin",),
@@ -327,7 +329,7 @@ def test_integer_tier_migration_preserves_current_authority_and_history(
             ("user",),
         ]
     command.upgrade(config, TIER_REVISION)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         assert connection.execute("SELECT * FROM user_roles").fetchall() == history
         assert connection.execute("SELECT * FROM audit_events").fetchall() == audit
         assert (
