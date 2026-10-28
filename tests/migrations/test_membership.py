@@ -17,6 +17,7 @@ def test_membership_upgrade_is_additive_and_enforces_active_evidence(
     database = tmp_path / "membership.db"
     monkeypatch.setenv("DB_PATH", str(database))
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["sqlite_path"] = database
     command.upgrade(config, "legacy016")
     with sqlite3.connect(database) as connection:
         connection.execute(

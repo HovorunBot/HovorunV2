@@ -2,7 +2,7 @@
 
 from functools import partial
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ports import AuditedUnitOfWork
@@ -13,6 +13,7 @@ from hovorunv2.domain.enums import TargetKind
 from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.handle import PublicHandleDB
 from hovorunv2.domain.membership import GroupMembershipStateDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 
 
@@ -46,7 +47,7 @@ class SQLAlchemyGroupMigrationStore:
         return result[0]
 
     async def _migrate(self, session: AsyncSession, old_id: int, new_id: int) -> tuple[bool, int]:
-        await session.execute(text("BEGIN IMMEDIATE"))
+        await lock_async_mutation(session, MutationLocks(chats=(old_id, new_id)))
         repository = SQLAlchemyChatRepository(session)
         group = await repository.get_by_id(old_id)
         if group is None or group.chat_type not in {"group", "supergroup"}:

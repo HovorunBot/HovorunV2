@@ -14,6 +14,7 @@ def test_ban_migration_preserves_existing_records(tmp_path: Path, monkeypatch: p
     database = tmp_path / "bans.db"
     monkeypatch.setenv("DB_PATH", str(database))
     config = Config("alembic.ini")
+    config.attributes["sqlite_path"] = database
     command.upgrade(config, "trust013")
     with sqlite3.connect(database) as connection:
         connection.execute("INSERT INTO chats (chat_id, platform, status) VALUES (-101, 'telegram', 'approved')")

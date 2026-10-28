@@ -64,7 +64,7 @@ async def test_old_environment_ids_never_grant_authority(
     monkeypatch.setenv("ADMIN_IDS", "[101]")
     monkeypatch.setenv("OWNERS", "[101]")
     monkeypatch.setenv("BOT_TOKEN", "123456:synthetic-token")
-    assert Settings(_env_file=None).db_path
+    assert Settings(_env_file=None).database_url
     assert "admin_ids" not in Settings.model_fields
     assert "owners" not in Settings.model_fields
     access = await test_container.get(AccessService)
@@ -75,7 +75,7 @@ async def test_old_environment_ids_never_grant_authority(
     assert await access.is_allowed(101, -100101, policy) is False
     assert await roles.list_roles() == []
     monkeypatch.setenv("ADMIN_IDS", "not-json")
-    assert Settings(_env_file=None).db_path
+    assert Settings(_env_file=None).database_url
 
 
 @pytest.mark.asyncio

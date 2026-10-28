@@ -1,6 +1,6 @@
 # HovorunV2 Context
 
-Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Valkey (Async), uv, Docker.
+Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), PostgreSQL, Valkey (Async), uv, Docker.
 
 ## Agent Constraints (STRICT)
 
@@ -75,12 +75,12 @@ Explicit user instructions take precedence. Distinguish mandatory business rules
 - **Constants & Enums:** No magic numbers (extract to constants/enums; `# noqa: PLR2004` only if structural). Reference bot commands via `CommandName` and chat lifecycle states via `ChatStatus` (`StrEnum`s in `application/data/constants.py`), and HTTP statuses via `http.HTTPStatus`.
 - **Exceptions:** Raise semantic built-in/custom exceptions (`ValueError`, `AttributeError`, `TypeError`). NEVER raise generic `RuntimeError`.
 - **Imports:** Top-level imports only. Local imports inside functions are FORBIDDEN unless breaking circular dependencies.
-- **Standard Lib & I/O:** Use `pathlib.Path` (NEVER `os.path`). All I/O (DB, Cache, Network) MUST be `async`.
+- **Standard Lib & I/O:** Use `pathlib.Path` (NEVER `os.path`). Bot, interactive CLI and bot-facing adapters use async I/O. Native Celery workers and their synchronous application use cases use synchronous SQLAlchemy/psycopg, HTTP, Telegram and browser adapters. Create worker resources inside each child process; never inherit live pools or wrap worker execution in an event loop. Share pure policy, parsing and rendering rules between bot and workers. Migration/import tools may use an explicit synchronous SQLAlchemy connection through the async connection boundary.
 - **Serialization:** Serialize Pydantic/aiogram models via `model_dump(mode="json")` before JSON encoding; avoid `model_dump_json()` on complex aiogram types.
 
 ## Testing (`PYTHONPATH=src uv run pytest`)
 
-- **Real Infrastructure:** Test against real services, in-memory SQLite, and local Valkey. NEVER use `unittest.mock` for internal services, repositories, or persistence—verify DB/Valkey state directly.
+- **Real Infrastructure:** Test against real PostgreSQL in isolated schemas and local Valkey. Keep temporary SQLite only for historical migration and one-time import coverage. NEVER use `unittest.mock` for internal services, repositories, or persistence—verify DB/Valkey state directly.
 - **Network Mocking:** Mock external HTTP APIs only (e.g., `api.vxtwitter.com`, `tikwm.com`) using `aioresponses`.
 - **Zero Warnings Policy:** Test suite runs must remain clean of deprecation, resource, and framework warnings. Investigate and eliminate root causes immediately.
 
@@ -110,8 +110,8 @@ Explicit user instructions take precedence. Distinguish mandatory business rules
 - **Setup:** `make setup` (or `make setup VERSION=vX.Y.Z`)
 - **Release Tag:** `make tag-release VERSION=vX.Y.Z`
 - **Install Hooks:** `make install-hooks` (pre-commit, pre-push, commit-msg, and post-commit changelog generation/amendment)
-- **Dev Run:** `make run-dev` (Valkey in Docker, bot via `uv`)
-- **Prod Run / Stop:** `make run` / `make stop`
+- **Dev Run:** `make run-dev` (complete development stack in Docker); `make dev` starts only PostgreSQL/Valkey for host-side tests
+- **Prod Run / Stop:** `make run` / `make stop` (standalone production Compose); `make stop-dev` stops development
 - **Test:** `PYTHONPATH=src uv run pytest`
 - **Type Check:** `uv run ty check src`
 - **Lint:** `uv run ruff check .`

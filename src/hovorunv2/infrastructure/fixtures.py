@@ -3,6 +3,7 @@
 from functools import partial
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.features import FEATURE_REGISTRY
@@ -12,6 +13,7 @@ from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 
 logger = get_logger(__name__)
 
@@ -29,11 +31,18 @@ INITIAL_COMMANDS: list[dict[str, str]] = [
 async def seed_command_fixtures(
     session: AsyncSession,
     missing_commands: list[dict[str, str]],
-) -> None:
-    """Add missing command fixtures to session."""
+) -> list[str]:
+    """Return only definitions actually inserted by this transaction."""
+    added: list[str] = []
+    await lock_async_mutation(session, MutationLocks(keys=("fixtures:commands",)))
     for cmd_data in missing_commands:
         logger.info("Adding command fixture: %s", cmd_data["name"])
-        session.add(CommandDB(**cmd_data))
+        name = await session.scalar(
+            insert(CommandDB).values(**cmd_data).on_conflict_do_nothing().returning(CommandDB.name)
+        )
+        if name is not None:
+            added.append(name)
+    return added
 
 
 async def setup_fixtures(
@@ -59,5 +68,6 @@ async def setup_fixtures(
         target_id="initial_commands",
         action="seed",
         operation=operation,
-        changed_fields={"added_commands": [cmd["name"] for cmd in missing]},
+        changed_fields=lambda added: {"added_commands": added},
+        audit_if=bool,
     )

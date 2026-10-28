@@ -1,9 +1,8 @@
-"""Serialized accounting transactions with replay-safe receipts and one batch audit."""
+"""Atomic PostgreSQL accounting transactions with replay-safe receipts and one batch audit."""
 
 import hashlib
 from functools import partial
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.features import FeatureRegistry
@@ -51,7 +50,6 @@ class SQLAlchemyUsageLedgerStore(UsageLedgerStore):
                     raise ValueError(msg)
 
     async def _apply(self, session: AsyncSession, events: tuple[UsageEvent, ...]) -> AppliedUsage:
-        await session.execute(text("BEGIN IMMEDIATE"))
         return await SQLAlchemyUsageLedgerRepository(session).apply(events)
 
     async def apply_batch(self, events: tuple[UsageEvent, ...], *, actor: ActorContext) -> AppliedUsage:

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 from dishka import AsyncContainer
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -15,10 +15,12 @@ from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.audit import AuditEventDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
 from hovorunv2.infrastructure.persistence.command_store import SQLAlchemyCommandStore
 from tests.utils.activation import ACTOR, GROUP, seed_activation
+from tests.utils.postgres import reject_audit
 
 
 @pytest.mark.asyncio
@@ -29,7 +31,9 @@ async def test_explicit_empty_stays_disabled_after_defaults_and_fixtures(
     """Private and group records preserve deliberate empty settings through retries."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
     await setup_fixtures(sessions)
-    service = CommandService(SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions)))
+    service = CommandService(
+        SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions), await load_authorization_policy())
+    )
     assert not await service.is_capture_allowed(chat_id, CommandName.TWITTER, is_video=True)
     await service.enable_command(chat_id, CommandName.TWITTER)
     await service.disable_command(chat_id, CommandName.TWITTER)
@@ -56,7 +60,9 @@ async def test_legacy_compatibility_ends_on_intentional_edit(test_engine: AsyncE
     await setup_fixtures(sessions)
     async with sessions.begin() as session:
         session.add(ChatDB(chat_id=-29002, legacy_empty_capture=True))
-    service = CommandService(SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions)))
+    service = CommandService(
+        SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions), await load_authorization_policy())
+    )
     assert await service.is_capture_allowed(-29002, CommandName.TWITTER, is_video=True)
     await service.enable_defaults(-29002)
     assert await service.get_allowed_commands(-29002) == set()
@@ -78,13 +84,12 @@ async def test_selection_audit_failure_rolls_back_legacy_transition(test_engine:
     await setup_fixtures(sessions)
     async with sessions.begin() as session:
         session.add(ChatDB(chat_id=-29003, legacy_empty_capture=True))
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_selection_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'command_association' BEGIN SELECT RAISE(ABORT, 'audit rejected'); END"
-            )
+        await reject_audit(
+            session, "reject_selection_audit", "NEW.target_type = 'command_association'", "audit rejected"
         )
-    service = CommandService(SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions)))
+    service = CommandService(
+        SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions), await load_authorization_policy())
+    )
     with pytest.raises(IntegrityError, match="audit rejected"):
         await service.enable_command(-29003, CommandName.TWITTER_POST)
     assert await service.get_allowed_commands(-29003) == set()
@@ -101,7 +106,9 @@ async def test_deleted_selection_never_resurrects_target(test_engine: AsyncEngin
     await setup_fixtures(sessions)
     async with sessions.begin() as session:
         session.add(ChatDB(chat_id=-29004, legacy_empty_capture=True, deleted_at=datetime.now(UTC)))
-    service = CommandService(SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions)))
+    service = CommandService(
+        SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions), await load_authorization_policy())
+    )
     assert not await service.enable_command(-29004, CommandName.TWITTER_POST)
     assert not await service.is_capture_allowed(-29004, CommandName.TWITTER, is_video=True)
     async with sessions() as session:
@@ -115,7 +122,9 @@ async def test_first_explicit_off_blocks_later_default_initialization(test_engin
     await setup_fixtures(sessions)
     async with sessions.begin() as session:
         session.add(ChatDB(chat_id=-29005))
-    service = CommandService(SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions)))
+    service = CommandService(
+        SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions), await load_authorization_policy())
+    )
     assert not await service.disable_command(-29005, CommandName.TWITTER_POST)
     await service.enable_defaults(-29005)
     assert await service.get_allowed_commands(-29005) == set()
@@ -186,7 +195,7 @@ async def test_defaults_initialize_once_without_audit_history(test_engine: Async
     await setup_fixtures(sessions)
     async with sessions.begin() as session:
         session.add(ChatDB(chat_id=-29008))
-    store = SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions))
+    store = SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions), await load_authorization_policy())
     await store.initialize_defaults(-29008, ())
     async with sessions.begin() as session:
         await session.execute(delete(AuditEventDB))
@@ -218,13 +227,8 @@ async def test_default_audit_failure_rolls_back_configuration_intent(test_engine
     await setup_fixtures(sessions)
     async with sessions.begin() as session:
         session.add(ChatDB(chat_id=-29009))
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_default_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'command_selection' BEGIN SELECT RAISE(ABORT, 'audit rejected'); END"
-            )
-        )
-    store = SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions))
+        await reject_audit(session, "reject_default_audit", "NEW.target_type = 'command_selection'", "audit rejected")
+    store = SQLAlchemyCommandStore(sessions, SQLAlchemyAuditedTransaction(sessions), await load_authorization_policy())
     with pytest.raises(IntegrityError, match="audit rejected"):
         await store.initialize_defaults(-29009, (CommandName.TWITTER_POST,))
     assert await store.get_allowed_commands(-29009) == []

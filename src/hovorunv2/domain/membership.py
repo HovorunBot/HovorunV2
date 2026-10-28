@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, column
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -19,7 +19,7 @@ class GroupMembershipStateDB(Base):
     admins_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     admins_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     bot_status: Mapped[str] = mapped_column(String(7), nullable=False, default="unknown")
-    bot_telegram_id: Mapped[int | None] = mapped_column(Integer, default=None)
+    bot_telegram_id: Mapped[int | None] = mapped_column(BigInteger, default=None)
     bot_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     bot_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     can_delete_messages: Mapped[bool | None] = mapped_column(Boolean, default=None)
@@ -51,5 +51,11 @@ class MemberEvidenceDB(Base):
 
     __table_args__ = (
         CheckConstraint("status IN ('unknown', 'member', 'admin', 'left')", name="ck_member_evidence_status"),
-        Index("uq_member_evidence_active", "group_id", "user_id", unique=True, sqlite_where=text("deleted_at IS NULL")),
+        Index(
+            "uq_member_evidence_active",
+            "group_id",
+            "user_id",
+            unique=True,
+            postgresql_where=column("deleted_at").is_(None),
+        ),
     )

@@ -26,6 +26,7 @@ from hovorunv2.domain.membership import MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
+from tests.utils.postgres import reject_audit
 
 NOW = datetime(2026, 10, 25, 12, tzinfo=UTC)
 FRESHNESS = timedelta(minutes=5)
@@ -176,20 +177,14 @@ async def test_generation_binding_and_transactional_audit_failure(test_container
     store = await test_container.get(MembershipStore)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER fail_member_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'membership' "
-                "BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END"
-            )
-        )
+        await reject_audit(session, "fail_member_audit", "NEW.target_type = 'membership'", "audit unavailable")
         await session.commit()
     with pytest.raises(IntegrityError, match="audit unavailable"):
         await store.save_member(group_id, member_evidence(101, MembershipStatus.ADMIN))
     assert await store.get_member(group_id, user_id) is None
     assert await store.get_state(group_id) is None
     async with sessions() as session:
-        await session.execute(text("DROP TRIGGER fail_member_audit"))
+        await session.execute(text("DROP TRIGGER fail_member_audit ON audit_events"))
         user = await session.get(UserDB, user_id)
         user.deleted_at = NOW
         await session.flush()

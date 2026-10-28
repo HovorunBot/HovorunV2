@@ -3,14 +3,13 @@
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from aioresponses import aioresponses
 from dishka import AsyncContainer
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from hovorunv2.application.activation import ActivationAction, ActivationOutcome, ActivationRequest, ActivationStore
 from hovorunv2.application.ban_ports import BanStore
@@ -35,6 +34,7 @@ from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyA
 from tests.conftest import provision_role, verify_group_admins
 from tests.test_membership_adapter import RecordedResponse
 from tests.utils.activation import ACTOR, ADMIN, GROUP, activation_runtime, seed_activation, stub_telegram
+from tests.utils.postgres import reject_audit
 
 
 async def test_trusted_activation_is_durable_idempotent_and_audited(test_container: AsyncContainer) -> None:
@@ -256,12 +256,11 @@ async def test_audit_failure_rolls_back_approval_defaults_status_and_request(tes
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
         async with sessions() as session:
-            await session.execute(
-                text(
-                    "CREATE TRIGGER fail_activation BEFORE INSERT ON audit_events "
-                    "WHEN NEW.target_type = 'group_activation' AND NEW.action = 'approve' "
-                    "BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END"
-                )
+            await reject_audit(
+                session,
+                "fail_activation",
+                "NEW.target_type = 'group_activation' AND NEW.action = 'approve'",
+                "audit unavailable",
             )
             await session.commit()
         with pytest.raises(IntegrityError, match="audit unavailable"):
@@ -293,11 +292,11 @@ async def test_request_evidence_is_actor_target_and_time_scoped(test_container: 
 
 
 @pytest.mark.parametrize("trusted", [True, False])
-async def test_concurrent_activation_is_idempotent_on_real_sqlite_file(
-    test_container: AsyncContainer, tmp_path: Path, trusted: bool
+async def test_concurrent_activation_is_idempotent_on_real_postgres_connections(
+    test_container: AsyncContainer, test_engine: AsyncEngine, trusted: bool
 ) -> None:
     """Independent connections serialize checks and create only one approval/request/audit."""
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'activation.db'}")
+    engine = test_engine
     try:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)

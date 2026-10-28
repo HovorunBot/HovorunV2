@@ -22,9 +22,8 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "aiohttp",
-    "redis",
+    "redis>=7.4,<8",
     "sqlalchemy",
-    "aiosqlite",
     "greenlet",
     "alembic",
     "yt-dlp",
@@ -37,7 +36,11 @@ dependencies = [
     "pycountry-convert",
     "saq",
     "casbin",
+    "psycopg[binary]>=3.3",
 ]
+
+[project.optional-dependencies]
+legacy-import = ["aiosqlite"]
 
 [project.urls]
 Repository = "https://github.com/HovorunBot/HovorunV2"
@@ -46,6 +49,7 @@ Issues = "https://github.com/HovorunBot/HovorunV2/issues"
 [project.scripts]
 hovorunv2 = "hovorunv2.__main__:main"
 hovorun-admin = "hovorunv2.bootstrap.admin:main"
+hovorun-import-sqlite = "hovorunv2.bootstrap.sqlite_to_postgres:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -56,6 +60,7 @@ packages = ["src/hovorunv2"]
 
 [dependency-groups]
 dev = [
+    "aiosqlite",
     "aioresponses>=0.7.9",
     "commitizen",
     "import-linter",

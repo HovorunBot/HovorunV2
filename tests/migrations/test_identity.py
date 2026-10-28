@@ -82,7 +82,7 @@ def test_actual_group_upgrade_rejects_duplicate_identity(tmp_path: Path, monkeyp
             "INSERT INTO chats (chat_id, platform, status) VALUES (-100123, 'telegram', ?)",
             [("approved",), ("unauthorized",)],
         )
-    with pytest.raises(RuntimeError, match="duplicate active chats"):
+    with pytest.raises(ValueError, match="duplicate active chats"):
         command.upgrade(config, "head")
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT status FROM chats ORDER BY id").fetchall() == [

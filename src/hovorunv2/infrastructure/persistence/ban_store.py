@@ -13,6 +13,7 @@ from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ActorOrigin, Role, TargetKind
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 
 
 class SQLAlchemyBanStore(BanStore):
@@ -84,6 +85,14 @@ class SQLAlchemyBanStore(BanStore):
         actor: ActorContext,
         public_explanation: str | None,
     ) -> bool:
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                users=(telegram_id,) if target == TargetKind.USER else (),
+                chats=(telegram_id,) if target == TargetKind.GROUP else (),
+                actors=(actor.actor_id,) if actor.actor_id is not None else (),
+            ),
+        )
         entity = await self._target(session, target, telegram_id)
         if entity is None:
             msg = "Ban target must be an active known identity."

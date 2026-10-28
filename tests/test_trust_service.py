@@ -1,16 +1,11 @@
 """Real SQLite trust authorization, revision and audit coverage."""
 
-import asyncio
-import sqlite3
-from pathlib import Path
-
 import pytest
 from dishka import AsyncContainer
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from alembic import command
 from hovorunv2.application.ports import PublicHandleStore, UserStore
 from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.bootstrap.admin import run_admin
@@ -18,7 +13,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import Role, TargetKind
 from hovorunv2.interface.cli.roles import RoleArguments, build_parser
 from tests.conftest import provision_role
-from tests.migrations.helpers import migration_config
+from tests.utils.postgres import reject_audit
 
 
 @pytest.mark.asyncio
@@ -99,12 +94,7 @@ async def test_trust_audit_failure_rolls_back_revision(test_container: AsyncCont
     await users.ingest_user(880017)
     session_maker = await test_container.get(async_sessionmaker)
     async with session_maker() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_trust_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.action = 'set_trust' BEGIN SELECT RAISE(ABORT, 'synthetic audit failure'); END"
-            )
-        )
+        await reject_audit(session, "reject_trust_audit", "NEW.action = 'set_trust'", "synthetic audit failure")
         await session.commit()
     with pytest.raises(IntegrityError):
         await trust.set_trust("880017", is_trusted=True, actor=ActorContext.cli())
@@ -114,22 +104,20 @@ async def test_trust_audit_failure_rolls_back_revision(test_container: AsyncCont
     assert user.trust_revision == 0
 
 
-def test_trust_cli_uses_offline_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Trust CLI runs without bot credentials and preserves idempotent mutation semantics."""
-    database = tmp_path / "trust-cli.db"
-    config = migration_config(monkeypatch, database)
-    command.upgrade(config, "trust013")
-    with sqlite3.connect(database) as connection:
-        connection.execute(
-            "INSERT INTO users (platform, telegram_id, role, is_trusted, generation, created_at, updated_at) "
-            "VALUES ('telegram', 880018, 1, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-        )
-    parser = build_parser()
-    arguments = parser.parse_args(
+async def test_trust_cli_uses_offline_database(test_container: AsyncContainer, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Trust CLI uses PostgreSQL without bot credentials and preserves idempotent mutations."""
+    users = await test_container.get(UserStore)
+    await users.ingest_user(880018)
+    monkeypatch.setenv("BOT_TOKEN", "")
+    monkeypatch.setenv("CACHE_ENCRYPTION_KEY", "")
+    arguments = build_parser().parse_args(
         ["trust", "grant", "880018", "--reason", "synthetic approval"], namespace=RoleArguments()
     )
-    assert asyncio.run(run_admin(arguments)) == "880018\ttrusted=true"
-    assert asyncio.run(run_admin(arguments)) == "880018\ttrusted=true"
-    with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT is_trusted, trust_revision FROM users").fetchone() == (1, 1)
-        assert connection.execute("SELECT COUNT(*) FROM audit_events WHERE action = 'set_trust'").fetchone() == (1,)
+    assert await run_admin(arguments) == "880018\ttrusted=true"
+    assert await run_admin(arguments) == "880018\ttrusted=true"
+    user = await users.get_by_telegram_id(880018)
+    assert user.is_trusted
+    assert user.trust_revision == 1
+    async with (await test_container.get(async_sessionmaker))() as session:
+        events = list((await session.scalars(select(AuditEventDB).where(AuditEventDB.action == "set_trust"))).all())
+        assert len(events) == 1

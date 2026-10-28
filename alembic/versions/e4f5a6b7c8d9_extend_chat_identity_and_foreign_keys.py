@@ -23,16 +23,12 @@ def upgrade() -> None:
     conn = op.get_bind()
 
     # Preflight check for duplicate existing numeric chat records
-    duplicates = conn.execute(
-        sa.text(
-            "SELECT platform, chat_id, COUNT(*) as cnt FROM chats "
-            "GROUP BY platform, chat_id HAVING COUNT(*) > 1"
-        )
-    ).fetchall()
+    chats = sa.table("chats", sa.column("platform"), sa.column("chat_id"))
+    duplicates = conn.execute(sa.select(chats.c.platform, chats.c.chat_id, sa.func.count()).group_by(chats.c.platform, chats.c.chat_id).having(sa.func.count() > 1)).fetchall()
     if duplicates:
         dup_summary = ", ".join(f"{row[0]}:{row[1]} (count: {row[2]})" for row in duplicates)
         msg = f"Migration aborted: duplicate active chats detected: {dup_summary}. Manual resolution required."
-        raise RuntimeError(msg)
+        raise ValueError(msg)
 
     with op.batch_alter_table("chats") as batch_op:
         batch_op.add_column(sa.Column("title", sa.String(), nullable=True))
@@ -51,6 +47,7 @@ def upgrade() -> None:
             ["platform", "chat_id"],
             unique=True,
             sqlite_where=sa.text("deleted_at IS NULL"),
+            postgresql_where=sa.text("deleted_at IS NULL"),
         )
 
 

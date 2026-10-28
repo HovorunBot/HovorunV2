@@ -1,5 +1,11 @@
 ## Unreleased
 
+### BREAKING CHANGE
+
+- DATABASE_URL and PostgreSQL replace the SQLite DB_PATH runtime.
+Stop old writers and run the documented one-time import with the original
+encryption configuration before starting against the new database.
+
 ### Feat
 
 - **queue**: bound and deduplicate work admission
@@ -48,6 +54,7 @@
 
 ### Refactor
 
+- **database**: migrate persistence to PostgreSQL
 - **queue**: define encrypted feature job envelopes
 - **audit**: use standard strict payload validation
 - **features**: decouple selection state from audit history

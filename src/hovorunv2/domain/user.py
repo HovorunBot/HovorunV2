@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, Index, Integer, String, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, Index, Integer, String, column
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -52,7 +52,7 @@ class UserDB(Base):
             "platform",
             "telegram_id",
             unique=True,
-            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=column("deleted_at").is_(None),
         ),
         CheckConstraint("role IN (1, 10, 100)", name="ck_users_valid_role"),
     )

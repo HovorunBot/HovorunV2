@@ -21,6 +21,7 @@ def test_remove_sponsorship_preserves_independent_access_and_history(
     database = tmp_path / "remove_sponsorship.db"
     monkeypatch.setenv("DB_PATH", str(database))
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["sqlite_path"] = database
     command.upgrade(config, "member019")
     with sqlite3.connect(database) as connection:
         connection.execute(

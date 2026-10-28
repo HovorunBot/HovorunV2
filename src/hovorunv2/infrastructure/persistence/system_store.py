@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ports import AuditedUnitOfWork, SystemStore
 from hovorunv2.domain.audit import ActorContext
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.system_repository import SQLAlchemySystemRepository
 
 
@@ -37,6 +38,7 @@ class SQLAlchemySystemStore(SystemStore):
 
     async def _execute_set_value(self, session: AsyncSession, key: str, value: str) -> None:
         """Execute setting a value on persistence session."""
+        await lock_async_mutation(session, MutationLocks(keys=("system:" + key,)))
         repo = SQLAlchemySystemRepository(session)
         await repo.set_value(key, value)
 

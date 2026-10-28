@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 from dishka import AsyncContainer
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -25,6 +25,7 @@ from hovorunv2.domain.enums import TargetKind
 from hovorunv2.domain.usage import UsageOverrideDB
 from hovorunv2.infrastructure.persistence.usage_policy_store import SQLAlchemyUsagePolicyStore
 from tests.conftest import provision_role
+from tests.utils.postgres import reject_audit
 from tests.utils.usage import GROUP, USER, usage_subjects
 
 FEATURE = FEATURE_REGISTRY.all()[0].key
@@ -160,12 +161,7 @@ async def test_audit_failure_rolls_back_policy_and_unknown_units_fail(test_conta
     policy = UsagePolicy(MEDIA_BUCKET, 8, 4, 2, 10)
     session_maker = await test_container.get(async_sessionmaker)
     async with session_maker() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_usage_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'usage_override' BEGIN SELECT RAISE(ABORT, 'synthetic'); END"
-            )
-        )
+        await reject_audit(session, "reject_usage_audit", "NEW.target_type = 'usage_override'", "synthetic")
         await session.commit()
     with pytest.raises(IntegrityError):
         await store.set_override(user.target, policy, actor=ActorContext.cli())

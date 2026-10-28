@@ -38,6 +38,7 @@ from hovorunv2.domain.group_beta import GroupBetaEnablerDB, GroupBetaFeatureDB
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
 from tests.conftest import provision_role
+from tests.utils.postgres import reject_audit
 
 GROUP = -100290001
 FIRST = 290001
@@ -53,11 +54,6 @@ GROUP_ONLY = FeatureDefinition(
     "group_only_beta", "Group-only beta", channel=FeatureChannel.BETA, scopes=frozenset({FeatureScope.GROUP})
 )
 REGISTRY = FeatureRegistry((*FEATURE_REGISTRY.all(), BETA, FUTURE, PRIVATE, GROUP_ONLY))
-REJECT_AUDIT = (
-    "CREATE TRIGGER reject_group_beta BEFORE INSERT ON audit_events "
-    "WHEN NEW.target_type = 'group_beta' "
-    "BEGIN SELECT RAISE(ABORT, 'synthetic audit failure'); END"
-)
 
 
 @dataclass(frozen=True)
@@ -381,16 +377,16 @@ async def test_audit_failure_rolls_back_selection_and_enabler_enable_and_disable
     runtime = await group_beta_runtime(test_container)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions.begin() as session:
-        await session.execute(text(REJECT_AUDIT))
+        await reject_audit(session, "reject_group_beta", "NEW.target_type = 'group_beta'", "synthetic audit failure")
     with pytest.raises(IntegrityError):
         await enable_local(runtime)
     async with sessions.begin() as session:
         assert await session.scalar(select(func.count()).select_from(GroupBetaFeatureDB)) == 0
         assert await session.scalar(select(func.count()).select_from(GroupBetaEnablerDB)) == 0
-        await session.execute(text("DROP TRIGGER reject_group_beta"))
+        await session.execute(text("DROP TRIGGER reject_group_beta ON audit_events"))
     await enable_local(runtime)
     async with sessions.begin() as session:
-        await session.execute(text(REJECT_AUDIT))
+        await reject_audit(session, "reject_group_beta", "NEW.target_type = 'group_beta'", "synthetic audit failure")
     with pytest.raises(IntegrityError):
         await runtime.service.set_enabled(
             runtime.target, BETA.key, enabled=False, actor=ActorContext.telegram(FIRST), transport_kind="group"

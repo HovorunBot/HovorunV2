@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, text
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, String, and_, column
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -56,7 +56,7 @@ class GroupApprovalDB(GrantLifecycle, Base):
             "group_id",
             "basis",
             unique=True,
-            sqlite_where=text("deleted_at IS NULL AND revoked_at IS NULL"),
+            postgresql_where=and_(column("deleted_at").is_(None), column("revoked_at").is_(None)),
         ),
     )
 
@@ -78,7 +78,7 @@ class GroupAccessRequestDB(GrantLifecycle, Base):
         default=RequestStatus.PENDING,
     )
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
-    decision_actor_id: Mapped[int | None] = mapped_column(nullable=True, default=None)
+    decision_actor_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     decision_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
 
     __table_args__ = (
@@ -86,6 +86,8 @@ class GroupAccessRequestDB(GrantLifecycle, Base):
             "uq_group_requests_pending",
             "group_id",
             unique=True,
-            sqlite_where=text("deleted_at IS NULL AND status = 'pending'"),
+            postgresql_where=and_(
+                column("deleted_at").is_(None), column("status", String()) == RequestStatus.PENDING.value
+            ),
         ),
     )

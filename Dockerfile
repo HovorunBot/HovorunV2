@@ -30,7 +30,7 @@ COPY pyproject.toml uv.lock ./
 
 # Use uv cache mount to speed up dependency resolution/downloads
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    uv sync --frozen --no-dev --extra legacy-import --no-install-project
 
 # 5. Copy application code (Frequent Changes)
 COPY src ./src
@@ -42,8 +42,8 @@ COPY README.md CHANGES.md* CHANGELOG.md* ./
 # Final sync to install the project itself
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}
-RUN chmod +x entrypoint.sh && uv sync --frozen --no-dev
+RUN chmod +x entrypoint.sh && uv sync --frozen --no-dev --extra legacy-import
 
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["uv", "run", "hovorunv2"]
+CMD ["uv", "run", "--no-sync", "hovorunv2"]
 

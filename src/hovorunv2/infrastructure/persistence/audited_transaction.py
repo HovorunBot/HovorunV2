@@ -4,12 +4,16 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext, AuditEventDB, sanitize_audit_changes
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.infrastructure.repositories.audit_repository import SQLAlchemyAuditRepository
+
+MAX_TRANSACTION_ATTEMPTS = 3
+RETRYABLE_TRANSACTION_STATES = frozenset({"40001", "40P01"})
 
 
 class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
@@ -54,32 +58,43 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
         validate_audit_changes(target_type, action, None)
         validate_audit_reason(actor.reason)
 
-        async with self._session_maker() as session:
-            async with session.begin():
-                result = await operation(session)
+        # Callbacks are database-only; whole-transaction retry cannot repeat external effects.
+        attempt = 0
+        while True:
+            try:
+                async with self._session_maker() as session:
+                    async with session.begin():
+                        result = await operation(session)
 
-                should_audit = audit_if(result) if audit_if is not None else True
-                if should_audit:
-                    if isinstance(changed_fields, dict):
-                        raw_changes = changed_fields
-                    elif callable(changed_fields):
-                        raw_changes = changed_fields(result)
-                    else:
-                        raw_changes = None
-                    validate_audit_changes(target_type, action, raw_changes)
-                    sanitized_changes = sanitize_audit_changes(raw_changes)
-                    audit_repo = SQLAlchemyAuditRepository(session)
-                    event = AuditEventDB(
-                        created_at=datetime.now(UTC),
-                        actor_origin=actor.origin,
-                        actor_id=actor.actor_id,
-                        target_type=target_type,
-                        target_id=str(target_id),
-                        action=action,
-                        changed_fields=sanitized_changes,
-                        reason=actor.reason,
-                        correlation_id=actor.correlation_id,
-                    )
-                    await audit_repo.add(event)
+                        should_audit = audit_if(result) if audit_if is not None else True
+                        if should_audit:
+                            if isinstance(changed_fields, dict):
+                                raw_changes = changed_fields
+                            elif callable(changed_fields):
+                                raw_changes = changed_fields(result)
+                            else:
+                                raw_changes = None
+                            validate_audit_changes(target_type, action, raw_changes)
+                            sanitized_changes = sanitize_audit_changes(raw_changes)
+                            audit_repo = SQLAlchemyAuditRepository(session)
+                            event = AuditEventDB(
+                                created_at=datetime.now(UTC),
+                                actor_origin=actor.origin,
+                                actor_id=actor.actor_id,
+                                target_type=target_type,
+                                target_id=str(target_id),
+                                action=action,
+                                changed_fields=sanitized_changes,
+                                reason=actor.reason,
+                                correlation_id=actor.correlation_id,
+                            )
+                            await audit_repo.add(event)
 
-            return result
+                    return result
+            except DBAPIError as error:
+                attempt += 1
+                if (
+                    getattr(error.orig, "sqlstate", None) not in RETRYABLE_TRANSACTION_STATES
+                    or attempt >= MAX_TRANSACTION_ATTEMPTS
+                ):
+                    raise

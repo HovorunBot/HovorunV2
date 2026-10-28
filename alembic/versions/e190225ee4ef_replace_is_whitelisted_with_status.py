@@ -24,9 +24,8 @@ def upgrade() -> None:
     op.add_column('chats', sa.Column('status', sa.String(), nullable=True))
 
     # 2. Migrate data
-    op.execute("UPDATE chats SET status = 'approved' WHERE is_whitelisted = 1")
-    op.execute("UPDATE chats SET status = 'unauthorized' WHERE is_whitelisted = 0")
-    op.execute("UPDATE chats SET status = 'unauthorized' WHERE status IS NULL")
+    chats = sa.table("chats", sa.column("status"), sa.column("is_whitelisted"))
+    op.execute(chats.update().values(status=sa.case((chats.c.is_whitelisted.is_(True), "approved"), else_="unauthorized")))
 
     # 3. Drop old column and make new one non-nullable
     with op.batch_alter_table('chats') as batch_op:
@@ -37,8 +36,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     op.add_column('chats', sa.Column('is_whitelisted', sa.BOOLEAN(), nullable=True))
-    op.execute("UPDATE chats SET is_whitelisted = 1 WHERE status = 'approved'")
-    op.execute("UPDATE chats SET is_whitelisted = 0 WHERE status != 'approved'")
+    chats = sa.table("chats", sa.column("status"), sa.column("is_whitelisted"))
+    op.execute(chats.update().values(is_whitelisted=chats.c.status == "approved"))
 
     with op.batch_alter_table('chats') as batch_op:
         batch_op.alter_column('is_whitelisted', nullable=False)

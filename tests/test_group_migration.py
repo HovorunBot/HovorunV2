@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from aiogram.types import CallbackQuery, Chat, Message, User
 from dishka import AsyncContainer
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -30,6 +30,7 @@ from hovorunv2.interface.telegram.identity import IdentityMiddleware
 from tests.conftest import provision_role
 from tests.test_chat_status_state_machine import bot_event
 from tests.utils.activation import ACTOR
+from tests.utils.postgres import reject_audit
 
 OLD = -250001
 NEW = -100250001
@@ -111,13 +112,7 @@ async def test_migration_rolls_back_when_audit_fails(test_container: AsyncContai
     await chats.get_or_create_chat(OLD)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions.begin() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_migration_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.action = 'migrate_route' BEGIN "
-                "SELECT RAISE(ABORT, 'synthetic audit failure'); END"
-            )
-        )
+        await reject_audit(session, "reject_migration_audit", "NEW.action = 'migrate_route'", "synthetic audit failure")
     with pytest.raises(IntegrityError, match="synthetic audit failure"):
         await (await test_container.get(GroupMigrationStore)).migrate(OLD, NEW)
     assert (await chats.get_chat(OLD)).chat_id == OLD

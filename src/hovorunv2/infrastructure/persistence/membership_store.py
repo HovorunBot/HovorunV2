@@ -18,6 +18,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.membership import GroupMembershipStateDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.membership_repository import (
     MembershipMutation,
     SQLAlchemyMembershipRepository,
@@ -66,7 +67,9 @@ class SQLAlchemyMembershipStore(MembershipStore):
         self,
         session: AsyncSession,
         operation: Callable[[SQLAlchemyMembershipRepository], Awaitable[MembershipMutation]],
+        locks: MutationLocks,
     ) -> MembershipMutation:
+        await lock_async_mutation(session, locks)
         return await operation(SQLAlchemyMembershipRepository(session))
 
     async def _mutate(
@@ -75,13 +78,16 @@ class SQLAlchemyMembershipStore(MembershipStore):
         action: str,
         operation: Callable[[SQLAlchemyMembershipRepository], Awaitable[MembershipMutation]],
         actor: ActorContext | None,
+        users: tuple[int, ...] = (),
     ) -> bool:
         result: MembershipMutation = await self._audited_uow.execute(
             actor=actor or ActorContext.system("membership verification"),
             target_type="membership",
             target_id=group_id,
             action=action,
-            operation=partial(self._execute, operation=operation),
+            operation=partial(
+                self._execute, operation=operation, locks=MutationLocks(group_ids=(group_id,), users=users)
+            ),
             changed_fields=lambda result: result.changes,
             audit_if=lambda result: result.changed,
         )
@@ -106,6 +112,7 @@ class SQLAlchemyMembershipStore(MembershipStore):
                 expected_user_id=expected_user_id,
             ),
             actor,
+            users=(evidence.user_telegram_id,),
         )
 
     async def save_bot(self, group_id: int, evidence: BotCapabilityEvidence, actor: ActorContext | None = None) -> bool:
@@ -126,4 +133,5 @@ class SQLAlchemyMembershipStore(MembershipStore):
             "verify_admins",
             partial(SQLAlchemyMembershipRepository.save_admins, group_id=group_id, evidence=evidence),
             actor,
+            users=tuple(member.user_telegram_id for member in evidence.members),
         )

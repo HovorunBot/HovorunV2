@@ -14,7 +14,8 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
-    text,
+    column,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -58,7 +59,7 @@ class ChatDB(Base):
     )
     generation: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     legacy_empty_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    features_configured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
+    features_configured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     target_lang: Mapped[str | None] = mapped_column(String, nullable=True)
     ignored_langs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     encryption_salt: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -86,6 +87,6 @@ class ChatDB(Base):
             "platform",
             "chat_id",
             unique=True,
-            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=column("deleted_at").is_(None),
         ),
     )

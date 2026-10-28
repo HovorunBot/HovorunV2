@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, and_, column, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -16,7 +16,7 @@ class GroupBetaFeatureDB(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("chats.id"), nullable=False)
     feature: Mapped[str] = mapped_column(String(128), nullable=False)
-    selected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
+    selected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
@@ -26,7 +26,7 @@ class GroupBetaFeatureDB(Base):
             "group_id",
             "feature",
             unique=True,
-            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=column("deleted_at").is_(None),
         ),
     )
 
@@ -49,6 +49,6 @@ class GroupBetaEnablerDB(Base):
             "selection_id",
             "user_id",
             unique=True,
-            sqlite_where=text("revoked_at IS NULL AND deleted_at IS NULL"),
+            postgresql_where=and_(column("revoked_at").is_(None), column("deleted_at").is_(None)),
         ),
     )

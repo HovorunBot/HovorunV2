@@ -23,6 +23,7 @@ data/
 *.db
 *.log
 .env
+.env.*
 .worktrees/
 docs/
 tests/
@@ -30,3 +31,7 @@ Makefile
 GEMINI.md
 LICENSE
 example.env
+ai-schemes/
+.agents/
+.codex/
+.aws/

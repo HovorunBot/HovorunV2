@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 
 
@@ -33,6 +34,7 @@ class SQLAlchemyGroupIdentityStore:
     async def _observe(
         self, session: AsyncSession, telegram_id: int, title: str | None, chat_type: str
     ) -> tuple[ChatDB | None, dict[str, object] | None]:
+        await lock_async_mutation(session, MutationLocks(chats=(telegram_id,)))
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(telegram_id)
         if chat is None:

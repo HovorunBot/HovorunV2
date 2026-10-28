@@ -1,0 +1,79 @@
+name: hovorunv2
+
+x-app: &app
+  image: hovorunv2:${APP_VERSION:-local}
+  build:
+    context: .
+    args:
+      APP_VERSION: ${APP_VERSION:-}
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Generate the server .env with make env-init}
+      POSTGRES_USER: ${POSTGRES_USER:?Generate the server .env with make env-init}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate the server .env with make env-init}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8.0
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    <<: *app
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  bot:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    env_file:
+      - path: ${APP_ENV_FILE:-.env}
+        required: true
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
+      VALKEY_URL: redis://valkey:6379/0
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      CACHE_ENCRYPTION_KEY: ${CACHE_ENCRYPTION_KEY:-}
+      APP_VERSION: ${APP_VERSION:-}
+
+  import-sqlite:
+    <<: *app
+    profiles: [tools]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["uv", "run", "--no-sync", "hovorun-import-sqlite"]
+    restart: "no"
+
+volumes:
+  postgres_data:
+  valkey_data:

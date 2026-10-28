@@ -1,6 +1,7 @@
 """Session-bound deterministic accounting and replay conflict detection."""
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.application.usage import UsageUnit, UsageWindow
@@ -60,43 +61,51 @@ class SQLAlchemyUsageLedgerRepository:
             )
         )
 
-    async def _charge(self, event: UsageEvent, charge: UsageCharge) -> UsageAggregateDB:
-        row = await self.aggregate(event.subject, charge.bucket, charge.unit, charge.window, event.occurred_at)
-        if row is None:
-            row = UsageAggregateDB(
-                subject_kind=event.subject.kind.value,
-                telegram_id=event.subject.telegram_id,
-                bucket=charge.bucket,
-                unit=charge.unit.value,
-                window_seconds=charge.window.seconds,
-                window_start=charge.window.start(event.occurred_at),
-                amount=charge.amount,
-            )
-            self._session.add(row)
-        else:
-            if row.amount > MAX_ACCOUNTING_INTEGER - charge.amount:
-                msg = "Usage aggregate exceeds database integer capacity."
-                raise ValueError(msg)
-            row.amount += charge.amount
-        await self._session.flush()
-        return row
+    async def _charge(self, event: UsageEvent, charge: UsageCharge) -> int:
+        statement = insert(UsageAggregateDB).values(
+            subject_kind=event.subject.kind.value,
+            telegram_id=event.subject.telegram_id,
+            bucket=charge.bucket,
+            unit=charge.unit.value,
+            window_seconds=charge.window.seconds,
+            window_start=charge.window.start(event.occurred_at),
+            amount=charge.amount,
+        )
+        row_id = await self._session.scalar(
+            statement.on_conflict_do_update(
+                constraint="uq_usage_aggregate_window",
+                set_={"amount": UsageAggregateDB.amount + statement.excluded.amount},
+                where=UsageAggregateDB.amount <= MAX_ACCOUNTING_INTEGER - statement.excluded.amount,
+            ).returning(UsageAggregateDB.id)
+        )
+        if row_id is None:
+            msg = "Usage aggregate exceeds database integer capacity."
+            raise ValueError(msg)
+        return row_id
 
     async def apply(self, events: tuple[UsageEvent, ...]) -> AppliedUsage:
         """Abort the whole batch on a conflicting replay, including earlier aggregate changes."""
         applied, units = 0, 0
         aggregates: set[int] = set()
-        for event in events:
-            receipt = await self._session.get(UsageAccountingEventDB, event.event_id)
-            if receipt is not None:
+        for event in sorted(events, key=lambda item: item.event_id):
+            inserted = await self._session.scalar(
+                insert(UsageAccountingEventDB)
+                .values(event_id=event.event_id, fingerprint=event.fingerprint)
+                .on_conflict_do_nothing()
+                .returning(UsageAccountingEventDB.event_id)
+            )
+            if inserted is None:
+                receipt = await self._session.get(UsageAccountingEventDB, event.event_id)
+                if receipt is None:
+                    msg = "Accounting receipt is unavailable after conflicting insertion."
+                    raise ValueError(msg)
                 if receipt.fingerprint != event.fingerprint:
                     msg = "Accounting event ID was already used for different charges."
                     raise ValueError(msg)
                 continue
             await self.require_known_subject(event.subject)
-            self._session.add(UsageAccountingEventDB(event_id=event.event_id, fingerprint=event.fingerprint))
             for charge in event.charges:
-                row = await self._charge(event, charge)
-                aggregates.add(row.id)
+                aggregates.add(await self._charge(event, charge))
                 units += charge.amount
             applied += 1
         return AppliedUsage(applied, len(aggregates), units)

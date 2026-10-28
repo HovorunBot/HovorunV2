@@ -19,4 +19,6 @@ def migration_config(monkeypatch: pytest.MonkeyPatch, database: Path) -> Config:
     monkeypatch.setenv("BOT_TOKEN", "123456:synthetic-migration-token")
     monkeypatch.setenv("ADMIN_IDS", "[]")
     monkeypatch.setenv("OWNERS", "[]")
-    return Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["sqlite_path"] = database
+    return config

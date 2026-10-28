@@ -1,17 +1,23 @@
 """Persistence adapter for command association operations."""
 
+from datetime import UTC, datetime
 from functools import partial
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.ports import AuditedUnitOfWork, CommandStore
+from hovorunv2.application.permissions import PermissionFacts, PermissionTarget
+from hovorunv2.application.ports import AuditedUnitOfWork, AuthorizationPolicy, CommandStore
 from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
-from hovorunv2.domain.enums import ChatStatus, Platform
+from hovorunv2.domain.enums import ActorOrigin, ChatStatus, Platform, TargetKind
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 from hovorunv2.infrastructure.repositories.command_repository import SQLAlchemyCommandRepository
+from hovorunv2.infrastructure.repositories.group_beta_repository import SQLAlchemyGroupBetaRepository
+from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 
 
 class SQLAlchemyCommandStore(CommandStore):
@@ -21,10 +27,51 @@ class SQLAlchemyCommandStore(CommandStore):
         self,
         session_maker: async_sessionmaker,
         audited_uow: AuditedUnitOfWork,
+        policy: AuthorizationPolicy,
     ) -> None:
         """Initialize with session maker and audited unit of work."""
         self._session_maker = session_maker
         self._audited_uow = audited_uow
+        self._policy = policy
+
+    async def _authorize_selection(self, session: AsyncSession, chat_id: int, actor: ActorContext) -> None:
+        """Recheck current configuration authority; trusted ingress supplies actor origin."""
+        if actor.origin != ActorOrigin.TELEGRAM:
+            return
+        user = await SQLAlchemyUserRepository(session).get_by_telegram_id(actor.actor_id or 0)
+        banned = await session.scalar(
+            select(BanDB.id)
+            .where(
+                BanDB.target_kind == TargetKind.USER,
+                BanDB.telegram_id == actor.actor_id,
+                BanDB.platform == "telegram",
+                BanDB.deleted_at.is_(None),
+                BanDB.revoked_at.is_(None),
+            )
+            .limit(1)
+        )
+        chat = await SQLAlchemyChatRepository(session).get_by_id(chat_id)
+        if user is None or banned is not None or chat is None:
+            msg = "Feature configuration requires current active authority."
+            raise PermissionError(msg)
+        if chat_id > 0:
+            allowed = actor.actor_id == chat_id and (
+                user.is_trusted
+                or self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
+            )
+        else:
+            admin = await SQLAlchemyGroupBetaRepository(session).is_admin(chat.id, user.id, datetime.now(UTC))
+            allowed = self._policy.is_allowed(
+                PermissionFacts(
+                    user.role,
+                    "group:settings",
+                    PermissionTarget("group", chat.id, chat.generation, chat.chat_id),
+                    admin,
+                )
+            )
+        if not allowed:
+            msg = "Feature configuration requires current settings authority."
+            raise PermissionError(msg)
 
     async def legacy_capture_allowed(self, chat_id: int, platform: str = "telegram") -> bool:
         """Read compatibility only for an active migrated empty configuration."""
@@ -35,7 +82,7 @@ class SQLAlchemyCommandStore(CommandStore):
     async def _initialize_defaults(
         self, session: AsyncSession, chat_id: int, commands: tuple[str, ...], platform: str
     ) -> bool:
-        await session.execute(text("BEGIN IMMEDIATE"))
+        await lock_async_mutation(session, MutationLocks(chats=(chat_id,), platform=platform))
         repository = SQLAlchemyChatRepository(session)
         chat = await repository.get_by_id(chat_id, platform)
         if chat is None or chat.features_configured or chat.commands or chat.legacy_empty_capture:
@@ -76,9 +123,16 @@ class SQLAlchemyCommandStore(CommandStore):
         chat_id: int,
         command_name: str,
         platform: str,
+        actor: ActorContext,
     ) -> tuple[bool, bool, bool]:
         """Associate a command with a chat on session."""
-        await session.execute(text("BEGIN IMMEDIATE"))
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                chats=(chat_id,), actors=(actor.actor_id,) if actor.actor_id is not None else (), platform=platform
+            ),
+        )
+        await self._authorize_selection(session, chat_id, actor)
         chat_repo = SQLAlchemyChatRepository(session)
         cmd_repo = SQLAlchemyCommandRepository(session)
 
@@ -109,9 +163,16 @@ class SQLAlchemyCommandStore(CommandStore):
         chat_id: int,
         command_name: str,
         platform: str,
+        actor: ActorContext,
     ) -> tuple[bool, bool, bool]:
         """Remove association and end legacy compatibility in the same transaction."""
-        await session.execute(text("BEGIN IMMEDIATE"))
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                chats=(chat_id,), actors=(actor.actor_id,) if actor.actor_id is not None else (), platform=platform
+            ),
+        )
+        await self._authorize_selection(session, chat_id, actor)
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(chat_id, platform)
         if not chat:
@@ -137,6 +198,7 @@ class SQLAlchemyCommandStore(CommandStore):
         """Associate a command with a chat."""
         operation = partial(
             self._execute_enable_command,
+            actor=actor or ActorContext.system("enable_command"),
             chat_id=chat_id,
             command_name=command_name,
             platform=platform,
@@ -162,6 +224,7 @@ class SQLAlchemyCommandStore(CommandStore):
         """Remove association of a command from a chat."""
         operation = partial(
             self._execute_disable_command,
+            actor=actor or ActorContext.system("disable_command"),
             chat_id=chat_id,
             command_name=command_name,
             platform=platform,

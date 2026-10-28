@@ -5,10 +5,12 @@ from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.ports import AuditedUnitOfWork, UserStore
+from hovorunv2.application.permissions import PermissionFacts, PermissionTarget
+from hovorunv2.application.ports import AuditedUnitOfWork, AuthorizationPolicy, UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, Role
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 
 
@@ -19,10 +21,12 @@ class SQLAlchemyUserStore(UserStore):
         self,
         session_maker: async_sessionmaker,
         audited_uow: AuditedUnitOfWork,
+        policy: AuthorizationPolicy,
     ) -> None:
         """Initialize with session maker and audited unit of work."""
         self._session_maker = session_maker
         self._audited_uow = audited_uow
+        self._policy = policy
 
     async def get_by_id(self, user_id: int) -> UserDB | None:
         """Fetch active user by internal entity ID."""
@@ -49,6 +53,7 @@ class SQLAlchemyUserStore(UserStore):
         platform: str,
     ) -> tuple[UserDB | None, bool]:
         """Execute user ingestion on session."""
+        await lock_async_mutation(session, MutationLocks(users=(telegram_id,), platform=platform))
         repo = SQLAlchemyUserRepository(session)
         return await repo.ingest(telegram_id, platform)
 
@@ -62,6 +67,7 @@ class SQLAlchemyUserStore(UserStore):
         deleted_at: datetime,
     ) -> bool:
         """Execute user soft-deletion on session."""
+        await lock_async_mutation(session, MutationLocks(users=(telegram_id,), platform=platform))
         repo = SQLAlchemyUserRepository(session)
         target = await repo.get_by_telegram_id(telegram_id, platform)
         if actor.origin != ActorOrigin.CLI and target is not None and target.role >= Role.ADMIN:
@@ -82,9 +88,23 @@ class SQLAlchemyUserStore(UserStore):
         platform: str,
         *,
         is_trusted: bool,
+        actor: ActorContext,
     ) -> tuple[bool, bool, int | None]:
         """Execute user trust update on session."""
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                users=(telegram_id,), actors=(actor.actor_id,) if actor.actor_id is not None else (), platform=platform
+            ),
+        )
         repo = SQLAlchemyUserRepository(session)
+        if actor.origin == ActorOrigin.TELEGRAM:
+            operator = await repo.get_by_telegram_id(actor.actor_id or 0, platform)
+            if operator is None or not self._policy.is_allowed(
+                PermissionFacts(operator.role, "bot:administer", PermissionTarget("bot"))
+            ):
+                msg = "Trust administration requires current bot administrator authority."
+                raise PermissionError(msg)
         return await repo.set_trust(telegram_id, is_trusted=is_trusted, platform=platform)
 
     async def ingest_user(
@@ -151,6 +171,7 @@ class SQLAlchemyUserStore(UserStore):
             telegram_id=telegram_id,
             platform=platform,
             is_trusted=is_trusted,
+            actor=actor or ActorContext.system("set_trust"),
         )
 
         res: tuple[bool, bool, int | None] = await self._audited_uow.execute(

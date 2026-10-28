@@ -28,18 +28,11 @@ def upgrade() -> None:
     # Backfill assignments from historical user_roles table:
     # OWNER takes precedence over ADMIN; no assignment means 'user'.
     conn = op.get_bind()
-    conn.execute(
-        sa.text(
-            "UPDATE users SET role = 'owner' "
-            "WHERE id IN (SELECT user_id FROM user_roles WHERE role = 'owner')"
-        )
-    )
-    conn.execute(
-        sa.text(
-            "UPDATE users SET role = 'admin' "
-            "WHERE id IN (SELECT user_id FROM user_roles WHERE role = 'admin') AND role != 'owner'"
-        )
-    )
+    users = sa.table("users", sa.column("id"), sa.column("role"))
+    roles = sa.table("user_roles", sa.column("user_id"), sa.column("role"))
+    conn.execute(users.update().where(users.c.id.in_(sa.select(roles.c.user_id).where(roles.c.role == "owner"))).values(role="owner"))
+    conn.execute(users.update().where(users.c.id.in_(sa.select(roles.c.user_id).where(roles.c.role == "admin")), users.c.role != "owner").values(role="admin"))
+
 
 
 def downgrade() -> None:

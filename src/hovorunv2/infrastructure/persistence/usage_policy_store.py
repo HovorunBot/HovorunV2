@@ -2,7 +2,7 @@
 
 from functools import partial
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.features import FeatureRegistry
@@ -13,6 +13,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.usage_policy_repository import (
     SQLAlchemyUsagePolicyRepository,
     UsagePolicyMutation,
@@ -91,7 +92,14 @@ class SQLAlchemyUsagePolicyStore(UsagePolicyStore):
         *,
         remove: bool,
     ) -> UsagePolicyMutation:
-        await session.execute(text("BEGIN IMMEDIATE"))
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                user_ids=(target.entity_id or 0,) if target.kind == "user" else (),
+                group_ids=(target.entity_id or 0,) if target.kind == "group" else (),
+                actors=(actor.actor_id,) if actor.actor_id is not None else (),
+            ),
+        )
         await self._authorize(session, actor, transport_kind)
         return await SQLAlchemyUsagePolicyRepository(session).set_policy(target, policy, remove=remove)
 

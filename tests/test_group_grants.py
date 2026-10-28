@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 from dishka import AsyncContainer
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -19,6 +19,7 @@ from hovorunv2.domain.group_grant import (
     RequestStatus,
 )
 from hovorunv2.domain.user import UserDB
+from tests.utils.postgres import reject_audit
 
 
 async def seed_grant_subjects(container: AsyncContainer) -> tuple[int, int, int]:
@@ -119,12 +120,7 @@ async def test_audit_failure_rolls_back_decision_and_approval(test_container: As
     request_id = await store.request(group_id, first_id, actor)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER fail_grant_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.action = 'decide_request' BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END"
-            )
-        )
+        await reject_audit(session, "fail_grant_audit", "NEW.action = 'decide_request'", "audit unavailable")
         await session.commit()
     with pytest.raises(IntegrityError, match="audit unavailable"):
         await store.decide(request_id, RequestStatus.APPROVED, actor)

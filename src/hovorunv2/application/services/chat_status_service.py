@@ -15,8 +15,11 @@ from hovorunv2.domain.enums import ChatStatus, TargetKind
 
 
 def evidence_time(value: datetime) -> datetime:
-    """Normalize timestamps read from SQLite without timezone metadata."""
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    """Validate aware PostgreSQL facts and normalize their UTC representation."""
+    if value.utcoffset() is None:
+        msg = "Membership facts require a timezone-aware timestamp."
+        raise ValueError(msg)
+    return value.astimezone(UTC)
 
 
 class ChatStatusService:

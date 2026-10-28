@@ -28,6 +28,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_group_beta_features_active", "group_beta_features", ["group_id", "feature"], unique=True,
         sqlite_where=sa.text("deleted_at IS NULL"),
+        postgresql_where=sa.text("deleted_at IS NULL"),
     )
     op.create_table(
         "group_beta_enablers",
@@ -41,6 +42,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_group_beta_enablers_active", "group_beta_enablers", ["selection_id", "user_id"], unique=True,
         sqlite_where=sa.text("revoked_at IS NULL AND deleted_at IS NULL"),
+        postgresql_where=sa.text("revoked_at IS NULL AND deleted_at IS NULL"),
     )
 
 

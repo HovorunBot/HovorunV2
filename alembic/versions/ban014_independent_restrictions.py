@@ -42,6 +42,7 @@ def upgrade() -> None:
         ["platform", "target_kind", "telegram_id", "kind"],
         unique=True,
         sqlite_where=sa.text("revoked_at IS NULL AND deleted_at IS NULL"),
+        postgresql_where=sa.text("revoked_at IS NULL AND deleted_at IS NULL"),
     )
 
 

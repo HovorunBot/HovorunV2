@@ -9,6 +9,7 @@ from hovorunv2.application.ports import AuditedUnitOfWork, RoleStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, Platform, Role
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.role_repository import SQLAlchemyRoleRepository
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
 
@@ -44,6 +45,7 @@ class SQLAlchemyRoleStore(RoleStore):
         platform: Platform,
     ) -> tuple[bool, dict[str, Any] | None]:
         """Execute role assignment directly on UserDB within an audited transaction."""
+        await lock_async_mutation(session, MutationLocks(users=(telegram_id,), platform=platform.value))
         user_repo = SQLAlchemyUserRepository(session)
         user = await user_repo.get_by_telegram_id(telegram_id, str(platform))
         if not user:

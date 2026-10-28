@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from functools import partial
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.application.activation import (
@@ -20,6 +20,7 @@ from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ActorOrigin, ChatStatus, TargetKind
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.activation_repository import (
     ActivationMutation,
     SQLAlchemyActivationRepository,
@@ -71,8 +72,10 @@ class SQLAlchemyActivationStore(ActivationStore):
         return ActivationMutation(ActivationResult(ActivationOutcome.DENIED))
 
     async def _execute(self, session: AsyncSession, request: ActivationRequest) -> ActivationMutation:
-        """Serialize SQLite writes before reading authority, bans, identity or idempotency state."""
-        await session.execute(text("BEGIN IMMEDIATE"))
+        """Recheck authority and identity inside the serialized audited transaction."""
+        await lock_async_mutation(
+            session, MutationLocks(chats=(request.target.telegram_id or 0,), actors=(request.actor_id,))
+        )
         repository = SQLAlchemyActivationRepository(session)
         actor = await SQLAlchemyUserRepository(session).get_by_telegram_id(request.actor_id)
         target = request.target

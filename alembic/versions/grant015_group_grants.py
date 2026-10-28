@@ -61,6 +61,7 @@ def upgrade() -> None:
         ["group_id", "basis"],
         unique=True,
         sqlite_where=sa.text("deleted_at IS NULL AND revoked_at IS NULL"),
+        postgresql_where=sa.text("deleted_at IS NULL AND revoked_at IS NULL"),
     )
     op.create_index(
         "uq_group_sponsors_active",
@@ -68,6 +69,7 @@ def upgrade() -> None:
         ["group_id", "user_id"],
         unique=True,
         sqlite_where=sa.text("deleted_at IS NULL AND revoked_at IS NULL"),
+        postgresql_where=sa.text("deleted_at IS NULL AND revoked_at IS NULL"),
     )
     op.create_index(
         "uq_group_requests_pending",
@@ -75,6 +77,7 @@ def upgrade() -> None:
         ["group_id"],
         unique=True,
         sqlite_where=sa.text("deleted_at IS NULL AND status = 'pending'"),
+        postgresql_where=sa.text("deleted_at IS NULL AND status = 'pending'"),
     )
 
 

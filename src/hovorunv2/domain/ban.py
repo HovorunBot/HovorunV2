@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, Integer, String, text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, Integer, String, and_, column
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -45,6 +45,6 @@ class BanDB(Base):
             "telegram_id",
             "kind",
             unique=True,
-            sqlite_where=text("revoked_at IS NULL AND deleted_at IS NULL"),
+            postgresql_where=and_(column("revoked_at").is_(None), column("deleted_at").is_(None)),
         ),
     )

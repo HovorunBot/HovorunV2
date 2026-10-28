@@ -77,7 +77,7 @@ async def test_rename_and_reuse_does_not_transfer_trust_or_grants(test_container
     user_store = await test_container.get(UserStore)
     handle_store = await test_container.get(PublicHandleStore)
 
-    actor = ActorContext(origin="cli", actor_id="operator_1")
+    actor = ActorContext.cli()
     alice_id = 770011
     bob_id = 770022
 

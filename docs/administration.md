@@ -29,20 +29,19 @@ administrator still block feature processing in that group for everyone, includi
 Those group restrictions preserve administrators' private communication and authorized private administration;
 explicit personal restrictions applied through CLI remain effective.
 
-The CLI and migrations require only `DB_PATH` (default `data/bot.db`, relative to the project root). They do not authenticate
+The CLI and migrations require only `DATABASE_URL` (PostgreSQL with psycopg). They do not authenticate
 to Telegram, start polling, initialize browsers, or require Valkey or encryption credentials. Run migrations before
 administration; the CLI does not create schema or restore deleted users.
 
 To administer the persistent database without starting the bot or Valkey:
 
 ```bash
-docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role add 123456789 --role owner
-docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role list
-docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role remove 123456789 --yes
+make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role add 123456789 --role owner"
+make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role list"
+make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role remove 123456789 --yes"
 ```
 
-The container entrypoint applies migrations first. Use `docker compose exec bot uv run hovorun-admin ...` when the bot
-container is already running. Live administrator and owner checks use these database roles through Casbin. No owner/admin IDs are imported from
+The dedicated `migrate` service applies migrations first. The one-off command works whether or not the bot is running. Add `COMPOSE_ENV=dev` for development. Live administrator and owner checks use these database roles through Casbin. No owner/admin IDs are imported from
 configuration; legacy `ADMIN_IDS` and `OWNERS` values are ignored and can be removed. An empty role registry grants nobody
 administrator access. Owner notifications and optional error DMs follow current active OWNER rows without restarting.
 
@@ -177,3 +176,5 @@ with a nonzero exit status. Failed validation never prints submitted internal re
 Inspect output excludes internal restriction notes, keys, salts and private payloads.
 CLI retains the existing protected-role safeguards and can manage protected personal restrictions
 where Telegram administration cannot. No new command changes authority roles indirectly.
+
+See [PostgreSQL setup and one-time SQLite transfer](postgresql-migration.md) for credentials, migration order and backup preservation.

@@ -10,9 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer, Scope, make_async_container, provide
-from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
 from hovorunv2.application.membership import AdministratorEvidence
 from hovorunv2.application.membership_store import MembershipStore
@@ -28,6 +26,7 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.utils.browser_cache import TestBrowserService
+from tests.utils.postgres import postgres_database
 
 
 async def provision_role(container: AsyncContainer, user_id: int = 101, role: Role = Role.ADMIN) -> int:
@@ -69,24 +68,23 @@ def create_mock_message(text: str | None, *, is_bot: bool = False, chat_id: int 
 
 
 @pytest.fixture
-async def test_engine() -> AsyncGenerator[AsyncEngine]:
-    """Create a test database engine."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        poolclass=StaticPool,
-        connect_args={"check_same_thread": False},
-    )
+async def postgres_database_url(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[str]:
+    """Point every application container at one isolated empty real PostgreSQL schema."""
+    async with postgres_database() as url:
+        monkeypatch.setenv("DATABASE_URL", url)
+        yield url
 
-    @event.listens_for(engine.sync_engine, "connect")
-    def set_sqlite_pragma(dbapi_connection: Any, _connection_record: Any) -> None:
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
+@pytest.fixture
+async def test_engine(postgres_database_url: str) -> AsyncGenerator[AsyncEngine]:
+    """Use PostgreSQL constraints and independent pooled connections in application tests."""
+    engine = create_async_engine(postgres_database_url, hide_parameters=True)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        yield engine
+    finally:
+        await engine.dispose()
 
 
 class TestInfrastructureProvider(InfrastructureProvider):

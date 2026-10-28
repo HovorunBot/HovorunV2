@@ -43,6 +43,7 @@ def upgrade() -> None:
             f"uq_usage_override_{kind}_active", "usage_overrides",
             [subject, "bucket", "unit", "window_seconds"], unique=True,
             sqlite_where=sa.text(f"deleted_at IS NULL AND {subject} IS NOT NULL"),
+            postgresql_where=sa.text(f"deleted_at IS NULL AND {subject} IS NOT NULL"),
         )
 
 

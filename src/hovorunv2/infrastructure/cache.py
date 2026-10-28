@@ -79,7 +79,7 @@ class CacheService:
 
     async def run_script(self, script: str, keys: list[str], arguments: list[str]) -> object:
         """Execute an infrastructure-owned atomic script without exposing Redis to application services."""
-        return await self._cache.eval(script, len(keys), *keys, *arguments)
+        return await self._cache.execute_command("EVAL", script, len(keys), *keys, *arguments)
 
     async def close(self) -> None:
         """Close cache connection."""

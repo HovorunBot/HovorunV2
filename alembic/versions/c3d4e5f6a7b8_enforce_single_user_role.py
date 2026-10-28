@@ -20,9 +20,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Reject invalid existing roles before adding the ORM's authority constraint."""
     connection = op.get_bind()
-    invalid_role = connection.execute(
-        sa.text("SELECT 1 FROM users WHERE role NOT IN ('user', 'admin', 'owner') LIMIT 1")
-    ).first()
+    users = sa.table("users", sa.column("role"))
+    invalid_role = connection.execute(sa.select(users.c.role).where(users.c.role.not_in(("user", "admin", "owner"))).limit(1)).first()
     if invalid_role is not None:
         msg = "Migration aborted: invalid authority roles exist. Resolve them explicitly before upgrading."
         raise ValueError(msg)

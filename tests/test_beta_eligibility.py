@@ -22,6 +22,7 @@ from hovorunv2.domain.chat import ChatDB, chat_commands
 from hovorunv2.domain.enums import Role
 from tests.conftest import provision_role
 from tests.migrations.helpers import migration_config
+from tests.utils.postgres import reject_audit
 
 BETA = FeatureDefinition("synthetic_beta", "Synthetic beta", channel=FeatureChannel.BETA)
 FUTURE_BETA = FeatureDefinition(
@@ -172,11 +173,8 @@ async def test_beta_entitlement_audit_failure_rolls_back(test_container: AsyncCo
     service = BetaEligibilityService(store, REGISTRY)
     session_maker = await test_container.get(async_sessionmaker)
     async with session_maker() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_beta_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'beta_entitlement' BEGIN SELECT RAISE(ABORT, 'synthetic audit failure'); END"
-            )
+        await reject_audit(
+            session, "reject_beta_audit", "NEW.target_type = 'beta_entitlement'", "synthetic audit failure"
         )
         await session.commit()
     with pytest.raises(IntegrityError):
@@ -184,15 +182,12 @@ async def test_beta_entitlement_audit_failure_rolls_back(test_container: AsyncCo
     assert not await service.is_eligible(target, BETA.key)
     async with session_maker() as session:
         assert await session.scalar(select(func.count()).select_from(BetaEntitlementDB)) == 0
-        await session.execute(text("DROP TRIGGER reject_beta_audit"))
+        await session.execute(text("DROP TRIGGER reject_beta_audit ON audit_events"))
         await session.commit()
     assert await service.set_grant(target, ALL_BETA, granted=True, actor=ActorContext.cli())
     async with session_maker() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_beta_revoke BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'beta_entitlement' BEGIN SELECT RAISE(ABORT, 'synthetic audit failure'); END"
-            )
+        await reject_audit(
+            session, "reject_beta_revoke", "NEW.target_type = 'beta_entitlement'", "synthetic audit failure"
         )
         await session.commit()
     with pytest.raises(IntegrityError):

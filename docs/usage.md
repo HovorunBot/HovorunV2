@@ -49,7 +49,7 @@ identities may receive delayed accounting without being recreated or authorized 
 Accounting aggregates and replay receipts are retained independently of soft-deleted configuration.
 Unknown subjects cannot be provisioned through accounting.
 
-A single serialized SQLite transaction commits replay receipts, aggregate increments and one
+A single PostgreSQL transaction commits replay receipts, aggregate increments and one
 payload-free audit summary. Failed audit insertion rolls back all three; retries can safely use
 the same event ID. Resource amounts are aggregated at completion/checkpoint boundaries, without
 one receipt or audit per token. Summary `units_added` counts aggregate increments across dimensions;
@@ -64,7 +64,7 @@ URLs, prompts, message data, provider credentials or executable jobs.
 Apply additive Alembic revisions before running code that uses these stores: `limits036`
 creates policy overrides and `usage037` creates accounting tables. No accounting history is
 backfilled from messages. Downgrading `usage037` discards its accounting tables and history.
-Runtime Valkey reservations and SQLite accounting do not share a transaction. Live admission,
+Runtime Valkey reservations and PostgreSQL accounting do not share a transaction. Live admission,
 worker integration, crash/restart reconciliation and checkpoint scheduling remain later work;
 this foundation makes no cross-store atomicity or exactly-once delivery claim.
 
@@ -87,7 +87,7 @@ rather than guarantee availability. No worker sleeps here. Valkey errors or miss
 Active reservations retain their capacity after deadline until explicit settlement/recovery;
 expiry must not silently permit overlapping execution. Terminal receipts remain for one hour,
 longer than request deadlines. Orphan recovery belongs to the terminal/reconciliation blocks.
-SQLite accounting and runtime settlement remain separate replayable operations.
+PostgreSQL accounting and runtime settlement remain separate replayable operations.
 
 ## Feature job envelopes and encrypted payloads
 

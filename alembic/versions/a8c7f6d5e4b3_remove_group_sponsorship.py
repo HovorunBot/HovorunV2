@@ -4,7 +4,6 @@ Revision ID: a8c7f6d5e4b3
 Revises: member019
 """
 
-import json
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
@@ -20,20 +19,13 @@ depends_on = None
 def upgrade() -> None:
     """Drop withdrawn sponsor associations without changing approved access or configuration."""
     connection = op.get_bind()
-    count = connection.execute(sa.text("SELECT COUNT(*) FROM group_sponsors")).scalar_one()
-    removed_evidence = connection.execute(
-        sa.text("DELETE FROM member_evidence WHERE admin_candidate = 0 AND needs_verification = 0")
-    ).rowcount
-    connection.execute(
-        sa.text(
-            "INSERT INTO audit_events (created_at, actor_origin, target_type, target_id, action, changed_fields) "
-            "VALUES (:now, 'migration', 'group_grant', 'sponsorship', 'remove_sponsorship', :changes)"
-        ),
-        {
-            "now": datetime.now(UTC).isoformat(),
-            "changes": json.dumps({"removed_relationships": count, "removed_irrelevant_evidence": removed_evidence}),
-        },
-    )
+    metadata = sa.MetaData()
+    sponsors = sa.Table("group_sponsors", metadata, autoload_with=connection)
+    evidence = sa.Table("member_evidence", metadata, autoload_with=connection)
+    audit = sa.Table("audit_events", metadata, autoload_with=connection)
+    count = connection.scalar(sa.select(sa.func.count()).select_from(sponsors))
+    removed_evidence = connection.execute(evidence.delete().where(evidence.c.admin_candidate.is_(False), evidence.c.needs_verification.is_(False))).rowcount
+    connection.execute(audit.insert().values(created_at=datetime.now(UTC), actor_origin="migration", target_type="group_grant", target_id="sponsorship", action="remove_sponsorship", changed_fields={"removed_relationships": count, "removed_irrelevant_evidence": removed_evidence}))
     op.drop_table("group_sponsors")
 
 
@@ -56,4 +48,5 @@ def downgrade() -> None:
         ["group_id", "user_id"],
         unique=True,
         sqlite_where=sa.text("deleted_at IS NULL AND revoked_at IS NULL"),
+        postgresql_where=sa.text("deleted_at IS NULL AND revoked_at IS NULL"),
     )

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from sqlalchemy import JSON, DateTime, Enum, Integer, String
+from sqlalchemy import JSON, BigInteger, DateTime, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -119,7 +119,7 @@ class AuditEventDB(Base):
         Enum(ActorOrigin, native_enum=False, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
-    actor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     target_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -20,7 +20,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Convert current authority to integer tiers, retaining every identity and historical row."""
     op.add_column("users", sa.Column("role_tier", sa.Integer(), nullable=True))
-    op.execute("UPDATE users SET role_tier = CASE role WHEN 'user' THEN 1 WHEN 'admin' THEN 10 WHEN 'owner' THEN 100 END")
+    users = sa.table("users", sa.column("role"), sa.column("role_tier"))
+    op.execute(users.update().values(role_tier=sa.case({"user": 1, "admin": 10, "owner": 100}, value=users.c.role)))
     with op.batch_alter_table("users") as batch_op:
         batch_op.drop_constraint("ck_users_valid_role", type_="check")
         batch_op.drop_column("role")
@@ -31,7 +32,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Restore textual authority without deriving it from outdated historical assignments."""
     op.add_column("users", sa.Column("role_name", sa.String(length=32), nullable=True))
-    op.execute("UPDATE users SET role_name = CASE role WHEN 1 THEN 'user' WHEN 10 THEN 'admin' WHEN 100 THEN 'owner' END")
+    users = sa.table("users", sa.column("role"), sa.column("role_name"))
+    op.execute(users.update().values(role_name=sa.case({1: "user", 10: "admin", 100: "owner"}, value=users.c.role)))
     with op.batch_alter_table("users") as batch_op:
         batch_op.drop_constraint("ck_users_valid_role", type_="check")
         batch_op.drop_column("role")

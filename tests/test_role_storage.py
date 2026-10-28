@@ -12,6 +12,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import ActorOrigin, Role
 from hovorunv2.domain.role import UserRoleDB
 from hovorunv2.domain.user import UserDB
+from tests.utils.postgres import reject_audit
 
 
 def test_user_role_model_has_no_invasive_personal_data_columns() -> None:
@@ -202,13 +203,7 @@ async def test_role_provisioning_rolls_back_when_audit_insert_fails(test_contain
     session_maker = await test_container.get(async_sessionmaker)
     target_id = 998877
     async with session_maker() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_role_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'user_role' "
-                "BEGIN SELECT RAISE(ABORT, 'role audit rejected'); END"
-            )
-        )
+        await reject_audit(session, "reject_role_audit", "NEW.target_type = 'user_role'", "role audit rejected")
         await session.commit()
 
     with pytest.raises(IntegrityError, match="role audit rejected"):

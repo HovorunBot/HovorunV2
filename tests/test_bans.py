@@ -14,6 +14,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Role, TargetKind
+from tests.utils.postgres import reject_audit
 
 
 async def test_independent_user_bans_and_revision(test_container: AsyncContainer) -> None:
@@ -91,19 +92,14 @@ async def test_ban_audit_failure_rolls_back_and_deleted_targets_are_hidden(test_
     await users.ingest_user(101)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_ban_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'ban' BEGIN SELECT RAISE(ABORT, 'ban audit rejected'); END"
-            )
-        )
+        await reject_audit(session, "reject_ban_audit", "NEW.target_type = 'ban'", "ban audit rejected")
         await session.commit()
     actor = ActorContext.cli(reason="test restriction")
     with pytest.raises(IntegrityError, match="ban audit rejected"):
         await bans.apply(TargetKind.USER, 101, BanKind.FULL, actor)
     assert await bans.list_active(TargetKind.USER, 101) == []
     async with sessions() as session:
-        await session.execute(text("DROP TRIGGER reject_ban_audit"))
+        await session.execute(text("DROP TRIGGER reject_ban_audit ON audit_events"))
         await session.commit()
     await bans.apply(TargetKind.USER, 101, BanKind.FULL, actor)
     await users.soft_delete_user(101, actor=actor, reason="test deletion")

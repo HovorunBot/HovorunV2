@@ -9,7 +9,7 @@ from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, Message, User
 from aioresponses import aioresponses
 from dishka import AsyncContainer
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -27,6 +27,7 @@ from tests.conftest import provision_role
 from tests.test_group_beta import FIRST, GROUP, SECOND, group_beta_runtime
 from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
 from tests.utils.activation import sent_fields
+from tests.utils.postgres import reject_audit
 from tests.utils.settings import bind_settings_callback
 
 DENIED = "Settings unavailable. Reopen /settings."
@@ -293,12 +294,8 @@ async def test_language_audit_failure_rolls_back_settings(test_container: AsyncC
     original = await languages.get_chat_settings(GROUP)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_language_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.action = 'update_translation_settings' "
-                "BEGIN SELECT RAISE(ABORT, 'synthetic audit failure'); END"
-            )
+        await reject_audit(
+            session, "reject_language_audit", "NEW.action = 'update_translation_settings'", "synthetic audit failure"
         )
         await session.commit()
     with pytest.raises(IntegrityError, match="synthetic audit failure"):

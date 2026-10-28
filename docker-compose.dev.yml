@@ -1,0 +1,83 @@
+name: hovorunv2-dev
+
+x-app: &app
+  image: hovorunv2-dev:${APP_VERSION:-local}
+  build:
+    context: .
+    args:
+      APP_VERSION: ${APP_VERSION:-}
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hovorun
+      POSTGRES_USER: hovorun
+      POSTGRES_PASSWORD: hovorun
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8.0
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    <<: *app
+    environment:
+      DATABASE_URL: postgresql+psycopg://hovorun:hovorun@postgres:5432/hovorun
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  bot:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    env_file:
+      - path: ${APP_ENV_FILE:-.env}
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://hovorun:hovorun@postgres:5432/hovorun
+      VALKEY_URL: redis://valkey:6379/0
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      CACHE_ENCRYPTION_KEY: ${CACHE_ENCRYPTION_KEY:-}
+      APP_VERSION: ${APP_VERSION:-}
+
+  import-sqlite:
+    <<: *app
+    profiles: [tools]
+    environment:
+      DATABASE_URL: postgresql+psycopg://hovorun:hovorun@postgres:5432/hovorun
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["uv", "run", "--no-sync", "hovorun-import-sqlite"]
+    restart: "no"
+
+volumes:
+  postgres_data:
+  valkey_data:

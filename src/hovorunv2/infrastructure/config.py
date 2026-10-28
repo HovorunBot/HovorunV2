@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 # ROOT is 4 levels up from this file: src/hovorunv2/infrastructure/config.py
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
@@ -13,18 +14,21 @@ DOT_ENV_PATH = ROOT_DIR / ".env"
 class DatabaseSettings(BaseSettings):
     """Database configuration usable by offline administration without bot credentials."""
 
-    db_path: str = "data/bot.db"
+    database_url: str = "postgresql+psycopg://hovorun:hovorun@localhost:5432/hovorun"
 
-    @field_validator("db_path", mode="after")
+    @field_validator("database_url", mode="after")
     @classmethod
-    def make_db_path_absolute(cls, v: str) -> str:
-        """Ensure the database path is absolute relative to the project root."""
-        path = Path(v)
-        if not path.is_absolute():
-            return str((ROOT_DIR / path).absolute())
-        return str(path.absolute())
+    def validate_database_url(cls, value: str) -> str:
+        """Use one PostgreSQL driver for async bot and independently deployed worker resources."""
+        url = make_url(value)
+        if url.drivername in {"postgres", "postgresql"}:
+            url = url.set(drivername="postgresql+psycopg")
+        if url.drivername != "postgresql+psycopg" or not url.database:
+            msg = "DATABASE_URL must identify a PostgreSQL database using psycopg."
+            raise ValueError(msg)
+        return url.render_as_string(hide_password=False)
 
-    model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore")
+    model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore", hide_input_in_errors=True)
 
 
 class Settings(DatabaseSettings):
@@ -32,7 +36,7 @@ class Settings(DatabaseSettings):
 
     Attributes:
         bot_token: Telegram Bot API token.
-        db_path: Path to the database file.
+        database_url: PostgreSQL connection URL.
 
     """
 

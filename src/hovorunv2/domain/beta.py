@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, and_, column
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -36,13 +36,17 @@ class BetaEntitlementDB(Base):
             "user_id",
             "feature",
             unique=True,
-            sqlite_where=text("revoked_at IS NULL AND deleted_at IS NULL AND user_id IS NOT NULL"),
+            postgresql_where=and_(
+                column("revoked_at").is_(None), column("deleted_at").is_(None), column("user_id").is_not(None)
+            ),
         ),
         Index(
             "uq_beta_entitlements_group_active",
             "group_id",
             "feature",
             unique=True,
-            sqlite_where=text("revoked_at IS NULL AND deleted_at IS NULL AND group_id IS NOT NULL"),
+            postgresql_where=and_(
+                column("revoked_at").is_(None), column("deleted_at").is_(None), column("group_id").is_not(None)
+            ),
         ),
     )

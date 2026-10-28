@@ -14,6 +14,7 @@ from hovorunv2.domain.group_grant import (
     GroupApprovalDB,
     RequestStatus,
 )
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.group_grant_repository import GrantMutation, SQLAlchemyGroupGrantRepository
 
 
@@ -44,7 +45,9 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         self,
         session: AsyncSession,
         operation: Callable[[SQLAlchemyGroupGrantRepository], Awaitable[GrantMutation]],
+        locks: MutationLocks,
     ) -> GrantMutation:
+        await lock_async_mutation(session, locks)
         return await operation(SQLAlchemyGroupGrantRepository(session))
 
     async def _mutate(
@@ -53,13 +56,14 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         action: str,
         actor: ActorContext,
         operation: Callable[[SQLAlchemyGroupGrantRepository], Awaitable[GrantMutation]],
+        locks: MutationLocks,
     ) -> int:
         result: GrantMutation = await self._audited_uow.execute(
             actor=actor,
             target_type="group_grant",
             target_id=target_id,
             action=action,
-            operation=partial(self._execute, operation=operation),
+            operation=partial(self._execute, operation=operation, locks=locks),
             changed_fields=lambda result: result.changes,
             audit_if=lambda result: bool(result.changes),
         )
@@ -69,7 +73,11 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         """Idempotently grant independent explicit approval."""
         return bool(
             await self._mutate(
-                group_id, "approve", actor, partial(SQLAlchemyGroupGrantRepository.approve, group_id=group_id)
+                group_id,
+                "approve",
+                actor,
+                partial(SQLAlchemyGroupGrantRepository.approve, group_id=group_id),
+                MutationLocks(group_ids=(group_id,), actors=(actor.actor_id,) if actor.actor_id is not None else ()),
             )
         )
 
@@ -81,6 +89,7 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
                 "revoke_approval",
                 actor,
                 partial(SQLAlchemyGroupGrantRepository.revoke_approval, group_id=group_id, basis=basis),
+                MutationLocks(group_ids=(group_id,), actors=(actor.actor_id,) if actor.actor_id is not None else ()),
             )
         )
 
@@ -91,6 +100,11 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
             "request",
             actor,
             partial(SQLAlchemyGroupGrantRepository.request, group_id=group_id, user_id=user_id),
+            MutationLocks(
+                group_ids=(group_id,),
+                read_user_ids=(user_id,),
+                actors=(actor.actor_id,) if actor.actor_id is not None else (),
+            ),
         )
 
     async def decide(self, request_id: int, status: RequestStatus, actor: ActorContext) -> bool:
@@ -107,6 +121,9 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
                     actor_id=actor.actor_id,
                     reason=actor.reason,
                 ),
+                MutationLocks(
+                    request_ids=(request_id,), actors=(actor.actor_id,) if actor.actor_id is not None else ()
+                ),
             )
         )
 
@@ -118,5 +135,8 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
                 "delete_request",
                 actor,
                 partial(SQLAlchemyGroupGrantRepository.delete_request, request_id=request_id),
+                MutationLocks(
+                    request_ids=(request_id,), actors=(actor.actor_id,) if actor.actor_id is not None else ()
+                ),
             )
         )

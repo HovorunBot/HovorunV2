@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -19,7 +20,9 @@ from hovorunv2.domain.enums import ActorOrigin, Role, TargetKind
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.config import DatabaseSettings
 from hovorunv2.interface.cli.roles import RoleArguments, RoleCLI, build_parser
-from tests.migrations.helpers import migration_config
+
+ORIGINAL_CONNECT = socket.socket.connect
+pytestmark = pytest.mark.usefixtures("postgres_database_url")
 
 
 def role_arguments(*arguments: str) -> RoleArguments:
@@ -27,9 +30,11 @@ def role_arguments(*arguments: str) -> RoleArguments:
     return build_parser().parse_args(["role", *arguments], namespace=RoleArguments())
 
 
-def reject_network(*args: object, **kwargs: object) -> None:
+def reject_network(connection: socket.socket, address: object) -> None:
     """Reject any attempted network connection in offline administration tests."""
-    msg = "Offline administration attempted a network connection."
+    if isinstance(address, tuple) and address[1] in {5432, 15432}:
+        return ORIGINAL_CONNECT(connection, address)
+    msg = "Offline administration attempted an external network connection."
     raise AssertionError(msg)
 
 
@@ -38,8 +43,7 @@ async def test_numeric_owner_bootstrap_without_bot_credentials_or_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An empty migrated database can acquire its first owner without any bot resources."""
-    database = tmp_path / "bootstrap.db"
-    config = migration_config(monkeypatch, database)
+    config = Config("alembic.ini")
     monkeypatch.setenv("BOT_TOKEN", "")
     monkeypatch.setenv("ADMIN_IDS", "invalid-json-that-must-not-be-parsed")
     monkeypatch.setenv("CACHE_ENCRYPTION_KEY", "")
@@ -51,7 +55,7 @@ async def test_numeric_owner_bootstrap_without_bot_credentials_or_network(
     )
     assert await run_admin(role_arguments("list")) == "101\towner"
     assert await run_admin(role_arguments("add", "101", "--role", "owner")) == "101\towner\tunchanged"
-    assert DatabaseSettings(_env_file=None).db_path == str(database)
+    assert DatabaseSettings(_env_file=None).database_url.startswith("postgresql+psycopg://")
 
 
 @pytest.mark.asyncio
@@ -149,8 +153,7 @@ def test_process_entry_point_with_empty_database(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The actual process entry point uses the offline container and prints minimal results."""
-    database = tmp_path / "entry-point.db"
-    config = migration_config(monkeypatch, database)
+    config = Config("alembic.ini")
     command.upgrade(config, "head")
     monkeypatch.setattr(socket.socket, "connect", reject_network)
     monkeypatch.setenv("BOT_TOKEN", "")

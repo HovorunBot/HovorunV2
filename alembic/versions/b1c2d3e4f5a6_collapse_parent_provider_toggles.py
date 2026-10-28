@@ -8,7 +8,10 @@ Create Date: 2026-10-23 23:00:00.000000
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
+from hovorunv2.infrastructure.persistence.migration_operations import insert_ignore, migration_tables
 
 # revision identifiers, used by Alembic.
 revision: str = "b1c2d3e4f5a6"
@@ -29,51 +32,24 @@ PROVIDERS: tuple[str, ...] = (
 
 
 def upgrade() -> None:
-    """Expand legacy parent rows into split rows, then remove parent rows."""
-    # 1. Expand parent rows to split rows for any chat that had parent enabled
+    """Expand legacy parents into split rows, then remove parent rows."""
+    connection = op.get_bind()
+    commands, links = migration_tables(connection, "commands", "chat_commands")
+    parent = commands.alias("parent")
+    child = commands.alias("child")
     for provider in PROVIDERS:
-        op.execute(
-            f"""
-            INSERT OR IGNORE INTO chat_commands (chat_id, command_id)
-            SELECT cc.chat_id, sub_cmd.id
-            FROM chat_commands cc
-            JOIN commands parent_cmd ON cc.command_id = parent_cmd.id
-            JOIN commands sub_cmd ON sub_cmd.name IN ('{provider}_video', '{provider}_post')
-            WHERE parent_cmd.name = '{provider}'
-            """
-        )
-
-    names_sql = ", ".join(f"'{name}'" for name in PROVIDERS)
-
-    # 2. Delete parent provider rows from chat_commands
-    op.execute(
-        f"""
-        DELETE FROM chat_commands
-        WHERE command_id IN (SELECT id FROM commands WHERE name IN ({names_sql}))
-        """
-    )
-
-    # 3. Delete parent provider rows from commands
-    op.execute(f"DELETE FROM commands WHERE name IN ({names_sql})")
+        rows = sa.select(links.c.chat_id, child.c.id).select_from(links.join(parent, links.c.command_id == parent.c.id).join(child, child.c.name.in_((provider + "_video", provider + "_post")))).where(parent.c.name == provider)
+        connection.execute(insert_ignore(connection, links).from_select(["chat_id", "command_id"], rows))
+    connection.execute(links.delete().where(links.c.command_id.in_(sa.select(commands.c.id).where(commands.c.name.in_(PROVIDERS)))))
+    connection.execute(commands.delete().where(commands.c.name.in_(PROVIDERS)))
 
 
 def downgrade() -> None:
-    """Recreate parent provider commands and re-insert chat associations."""
-    # 1. Recreate parent commands
+    """Recreate parent commands and links for chats with selected split rows."""
+    connection = op.get_bind()
+    commands, links = migration_tables(connection, "commands", "chat_commands")
     for provider in PROVIDERS:
-        label = provider.capitalize()
-        op.execute(
-            f"INSERT OR IGNORE INTO commands (name, description) VALUES ('{provider}', 'Process {label} links')"
-        )
-
-    # 2. Re-populate parent rows where any split row exists
-    for provider in PROVIDERS:
-        op.execute(
-            f"""
-            INSERT OR IGNORE INTO chat_commands (chat_id, command_id)
-            SELECT DISTINCT cc.chat_id, (SELECT id FROM commands WHERE name = '{provider}')
-            FROM chat_commands cc
-            JOIN commands sub_cmd ON cc.command_id = sub_cmd.id
-            WHERE sub_cmd.name IN ('{provider}_video', '{provider}_post')
-            """
-        )
+        connection.execute(insert_ignore(connection, commands).values(name=provider, description=f"Process {provider.capitalize()} links"))
+        parent_id = sa.select(commands.c.id).where(commands.c.name == provider).scalar_subquery()
+        rows = sa.select(links.c.chat_id, parent_id).select_from(links.join(commands, links.c.command_id == commands.c.id)).where(commands.c.name.in_((provider + "_video", provider + "_post"))).distinct()
+        connection.execute(insert_ignore(connection, links).from_select(["chat_id", "command_id"], rows))

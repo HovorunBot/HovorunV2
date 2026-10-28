@@ -21,6 +21,7 @@ def test_legacy_grants_preserve_all_statuses_and_configuration(
     database = tmp_path / "legacy_grants.db"
     monkeypatch.setenv("DB_PATH", str(database))
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["sqlite_path"] = database
     command.upgrade(config, "grant015")
     statuses = ["unauthorized", "pending", "approved", "rejected", "banned", "inactive"]
     with sqlite3.connect(database) as connection:
@@ -88,6 +89,7 @@ def test_migrated_grants_enforce_constraints_and_history(tmp_path: Path, monkeyp
     database = tmp_path / "grant_constraints.db"
     monkeypatch.setenv("DB_PATH", str(database))
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    config.attributes["sqlite_path"] = database
     command.upgrade(config, "legacy016")
     with sqlite3.connect(database) as connection:
         connection.execute("PRAGMA foreign_keys=ON")

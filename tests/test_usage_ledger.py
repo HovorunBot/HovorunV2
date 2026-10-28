@@ -2,13 +2,12 @@
 
 import asyncio
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 from dishka import AsyncContainer
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from hovorunv2.application.features import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry
 from hovorunv2.application.ports import AuditedUnitOfWork, ChatStore, UserStore
@@ -30,6 +29,7 @@ from hovorunv2.domain.usage_accounting import UsageAccountingEventDB, UsageAggre
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
 from hovorunv2.infrastructure.persistence.usage_ledger_store import SQLAlchemyUsageLedgerStore
+from tests.utils.postgres import reject_audit
 from tests.utils.usage import GROUP, USER, usage_subjects
 
 FEATURE_BUCKET = f"feature:{FEATURE_REGISTRY.all()[0].key}"
@@ -156,12 +156,7 @@ async def test_audit_failure_rolls_back_receipt_and_aggregate(test_container: As
     store = await test_container.get(UsageLedgerStore)
     session_maker = await test_container.get(async_sessionmaker)
     async with session_maker() as session:
-        await session.execute(
-            text(
-                "CREATE TRIGGER reject_accounting_audit BEFORE INSERT ON audit_events "
-                "WHEN NEW.target_type = 'usage_batch' BEGIN SELECT RAISE(ABORT, 'synthetic'); END"
-            )
-        )
+        await reject_audit(session, "reject_accounting_audit", "NEW.target_type = 'usage_batch'", "synthetic")
         await session.commit()
     with pytest.raises(IntegrityError):
         await store.apply_batch((usage_event("retry-after-audit-failure"),), actor=ACTOR)
@@ -174,7 +169,7 @@ async def test_audit_failure_rolls_back_receipt_and_aggregate(test_container: As
             )
             == 0
         )
-        await session.execute(text("DROP TRIGGER reject_accounting_audit"))
+        await session.execute(text("DROP TRIGGER reject_accounting_audit ON audit_events"))
         await session.commit()
     assert (await store.apply_batch((usage_event("retry-after-audit-failure"),), actor=ACTOR)).events_applied == 1
 
@@ -233,9 +228,9 @@ def test_event_dimensions_are_unambiguous_and_window_boundaries_exact() -> None:
         AccountingSubject(TargetKind.GROUP, USER)
 
 
-async def test_concurrent_replay_and_distinct_events_serialize_without_double_charge(tmp_path: Path) -> None:
-    """Use separate real file-SQLite connections rather than an in-memory shared-connection concurrency test."""
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'accounting.db'}")
+async def test_concurrent_replay_and_distinct_events_serialize_without_double_charge(test_engine: AsyncEngine) -> None:
+    """Use independent real PostgreSQL connections for concurrent replay and aggregate updates."""
+    engine = test_engine
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with engine.begin() as connection:

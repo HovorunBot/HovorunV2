@@ -75,6 +75,7 @@ GROUP_BETA_FIELDS: Final = {
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
+    ("database", "import_sqlite"): {"tables_imported": NUMBER, "rows_imported": NUMBER},
     ("group_beta", "enable"): GROUP_BETA_FIELDS.copy(),
     ("group_beta", "disable"): GROUP_BETA_FIELDS.copy(),
     ("beta_entitlement", "grant"): BETA_FIELDS.copy(),

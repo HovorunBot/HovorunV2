@@ -11,6 +11,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform
 from hovorunv2.domain.group_route import GroupRouteDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 
 
@@ -59,6 +60,7 @@ class SQLAlchemyChatStore(ChatStore):
         deleted_at: datetime,
     ) -> bool:
         """Execute chat soft-deletion on session."""
+        await lock_async_mutation(session, MutationLocks(chats=(chat_id,), platform=platform))
         repo = SQLAlchemyChatRepository(session)
         return await repo.soft_delete(
             chat_id=chat_id,
@@ -106,6 +108,7 @@ class SQLAlchemyChatStore(ChatStore):
         platform: str,
     ) -> ChatStatus | None:
         """Update chat status on session."""
+        await lock_async_mutation(session, MutationLocks(chats=(chat_id,), platform=platform))
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(chat_id, platform)
         old_status: ChatStatus | None = None
@@ -127,6 +130,7 @@ class SQLAlchemyChatStore(ChatStore):
         platform: str,
     ) -> None:
         """Update translation settings on session."""
+        await lock_async_mutation(session, MutationLocks(chats=(chat_id,), platform=platform))
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(chat_id, platform)
         if not chat:
@@ -144,6 +148,7 @@ class SQLAlchemyChatStore(ChatStore):
         platform: str,
     ) -> tuple[ChatDB, bool]:
         """Create chat if missing on session."""
+        await lock_async_mutation(session, MutationLocks(chats=(chat_id,), platform=platform))
         repo = SQLAlchemyChatRepository(session)
         existing = await repo.get_by_id(chat_id, platform)
         if existing:
@@ -161,6 +166,7 @@ class SQLAlchemyChatStore(ChatStore):
         platform: str,
     ) -> None:
         """Set encryption salt on session."""
+        await lock_async_mutation(session, MutationLocks(chats=(chat_id,), platform=platform))
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(chat_id, platform)
         if not chat:

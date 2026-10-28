@@ -14,6 +14,7 @@ from hovorunv2.domain.handle import (
     normalize_handle,
     validate_handle,
 )
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
 from hovorunv2.infrastructure.repositories.public_handle_repository import SQLAlchemyPublicHandleRepository
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
@@ -89,6 +90,15 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
     ) -> tuple[ResolvedTarget | None, dict[str, Any] | None]:
         """Execute handle synchronization within an audited transaction."""
         norm = normalize_handle(raw_handle)
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                users=(target_id,) if target_kind == TargetKind.USER else (),
+                chats=(target_id,) if target_kind == TargetKind.GROUP else (),
+                keys=(f"handle:{platform}:{norm}",) if norm else (),
+                platform=platform.value,
+            ),
+        )
         display = raw_handle.strip().lstrip("@") if (raw_handle and norm) else None
         if raw_handle and not validate_handle(raw_handle):
             raise InvalidHandleError(raw_handle)
@@ -190,6 +200,14 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         platform: Platform,
     ) -> tuple[bool, dict[str, Any] | None]:
         """Execute handle release within an audited transaction."""
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                users=(target_id,) if target_kind == TargetKind.USER else (),
+                chats=(target_id,) if target_kind == TargetKind.GROUP else (),
+                platform=platform.value,
+            ),
+        )
         repo = SQLAlchemyPublicHandleRepository(session)
         existing = await repo.get_by_target(target_kind, target_id, platform)
         if not existing:

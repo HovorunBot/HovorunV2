@@ -20,9 +20,12 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
 from hovorunv2.domain.group_grant import GroupAccessRequestDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.config import DatabaseSettings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.cli.roles import RoleArguments, build_parser
 from tests.test_admin_cli import reject_network
+
+pytestmark = pytest.mark.usefixtures("postgres_database_url")
 
 USER = 350001
 GROUP = -350002
@@ -35,11 +38,9 @@ def access_arguments(*arguments: str) -> RoleArguments:
 
 async def offline_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Create a real database with synthetic known identities and no bot credentials."""
-    database = tmp_path / "access.db"
-    monkeypatch.setenv("DB_PATH", str(database))
     monkeypatch.setenv("BOT_TOKEN", "")
     monkeypatch.setenv("CACHE_ENCRYPTION_KEY", "")
-    engine = create_async_engine(f"sqlite+aiosqlite:///{database}")
+    engine = create_async_engine(DatabaseSettings().database_url)
     try:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)

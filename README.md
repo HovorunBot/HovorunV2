@@ -29,24 +29,29 @@ Edit the generated `.env` file:
 
 ```dotenv
 BOT_TOKEN=...
-CACHE_ENCRYPTION_KEY=...
 ```
 
-Both values are required. Provision an owner using your numeric Telegram user ID; the example ID below is synthetic:
+The generator creates database credentials and an encryption passphrase. Preserve an existing encryption key when upgrading. See [PostgreSQL setup and SQLite transfer](docs/postgresql-migration.md) before starting an existing installation. Provision an owner using your numeric Telegram user ID; the example ID below is synthetic:
 
 ```bash
-docker compose --profile prod run --rm --no-deps bot uv run hovorun-admin role add 123456789 --role owner
+make migrate
+make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role add 123456789 --role owner"
 make run
 ```
 
-The container entrypoint applies database migrations. CLI administration can run before the bot starts and does not require Telegram or Valkey connections.
+A dedicated migration container applies schema upgrades before the bot starts. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
 
 | Command | Purpose |
 | --- | --- |
-| `make run` | Start the bot and Valkey |
-| `make stop` | Stop services |
+| `make run` | Start the bot, PostgreSQL and Valkey |
+| `make stop` | Stop production services and preserve volumes |
+| `make run-dev` | Start the complete development stack in Docker |
+| `make stop-dev` | Stop development services and preserve volumes |
+| `make dev` | Start development PostgreSQL/Valkey for host-side tests |
 | `make update` | Pull changes and rebuild |
 | `make migrate` | Apply database migrations in Docker |
+
+Each environment has one complete Compose file: `docker-compose.dev.yml` or `docker-compose.prod.yml`. Make selects production by default; `COMPOSE_ENV=dev` selects development for any Docker target. There is no base file or overlay. Use `APP_ENV_FILE=.env.dev` when keeping separate local/server settings.
 
 See [administration](docs/administration.md) for role and trust commands, access rules and troubleshooting.
 
@@ -60,7 +65,7 @@ Operational logs omit message URLs, exception contents and credentials while ret
 
 ## Development
 
-Built with Python 3.15+, aiogram, SQLAlchemy/SQLite, Valkey, Dishka and DrissionPage.
+Built with Python 3.15+, aiogram, SQLAlchemy/PostgreSQL, Valkey, Dishka and DrissionPage.
 See the [contributor guide](CONTRIBUTING.md) for setup, checks and contribution conventions, and [architecture](docs/architecture.md) for implementation details.
 
 ## License

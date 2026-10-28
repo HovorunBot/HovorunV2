@@ -141,7 +141,9 @@ def main() -> None:
     except (ValueError, PermissionError) as error:
         parser.error(str(error))
     except SQLAlchemyError:
-        parser.error("Database operation failed. Check DB_PATH and apply Alembic migrations before administration.")
+        parser.error(
+            "Database operation failed. Check DATABASE_URL and apply Alembic migrations before administration."
+        )
     else:
         sys.stdout.write(output + "\n")
 

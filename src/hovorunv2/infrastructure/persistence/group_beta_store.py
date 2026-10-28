@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from functools import partial
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.group_beta import GroupBetaFacts, GroupBetaStore
@@ -14,6 +14,7 @@ from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.beta import ALL_BETA
 from hovorunv2.domain.enums import ActorOrigin, ChatStatus, TargetKind
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.repositories.beta_repository import SQLAlchemyBetaEntitlementRepository
 from hovorunv2.infrastructure.repositories.group_beta_repository import GroupBetaMutation, SQLAlchemyGroupBetaRepository
 from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
@@ -90,7 +91,12 @@ class SQLAlchemyGroupBetaStore(GroupBetaStore):
         actor: ActorContext,
         transport_kind: str | None,
     ) -> GroupBetaMutation:
-        await session.execute(text("BEGIN IMMEDIATE"))
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                group_ids=(target.entity_id or 0,), actors=(actor.actor_id,) if actor.actor_id is not None else ()
+            ),
+        )
         now = datetime.now(UTC)
         group = await SQLAlchemyBetaEntitlementRepository(session).target(target)
         if group is None:
