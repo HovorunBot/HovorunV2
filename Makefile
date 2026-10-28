@@ -24,7 +24,7 @@ MESSAGE ?=
 
 .PHONY: all setup run stop update deploy help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
-        test lint format type-check lint-imports check install-hooks
+        test lint format type-check lint-imports check install-hooks ai agy gemini codex claude ai-check ai-next
 
 # Each command uses one complete environment file, never an overlay.
 ## Run setup, then start the selected Docker stack.
@@ -236,3 +236,49 @@ install-hooks:
 		echo "Installing Git quality, commit-message, and post-commit changelog hooks..."; \
 		uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg --hook-type post-commit; \
 	fi
+
+## Launch an assistant CLI with sandbox and workspace settings (TOOL=<codex|agy|gemini|claude|custom> [MODEL=...]).
+ai:
+	@if [ -z "$(TOOL)" ]; then \
+		echo "Usage: make ai TOOL=<codex|agy|gemini|claude|custom> [MODEL=...] [ARGS=...]"; \
+		exit 2; \
+	fi; \
+	AI_MODEL="$(MODEL)" ./scripts/ai-workflow $(TOOL) $(ARGS)
+
+## Launch Antigravity (Gemini) CLI assistant with project sandbox (optional MODEL=...).
+agy:
+	@$(MAKE) ai TOOL=agy MODEL="$(MODEL)" ARGS="$(ARGS)"
+
+## Alias for agy: launch Antigravity (Gemini) CLI assistant.
+gemini: agy
+
+## Launch OpenAI Codex assistant with project sandbox and approvals (optional MODEL=...).
+codex:
+	@$(MAKE) ai TOOL=codex MODEL="$(MODEL)" ARGS="$(ARGS)"
+
+## Launch Claude Code assistant with project settings (optional MODEL=...).
+claude:
+	@$(MAKE) ai TOOL=claude MODEL="$(MODEL)" ARGS="$(ARGS)"
+
+## Validate local ai-schemes initiatives (optional SCHEME=path/to/initiative).
+ai-check:
+	@if [ -n "$(SCHEME)" ]; then \
+		uv run python scripts/ai_scheme.py validate "$(SCHEME)"; \
+	elif [ -d ai-schemes ]; then \
+		schemes=$$(find ai-schemes -mindepth 1 -maxdepth 1 -type d); \
+		if [ -n "$$schemes" ]; then \
+			uv run python scripts/ai_scheme.py validate $$schemes; \
+		else \
+			echo "No local ai-schemes initiatives found."; \
+		fi; \
+	else \
+		echo "No local ai-schemes directory."; \
+	fi
+
+## Print the next eligible TODO block in an initiative (SCHEME=path/to/initiative).
+ai-next:
+	@if [ -z "$(SCHEME)" ]; then \
+		echo "Usage: make ai-next SCHEME=ai-schemes/<initiative>"; \
+		exit 2; \
+	fi; \
+	uv run python scripts/ai_scheme.py next "$(SCHEME)"

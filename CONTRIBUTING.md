@@ -36,4 +36,6 @@ review the generated changes, and amend the commit before tagging or pushing.
 
 AI tools are allowed. The commit author remains responsible for reviewing, understanding and testing the submitted code. Follow the same architecture, privacy and quality requirements for generated code.
 
+See [AGENTS.md](AGENTS.md) for canonical instructions, privacy constraints, and coding conventions. See [.agents/](.agents/README.md) for tool-specific setup (Antigravity, Codex, Claude Code), role guides, and initiative templates. Assistants can be launched with `make ai TOOL=<name>` or dedicated shortcuts `make agy`, `make codex`, `make claude`. Plan validation and progression are available via `make ai-check` and `make ai-next`.
+
 Database tests require local PostgreSQL (`make dev`) or an explicit `TEST_DATABASE_URL`. See [PostgreSQL testing and transfer](docs/postgresql-migration.md).
