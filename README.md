@@ -19,6 +19,8 @@ You can also host your own instance with Docker.
 
 ## Self-hosting
 
+The supported runtime is Linux. On Windows or macOS, run the project in Linux containers; Windows developers can also use WSL2. Native Windows execution is unsupported.
+
 Install Docker with Compose and `make`, then run:
 
 ```bash

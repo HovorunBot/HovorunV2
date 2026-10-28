@@ -4,6 +4,12 @@ Project conventions, privacy constraints and assistant instructions live in [AGE
 
 ## Development
 
+Use Linux, WSL2, or a Linux container for development and worker execution. Native Windows execution is unsupported; native macOS is not a supported worker runtime.
+
+Browser discovery checks an executable `BROWSER_PATH` override first, then package installations, Flatpak, Snap, and AppImage, in that order, even when PATH lists Snap first. Package locations include common Unix binary directories, Homebrew prefixes, and known Chromium browser bundles in `/Applications` and `~/Applications` on macOS.
+
+Flatpak discovery includes user and system exports. Browser AppImages are searched non-recursively in PATH directories, `~/Applications`, `~/AppImages`, and `/opt/appimages`; downloads must be executable. This discovery support does not change the supported worker runtime. For a browser installed elsewhere, set `BROWSER_PATH` explicitly.
+
 Use Python 3.15+, uv and Docker for local PostgreSQL and Valkey. Install dependencies with `uv sync`. For the development bot container, supply `BOT_TOKEN` and `CACHE_ENCRYPTION_KEY` through your environment or private `.env`. `make run-dev` selects the complete `docker-compose.dev.yml` stack with public development database credentials. `make run` selects only `docker-compose.prod.yml`, requiring private server credentials. Use `APP_ENV_FILE=.env.dev` for separate development settings. `example.env` is the server template; `make env-init` generates server-only secrets without overwriting an existing file.
 
 * `make run-dev`: Build and start the development bot, migration tool, PostgreSQL and Valkey in Docker.
