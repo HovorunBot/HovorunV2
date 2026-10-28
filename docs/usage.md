@@ -88,3 +88,25 @@ Active reservations retain their capacity after deadline until explicit settleme
 expiry must not silently permit overlapping execution. Terminal receipts remain for one hour,
 longer than request deadlines. Orphan recovery belongs to the terminal/reconciliation blocks.
 SQLite accounting and runtime settlement remain separate replayable operations.
+
+## Feature job envelopes and encrypted payloads
+
+FeatureQueuePort carries a strict JobEnvelope containing technical job/payload references,
+feature, canonical target/generation, actor/generation, charging scope, original acceptance/deadline,
+hashed deduplication identity, feature epoch and delivery message ID. Payload contents, URLs,
+Telegram objects, arbitrary kwargs and profile fields are excluded. Automatic work binds the
+charged group to its target; direct work binds the charged user to its actor.
+
+ValkeyPayloadStore prepares independently salted Fernet ciphertext without changing existing
+per-chat derivation. Actual stored ciphertext bytes, including encryption overhead, count against
+the request bound. Payload retention covers the remaining original deadline plus a 60-second
+cleanup margin. Rewriting the same payload never extends retention. Missing, expired, unavailable
+or undecryptable input produces a safe typed outcome with no plaintext fallback.
+
+SAQFeatureQueue owns a separate queue from operational tasks. Enqueue/schedule/inspect/cancel
+use typed application contracts; SAQ jobs stay in infrastructure. Job timeout bounds execution,
+not the acceptance deadline. Job records retain one hour after completion. FeatureJobRunner and
+FeatureWorkerBridge convert executor exceptions and results into fixed outcome codes; serialization
+also strips arbitrary metadata and sanitizes result/error fields before persistence and finish logs.
+The feature queue uses SET with expiry for terminal persistence. No feature worker starts in this
+foundation; worker cutover must also address the stock SAQ 0.26.4 deprecated coroutine probe.

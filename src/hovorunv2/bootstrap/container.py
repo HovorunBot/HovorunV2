@@ -19,6 +19,7 @@ from hovorunv2.application.clients.threads import ThreadsService
 from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.clients.youtube import YoutubeService
+from hovorunv2.application.feature_jobs import FeatureQueuePort, PayloadPort
 from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry
 from hovorunv2.application.group_beta import GroupBetaStore
 from hovorunv2.application.group_grants import GroupGrantStore
@@ -82,6 +83,8 @@ from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import DatabaseSettings, Settings
+from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
+from hovorunv2.infrastructure.feature_queue import SAQFeatureQueue
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyAuditedTransaction,
     SQLAlchemyChatStore,
@@ -162,6 +165,19 @@ class InfrastructureProvider(DatabaseProvider):
         service = TaskQueueService(config)
         yield service
         await service.stop_worker()
+
+    @provide(scope=Scope.APP)
+    async def feature_queue(
+        self,
+        config: Settings,
+        clock: Clock,
+        namespace: RuntimeNamespace,
+        safety: UsageSafetyCaps,
+    ) -> AsyncIterable[FeatureQueuePort]:
+        """Own a separate typed feature queue connection without starting a worker prematurely."""
+        queue = SAQFeatureQueue(config, clock, namespace, safety)
+        yield queue
+        await queue.close()
 
     membership_adapter = provide(TelegramMembershipAdapter, scope=Scope.APP)
     membership_port = alias(source=TelegramMembershipAdapter, provides=MembershipPort)
@@ -270,6 +286,8 @@ class AppProvider(Provider):
 
     clock_impl = provide(WallClock)
     clock = alias(source=WallClock, provides=Clock)
+    payload_store_impl = provide(ValkeyPayloadStore)
+    payload_store = alias(source=ValkeyPayloadStore, provides=PayloadPort)
     budget_store_impl = provide(ValkeyBudgetStore)
     budget_store = alias(source=ValkeyBudgetStore, provides=BudgetPort)
     budget_service = provide(BudgetService)

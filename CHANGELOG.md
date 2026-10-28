@@ -47,6 +47,7 @@
 
 ### Refactor
 
+- **queue**: define encrypted feature job envelopes
 - **audit**: use standard strict payload validation
 - **features**: decouple selection state from audit history
 - **features**: make activation state explicit
