@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "initiative": "initiative-name",
+  "specification": "SPECIFICATION.md",
+  "blocks": [
+    {
+      "id": "B01",
+      "file": "blocks/B01.md",
+      "status": "TODO",
+      "depends": [],
+      "requirements": [
+        "R1"
+      ],
+      "commit": "feat(scope): description"
+    }
+  ]
+}
