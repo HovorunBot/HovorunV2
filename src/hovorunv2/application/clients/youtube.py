@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import aiohttp
@@ -10,6 +11,13 @@ from hovorunv2.application.clients.base import BaseMediaClient, OGConfig, Provid
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
+
+_YOUTUBE_OG_CONFIG = OGConfig(
+    default_author="YouTube Channel",
+    author_handle="youtube",
+    author_url="https://www.youtube.com",
+    title_suffix=" - YouTube",
+)
 
 YOUTUBE_CONFIG = ProviderConfig(
     name=CommandName.YOUTUBE,
@@ -34,12 +42,7 @@ YOUTUBE_CONFIG = ProviderConfig(
     headers={
         "Cookie": "SOCS=CAESEwgDEgk2MTQ1NzU1MDQaAmVuIAEaBgiA_LyaBg",
     },
-    og_config=OGConfig(
-        default_author="YouTube Channel",
-        author_handle="youtube",
-        author_url="https://www.youtube.com",
-        title_suffix=" - YouTube",
-    ),
+    og_config=_YOUTUBE_OG_CONFIG,
 )
 
 
@@ -65,20 +68,12 @@ class YoutubeService(BaseMediaClient):
         if renderer := self._extract_post_renderer(html_content):
             return self._build_payload_from_renderer(renderer, fetch_url)
 
-        assert self._config.og_config is not None
-        return self._parse_og_html(html_content, fetch_url, self._config.og_config)
+        return self._parse_og_html(html_content, fetch_url, _YOUTUBE_OG_CONFIG)
 
     def _extract_post_renderer(self, html_content: str) -> dict[str, Any] | None:
         """Extract backstagePostRenderer or sharedPostRenderer from ytInitialData in page HTML."""
-        marker = "ytInitialData"
-        idx = html_content.find(marker)
-        brace_idx = html_content.find("{", idx) if idx != -1 else -1
-        if brace_idx == -1:
-            return None
-
-        try:
-            data, _ = json.JSONDecoder().raw_decode(html_content[brace_idx:])
-        except Exception:
+        data = self._read_initial_data(html_content)
+        if data is None:
             return None
 
         if isinstance(found := self._find_key_in_json(data, "backstagePostRenderer"), dict):
@@ -90,10 +85,23 @@ class YoutubeService(BaseMediaClient):
 
         return None
 
+    def _read_initial_data(self, html_content: str) -> object:
+        """Read the embedded JSON candidate without interpreting trailing page scripts."""
+        marker = "ytInitialData"
+        idx = html_content.find(marker)
+        brace_idx = html_content.find("{", idx) if idx != -1 else -1
+        if brace_idx == -1:
+            return None
+
+        try:
+            return json.JSONDecoder().raw_decode(html_content[brace_idx:])[0]
+        except ValueError, RecursionError:
+            return None
+
     def _build_payload_from_renderer(self, renderer: dict[str, Any], url: str) -> RichMediaPayload | None:
         """Construct raw RichMediaPayload from YouTube backstagePostRenderer."""
         author_runs = renderer.get("authorText", {}).get("runs", [])
-        author_name = "".join(r.get("text", "") for r in author_runs).strip() or "YouTube Channel"
+        author_name = self._join_runs(author_runs) or "YouTube Channel"
 
         author_path = (
             renderer.get("authorEndpoint", {}).get("commandMetadata", {}).get("webCommandMetadata", {}).get("url", "")
@@ -102,15 +110,14 @@ class YoutubeService(BaseMediaClient):
         author_url = f"https://www.youtube.com{author_path}" if author_path else "https://www.youtube.com"
 
         content_runs = renderer.get("contentText", {}).get("runs", [])
-        raw_text = "".join(r.get("text", "") for r in content_runs).strip()
+        raw_text = self._join_runs(content_runs)
         media_items = self._extract_attachment_media(renderer.get("backstageAttachment", {}))
 
         if not raw_text and not media_items:
             return None
 
-        likes = (
-            renderer.get("voteCount", {}).get("simpleText")
-            or "".join(r.get("text", "") for r in renderer.get("voteCount", {}).get("runs", [])).strip()
+        likes = renderer.get("voteCount", {}).get("simpleText") or self._join_runs(
+            renderer.get("voteCount", {}).get("runs", [])
         )
 
         return RichMediaPayload(
@@ -122,6 +129,10 @@ class YoutubeService(BaseMediaClient):
             original_url=url,
             media_items=media_items,
         )
+
+    def _join_runs(self, runs: Sequence[Mapping[str, str]]) -> str:
+        """Join provider text runs before trimming the complete author, caption or metric."""
+        return "".join(run.get("text", "") for run in runs).strip()
 
     def _extract_attachment_media(self, attachment: dict[str, Any]) -> list[MediaItem]:
         """Extract single or multi-image attachments from backstageAttachment."""

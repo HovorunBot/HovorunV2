@@ -44,16 +44,20 @@ class RedditService(BaseMediaClient):
         match: re.Match[str],
     ) -> RichMediaPayload | None:
         """Fetch Reddit post metadata from vxReddit and construct raw RichMediaPayload."""
-        vx_url = re.sub(
-            r"^https?://(?:(?:[\w-]+\.)?reddit\.com|redd\.it)",
-            self.VXREDDIT_BASE_URL,
-            url.split("?", maxsplit=1)[0],
-        )
+        vx_url = self._metadata_url(url)
         html_content = await self._fetch_html(vx_url)
         if not html_content:
             return None
 
         return self._parse_vxreddit_html(html_content, url)
+
+    def _metadata_url(self, url: str) -> str:
+        """Normalize supported post/share URLs to the metadata endpoint without their query."""
+        return re.sub(
+            r"^https?://(?:(?:[\w-]+\.)?reddit\.com|redd\.it)",
+            self.VXREDDIT_BASE_URL,
+            url.split("?", maxsplit=1)[0],
+        )
 
     def _parse_vxreddit_html(self, html_content: str, original_url: str) -> RichMediaPayload | None:
         """Parse OpenGraph metadata from vxReddit HTML response."""
@@ -62,6 +66,28 @@ class RedditService(BaseMediaClient):
         if not site_name:
             return None
 
+        author_name, author_handle, author_url, footer_text = self._author_metadata(site_name)
+
+        og_title = self._get_meta_content(soup, "og:title")
+        og_desc = self._get_meta_content(soup, "og:description")
+        content = self._post_content(og_title, og_desc)
+
+        media_items = self._extract_media_items(soup)
+        if not content and not media_items:
+            return None
+
+        return RichMediaPayload(
+            author_name=author_name,
+            author_handle=author_handle,
+            author_url=author_url,
+            content=content,
+            footer_text=footer_text,
+            original_url=original_url,
+            media_items=media_items,
+        )
+
+    def _author_metadata(self, site_name: str) -> tuple[str, str, str, str]:
+        """Keep parsed author attribution and metrics distinct from unrecognized site labels."""
         if stats_match := self.STATS_PATTERN.search(site_name):
             author = stats_match.group("author")
             subreddit = stats_match.group("subreddit")
@@ -77,28 +103,15 @@ class RedditService(BaseMediaClient):
             author_url = "https://www.reddit.com"
             footer_text = ""
 
-        og_title = self._get_meta_content(soup, "og:title")
-        og_desc = self._get_meta_content(soup, "og:description")
+        return author_name, author_handle, author_url, footer_text
+
+    def _post_content(self, og_title: str, og_desc: str) -> str:
+        """Combine distinct title/body metadata while omitting the endpoint's placeholder title."""
         if og_title == "vxReddit":
-            content = og_desc
-        elif og_title and og_desc and og_title != og_desc:
-            content = f"{og_title}\n\n{og_desc}"
-        else:
-            content = og_title or og_desc
-
-        media_items = self._extract_media_items(soup)
-        if not content and not media_items:
-            return None
-
-        return RichMediaPayload(
-            author_name=author_name,
-            author_handle=author_handle,
-            author_url=author_url,
-            content=content,
-            footer_text=footer_text,
-            original_url=original_url,
-            media_items=media_items,
-        )
+            return og_desc
+        if og_title and og_desc and og_title != og_desc:
+            return f"{og_title}\n\n{og_desc}"
+        return og_title or og_desc
 
     def _extract_media_items(self, soup: BeautifulSoup) -> list[MediaItem]:
         """Extract video or image media items from vxReddit meta tags."""
