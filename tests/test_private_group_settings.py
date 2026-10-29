@@ -10,7 +10,7 @@ import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from aiohttp import FormData
-from aioresponses import CallbackResult, aioresponses
+from aioresponses import CallbackResult
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -50,6 +50,7 @@ from tests.test_group_beta import BETA, GROUP, MEMBER, SECOND
 from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
 from tests.test_settings_sessions import DENIED, button, query_for, settings_message
 from tests.utils.activation import sent_fields
+from tests.utils.http import RecordedResponses
 
 OTHER = GROUP - 1
 
@@ -102,7 +103,9 @@ async def membership_http(url: object, *, statuses: dict[int, str], **kwargs: ob
     return CallbackResult(payload={"ok": True, "result": result}, response_class=RecordedResponse)
 
 
-def private_http(http: aioresponses, actor: int, statuses: dict[int, str], *, group_transport: bool = False) -> None:
+def private_http(
+    http: RecordedResponses, actor: int, statuses: dict[int, str], *, group_transport: bool = False
+) -> None:
     """Intercept Telegram; never replace application services, repositories or cache."""
     message = settings_message(chat_id=GROUP if group_transport else actor, actor_id=actor)
     for method in ("sendMessage", "editMessageText"):
@@ -122,7 +125,7 @@ def private_http(http: aioresponses, actor: int, statuses: dict[int, str], *, gr
     )
 
 
-def rendered_text(http: aioresponses) -> str:
+def rendered_text(http: RecordedResponses) -> str:
     """Read only fields shown by the actual private settings keyboard."""
     fields = sent_fields(http, "editMessageText")[-1]
     return fields["text"] + json.dumps(json.loads(fields.get("reply_markup", "{}")), ensure_ascii=False)
@@ -160,7 +163,7 @@ async def test_untrusted_admin_private_workflow_reuses_group_settings_and_audit(
         )
         message = settings_message(chat_id=SECOND, actor_id=SECOND).as_(bot)
         from_user = message.from_user
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             private_http(http, SECOND, {GROUP: "creator"})
             await dispatcher.feed_update(bot, Update(update_id=1, message=message))
             assert "Managed group" in rendered_text(http)
@@ -187,7 +190,7 @@ async def test_untrusted_admin_private_workflow_reuses_group_settings_and_audit(
         languages = await test_container.get(LanguageService)
         assert (await languages.get_chat_settings(GROUP))[0] == "pl"
         group_message = settings_message(actor_id=SECOND).as_(bot)
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             private_http(http, SECOND, {GROUP: "creator"}, group_transport=True)
             await command.handle(group_message, bot)
             await command.handle_callback(query_for(group_message, bot, SECOND), button(http, SettingsMenu.MODULES))
@@ -218,7 +221,7 @@ async def test_demotion_rechecks_list_selection_and_mutations(
     async with private_runtime(test_container) as (bot, command, _service):
         message = settings_message(chat_id=SECOND, actor_id=SECOND).as_(bot)
         statuses = {GROUP: "creator"}
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             private_http(http, SECOND, statuses)
             await command.handle(message, bot)
             callback = button(http, SettingsMenu.GROUP_SELECT, value="0")
@@ -238,7 +241,7 @@ async def test_opaque_selection_slot_and_private_actor_cannot_be_forged(test_con
     """Changing a slot, transport actor or target cannot reveal an unrelated group."""
     async with private_runtime(test_container) as (bot, command, _service):
         message = settings_message(chat_id=SECOND, actor_id=SECOND).as_(bot)
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             private_http(http, SECOND, {GROUP: "creator"})
             await command.handle(message, bot)
             callback = button(http, SettingsMenu.GROUP_SELECT, value="0")
@@ -259,7 +262,7 @@ async def test_group_discovery_is_bounded_and_filters_unrelated_titles(test_cont
         for offset in range(GROUPS_PER_PAGE):
             wanted = OTHER - offset - 1
             await groups.ingest_group(wanted, f"Unrelated title {offset}", "supergroup")
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             private_http(http, SECOND, {wanted: "creator"})
             page = await service.list_groups(SECOND)
             assert not page.groups
@@ -290,7 +293,7 @@ async def test_bot_admin_can_inspect_all_active_groups_but_cannot_bypass_feature
         page = await service.list_groups(SECOND)
         assert {group.telegram_id for group in page.groups} == {GROUP, OTHER}
         message = settings_message(chat_id=SECOND, actor_id=SECOND).as_(bot)
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             private_http(http, SECOND, {})
             await command.handle(message, bot)
             await command.handle_callback(
@@ -312,7 +315,7 @@ async def test_deleted_and_absent_groups_are_not_discovered_or_selected(test_con
         target = PermissionTarget("group", current.id, current.generation, GROUP)
         assert await chats.soft_delete_chat(GROUP, ActorContext.cli(), "Synthetic lifecycle")
         await mark_bot_absent(test_container, OTHER)
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             private_http(http, SECOND, {GROUP: "creator"})
             assert not await service.can_manage(SECOND, target)
             assert not (await service.list_groups(SECOND)).groups
@@ -332,7 +335,7 @@ async def test_private_manager_can_inspect_uncertainty_without_enabling_features
             chat.id, AdministratorEvidence(GROUP, False, (), now, now + timedelta(minutes=5))
         )
         message = settings_message(chat_id=SECOND, actor_id=SECOND).as_(bot)
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             private_http(http, SECOND, {GROUP: "creator"})
             await command.handle(message, bot)
             query = query_for(message, bot, SECOND)

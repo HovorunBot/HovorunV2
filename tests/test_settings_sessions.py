@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 import pytest
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, Message, User
-from aioresponses import aioresponses
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +26,7 @@ from tests.conftest import provision_role
 from tests.test_group_beta import FIRST, GROUP, SECOND, group_beta_runtime
 from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
 from tests.utils.activation import sent_fields
+from tests.utils.http import RecordedResponses
 from tests.utils.postgres import reject_audit
 from tests.utils.settings import bind_settings_callback
 
@@ -54,7 +54,7 @@ def query_for(message: Message, bot: Bot, actor_id: int = FIRST) -> CallbackQuer
     ).as_(bot)
 
 
-def settings_http(http: aioresponses, message: Message, *, admin: bool = True) -> None:
+def settings_http(http: RecordedResponses, message: Message, *, admin: bool = True) -> None:
     """Intercept external Telegram calls only, including fresh membership queries."""
     for method in ("sendMessage", "editMessageText"):
         http.post(
@@ -73,7 +73,7 @@ def settings_http(http: aioresponses, message: Message, *, admin: bool = True) -
     )
 
 
-def button(http: aioresponses, menu: SettingsMenu, *, value: str | None = None) -> SettingsCallback:
+def button(http: RecordedResponses, menu: SettingsMenu, *, value: str | None = None) -> SettingsCallback:
     """Read the real server-rendered callback rather than fabricate trusted state."""
     markup = json.loads(sent_fields(http, "editMessageText")[-1]["reply_markup"])
     for row in markup["inline_keyboard"]:
@@ -95,7 +95,7 @@ async def test_real_settings_language_workflow_and_transactional_actor_audit(tes
     cleanup = await test_container.get(CleanupService)
     await cleanup.register_window(GROUP, message.message_id - 1, SETTINGS_SESSION_TTL, CommandName.SETTINGS)
     async with Bot(BOT_CREDENTIAL) as bot:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             settings_http(http, message)
             await command.handle(message.as_(bot), bot)
             assert [int(fields["message_id"]) for fields in sent_fields(http, "deleteMessage")] == [
@@ -159,7 +159,7 @@ async def test_callback_tampering_changes_no_durable_state(test_container: Async
         case "token":
             callback.token = "guessed"  # noqa: S105 - Deliberately forged UI token.
     async with Bot(BOT_CREDENTIAL) as bot:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             settings_http(http, message)
             await command.handle_callback(query_for(message, bot), callback)
             assert sent_fields(http, "answerCallbackQuery")[-1]["text"] == DENIED
@@ -183,7 +183,7 @@ async def test_demoted_admin_cannot_mutate_an_older_menu(test_container: AsyncCo
         SettingsCallback(menu=SettingsMenu.LANG_TARGET, action=SettingsAction.SELECT, value="pl"),
     )
     async with Bot(BOT_CREDENTIAL) as bot:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             settings_http(http, message, admin=False)
             await command.handle_callback(query_for(message, bot), callback)
             assert len(sent_fields(http, "getChatMember")) == 1
@@ -206,7 +206,7 @@ async def test_private_context_uses_selected_group_and_denies_other_actor(test_c
         target=GROUP,
     )
     async with Bot(BOT_CREDENTIAL) as bot:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             settings_http(http, message)
             await command.handle_callback(query_for(message, bot, SECOND), callback)
             assert sent_fields(http, "answerCallbackQuery")[-1]["text"] == DENIED
@@ -281,7 +281,7 @@ async def test_anonymous_sender_cannot_open_user_bound_settings(test_container: 
     command = await test_container.get(SettingsCommand)
     message = settings_message().model_copy(update={"sender_chat": Chat(id=GROUP, type="supergroup")})
     async with Bot(BOT_CREDENTIAL) as bot:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             settings_http(http, message)
             await command.handle(message.as_(bot), bot)
             assert not http.requests

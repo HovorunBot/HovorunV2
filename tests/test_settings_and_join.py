@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, Message, User
-from aioresponses import aioresponses
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -25,6 +24,7 @@ from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from tests.conftest import create_mock_message, provision_role, verify_group_admins
 from tests.test_membership_adapter import RecordedResponse
+from tests.utils.http import RecordedResponses
 from tests.utils.settings import bind_settings_callback
 
 
@@ -42,7 +42,7 @@ async def test_bot_join_prompt(test_container: AsyncContainer) -> None:
     )
     bot = Bot("777:synthetic-token")
     try:
-        with aioresponses(response_class=RecordedResponse) as responses:
+        with RecordedResponses() as responses:
             responses.post(
                 "https://api.telegram.org/bot777:synthetic-token/sendMessage",
                 payload={
@@ -90,7 +90,7 @@ async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
         SettingsCallback(menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value=CommandName.TWITTER_POST),
     )
     try:
-        with aioresponses(response_class=RecordedResponse) as responses:
+        with RecordedResponses() as responses:
             responses.post(
                 "https://api.telegram.org/bot777:synthetic-token/answerCallbackQuery",
                 payload={"ok": True, "result": True},

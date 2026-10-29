@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 import pytest
 from aiogram import Dispatcher
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
-from aioresponses import aioresponses
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -25,7 +24,6 @@ from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
 from tests.conftest import provision_role
-from tests.test_membership_adapter import RecordedResponse
 from tests.utils.activation import (
     ACTOR,
     ADMIN,
@@ -38,6 +36,7 @@ from tests.utils.activation import (
     sent_fields,
     stub_telegram,
 )
+from tests.utils.http import RecordedResponses
 
 
 @pytest.mark.parametrize(
@@ -63,7 +62,7 @@ async def test_handle_authorized(test_container: AsyncContainer) -> None:
     await seed_activation(test_container, trusted=False)
     await provision_role(test_container, ACTOR)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             await runtime.command.handle(group_message().as_(runtime.bot), runtime.bot)
             assert len(sent_fields(http, "sendMessage")) == 1
@@ -90,7 +89,7 @@ async def test_request_callback_uses_human_actor_and_deduplicates_admin_notifica
     )
     async with activation_runtime(test_container) as runtime:
         query = query.as_(runtime.bot)
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             await runtime.command.handle_callback(query, data, runtime.bot)
             await runtime.command.handle_callback(query, data, runtime.bot)
@@ -126,7 +125,7 @@ async def test_trusted_button_click_activates_without_group_admin_call(test_cont
         data=data.pack(),
     )
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             await runtime.command.handle_callback(query.as_(runtime.bot), data, runtime.bot)
             assert not sent_fields(http, "getChatMember")
@@ -142,7 +141,7 @@ async def test_forged_or_stale_approval_callback_rejected(test_container: AsyncC
     target = await seed_activation(test_container, trusted=False)
     await provision_role(test_container, ADMIN)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
             actor = ACTOR if invalid == "non_admin" else ADMIN
@@ -187,7 +186,7 @@ async def test_private_admin_callback_approves_and_closes_exact_request(test_con
     target = await seed_activation(test_container, trusted=False)
     await provision_role(test_container, ADMIN)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
             data = AccessCallback(
@@ -229,7 +228,7 @@ async def test_request_button_cannot_select_another_group(test_container: AsyncC
         data=data.pack(),
     )
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             await runtime.command.handle_callback(query.as_(runtime.bot), data, runtime.bot)
     sessions = await test_container.get(async_sessionmaker)
@@ -242,7 +241,7 @@ async def test_prompt_contains_known_generation_bound_target(test_container: Asy
     target = await seed_activation(test_container)
     sender = await test_container.get(TelegramUnauthorizedPromptSender)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             assert await sender.send(runtime.bot, GROUP)
             assert not await sender.send(runtime.bot, GROUP - 1)
@@ -274,7 +273,7 @@ async def test_real_router_activates_trusted_user_in_unapproved_group(test_conta
             message=group_message(user_id=BOT_ID),
             data=data.pack(),
         )
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             await dispatcher.feed_update(runtime.bot, Update(update_id=23, callback_query=query))
             assert len(sent_fields(http, "editMessageText")) == 1

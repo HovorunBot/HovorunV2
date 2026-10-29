@@ -8,7 +8,6 @@ import sys
 import aiohttp
 import pytest
 from aiogram import Bot
-from aioresponses import aioresponses
 from dishka import AsyncContainer
 
 from hovorunv2.application.clients.instagram import PrivateInstaloaderContext
@@ -26,7 +25,8 @@ from hovorunv2.infrastructure.logger import (
     setup_telegram_logging,
 )
 from tests.conftest import provision_role
-from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
+from tests.test_membership_adapter import API, BOT_CREDENTIAL
+from tests.utils.http import RecordedResponses
 
 SENTINEL = "synthetic-private-payload-022e"
 PRIVATE_URL = f"https://example.invalid/media?credential={SENTINEL}"
@@ -62,7 +62,7 @@ async def test_exception_payloads_never_reach_console_or_telegram(test_container
     async with Bot(BOT_CREDENTIAL) as bot:
         handler = setup_telegram_logging(bot, roles)
         try:
-            with aioresponses(response_class=RecordedResponse) as http:
+            with RecordedResponses() as http:
                 endpoint = f"{API}/sendMessage"
                 http.post(
                     endpoint,
@@ -99,7 +99,7 @@ async def test_media_download_failure_logs_no_message_url(
     monkeypatch.setattr(logging.getLogger("hovorunv2.application.media.downloader"), "disabled", False)
     async with aiohttp.ClientSession() as session:
         downloader = MediaDownloader(session)
-        with caplog.at_level(logging.WARNING), aioresponses(response_class=RecordedResponse) as http:
+        with caplog.at_level(logging.WARNING), RecordedResponses() as http:
             http.get(PRIVATE_URL, exception=ValueError(SENTINEL))
             with pytest.raises(MediaDownloadError) as error:
                 await downloader.download_as_buffered_file(PRIVATE_URL, "image.jpg", is_video=False)

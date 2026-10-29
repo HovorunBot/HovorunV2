@@ -5,7 +5,6 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from aioresponses import aioresponses
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -32,8 +31,8 @@ from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActivationStore
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
 from tests.conftest import provision_role, verify_group_admins
-from tests.test_membership_adapter import RecordedResponse
 from tests.utils.activation import ACTOR, ADMIN, GROUP, activation_runtime, seed_activation, stub_telegram
+from tests.utils.http import RecordedResponses
 from tests.utils.postgres import reject_audit
 
 
@@ -42,7 +41,7 @@ async def test_trusted_activation_is_durable_idempotent_and_audited(test_contain
     target = await seed_activation(test_container)
     store = await test_container.get(ActivationStore)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses():
+        with RecordedResponses():
             assert (await runtime.service.enable(ACTOR, target, "supergroup")).outcome == ActivationOutcome.APPROVED
     commands = await test_container.get(CommandService)
     await commands.disable_command(GROUP, CommandName.TIKTOK_VIDEO)
@@ -77,7 +76,7 @@ async def test_only_untrusted_group_administrator_can_request(test_container: As
     """Fresh creator evidence can request; ordinary members and departed users cannot."""
     target = await seed_activation(test_container, trusted=False)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http, member_status=status)
             first = await runtime.service.enable(ACTOR, target, "supergroup")
             second = await runtime.service.enable(ACTOR, target, "supergroup")
@@ -201,7 +200,7 @@ async def test_bot_administrator_decides_pending_request_in_private(
     target = await seed_activation(test_container, trusted=False)
     await provision_role(test_container, ADMIN)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
         action = ActivationAction.APPROVE if approved else ActivationAction.REJECT
@@ -224,7 +223,7 @@ async def test_open_admin_decision_rechecks_demotion_and_target(test_container: 
     target = await seed_activation(test_container, trusted=False)
     await provision_role(test_container, ADMIN)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
         roles = await test_container.get(RoleService)
@@ -252,7 +251,7 @@ async def test_audit_failure_rolls_back_approval_defaults_status_and_request(tes
     await provision_role(test_container, ADMIN)
     sessions = await test_container.get(async_sessionmaker)
     async with activation_runtime(test_container) as runtime:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
         async with sessions() as session:

@@ -8,7 +8,7 @@ from functools import partial
 import pytest
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, Message, TelegramObject, User
-from aioresponses import CallbackResult, aioresponses
+from aioresponses import CallbackResult
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -43,8 +43,9 @@ from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.test_group_beta import BETA, FIRST, FUTURE, GROUP, MEMBER, REGISTRY, group_beta_runtime
-from tests.test_membership_adapter import BOT_CREDENTIAL, RecordedResponse
+from tests.test_membership_adapter import BOT_CREDENTIAL
 from tests.utils.activation import sent_fields, stub_telegram
+from tests.utils.http import RecordedResponses
 from tests.utils.settings import bind_settings_callback
 
 CAPABLE = FeatureDefinition(
@@ -126,7 +127,7 @@ async def test_guessed_execution_and_stale_callbacks_recheck_current_group_suppo
         )
     data = {"policy": CommandPolicy(is_toggleable=True), "command_name": BETA.key}
     try:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             assert await middleware(handled, event, data) is None
             await service.set_group_beta(BETA.key, GROUP, FIRST, enabled=True)
@@ -151,7 +152,7 @@ async def test_help_and_modules_hide_future_beta_and_guessed_toggle_writes_nothi
     async with sessions() as session:
         before = len((await session.scalars(select(AuditEventDB))).all())
     try:
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             callback = await bind_settings_callback(
                 test_container, menu, FIRST, SettingsCallback(menu=SettingsMenu.MODULES)
@@ -175,7 +176,7 @@ async def test_help_and_modules_hide_future_beta_and_guessed_toggle_writes_nothi
         async with sessions() as session:
             assert len((await session.scalars(select(AuditEventDB))).all()) == before
         await service.set_group_beta(BETA.key, GROUP, FIRST, enabled=True)
-        with aioresponses(response_class=RecordedResponse) as http:
+        with RecordedResponses() as http:
             stub_telegram(http)
             await help_command.handle(message(MEMBER).as_(bot), bot)
             assert BETA.display_name in sent_fields(http, "sendMessage")[-1]["text"]
@@ -264,7 +265,7 @@ async def test_pipeline_denies_before_network_and_rechecks_after_extraction(test
         await test_container.get(MediaExtractor), await test_container.get(TranslationService), service
     )
     client = await test_container.get(TwitterService)
-    with aioresponses(response_class=RecordedResponse) as http:
+    with RecordedResponses() as http:
         result = await pipeline.process(
             client, "https://x.com/synthetic/status/123", GROUP, actor_id=MEMBER, trigger=TriggerKind.AUTOMATIC
         )
