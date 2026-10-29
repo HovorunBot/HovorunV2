@@ -82,6 +82,12 @@ class WorkerPolicyStore:
         with self._sessions() as session:
             return PolicyFactReader(session, self._policy).permission(request, datetime.now(UTC))
 
+    def chat_translation_settings(self, chat_id: int) -> tuple[str | None, tuple[str, ...] | None] | None:
+        """Load fresh translation settings through the same child-owned session boundary as policy reads."""
+        self._require_owner()
+        with self._sessions() as session:
+            return PolicyFactReader(session, self._policy).chat_translation_settings(chat_id)
+
     def resolve(
         self,
         feature: str,

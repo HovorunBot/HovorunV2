@@ -1,93 +1,32 @@
 """Configuration-driven base class for all media provider clients."""
 
-import json
 import logging
 import re
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any, ClassVar
 
 import aiohttp
 
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.clients.config import (
+    FACEBOOK_CONFIG,
+    BrowserFallbackConfig,
+    OGConfig,
+    ProviderConfig,
+)
+from hovorunv2.application.clients.parsing import MediaParser
+from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.ports import BrowserPort
-from hovorunv2.application.text import extract_og_metadata, format_number
+from hovorunv2.application.text import extract_og_metadata
 from hovorunv2.domain.enums import CommandName
+
+__all__ = ["FACEBOOK_CONFIG", "BaseMediaClient", "BrowserFallbackConfig", "OGConfig", "ProviderConfig"]
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class OGConfig:
-    """Declarative configuration for OpenGraph metadata extraction."""
-
-    default_author: str
-    author_handle: str
-    author_url: str
-    title_separator: str | None = None
-    title_suffix: str | None = None
-    headers: Mapping[str, str] | None = None
-    video_url_pattern: re.Pattern[str] | None = None
-
-
-@dataclass(frozen=True)
-class BrowserFallbackConfig:
-    """Declarative configuration for headless browser fallback extraction."""
-
-    wait_selector: str
-    gate_buttons: tuple[str, ...] = ()
-    js_extractor: str | None = None
-    default_author: str = "User"
-    author_handle: str = "user"
-    author_url: str = ""
-    default_title: str = "Post"
-    default_footer: str = ""
-    description_clean_pattern: re.Pattern[str] | None = None
-
-
-@dataclass(frozen=True)
-class ProviderConfig:
-    """Declarative configuration for a media provider."""
-
-    name: CommandName
-    pattern: re.Pattern[str]
-    platform_name: str = ""
-    redirect_pattern: re.Pattern[str] | None = None
-    post_url_pattern: re.Pattern[str] | None = None
-    strip_hashtags: bool = False
-    merge_quoted_media: bool = True
-    merge_quoted_only_when_empty: bool = False
-    translate_quoted: bool = True
-    headers: Mapping[str, str] = field(default_factory=dict)
-    og_config: OGConfig | None = None
-    browser_config: BrowserFallbackConfig | None = None
-
-    @property
-    def label(self) -> str:
-        """Human-readable platform name."""
-        return self.platform_name or str(self.name).capitalize()
-
-
-FACEBOOK_CONFIG = ProviderConfig(
-    name=CommandName.FACEBOOK,
-    pattern=re.compile(
-        r"https?://(?:[\w-]+\.)?facebook\.com/(?:[^/]+/posts/\d+|groups/[^/]+/posts/\d+|"
-        r"permalink\.php|photo\.php|reel/[\w-]+|watch/|videos/[\w-]+|share/[vpr]/[\w-]+|story\.php|(?P<id>\w+))"
-    ),
-    og_config=OGConfig(
-        default_author="Facebook User",
-        author_handle="facebook",
-        author_url="https://www.facebook.com",
-        title_separator=" - ",
-        headers={"User-Agent": "facebookexternalhit/1.1"},
-        video_url_pattern=re.compile(r"facebook\.com/(?:reel/|watch/|videos/|share/[vr]/|[^/]+/videos/)"),
-    ),
-)
-
-
-class BaseMediaClient:
+class BaseMediaClient(MediaParser):
     """Generalized media client executing config-driven extraction, OG/browser fallbacks, and post-processing."""
 
     DEFAULT_TIMEOUT_SECONDS: ClassVar[int] = 15
@@ -230,98 +169,12 @@ class BaseMediaClient:
             return self._build_browser_payload(og_meta, url, b_cfg)
         return None
 
-    def _extract_from_json_scripts(self, html_content: str) -> dict[str, Any] | None:
-        """Extract video_url or display_url from application/json script tags."""
-        for json_str in re.findall(
-            r'<script[^>]*type=["\']application/json["\'][^>]*>(.*?)</script>', html_content, re.DOTALL
-        ):
-            if "video_url" not in json_str and "display_url" not in json_str:
-                continue
-            try:
-                script_data = json.loads(json_str)
-                video = self._find_key_in_json(script_data, "video_url")
-                image = self._find_key_in_json(script_data, "display_url")
-                if video or image:
-                    return {"video": video, "image": image}
-            except Exception:
-                logger.debug("Failed to parse JSON script blob")
-        return None
-
-    def _build_browser_payload(
-        self, results: dict[str, Any], url: str, b_cfg: BrowserFallbackConfig
-    ) -> RichMediaPayload:
-        """Build RichMediaPayload from browser extraction dictionary."""
-        media_url = results.get("video") or results.get("image")
-        title = results.get("title") or b_cfg.default_title
-        description = results.get("description") or ""
-        if b_cfg.description_clean_pattern:
-            description = b_cfg.description_clean_pattern.sub("", description).strip(' "')
-
-        footer = (
-            self._build_metrics_footer(
-                ("❤️", results.get("likes")),
-                ("👁️", results.get("views")),
-                ("💬", results.get("comments")),
-                prefix="📊 ",
-            )
-            or b_cfg.default_footer
-        )
-
-        return RichMediaPayload(
-            author_name=b_cfg.default_author,
-            author_handle=b_cfg.author_handle,
-            author_url=b_cfg.author_url,
-            content=f"<b>{title}</b>\n\n{description}".strip(),
-            footer_text=footer,
-            original_url=url,
-            media_items=[MediaItem(url=str(media_url), is_video=bool(results.get("video")))],
-        )
-
     async def _extract_via_og(self, url: str, og_cfg: OGConfig) -> RichMediaPayload | None:
         """Fetch HTML and construct raw RichMediaPayload from OpenGraph metadata."""
         html_content = await self._fetch_html(url, headers=og_cfg.headers)
         if not html_content:
             return None
         return self._parse_og_html(html_content, url, og_cfg)
-
-    def _parse_og_html(self, html_content: str, url: str, og_cfg: OGConfig) -> RichMediaPayload | None:
-        """Parse OpenGraph metadata from HTML string into raw RichMediaPayload."""
-        metadata = extract_og_metadata(html_content)
-        if not metadata:
-            return None
-
-        og_url = metadata.get("url", "")
-        is_video = (
-            metadata.get("type") == "video"
-            or "video" in metadata
-            or bool(
-                og_cfg.video_url_pattern
-                and (og_cfg.video_url_pattern.search(url) or og_cfg.video_url_pattern.search(og_url))
-            )
-        )
-        if is_video:
-            return None
-
-        raw_content = metadata.get("description") or metadata.get("title") or ""
-        media_items = [MediaItem(url=metadata["image"], is_video=False)] if "image" in metadata else []
-        if not raw_content and not media_items:
-            return None
-
-        title = metadata.get("title", "")
-        author_name = og_cfg.default_author
-        if og_cfg.title_separator and og_cfg.title_separator in title:
-            author_name = title.split(og_cfg.title_separator, maxsplit=1)[0].strip() or og_cfg.default_author
-        elif og_cfg.title_suffix and title:
-            author_name = title.removesuffix(og_cfg.title_suffix).strip() or og_cfg.default_author
-
-        return RichMediaPayload(
-            author_name=author_name,
-            author_handle=og_cfg.author_handle,
-            author_url=og_cfg.author_url,
-            content=raw_content,
-            original_url=url,
-            media_items=media_items,
-        )
 
     async def _fetch_json(
         self,
@@ -385,42 +238,3 @@ class BaseMediaClient:
         except Exception:
             logger.exception("Failed to follow provider redirect for %s", self.name)
             return None
-
-    def _build_metrics_footer(
-        self,
-        *metrics: tuple[str, int | str | None],
-        prefix: str = "",
-        include_zero: bool = False,
-    ) -> str:
-        """Format (emoji, value) pairs into a standardized footer string."""
-        parts: list[str] = []
-        for emoji, val in metrics:
-            if val is None:
-                continue
-            if isinstance(val, int):
-                if val or include_zero:
-                    parts.append(f"{emoji} {format_number(val)}")
-            elif val:
-                parts.append(f"{emoji} {val}")
-
-        if not parts:
-            return ""
-        joined = " | ".join(parts)
-        return f"{prefix}{joined}" if prefix else joined
-
-    def _find_key_in_json(self, data: Any, target_key: str) -> Any:
-        """Recursively find target_key in nested dicts/lists."""
-        match data:
-            case dict() if target_key in data:
-                return data[target_key]
-            case dict():
-                items = data.values()
-            case list():
-                items = data
-            case _:
-                return None
-
-        for item in items:
-            if (result := self._find_key_in_json(item, target_key)) is not None:
-                return result
-        return None

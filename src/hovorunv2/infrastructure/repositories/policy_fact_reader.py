@@ -267,6 +267,14 @@ class PolicyFactReader:
             selection is not None and self.session.scalar(group_support(selection, now)) is not None
         )
 
+    def chat_translation_settings(self, chat_id: int) -> tuple[str | None, tuple[str, ...] | None] | None:
+        """Read current canonical preferences without copying profiles or writing any state."""
+        chat = self.session.scalar(active_chat(chat_id))
+        if chat is None or chat.chat_id != chat_id:
+            return None
+        ignored = tuple(chat.ignored_langs) if chat.ignored_langs is not None else None
+        return chat.target_lang, ignored
+
     def usage_subject(
         self, actor_id: int | None, group_id: int | None, trigger: TriggerKind
     ) -> tuple[UsageSubject, bool, bool]:

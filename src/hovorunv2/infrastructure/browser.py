@@ -1,21 +1,18 @@
 """Infrastructure service for managing a headless browser instance using DrissionPage."""
 
 import asyncio
-import html
 from collections.abc import Callable
 from typing import Any
 
-from DrissionPage import ChromiumOptions, ChromiumPage
+from DrissionPage import ChromiumPage
 from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
-from hovorunv2.infrastructure.browser_discovery import find_browser_executable
+from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.infrastructure.browser_process import BrowserError, OwnedChromium
 from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.infrastructure.native_browser import download_tab_media
 
 logger = get_logger(__name__)
-
-
-class BrowserError(Exception):
-    """Base exception for browser-related errors."""
 
 
 class BrowserLifecycleManager:
@@ -40,6 +37,7 @@ class BrowserLifecycleManager:
         """
         self._idle_timeout = idle_timeout
         self._flags = flags or []
+        self._browser = OwnedChromium(flags)
         self._page: ChromiumPage | None = None
         self._idle_timer: asyncio.Task | None = None
         self._active_requests = 0
@@ -63,14 +61,14 @@ class BrowserLifecycleManager:
             True if _page exists.
 
         """
-        return self._page is not None
+        return self._browser.is_running
 
     async def acquire(self) -> None:
         """Initialize browser and tracking for a new request."""
         async with self._lock:
-            self._active_requests += 1
             self._stop_idle_timer()
             await self._ensure_browser()
+            self._active_requests += 1
 
     async def release(self) -> None:
         """Update tracking and start idle timer if no active requests."""
@@ -83,25 +81,20 @@ class BrowserLifecycleManager:
         """Ensure browser instance is running."""
         if not self._page:
             logger.info("Starting new headless DrissionPage instance")
-            await asyncio.to_thread(self._init_page)
+            task = asyncio.create_task(asyncio.to_thread(self._init_page))
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                try:
+                    await task
+                finally:
+                    await asyncio.to_thread(self._browser.close)
+                    self._page = None
+                raise
 
     def _init_page(self) -> None:
         """Initialize ChromiumPage in a thread with detected browser path."""
-        options = ChromiumOptions()
-        options.set_argument("--headless")
-        options.set_argument("--no-sandbox")
-        options.set_argument("--disable-gpu")
-        options.set_argument("--disable-dev-shm-usage")
-        options.set_argument("--disable-software-rasterizer")
-
-        for flag in self._flags:
-            options.set_argument(flag)
-
-        if browser_path := find_browser_executable():
-            logger.info("Using browser at: %s", browser_path)
-            options.set_browser_path(browser_path)
-
-        self._page = ChromiumPage(options)
+        self._page = self._browser.start()
 
     def _start_idle_timer(self) -> None:
         """Start idle shutdown timer."""
@@ -111,7 +104,8 @@ class BrowserLifecycleManager:
     def _stop_idle_timer(self) -> None:
         """Cancel idle shutdown timer."""
         if self._idle_timer:
-            self._idle_timer.cancel()
+            if self._idle_timer is not asyncio.current_task():
+                self._idle_timer.cancel()
             self._idle_timer = None
 
     async def _idle_shutdown(self) -> None:
@@ -127,15 +121,14 @@ class BrowserLifecycleManager:
 
     async def _perform_close(self) -> None:
         """Close without lock."""
-        if self._idle_timer:
-            self._idle_timer.cancel()
-            self._idle_timer = None
-
-        if self._page:
-            try:
-                await asyncio.to_thread(self._page.quit)
-            except Exception:
-                logger.exception("Error closing DrissionPage")
+        self._stop_idle_timer()
+        task = asyncio.create_task(asyncio.to_thread(self._browser.close))
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task
+            raise
+        finally:
             self._page = None
         logger.info("Browser lifecycle manager closed")
 
@@ -165,6 +158,9 @@ class BrowserService:
             flags: Optional list of browser arguments.
 
         """
+        if max_tabs <= 0:
+            msg = "Browser tab capacity must be positive."
+            raise ValueError(msg)
         self._manager = BrowserLifecycleManager(idle_timeout, flags)
         self._semaphore = asyncio.Semaphore(max_tabs)
 
@@ -189,7 +185,7 @@ class BrowserService:
                 finally:
                     await self._manager.release()
 
-        msg = f"Failed to fetch content from {url} after retries"
+        msg = "Failed to fetch browser content after retries."
         raise BrowserError(msg)
 
     async def extract_and_download(
@@ -253,38 +249,13 @@ class BrowserService:
             if not metadata:
                 return None, []
 
-            if not hasattr(metadata, "media_items"):
+            if not isinstance(metadata, RichMediaPayload):
                 return metadata, []
 
-            downloaded_bytes = []
-            for item in metadata.media_items:
-                if not item.url:
-                    logger.warning("Skipping media item with empty URL")
-                    continue
-
-                # Use the same tab/session to fetch the resource
-                clean_media_url = html.unescape(item.url)
-                logger.info("Downloading media via browser session")
-
-                assert isinstance(clean_media_url, str), "Media URL cannot be empty or None"
-                resp = tab.get(clean_media_url)
-                if content := self._extract_content_from_response(resp):
-                    downloaded_bytes.append(content)
-
-            return metadata, downloaded_bytes
+            # Use the same tab/session cookies to fetch the resource through bounded streaming HTTP.
+            return metadata, download_tab_media(tab, metadata, url)
         finally:
             tab.close()
-
-    def _extract_content_from_response(self, resp: Any) -> bytes | None:
-        """Extract raw bytes from various response types using pattern matching."""
-        match resp:
-            case _ if hasattr(resp, "content"):
-                return resp.content
-            case bytes() as content:
-                return content
-            case _:
-                logger.warning("Unexpected browser response type: %s", type(resp))
-                return None
 
     def _is_recoverable_error(self, error: Exception) -> bool:
         """Check if browser error is recoverable by restarting.
@@ -336,8 +307,8 @@ class BrowserService:
 
         """
         logger.info("Fetching browser content")
-        # new_tab creates a new tab object; get(url) loads the content
-        tab = page.new_tab(url)
+        # new_tab creates an empty tab; the bounded get(url) below performs its only navigation.
+        tab = page.new_tab()
         try:
             tab.get(url, timeout=self.DEFAULT_TIMEOUT_S)
 

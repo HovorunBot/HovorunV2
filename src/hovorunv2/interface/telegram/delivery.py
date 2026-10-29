@@ -1,6 +1,5 @@
 """Media delivery service for Telegram interface."""
 
-import html
 import logging
 from collections.abc import Mapping
 from contextlib import suppress
@@ -12,6 +11,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramEntityTooLarge
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, MediaUnion, Message
 
 from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.media import rendering
 from hovorunv2.application.media.downloader import MediaDownloader
 
 logger = logging.getLogger(__name__)
@@ -28,16 +28,11 @@ class DeliveryError(StrEnum):
 class TelegramMediaDelivery:
     """Delivers rich media payloads to Telegram chats."""
 
-    CAPTION_LIMIT = 1024
-    HEADER_TEMPLATE = (
-        "🗣 <b>{tg_user_name}</b> shared a post by <b>{author_name}</b> "
-        '(<a href="{author_url}">@{author_handle}</a>)\n\n'
-    )
-    QUOTE_TEMPLATE = (
-        '<blockquote>🔄 <b>{author_name}</b> (<a href="{author_url}">@{author_handle}</a>)\n{content}</blockquote>\n'
-    )
-    METRICS_TEMPLATE = "{metrics}\n"
-    FOOTER_TEMPLATE = '🔗 <a href="{url}">Open on {platform}</a>'
+    CAPTION_LIMIT = rendering.CAPTION_LIMIT
+    HEADER_TEMPLATE = rendering.HEADER_TEMPLATE
+    QUOTE_TEMPLATE = rendering.QUOTE_TEMPLATE
+    METRICS_TEMPLATE = rendering.METRICS_TEMPLATE
+    FOOTER_TEMPLATE = rendering.FOOTER_TEMPLATE
 
     ERROR_TEXTS: Mapping[DeliveryError, str] = {
         DeliveryError.DOWNLOAD: "⚠️ <i>Failed to download media.</i>",
@@ -81,31 +76,7 @@ class TelegramMediaDelivery:
 
     def build_caption(self, payload: RichMediaPayload, tg_user_name: str, platform_name: str) -> str:
         """Build caption from payload using standardized format."""
-        header = self.HEADER_TEMPLATE.format(
-            tg_user_name=html.escape(tg_user_name),
-            author_name=payload.author_name,
-            author_handle=payload.author_handle,
-            author_url=payload.author_url,
-        )
-
-        content = payload.content + "\n\n" if payload.content else ""
-
-        quote = ""
-        if payload.quoted_payload:
-            quote = self.QUOTE_TEMPLATE.format(
-                author_name=payload.quoted_payload.author_name,
-                author_handle=payload.quoted_payload.author_handle,
-                author_url=payload.quoted_payload.author_url,
-                content=payload.quoted_payload.content,
-            )
-
-        metrics = ""
-        if payload.footer_text and payload.footer_text.strip():
-            metrics = self.METRICS_TEMPLATE.format(metrics=payload.footer_text.strip().replace("\n", " "))
-
-        footer = self.FOOTER_TEMPLATE.format(url=payload.original_url, platform=platform_name)
-
-        return f"{header}{content}{quote}{metrics}{footer}".strip()
+        return rendering.build_caption(payload, tg_user_name, platform_name)
 
     def _build_input_media(
         self, media: str | BufferedInputFile, *, is_video: bool, caption: str | None
@@ -120,25 +91,14 @@ class TelegramMediaDelivery:
         self, message: Message, payload: RichMediaPayload, total_text: str, tg_user_name: str, platform_name: str
     ) -> str:
         """Send long captions separately if needed and return appropriate caption for media."""
-        if len(total_text) <= self.CAPTION_LIMIT:
-            return total_text
-
-        await message.answer(
-            total_text,
-            parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(is_disabled=True),
-        )
-
-        header_text = self.HEADER_TEMPLATE.format(
-            tg_user_name=html.escape(tg_user_name),
-            author_name=payload.author_name,
-            author_handle=payload.author_handle,
-            author_url=payload.author_url,
-        )
-        footer_text = self.FOOTER_TEMPLATE.format(url=payload.original_url, platform=platform_name)
-        caption = f"{header_text}{footer_text}".strip()
-
-        return footer_text if len(caption) > self.CAPTION_LIMIT else caption
+        plan = rendering.plan_caption(payload, tg_user_name, platform_name, total_text)
+        if plan.separate_text is not None:
+            await message.answer(
+                plan.separate_text,
+                parse_mode="HTML",
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+        return plan.caption
 
     async def _send_predownloaded_bytes(
         self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str

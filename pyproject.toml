@@ -38,6 +38,7 @@ dependencies = [
     "celery[redis]>=5.7.0rc1",
     "casbin",
     "psycopg[binary]>=3.3",
+    "requests",
 ]
 
 [project.optional-dependencies]
@@ -81,6 +82,10 @@ exclude = ["alembic"]
 
 [tool.ruff.lint]
 select = ["ALL"]
+# Opt in to nesting and condition-size checks without selecting every preview rule.
+preview = true
+explicit-preview-rules = true
+extend-select = ["PLR0916", "PLR1702"]
 ignore = [
     "D107",
     "D203",
@@ -100,7 +105,14 @@ ignore = [
 ]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 15
+max-complexity = 12
+
+[tool.ruff.lint.pylint]
+max-branches = 10
+max-statements = 50
+max-returns = 6
+max-nested-blocks = 3
+max-bool-expr = 4
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["FBT", "PLR2004"]

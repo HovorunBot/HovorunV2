@@ -2,30 +2,29 @@
 
 import html
 import logging
-from typing import NamedTuple
 
 import aiohttp
 
-from hovorunv2.application.data.languages import ISO_CODE_LEN, LANGUAGES
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.services.translation_providers import BaseTranslationService
+from hovorunv2.application.services.translation_rules import (
+    DEFAULT_TRANSLATION_FLAG,
+    MANDATORY_IGNORED_LANGS,
+    TranslationResult,
+    select_translation,
+    translation_flag,
+)
+
+__all__ = ["TranslationResult", "TranslationService"]
 
 logger = logging.getLogger(__name__)
-
-
-class TranslationResult(NamedTuple):
-    """Result of a translation operation."""
-
-    text: str
-    target_lang: str
-    flag: str
 
 
 class TranslationService:
     """Service to handle text translation using configured providers."""
 
-    MANDATORY_IGNORED_LANGS: tuple[str, ...] = ("und",)
-    DEFAULT_FLAG: str = "🌐"
+    MANDATORY_IGNORED_LANGS: tuple[str, ...] = MANDATORY_IGNORED_LANGS
+    DEFAULT_FLAG: str = DEFAULT_TRANSLATION_FLAG
 
     def __init__(
         self,
@@ -40,16 +39,7 @@ class TranslationService:
 
     def get_flag(self, lang_code: str) -> str:
         """Get flag emoji for a language code."""
-        # Normalize and check centralized data
-        code = lang_code.lower().split("-")[0].split("_")[0]
-        if code in LANGUAGES:
-            return LANGUAGES[code].flag
-
-        # Fallback for regional or missing codes
-        country_code = code.upper()
-        if len(country_code) != ISO_CODE_LEN:
-            return self.DEFAULT_FLAG
-        return "".join(chr(127397 + ord(c)) for c in country_code)
+        return translation_flag(lang_code)
 
     async def translate_if_needed(
         self,
@@ -64,19 +54,9 @@ class TranslationService:
         # Fetch chat settings from language service
         target_lang, ignored_langs = await self._language_service.get_chat_settings(chat_id)
 
-        # Enforce mandatory ignores and include target_lang
-        all_ignored = set(ignored_langs)
-        all_ignored.add(target_lang)
-        for lang in self.MANDATORY_IGNORED_LANGS:
-            all_ignored.add(lang)
-
         actual_session = session or self._session
         result = await self._provider.translate(actual_session, text, target_lang)
-
-        if result and result.source_lang not in all_ignored:
-            return TranslationResult(text=result.text, target_lang=target_lang, flag=self.get_flag(result.source_lang))
-
-        return None
+        return select_translation(result, target_lang, ignored_langs)
 
     async def escape_and_translate(
         self,

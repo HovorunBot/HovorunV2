@@ -4,13 +4,20 @@ import html
 import logging
 from typing import ClassVar
 
-from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
+from hovorunv2.application.clients.base import BaseMediaClient
+from hovorunv2.application.clients.config import ProviderConfig
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.features import TriggerKind
 from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.media.finalization import (
+    QUOTED_MEDIA_NOTE,
+    append_translation,
+    escape_payload_authors,
+    merge_quoted_media,
+    prepare_caption_text,
+)
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.text import clean_caption_text
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +25,7 @@ logger = logging.getLogger(__name__)
 class MediaPipeline:
     """Orchestrates 4-tier media extraction, capture permissions, and payload finalization."""
 
-    QUOTED_MEDIA_NOTE: ClassVar[str] = "\n\nℹ️️ <i>Post includes quoted media</i>"  # noqa: RUF001
+    QUOTED_MEDIA_NOTE: ClassVar[str] = QUOTED_MEDIA_NOTE
 
     def __init__(
         self,
@@ -96,26 +103,16 @@ class MediaPipeline:
         chat_id: int,
     ) -> RichMediaPayload:
         """Escape HTML, translate content if needed, and merge quotes."""
-        payload.author_name = html.escape(payload.author_name)
-        payload.author_handle = html.escape(payload.author_handle)
-        payload.original_url = original_url
+        escape_payload_authors(payload, original_url)
         payload.content = await self._translate_text(payload.content, chat_id, strip_hashtags=config.strip_hashtags)
 
         if quote := payload.quoted_payload:
-            quote.author_name = html.escape(quote.author_name)
-            quote.author_handle = html.escape(quote.author_handle)
             if config.translate_quoted:
                 quote.content = await self._translate_text(quote.content, chat_id)
             else:
                 quote.content = html.escape(quote.content)
 
-            if (
-                quote.media_items
-                and config.merge_quoted_media
-                and (not config.merge_quoted_only_when_empty or not payload.media_items)
-            ):
-                payload.media_items.extend(quote.media_items)
-                payload.content += self.QUOTED_MEDIA_NOTE
+        merge_quoted_media(payload, config)
 
         return payload
 
@@ -127,9 +124,6 @@ class MediaPipeline:
         strip_hashtags: bool = False,
     ) -> str:
         """Clean, HTML-escape, and translate text if needed."""
-        text_to_escape = clean_caption_text(raw_text, strip_hashtags=True) if strip_hashtags else raw_text
-        content = html.escape(text_to_escape)
-        trans_res = await self._translation_service.translate_if_needed(content, chat_id)
-        if trans_res:
-            content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"
-        return content
+        content = prepare_caption_text(raw_text, strip_hashtags=strip_hashtags)
+        translated = await self._translation_service.translate_if_needed(content, chat_id)
+        return append_translation(content, translated)
