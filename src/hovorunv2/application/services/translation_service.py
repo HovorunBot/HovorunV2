@@ -14,6 +14,7 @@ from hovorunv2.application.services.translation_rules import (
     select_translation,
     translation_flag,
 )
+from hovorunv2.application.worker_io import HTTPTransportError
 
 __all__ = ["TranslationResult", "TranslationService"]
 
@@ -48,14 +49,18 @@ class TranslationService:
         session: aiohttp.ClientSession | None = None,
     ) -> TranslationResult | None:
         """Translate text if it's not in ignored languages for the specific chat."""
-        if not text or not text.strip():
+        if not text.strip():
             return None
 
         # Fetch chat settings from language service
         target_lang, ignored_langs = await self._language_service.get_chat_settings(chat_id)
 
         actual_session = session or self._session
-        result = await self._provider.translate(actual_session, text, target_lang)
+        try:
+            result = await self._provider.translate(actual_session, text, target_lang)
+        except HTTPTransportError:
+            logger.info("Translation provider is unavailable")
+            return None
         return select_translation(result, target_lang, ignored_langs)
 
     async def escape_and_translate(

@@ -9,6 +9,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.ports import ChatStore
 from hovorunv2.application.services.native_translation import NativeTranslationService
 from hovorunv2.application.services.translation_rules import parse_google_translation
+from hovorunv2.application.worker_io import HTTPTransportError
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.config import Settings
@@ -63,4 +64,5 @@ async def test_native_translation_preserves_defaults_empty_ignores_and_fresh_set
 @pytest.mark.parametrize("response", [None, {}, [], [[], None, "fr"], [[["text"]], None, {}]])
 def test_shared_translation_parser_rejects_malformed_external_responses(response: object) -> None:
     """Malformed provider data cannot create a display translation or leak through an exception."""
-    assert parse_google_translation(response) is None
+    with pytest.raises(HTTPTransportError):
+        parse_google_translation(response)

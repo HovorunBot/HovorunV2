@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **translation**: separate provider failure from display policy
 - **media**: flatten semantic strategy recovery and finalization
 - **media**: require usable extraction and download results
 - **providers**: separate browser quote and media eligibility

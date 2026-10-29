@@ -3,11 +3,11 @@
 import html
 from typing import NamedTuple
 
-from hovorunv2.application.data.languages import ISO_CODE_LEN, LANGUAGES
+from hovorunv2.application.data.languages import ISO_CODE_LEN, LANGUAGES, REGIONAL_INDICATOR_OFFSET
+from hovorunv2.application.worker_io import HTTPFailure, HTTPTransportError
 
 GOOGLE_TRANSLATION_URL = "https://translate.googleapis.com/translate_a/single"
 SOURCE_LANGUAGE_INDEX = 2
-REGIONAL_INDICATOR_OFFSET = 127397
 MANDATORY_IGNORED_LANGS = ("und",)
 DEFAULT_TRANSLATION_FLAG = "🌐"
 
@@ -39,16 +39,16 @@ def google_translation_params(text: str, target_lang: str) -> dict[str, str]:
     }
 
 
-def parse_google_translation(data: object) -> TranslationRawResult | None:
-    """Reject malformed provider replies without exposing text or transport exceptions."""
+def parse_google_translation(data: object) -> TranslationRawResult:
+    """Require usable translated segments or a safe malformed-response failure."""
     if not isinstance(data, list) or len(data) <= SOURCE_LANGUAGE_INDEX:
-        return None
+        raise HTTPTransportError(HTTPFailure.MALFORMED)
     source = data[SOURCE_LANGUAGE_INDEX]
     if source is None or source == "":
         source = "und"
     sentences = data[0]
     if not isinstance(source, str) or not isinstance(sentences, list) or not sentences:
-        return None
+        raise HTTPTransportError(HTTPFailure.MALFORMED)
     # Normalize common aliases back to canonical form
     source = {"iw": "he", "ji": "yi"}.get(source, source)
     text = "".join(
@@ -56,6 +56,8 @@ def parse_google_translation(data: object) -> TranslationRawResult | None:
         for sentence in sentences
         if isinstance(sentence, list) and sentence and isinstance(sentence[0], str)
     )
+    if not text.strip():
+        raise HTTPTransportError(HTTPFailure.MALFORMED)
     return TranslationRawResult(text, source)
 
 
@@ -73,11 +75,11 @@ def translation_flag(lang_code: str) -> str:
 
 
 def select_translation(
-    result: TranslationRawResult | None, target_lang: str, ignored_langs: tuple[str, ...] | list[str]
+    result: TranslationRawResult, target_lang: str, ignored_langs: tuple[str, ...] | list[str]
 ) -> TranslationResult | None:
     """Apply identical ignored-source and mandatory-undetermined-language rules in both runtimes."""
     # Enforce mandatory ignores and include target_lang
     ignored = {*ignored_langs, target_lang, *MANDATORY_IGNORED_LANGS}
-    if result is None or result.source_lang in ignored:
+    if result.source_lang in ignored:
         return None
     return TranslationResult(result.text, target_lang, translation_flag(result.source_lang))

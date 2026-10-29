@@ -1,6 +1,5 @@
 """Translation service implementations."""
 
-import logging
 from abc import ABC, abstractmethod
 from http import HTTPStatus
 from typing import Final
@@ -13,10 +12,9 @@ from hovorunv2.application.services.translation_rules import (
     google_translation_params,
     parse_google_translation,
 )
+from hovorunv2.application.worker_io import HTTPFailure, HTTPTransportError
 
 __all__ = ["BaseTranslationService", "GoogleTranslationService", "TranslationRawResult"]
-
-logger = logging.getLogger(__name__)
 
 
 class BaseTranslationService(ABC):
@@ -28,8 +26,8 @@ class BaseTranslationService(ABC):
         session: aiohttp.ClientSession,
         text: str,
         target_lang: str,
-    ) -> TranslationRawResult | None:
-        """Translate text to the target language."""
+    ) -> TranslationRawResult:
+        """Return required provider facts; unusable responses or I/O raise HTTPTransportError."""
 
 
 class GoogleTranslationService(BaseTranslationService):
@@ -47,19 +45,23 @@ class GoogleTranslationService(BaseTranslationService):
         session: aiohttp.ClientSession,
         text: str,
         target_lang: str,
-    ) -> TranslationRawResult | None:
-        """Translate text using Google Translate API."""
+    ) -> TranslationRawResult:
+        """Require usable Google translation data without exposing private response diagnostics."""
         params = google_translation_params(text, target_lang)
 
         try:
-            async with session.get(self.API_URL, params=params) as resp:
-                if resp.status != HTTPStatus.OK:
-                    logger.error("Google Translate returned status %d", resp.status)
-                    return None
+            async with session.get(self.API_URL, params=params) as response:
+                return await self._read_response(response)
+        except HTTPTransportError:
+            raise
+        except aiohttp.ClientError, OSError:
+            raise HTTPTransportError from None
 
-                data = await resp.json(content_type=None)
-                return parse_google_translation(data)
-        except Exception:
-            logger.exception("Google Translation API call failed")
-
-        return None
+    async def _read_response(self, response: aiohttp.ClientResponse) -> TranslationRawResult:
+        if response.status != HTTPStatus.OK:
+            raise HTTPTransportError(HTTPFailure.REJECTED)
+        try:
+            data = await response.json(content_type=None)
+        except ValueError:
+            raise HTTPTransportError(HTTPFailure.MALFORMED) from None
+        return parse_google_translation(data)

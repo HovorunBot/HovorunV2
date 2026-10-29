@@ -42,16 +42,20 @@ class NativeTranslationService:
         """Read preferences for each operation and keep provider failures independent of media delivery."""
         if not text.strip():
             return None
-        preferences = self._preferences.chat_translation_settings(chat_id)
-        target = preferences[0] if preferences is not None else None
-        ignored = preferences[1] if preferences is not None else None
-        target = target or self._settings.translation_target_lang
-        ignored = tuple(self._settings.translation_ignored_langs) if ignored is None else ignored
+        target, ignored = self._current_languages(chat_id)
         try:
-            raw = self._http.get_json(self._api_url, params=google_translation_params(text, target))
+            raw = self._http.read_json(self._api_url, params=google_translation_params(text, target))
+            result = parse_google_translation(raw)
         except HTTPTransportError:
             return None
-        return select_translation(parse_google_translation(raw), target, ignored)
+        return select_translation(result, target, ignored)
+
+    def _current_languages(self, chat_id: int) -> tuple[str, tuple[str, ...]]:
+        preferences = self._preferences.chat_translation_settings(chat_id)
+        target, ignored = preferences if preferences is not None else (None, None)
+        target = target or self._settings.translation_target_lang
+        ignored = tuple(self._settings.translation_ignored_langs) if ignored is None else ignored
+        return target, ignored
 
     def escape_and_translate(self, raw_text: str, chat_id: int) -> str:
         """Escape raw captions and append the shared translation display block."""
