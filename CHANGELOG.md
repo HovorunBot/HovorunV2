@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **queue**: make admission the lifecycle owner
 - **browser**: rank Unix browser installation targets
 - **workers**: add native persistence and Celery foundations
 - **database**: migrate persistence to PostgreSQL

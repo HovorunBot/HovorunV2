@@ -14,11 +14,15 @@ from aioresponses import aioresponses
 from celery import Celery
 from dishka import AsyncContainer
 
+from hovorunv2.application.admission import AdmissionLimits
+from hovorunv2.application.budgets import RuntimeNamespace
 from hovorunv2.application.feature_jobs import EnqueueState, JobEnvelope, JobOutcome, JobStatus, JobTarget, PayloadState
 from hovorunv2.application.features import TriggerKind
 from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.usage import UsageSafetyCaps
 from hovorunv2.domain.enums import TargetKind
+from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
 from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue, FeatureWorkerBridge
@@ -49,6 +53,25 @@ def job_envelope(reference: str, clock: ManualClock, *, job_id: str = "feature-j
     }
     values.update(changes)
     return JobEnvelope.model_validate(values)
+
+
+async def admit_test_job(
+    settings: Settings, cache: CacheService, namespace: RuntimeNamespace, clock: ManualClock, envelope: JobEnvelope
+) -> None:
+    """Accept real counted ciphertext before exercising the publication boundary."""
+    payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
+    raw = await cache.get(namespace.value + "payload:" + envelope.payload_ref)
+    if raw is None:
+        sealed = await payloads.seal(envelope.job_id, PRIVATE_BODY, envelope.deadline)
+        sealed = replace(sealed, reference=envelope.payload_ref)
+    else:
+        blob = json.dumps(raw, separators=(",", ":"))
+        from_payload = await payloads.seal(envelope.job_id, PRIVATE_BODY, envelope.deadline)
+        sealed = replace(from_payload, reference=envelope.payload_ref, blob=blob, byte_size=len(blob.encode()))
+    result = await ValkeyAdmissionStore(cache, namespace).admit(
+        envelope, sealed, AdmissionLimits(10, 10, UsageSafetyCaps()), clock.now()
+    )
+    assert result.ticket is not None
 
 
 class HTTPExecutor:
@@ -144,6 +167,7 @@ async def test_real_celery_messages_are_private_and_duplicate_execution_is_block
             sealed = await payloads.seal("feature-job", PRIVATE_BODY, clock.now() + 300)
             await payloads.put(sealed)
             envelope = job_envelope(sealed.reference, clock)
+            await admit_test_job(settings, cache, namespace, clock, envelope)
             publications = await asyncio.gather(*(queue.enqueue(envelope) for _ in range(8)))
             assert publications.count(EnqueueState.ENQUEUED) == 1
             assert publications.count(EnqueueState.EXISTS) == 7

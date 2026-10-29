@@ -11,7 +11,8 @@ from celery import Celery
 from kombu.exceptions import OperationalError
 from redis.exceptions import RedisError
 
-from hovorunv2.application.budgets import RUNTIME_RETENTION_SECONDS, TECHNICAL_ID, Clock, RuntimeNamespace
+from hovorunv2.application.admission import JobStage, TicketState
+from hovorunv2.application.budgets import RUNTIME_RETENTION_SECONDS, Clock, RuntimeNamespace
 from hovorunv2.application.feature_jobs import (
     FEATURE_JOB_FUNCTION,
     EnqueueState,
@@ -23,16 +24,19 @@ from hovorunv2.application.feature_jobs import (
 )
 from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.usage import UsageSafetyCaps
-from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_queue_scripts import (
-    CANCEL_FEATURE,
-    CLAIM_FEATURE,
-    FINISH_FEATURE,
-    REGISTER_FEATURE,
+from hovorunv2.infrastructure.admission import admission_ticket_key, parse_ticket
+from hovorunv2.infrastructure.admission_scripts import (
+    CANCEL_WORK,
+    CLAIM_STAGE,
+    REGISTER_PUBLICATION,
+    SET_PUBLISHED,
+    TRANSITION_WORK,
 )
+from hovorunv2.infrastructure.config import Settings
 
 BROKER_VISIBILITY_SECONDS = 2 * RUNTIME_RETENTION_SECONDS
 BROKER_SOCKET_SECONDS = 2
+MISSING_ADMISSION = -2
 
 
 def _envelope_json(envelope: JobEnvelope) -> str:
@@ -50,7 +54,7 @@ class CeleryFeatureQueue(FeatureQueuePort):
     def __init__(self, settings: Settings, clock: Clock, namespace: RuntimeNamespace, safety: UsageSafetyCaps) -> None:
         self._clock = clock
         self._safety = safety
-        self._prefix = namespace.value + "feature-job:"
+        self._prefix = namespace.value + "admission:"
         self._client = redis.from_url(settings.valkey_url, decode_responses=True)
         self._queue_name = namespace.value + "features"
         self._app = Celery("hovorun_features", broker=settings.valkey_url)
@@ -75,6 +79,9 @@ class CeleryFeatureQueue(FeatureQueuePort):
             },
         )
 
+    def _key(self, job_id: str) -> str:
+        return admission_ticket_key(self._prefix, job_id)
+
     async def enqueue(self, envelope: JobEnvelope, *, not_before: float = 0) -> EnqueueState:
         """Retry uncertain publication with original metadata; the consumer claim blocks duplicate execution."""
         now = self._clock.now()
@@ -86,23 +93,26 @@ class CeleryFeatureQueue(FeatureQueuePort):
         key = self._key(envelope.job_id)
         try:
             registered = await self._client.execute_command(
-                "EVAL", REGISTER_FEATURE, 1, key, _envelope_json(envelope), repr(not_before)
+                "EVAL", REGISTER_PUBLICATION, 1, key, _envelope_json(envelope), repr(not_before)
             )
-            if registered == -1:
+            code = registered[0]
+            if code == MISSING_ADMISSION:
+                return EnqueueState.UNAVAILABLE
+            if code == -1:
                 msg = "Feature job ID conflicts with another envelope."
                 raise ValueError(msg)
-            if registered == 0:
+            if code == 0:
                 return EnqueueState.EXISTS
-            # Read the original schedule, not a retry's potentially changed scheduling request.
-            original_schedule = await self._client.execute_command("HGET", key, "not_before")
-            if original_schedule is None:
-                return EnqueueState.UNAVAILABLE
-            if not await asyncio.to_thread(self._publish, envelope, float(original_schedule)):
+            ticket_data = json.loads(registered[1])
+            schedule = float(ticket_data.get("not_before", 0))
+            if not await asyncio.to_thread(self._publish, envelope, schedule):
                 return EnqueueState.EXPIRED
-            await self._client.execute_command("HSET", key, "published", "1")
+            await self._client.execute_command(
+                "EVAL", SET_PUBLISHED, 1, key, ticket_data["stage"], ticket_data["attempt"]
+            )
         except RedisError, OperationalError, OSError:
             return EnqueueState.UNAVAILABLE
-        return EnqueueState.ENQUEUED if registered == 1 else EnqueueState.EXISTS
+        return EnqueueState.ENQUEUED if code == 1 else EnqueueState.EXISTS
 
     def _publish(self, envelope: JobEnvelope, not_before: float) -> bool:
         """Run synchronous broker I/O only through to_thread; never share async resources with that thread."""
@@ -128,55 +138,81 @@ class CeleryFeatureQueue(FeatureQueuePort):
 
     async def inspect(self, job_id: str) -> QueuedFeature | None:
         """Read application facts; Celery PENDING cannot distinguish unknown, queued and lost jobs."""
-        record = await self._client.execute_command("HGETALL", self._key(job_id))
-        if not record:
+        raw = await self._client.execute_command("GET", self._key(job_id))
+        if not raw:
             return None
+        ticket = parse_ticket(raw)
+        status_map = {
+            TicketState.ACCEPTED: JobStatus.PENDING,
+            TicketState.ENQUEUED: JobStatus.PENDING,
+            TicketState.RUNNING: JobStatus.RUNNING,
+            TicketState.CANCELLING: JobStatus.CANCELLING,
+            TicketState.TERMINAL: JobStatus.TERMINAL,
+        }
         return QueuedFeature(
-            JobEnvelope.model_validate_json(record["envelope"]),
-            JobStatus(record["state"]),
-            JobOutcome(record["outcome"]) if "outcome" in record else None,
+            ticket.envelope,
+            status_map.get(ticket.state, JobStatus.TERMINAL),
+            ticket.outcome,
         )
 
-    async def claim(self, envelope: JobEnvelope) -> str | None:
+    async def claim(self, envelope: JobEnvelope, stage: JobStage = JobStage.MEDIA) -> str | None:
         """Acquire one execution owner; duplicates, missing state, cancellation and expiry cannot execute."""
         token = secrets.token_hex(16)
-        claimed = await self._client.execute_command(
+        result = await self._client.execute_command(
             "EVAL",
-            CLAIM_FEATURE,
-            1,
+            CLAIM_STAGE,
+            4,
             self._key(envelope.job_id),
-            _envelope_json(envelope),
+            self._prefix + "totals",
+            self._prefix + "handoff",
+            self._prefix + "pending",
+            stage.value,
             repr(self._clock.now()),
-            repr(envelope.deadline),
             token,
             RUNTIME_RETENTION_SECONDS,
+            _envelope_json(envelope),
         )
-        return token if claimed == 1 else None
+        if not isinstance(result, list) or not result:
+            return None
+        code = result[1] if len(result) > 1 else ""
+        return token if code == "claimed" else None
 
     async def finish(self, job_id: str, token: str, outcome: JobOutcome) -> bool:
         """Only the actual execution owner may record a safe outcome; never settle admission or budgets here."""
         if not isinstance(outcome, JobOutcome):
             msg = "Feature completion requires a safe typed outcome."
             raise TypeError(msg)
-        return (
-            await self._client.execute_command(
-                "EVAL", FINISH_FEATURE, 1, self._key(job_id), token, outcome.value, RUNTIME_RETENTION_SECONDS
-            )
-            == 1
+        result = await self._client.execute_command(
+            "EVAL",
+            TRANSITION_WORK,
+            4,
+            self._key(job_id),
+            self._prefix + "totals",
+            self._prefix + "handoff",
+            self._prefix + "pending",
+            TicketState.TERMINAL.value,
+            outcome.value,
+            RUNTIME_RETENTION_SECONDS,
+            token,
         )
+        if not isinstance(result, list) or not result:
+            return False
+        code = result[0]
+        return code not in {"wrong_owner", "conflict", "unavailable"}
 
     async def cancel(self, job_id: str) -> bool:
         """Tombstone queued work atomically; running work retains its claim pending cooperative cancellation."""
-        return (
-            await self._client.execute_command("EVAL", CANCEL_FEATURE, 1, self._key(job_id), RUNTIME_RETENTION_SECONDS)
-            == 1
+        result = await self._client.execute_command(
+            "EVAL",
+            CANCEL_WORK,
+            4,
+            self._key(job_id),
+            self._prefix + "totals",
+            self._prefix + "handoff",
+            self._prefix + "pending",
+            RUNTIME_RETENTION_SECONDS,
         )
-
-    def _key(self, job_id: str) -> str:
-        if TECHNICAL_ID.fullmatch(job_id) is None:
-            msg = "Invalid feature job identity."
-            raise ValueError(msg)
-        return self._prefix + job_id
+        return bool(result and result[0] == 1)
 
     async def close(self) -> None:
         """Close owned clients without starting a worker or touching other queues."""

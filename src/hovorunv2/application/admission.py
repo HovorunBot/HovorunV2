@@ -14,9 +14,9 @@ DEFAULT_INGRESS_PENDING = 10
 RECOVERY_PAGE_LIMIT = 100
 
 
-def incoming_action_key(feature: str, chat_id: int, actor_id: int, message_id: int, trigger: TriggerKind) -> str:
+def incoming_action_key(feature: str, chat_id: int, actor_id: int | None, message_id: int, trigger: TriggerKind) -> str:
     """Hash stable incoming action metadata, never URL/message contents or current processing time."""
-    identity = ["telegram", chat_id, actor_id, message_id, trigger.value, feature]
+    identity = ["telegram", chat_id, actor_id or 0, message_id, trigger.value, feature]
     return hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -25,7 +25,16 @@ class TicketState(StrEnum):
 
     ACCEPTED = "accepted"
     ENQUEUED = "enqueued"
+    RUNNING = "running"
+    CANCELLING = "cancelling"
     TERMINAL = "terminal"
+
+
+class JobStage(StrEnum):
+    """Execution stages for multi-stage feature processing."""
+
+    MEDIA = "media"
+    BROWSER = "browser"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +44,9 @@ class AdmissionTicket:
     envelope: JobEnvelope
     state: TicketState
     byte_size: int
+    stage: JobStage = JobStage.MEDIA
+    token: str | None = None
+    attempt: int = 0
     outcome: JobOutcome | None = None
 
 
@@ -91,11 +103,23 @@ class AdmissionPort(Protocol):
         """Read operational ticket metadata only."""
         ...
 
-    async def mark_enqueued(self, job_id: str) -> AdmissionTicket | None:
+    async def mark_enqueued(self, job_id: str, stage: JobStage, attempt: int) -> AdmissionTicket | None:
         """CAS accepted to enqueued after an idempotent queue operation."""
         ...
 
-    async def finish(self, job_id: str, outcome: JobOutcome) -> AdmissionTicket | None:
+    async def claim_stage(self, job_id: str, stage: JobStage, now: float, token: str) -> AdmissionTicket | None:
+        """Acquire exclusive stage execution owner; wrong stage, expired deadline or another owner cannot claim."""
+        ...
+
+    async def handoff_stage(self, job_id: str, token: str, next_stage: JobStage) -> AdmissionTicket | None:
+        """Hand off the running stage without releasing capacity or renewing its deadline."""
+        ...
+
+    async def cancel(self, job_id: str) -> bool:
+        """Tombstone queued work atomically; running work transitions to cancelling."""
+        ...
+
+    async def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
         """Release pending capacity and encrypted payload once after verified terminal execution."""
         ...
 

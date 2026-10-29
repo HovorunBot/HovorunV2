@@ -43,8 +43,8 @@ class JobEnvelope(BaseModel):
     payload_ref: str = Field(pattern=r"^[a-f0-9]{32}$")
     feature: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,96}$")
     target: JobTarget
-    actor_id: int = Field(gt=0, lt=1 << 63)
-    actor_generation: int = Field(gt=0)
+    actor_id: int | None = Field(default=None, gt=0, lt=1 << 63)
+    actor_generation: int | None = Field(default=None, gt=0)
     trigger: TriggerKind
     charged_kind: TargetKind
     charged_telegram_id: int
@@ -65,9 +65,17 @@ class JobEnvelope(BaseModel):
                 self.target.kind == TargetKind.GROUP
                 and self.charged_kind == TargetKind.GROUP
                 and self.charged_telegram_id == self.target.telegram_id
+                and ((self.actor_id is None) == (self.actor_generation is None))
             )
         else:
-            valid = self.charged_kind == TargetKind.USER and self.charged_telegram_id == self.actor_id
+            valid = (
+                self.actor_id is not None
+                and self.actor_id > 0
+                and self.actor_generation is not None
+                and self.actor_generation > 0
+                and self.charged_kind == TargetKind.USER
+                and self.charged_telegram_id == self.actor_id
+            )
         if self.target.kind == TargetKind.USER:
             valid = valid and self.target.telegram_id == self.actor_id
         if not valid:
@@ -113,12 +121,15 @@ class LoadedPayload:
 
     state: PayloadState
     data: bytes | None = None
+    sender_label: str | None = None
 
 
 class PayloadPort(Protocol):
     """Encrypt before admission; store/read opaque payloads with bounded retention."""
 
-    async def seal(self, job_id: str, data: bytes, deadline: float) -> SealedPayload:
+    async def seal(
+        self, job_id: str, data: bytes, deadline: float, *, sender_label: str | None = None
+    ) -> SealedPayload:
         """Prepare ciphertext without persisting a plaintext or uncounted payload."""
         ...
 

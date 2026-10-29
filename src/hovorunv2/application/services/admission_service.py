@@ -12,10 +12,11 @@ from hovorunv2.application.admission import (
 )
 from hovorunv2.application.budgets import Clock
 from hovorunv2.application.feature_jobs import EnqueueState, FeatureQueuePort, JobEnvelope, SealedPayload
+from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.usage_policy_service import UsagePolicyService
-from hovorunv2.domain.enums import TargetKind
+from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, SPLIT_TO_PROVIDER_COMMAND, CommandName, TargetKind
 
 
 class AdmissionService:
@@ -40,12 +41,21 @@ class AdmissionService:
         self._clock = clock
 
     async def _current(self, envelope: JobEnvelope) -> bool:
-        user = await self._users.get_by_telegram_id(envelope.actor_id)
-        if user is None or user.generation != envelope.actor_generation:
+        user = None
+        if envelope.actor_id is not None:
+            user = await self._users.get_by_telegram_id(envelope.actor_id)
+            if user is None or user.generation != envelope.actor_generation:
+                return False
+        elif envelope.trigger != TriggerKind.AUTOMATIC:
             return False
         target = envelope.target
         if target.kind == TargetKind.USER:
-            return target.entity_id == user.id and target.generation == user.generation
+            return (
+                user is not None
+                and envelope.actor_id is not None
+                and target.entity_id == user.id
+                and target.generation == user.generation
+            )
         chat = await self._chats.get_chat(target.telegram_id)
         return (
             chat is not None
@@ -65,17 +75,46 @@ class AdmissionService:
         )
         if envelope.dedupe_key != expected or not await self._current(envelope):
             return AdmissionResult(AdmissionState.DENIED)
-        decision = await self._features.evaluate(
-            envelope.feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
-        )
-        if not decision.allowed:
-            return AdmissionResult(AdmissionState.DENIED)
-        usage = await self._policies.resolve(
-            envelope.feature,
-            envelope.trigger,
-            envelope.actor_id,
-            group_id=envelope.target.telegram_id if envelope.target.kind == TargetKind.GROUP else None,
-        )
+
+        provider: CommandName | None = None
+        try:
+            cmd = CommandName(envelope.feature)
+            if cmd in PROVIDER_SPLIT_COMMANDS:
+                provider = cmd
+            elif cmd in SPLIT_TO_PROVIDER_COMMAND:
+                provider = SPLIT_TO_PROVIDER_COMMAND[cmd]
+        except ValueError:
+            provider = None
+
+        if provider is not None:
+            video_feature = FEATURE_REGISTRY.capture(provider, is_video=True).key
+            post_feature = FEATURE_REGISTRY.capture(provider, is_video=False).key
+            video_allowed = (
+                await self._features.evaluate(
+                    video_feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
+                )
+            ).allowed
+            post_allowed = (
+                await self._features.evaluate(
+                    post_feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
+                )
+            ).allowed
+            if not (video_allowed or post_allowed):
+                return AdmissionResult(AdmissionState.DENIED)
+        else:
+            decision = await self._features.evaluate(
+                envelope.feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
+            )
+            if not decision.allowed:
+                return AdmissionResult(AdmissionState.DENIED)
+
+        group_id = envelope.target.telegram_id if envelope.target.kind == TargetKind.GROUP else None
+        if provider is not None:
+            usage = await self._policies.resolve_media(provider, envelope.trigger, envelope.actor_id, group_id=group_id)
+        else:
+            usage = await self._policies.resolve(
+                envelope.feature, envelope.trigger, envelope.actor_id, group_id=group_id
+            )
         if usage.subject.kind != envelope.charged_kind or usage.subject.telegram_id != envelope.charged_telegram_id:
             return AdmissionResult(AdmissionState.DENIED)
         pending = min(policy.pending for policy in usage.policies)
@@ -97,7 +136,7 @@ class AdmissionService:
         if enqueued in {EnqueueState.UNAVAILABLE, EnqueueState.EXPIRED}:
             state = AdmissionState.UNAVAILABLE if enqueued == EnqueueState.UNAVAILABLE else AdmissionState.EXPIRED
             return AdmissionResult(state, ticket)
-        acknowledged = await self._admission.mark_enqueued(job_id)
+        acknowledged = await self._admission.mark_enqueued(job_id, ticket.stage, ticket.attempt)
         if acknowledged is None:
             return AdmissionResult(AdmissionState.UNAVAILABLE, ticket)
         state = AdmissionState.TERMINAL if acknowledged.state == TicketState.TERMINAL else AdmissionState.ENQUEUED

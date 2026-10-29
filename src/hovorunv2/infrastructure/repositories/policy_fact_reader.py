@@ -268,7 +268,7 @@ class PolicyFactReader:
         )
 
     def usage_subject(
-        self, actor_id: int, group_id: int | None, trigger: TriggerKind
+        self, actor_id: int | None, group_id: int | None, trigger: TriggerKind
     ) -> tuple[UsageSubject, bool, bool]:
         """Resolve charged identity separately from the execution target and optional actor."""
         if trigger == TriggerKind.AUTOMATIC:
@@ -277,6 +277,9 @@ class PolicyFactReader:
                 msg = "Automatic usage requires an active canonical group."
                 raise ValueError(msg)
             return UsageSubject(TargetKind.GROUP, chat.chat_id, chat.id, chat.generation), False, False
+        if actor_id is None or actor_id <= 0:
+            msg = "Direct usage requires an active user."
+            raise ValueError(msg)
         user = self.session.scalar(active_user(actor_id))
         if user is None:
             msg = "Direct usage requires an active user."

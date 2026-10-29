@@ -86,7 +86,7 @@ class WorkerPolicyStore:
         self,
         feature: str,
         trigger: TriggerKind,
-        actor_id: int,
+        actor_id: int | None = None,
         *,
         group_id: int | None = None,
         unit: UsageUnit = UsageUnit.REQUESTS,
