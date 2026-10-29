@@ -112,7 +112,7 @@ async def test_parallel_global_ciphertext_bytes_and_overflow_preserve_accepted_j
         assert len(await store.recoverable(clock.now())) == 2
         client = redis.from_url(settings.valkey_url)
         try:
-            totals = await client.hgetall(namespace.value + "admission:totals")
+            totals = await client.execute_command("HGETALL", namespace.value + "admission:totals")
             assert int(totals[b"count"]) == 2
             assert int(totals[b"bytes"]) == 2 * size
             for (envelope, _sealed), result in zip(entries, results, strict=True):
@@ -241,6 +241,20 @@ async def test_application_admission_rechecks_actor_target_access_and_original_d
             assert (
                 await service.admit(envelope.model_copy(update={"dedupe_key": "b" * 64}), sealed)
             ).state == AdmissionState.DENIED
+            for target in (
+                envelope.target.model_copy(update={"entity_id": user.entity_id + 1}),
+                envelope.target.model_copy(update={"generation": user.generation + 1}),
+            ):
+                assert (
+                    await service.admit(envelope.model_copy(update={"target": target}), sealed)
+                ).state == AdmissionState.DENIED
+            for charge in (
+                {"charged_kind": TargetKind.GROUP},
+                {"charged_telegram_id": USER + 1},
+            ):
+                assert (await service.admit(envelope.model_copy(update=charge), sealed)).state == AdmissionState.DENIED
+            assert await store.get(envelope.job_id) is None
+            assert not await store.recoverable(clock.now())
             assert (await service.admit(envelope, sealed)).state == AdmissionState.ACCEPTED
             assert (await service.admit(envelope, sealed)).state == AdmissionState.DUPLICATE
             await users.set_trust(USER, is_trusted=False, actor=ActorContext.cli())

@@ -11,11 +11,12 @@ from hovorunv2.application.admission import (
     incoming_action_key,
 )
 from hovorunv2.application.budgets import Clock
-from hovorunv2.application.feature_jobs import EnqueueState, FeatureQueuePort, JobEnvelope, SealedPayload
+from hovorunv2.application.feature_jobs import EnqueueState, FeatureQueuePort, JobEnvelope, JobTarget, SealedPayload
 from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.usage_policy_service import UsagePolicyService
+from hovorunv2.application.usage import ResolvedUsage
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, SPLIT_TO_PROVIDER_COMMAND, CommandName, TargetKind
 
 
@@ -50,20 +51,18 @@ class AdmissionService:
             return False
         target = envelope.target
         if target.kind == TargetKind.USER:
-            return (
-                user is not None
-                and envelope.actor_id is not None
-                and target.entity_id == user.id
-                and target.generation == user.generation
-            )
+            if user is None or envelope.actor_id is None:
+                return False
+            return target.entity_id == user.id and target.generation == user.generation
+        return await self._current_group(target)
+
+    async def _current_group(self, target: JobTarget) -> bool:
         chat = await self._chats.get_chat(target.telegram_id)
-        return (
-            chat is not None
-            and chat.id == target.entity_id
-            and chat.generation == target.generation
-            and chat.chat_id == target.telegram_id
-            and chat.chat_type in {"group", "supergroup"}
-        )
+        if chat is None:
+            return False
+        if chat.id != target.entity_id or chat.generation != target.generation:
+            return False
+        return chat.chat_id == target.telegram_id and chat.chat_type in {"group", "supergroup"}
 
     async def admit(self, envelope: JobEnvelope, payload: SealedPayload) -> AdmissionResult:
         """Resolve permissions and policy before accepting; dedupe never depends on payload contents."""
@@ -73,54 +72,57 @@ class AdmissionService:
         expected = incoming_action_key(
             envelope.feature, envelope.target.telegram_id, envelope.actor_id, envelope.message_id, envelope.trigger
         )
-        if envelope.dedupe_key != expected or not await self._current(envelope):
+        if envelope.dedupe_key != expected:
+            return AdmissionResult(AdmissionState.DENIED)
+        if not await self._current(envelope):
             return AdmissionResult(AdmissionState.DENIED)
 
-        provider: CommandName | None = None
-        try:
-            cmd = CommandName(envelope.feature)
-            if cmd in PROVIDER_SPLIT_COMMANDS:
-                provider = cmd
-            elif cmd in SPLIT_TO_PROVIDER_COMMAND:
-                provider = SPLIT_TO_PROVIDER_COMMAND[cmd]
-        except ValueError:
-            provider = None
+        provider = self._resolve_provider(envelope.feature)
+        if not await self._capture_allowed(envelope, provider):
+            return AdmissionResult(AdmissionState.DENIED)
 
-        if provider is not None:
-            video_feature = FEATURE_REGISTRY.capture(provider, is_video=True).key
-            post_feature = FEATURE_REGISTRY.capture(provider, is_video=False).key
-            video_allowed = (
-                await self._features.evaluate(
-                    video_feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
-                )
-            ).allowed
-            post_allowed = (
-                await self._features.evaluate(
-                    post_feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
-                )
-            ).allowed
-            if not (video_allowed or post_allowed):
-                return AdmissionResult(AdmissionState.DENIED)
-        else:
-            decision = await self._features.evaluate(
-                envelope.feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
-            )
-            if not decision.allowed:
-                return AdmissionResult(AdmissionState.DENIED)
-
-        group_id = envelope.target.telegram_id if envelope.target.kind == TargetKind.GROUP else None
-        if provider is not None:
-            usage = await self._policies.resolve_media(provider, envelope.trigger, envelope.actor_id, group_id=group_id)
-        else:
-            usage = await self._policies.resolve(
-                envelope.feature, envelope.trigger, envelope.actor_id, group_id=group_id
-            )
+        usage = await self._resolve_usage(envelope, provider)
         if usage.subject.kind != envelope.charged_kind or usage.subject.telegram_id != envelope.charged_telegram_id:
             return AdmissionResult(AdmissionState.DENIED)
         pending = min(policy.pending for policy in usage.policies)
         return await self._admission.admit(
             envelope, payload, AdmissionLimits(pending, min(DEFAULT_INGRESS_PENDING, pending), usage.safety), now
         )
+
+    def _resolve_provider(self, feature: str) -> CommandName | None:
+        try:
+            command = CommandName(feature)
+        except ValueError:
+            return None
+        if command in PROVIDER_SPLIT_COMMANDS:
+            return command
+        return SPLIT_TO_PROVIDER_COMMAND.get(command)
+
+    async def _capture_allowed(self, envelope: JobEnvelope, provider: CommandName | None) -> bool:
+        if provider is None:
+            decision = await self._features.evaluate(
+                envelope.feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
+            )
+            return decision.allowed
+        video_feature = FEATURE_REGISTRY.capture(provider, is_video=True).key
+        post_feature = FEATURE_REGISTRY.capture(provider, is_video=False).key
+        video_allowed = (
+            await self._features.evaluate(
+                video_feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
+            )
+        ).allowed
+        post_allowed = (
+            await self._features.evaluate(
+                post_feature, envelope.target.telegram_id, envelope.actor_id, trigger=envelope.trigger
+            )
+        ).allowed
+        return video_allowed or post_allowed
+
+    async def _resolve_usage(self, envelope: JobEnvelope, provider: CommandName | None) -> ResolvedUsage:
+        group_id = envelope.target.telegram_id if envelope.target.kind == TargetKind.GROUP else None
+        if provider is not None:
+            return await self._policies.resolve_media(provider, envelope.trigger, envelope.actor_id, group_id=group_id)
+        return await self._policies.resolve(envelope.feature, envelope.trigger, envelope.actor_id, group_id=group_id)
 
     async def handoff(self, job_id: str) -> AdmissionResult:
         """Keep accepted capacity on failure; retry after either side of an enqueue/acknowledgement crash."""

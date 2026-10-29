@@ -57,7 +57,7 @@ async def test_duplicate_claim_at_deadline_keeps_running_owner_and_capacity(test
         assert ticket.state == TicketState.RUNNING
         assert ticket.token == owner
         async with async_redis.from_url(settings.valkey_url) as client:
-            totals = await client.hgetall(namespace.value + "admission:totals")
+            totals = await client.execute_command("HGETALL", namespace.value + "admission:totals")
             assert int(totals[b"count"]) == 1
             assert int(totals[b"bytes"]) == sealed.byte_size
             assert await client.exists(namespace.value + "payload:" + sealed.reference)
@@ -105,7 +105,7 @@ async def test_browser_handoff_is_recoverable_and_fences_previous_owner(test_con
             assert browser.envelope == envelope
             assert await store.finish(envelope.job_id, JobOutcome.COMPLETE, token=media_owner) is None
             async with async_redis.from_url(settings.valkey_url) as inspector:
-                totals = await inspector.hgetall(namespace.value + "admission:totals")
+                totals = await inspector.execute_command("HGETALL", namespace.value + "admission:totals")
                 assert int(totals[b"count"]) == 1
                 assert int(totals[b"bytes"]) == sealed.byte_size
             finished = await asyncio.to_thread(worker.finish, envelope.job_id, JobOutcome.COMPLETE, token=browser_owner)
@@ -295,8 +295,9 @@ async def test_native_budget_reserve_and_settlement_share_bot_state(test_contain
 @pytest.mark.parametrize(
     ("video_enabled", "post_enabled"), [(False, False), (False, True), (True, False), (True, True)]
 )
+@pytest.mark.parametrize("ingress_feature", [CommandName.TWITTER, CommandName.TWITTER_VIDEO, CommandName.TWITTER_POST])
 async def test_provider_admission_checks_both_splits_and_reserves_shared_media_policy(
-    test_container: AsyncContainer, *, video_enabled: bool, post_enabled: bool
+    test_container: AsyncContainer, ingress_feature: CommandName, *, video_enabled: bool, post_enabled: bool
 ) -> None:
     """Provider ingress accepts either enabled split and does not reserve an undetermined split's pending budget."""
     user, _group = await usage_subjects(test_container)
@@ -332,14 +333,14 @@ async def test_provider_admission_checks_both_splits_and_reserves_shared_media_p
                     sealed.reference,
                     clock,
                     job_id=job_id,
-                    feature=str(provider),
+                    feature=str(ingress_feature),
                     actor_id=USER,
                     target=JobTarget(
                         kind=TargetKind.USER, entity_id=user.entity_id, generation=user.generation, telegram_id=USER
                     ),
                     charged_telegram_id=USER,
                     message_id=index + 1,
-                    dedupe_key=incoming_action_key(str(provider), USER, USER, index + 1, TriggerKind.DIRECT),
+                    dedupe_key=incoming_action_key(str(ingress_feature), USER, USER, index + 1, TriggerKind.DIRECT),
                 )
                 result = await service.admit(envelope, sealed)
                 assert result.state == (
