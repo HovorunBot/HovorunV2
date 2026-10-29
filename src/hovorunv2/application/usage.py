@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Final, Protocol
 
 from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.domain.audit import ActorContext
@@ -10,6 +10,12 @@ from hovorunv2.domain.enums import TargetKind
 
 MEDIA_BUCKET = "family:media"
 MINUTE_SECONDS = 60
+_INVALID_POLICY_LIMITS_MESSAGE: Final = (
+    "Usage limits must be positive integers and burst cannot exceed the window limit."
+)
+_INVALID_POLICY_DIMENSIONS_MESSAGE: Final = "Usage policies require typed units and windows."
+_INVALID_SAFETY_CAPS_MESSAGE: Final = "Application safety caps must be positive integers."
+_INVALID_SAFETY_BOUNDS_MESSAGE: Final = "Per-request safety limits cannot exceed their application bounds."
 
 
 class UsageUnit(StrEnum):
@@ -54,16 +60,30 @@ class UsagePolicy:
 
     def __post_init__(self) -> None:
         """Reject accidental unlimited values and unsupported unit/bucket contracts."""
+        self._validate_limits()
+        self._validate_bucket()
+        self._validate_dimensions()
+
+    def _validate_limits(self) -> None:
+        """Require positive integer ceilings and a burst within the window limit."""
         values = (self.limit, self.burst, self.concurrency, self.pending)
-        if any(type(value) is not int or value <= 0 for value in values) or self.burst > self.limit:
-            msg = "Usage limits must be positive integers and burst cannot exceed the window limit."
-            raise ValueError(msg)
+        if any(type(value) is not int or value <= 0 for value in values):
+            raise ValueError(_INVALID_POLICY_LIMITS_MESSAGE)
+        if self.burst > self.limit:
+            raise ValueError(_INVALID_POLICY_LIMITS_MESSAGE)
+
+    def _validate_bucket(self) -> None:
+        """Require a nonempty feature or family scope."""
         if not self.bucket.startswith(("feature:", "family:")) or not self.bucket.partition(":")[2]:
             msg = "Usage bucket must identify a feature or family."
             raise ValueError(msg)
-        if not isinstance(self.unit, UsageUnit) or not isinstance(self.window, UsageWindow):
-            msg = "Usage policies require typed units and windows."
-            raise TypeError(msg)
+
+    def _validate_dimensions(self) -> None:
+        """Require typed accounting units and fixed-window configuration."""
+        if not isinstance(self.unit, UsageUnit):
+            raise TypeError(_INVALID_POLICY_DIMENSIONS_MESSAGE)
+        if not isinstance(self.window, UsageWindow):
+            raise TypeError(_INVALID_POLICY_DIMENSIONS_MESSAGE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +114,12 @@ class UsageSafetyCaps:
 
     def __post_init__(self) -> None:
         """Safety configuration cannot disable ceilings using zero or negative values."""
+        self._validate_positive_caps()
+        self._validate_payload_bounds()
+        self._validate_execution_bounds()
+
+    def _validate_positive_caps(self) -> None:
+        """Require all application ceilings to be positive exact integers."""
         values = (
             self.global_concurrency,
             self.global_pending,
@@ -103,11 +129,17 @@ class UsageSafetyCaps:
             self.execution_seconds,
         )
         if any(type(value) is not int or value <= 0 for value in values):
-            msg = "Application safety caps must be positive integers."
-            raise ValueError(msg)
-        if self.payload_bytes > self.total_payload_bytes or self.execution_seconds > self.deadline_seconds:
-            msg = "Per-request safety limits cannot exceed their application bounds."
-            raise ValueError(msg)
+            raise ValueError(_INVALID_SAFETY_CAPS_MESSAGE)
+
+    def _validate_payload_bounds(self) -> None:
+        """Keep one payload within the application's total payload ceiling."""
+        if self.payload_bytes > self.total_payload_bytes:
+            raise ValueError(_INVALID_SAFETY_BOUNDS_MESSAGE)
+
+    def _validate_execution_bounds(self) -> None:
+        """Keep execution time within the request's original deadline budget."""
+        if self.execution_seconds > self.deadline_seconds:
+            raise ValueError(_INVALID_SAFETY_BOUNDS_MESSAGE)
 
 
 @dataclass(frozen=True, slots=True)

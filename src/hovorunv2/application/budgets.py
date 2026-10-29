@@ -5,12 +5,15 @@ import re
 import time
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Final, Protocol
 
 from hovorunv2.application.usage import ResolvedUsage, UsageUnit
 
 TECHNICAL_ID = re.compile(r"[A-Za-z0-9_.-]{1,96}\Z")
 RUNTIME_RETENTION_SECONDS = 3600
+_INVALID_RESERVATION_MESSAGE: Final = (
+    "Reservation requires a technical ID, positive estimates for every policy unit and a finite deadline."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,17 +87,34 @@ class BudgetRequest:
     def __post_init__(self) -> None:
         """Reject incomplete or ambiguous reservations rather than granting unlimited execution."""
         units = {item.unit for item in self.estimates}
-        if (
-            TECHNICAL_ID.fullmatch(self.reservation_id) is None
-            or not self.estimates
-            or len(units) != len(self.estimates)
-            or any(item.amount <= 0 for item in self.estimates)
-            or not math.isfinite(self.deadline)
-            or self.deadline <= 0
-            or units != {policy.unit for policy in self.usage.policies}
-        ):
-            msg = "Reservation requires a technical ID, positive estimates for every policy unit and a finite deadline."
-            raise ValueError(msg)
+        self._validate_reservation_id()
+        self._validate_estimates(units)
+        self._validate_deadline()
+        self._validate_policy_coverage(units)
+
+    def _validate_reservation_id(self) -> None:
+        """Require a bounded technical identity for reservation replay."""
+        if TECHNICAL_ID.fullmatch(self.reservation_id) is None:
+            raise ValueError(_INVALID_RESERVATION_MESSAGE)
+
+    def _validate_estimates(self, units: set[UsageUnit]) -> None:
+        """Require nonempty, unambiguous estimates with positive amounts."""
+        if not self.estimates:
+            raise ValueError(_INVALID_RESERVATION_MESSAGE)
+        if len(units) != len(self.estimates):
+            raise ValueError(_INVALID_RESERVATION_MESSAGE)
+        if any(item.amount <= 0 for item in self.estimates):
+            raise ValueError(_INVALID_RESERVATION_MESSAGE)
+
+    def _validate_deadline(self) -> None:
+        """Require a finite positive deadline without rounding the original timestamp."""
+        if not math.isfinite(self.deadline) or self.deadline <= 0:
+            raise ValueError(_INVALID_RESERVATION_MESSAGE)
+
+    def _validate_policy_coverage(self, units: set[UsageUnit]) -> None:
+        """Require estimates for exactly the resolved policy units."""
+        if units != {policy.unit for policy in self.usage.policies}:
+            raise ValueError(_INVALID_RESERVATION_MESSAGE)
 
 
 @dataclass(frozen=True, slots=True)
