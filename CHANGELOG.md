@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **policy**: separate evidence and eligibility decisions
 - **features**: separate job and operation invariants
 - **usage**: separate reservation and policy invariants
 - **audit**: separate sanitization policy and field validation

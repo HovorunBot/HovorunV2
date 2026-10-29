@@ -15,7 +15,19 @@ from hovorunv2.domain.enums import Role
 
 def authority_allowed(policy: AuthorizationPolicy, role: Role | None, action: str) -> bool:
     """Historical assignments and trust never substitute for the current active role."""
-    return role is not None and policy.is_allowed(PermissionFacts(role, action, PermissionTarget("bot")))
+    if role is None:
+        return False
+    return policy.is_allowed(PermissionFacts(role, action, PermissionTarget("bot")))
+
+
+def _has_current_group_administrator(request: PermissionRequest, now: datetime) -> bool:
+    """Use optional administrator evidence only for its exact group, actor and current interval."""
+    if request.target.kind != "group":
+        return False
+    evidence = request.group_admin
+    if evidence is None:
+        return False
+    return evidence.applies_to(request.actor_id, request.target, now)
 
 
 def permission_decision(
@@ -34,10 +46,6 @@ def permission_decision(
         return AccessDecision(allowed=False, reason=DecisionReason.UNAUTHORIZED_MANAGEMENT)
     if request.target.kind == "group" and group_banned:
         return AccessDecision(allowed=False, reason=DecisionReason.GROUP_BANNED)
-    admin = (
-        request.target.kind == "group"
-        and request.group_admin is not None
-        and request.group_admin.applies_to(request.actor_id, request.target, now)
-    )
+    admin = _has_current_group_administrator(request, now)
     allowed = policy.is_allowed(PermissionFacts(role, request.action, request.target, admin))
     return AccessDecision(allowed, DecisionReason.ALLOWED if allowed else DecisionReason.UNAUTHORIZED_MANAGEMENT)

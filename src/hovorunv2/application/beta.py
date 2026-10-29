@@ -19,11 +19,11 @@ class BetaEligibilityFacts:
 
     def permits(self, feature: FeatureDefinition) -> bool:
         """Require an active subject and explicit beta entitlement; allow standard features without grants."""
-        return (
-            self.subject_active
-            and self.feature == feature.key
-            and (feature.channel == FeatureChannel.STANDARD or self.all_beta or self.specific_feature)
-        )
+        if not self.subject_active:
+            return False
+        if self.feature != feature.key:
+            return False
+        return feature.channel == FeatureChannel.STANDARD or self.all_beta or self.specific_feature
 
 
 class BetaEntitlementStore(Protocol):

@@ -41,14 +41,23 @@ class GroupAdminEvidence:
 
     def applies_to(self, actor_id: int, target: PermissionTarget, now: datetime) -> bool:
         """Reject mismatched, expired, future or timezone-ambiguous evidence."""
-        return (
-            self.actor_id == actor_id
-            and self.target_id == target.entity_id
-            and self.target_generation == target.generation
-            and self.verified_at.utcoffset() is not None
-            and self.expires_at.utcoffset() is not None
-            and self.verified_at <= now < self.expires_at
-        )
+        if self.actor_id != actor_id:
+            return False
+        if not self._matches_target(target):
+            return False
+        return self._is_current(now)
+
+    def _matches_target(self, target: PermissionTarget) -> bool:
+        """Bind evidence to the selected internal identity and configuration generation."""
+        return self.target_id == target.entity_id and self.target_generation == target.generation
+
+    def _is_current(self, now: datetime) -> bool:
+        """Require aware evidence timestamps and preserve the original validity interval."""
+        if self.verified_at.utcoffset() is None:
+            return False
+        if self.expires_at.utcoffset() is None:
+            return False
+        return self.verified_at <= now < self.expires_at
 
 
 @dataclass(frozen=True, slots=True)

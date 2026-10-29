@@ -33,6 +33,11 @@ class FeatureFacts:
     capable: bool = False
 
 
+def _uses_group_authority(scope: FeatureScope, trigger: TriggerKind, *, configure: bool) -> bool:
+    """Only automatic group execution may enter without a current unrestricted actor."""
+    return scope == FeatureScope.GROUP and trigger == TriggerKind.AUTOMATIC and not configure
+
+
 def feature_entry_allowed(
     definition: FeatureDefinition,
     scope: FeatureScope,
@@ -43,17 +48,22 @@ def feature_entry_allowed(
     configure: bool,
 ) -> bool:
     """Automatic group work uses group authority; human actions require a current actor."""
-    if scope not in definition.scopes or (not configure and trigger not in definition.triggers):
+    if scope not in definition.scopes:
         return False
-    automatic = scope == FeatureScope.GROUP and trigger == TriggerKind.AUTOMATIC and not configure
-    return automatic or (actor_active and not actor_restricted)
+    if not configure and trigger not in definition.triggers:
+        return False
+    if _uses_group_authority(scope, trigger, configure=configure):
+        return True
+    return actor_active and not actor_restricted
 
 
 def evaluate_feature(
     definition: FeatureDefinition, facts: FeatureFacts, *, trigger: TriggerKind, configure: bool = False
 ) -> FeatureDecision:
     """Apply existing private/group rules independently of fact-loading I/O."""
-    if not facts.target_active or not feature_entry_allowed(
+    if not facts.target_active:
+        return FeatureDecision()
+    if not feature_entry_allowed(
         definition,
         facts.scope,
         actor_active=facts.actor_active,
@@ -64,6 +74,11 @@ def evaluate_feature(
         return FeatureDecision()
     if facts.scope == FeatureScope.PRIVATE:
         return _private_decision(facts, configure=configure)
+    return _group_decision(facts, configure=configure)
+
+
+def _group_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecision:
+    """Keep management visibility, group access and execution capability as distinct decisions."""
     if configure and not facts.manager:
         return FeatureDecision()
     if facts.access_reason != DecisionReason.ALLOWED:

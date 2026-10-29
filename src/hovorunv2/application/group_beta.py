@@ -21,16 +21,25 @@ class GroupBetaFacts:
 
     def permits(self, feature: FeatureDefinition, *, group_allowed: bool, emergency_disabled: bool) -> bool:
         """Require explicit independent access/emergency guards for group execution."""
-        return (
-            self.subject_active
-            and self.feature == feature.key
-            and feature.channel == FeatureChannel.BETA
-            and FeatureScope.GROUP in feature.scopes
-            and self.selected
-            and (self.group_granted or self.qualifying_enabler)
-            and group_allowed
-            and not emergency_disabled
-        )
+        if not self._has_selected_group_feature(feature):
+            return False
+        if not (self.group_granted or self.qualifying_enabler):
+            return False
+        if not group_allowed:
+            return False
+        return not emergency_disabled
+
+    def _has_selected_group_feature(self, feature: FeatureDefinition) -> bool:
+        """Bind selected state to an active subject and a group-capable beta definition."""
+        if not self.subject_active:
+            return False
+        if self.feature != feature.key:
+            return False
+        if feature.channel != FeatureChannel.BETA:
+            return False
+        if FeatureScope.GROUP not in feature.scopes:
+            return False
+        return self.selected
 
 
 class GroupBetaStore(Protocol):
