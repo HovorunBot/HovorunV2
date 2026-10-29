@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Final, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -13,6 +13,9 @@ from hovorunv2.domain.enums import TargetKind
 MAX_JOB_LIFETIME_SECONDS = 5 * MINUTE_SECONDS
 PAYLOAD_CLEANUP_SECONDS = 60
 FEATURE_JOB_FUNCTION = "run_feature_job"
+_INVALID_JOB_TARGET_MESSAGE: Final = "Job target kind and Telegram identity disagree."
+_INVALID_JOB_DEADLINE_MESSAGE: Final = "Feature job requires an original deadline within five minutes of acceptance."
+_INVALID_JOB_BINDING_MESSAGE: Final = "Job trigger, target and charged subject disagree."
 
 
 class JobTarget(BaseModel):
@@ -28,9 +31,10 @@ class JobTarget(BaseModel):
     @model_validator(mode="after")
     def validate_identity(self) -> JobTarget:
         """Reject ambiguous Telegram target kinds and invalid stable identities."""
-        if not 0 < abs(self.telegram_id) < (1 << 63) or (self.kind == TargetKind.USER) != (self.telegram_id > 0):
-            msg = "Job target kind and Telegram identity disagree."
-            raise ValueError(msg)
+        if not 0 < abs(self.telegram_id) < (1 << 63):
+            raise ValueError(_INVALID_JOB_TARGET_MESSAGE)
+        if (self.kind == TargetKind.USER) != (self.telegram_id > 0):
+            raise ValueError(_INVALID_JOB_TARGET_MESSAGE)
         return self
 
 
@@ -57,31 +61,48 @@ class JobEnvelope(BaseModel):
     @model_validator(mode="after")
     def validate_binding(self) -> JobEnvelope:
         """Keep charging, original deadline and canonical transport facts consistent."""
-        if self.deadline <= self.accepted_at or self.deadline - self.accepted_at > MAX_JOB_LIFETIME_SECONDS:
-            msg = "Feature job requires an original deadline within five minutes of acceptance."
-            raise ValueError(msg)
+        self._validate_deadline()
         if self.trigger == TriggerKind.AUTOMATIC:
-            valid = (
-                self.target.kind == TargetKind.GROUP
-                and self.charged_kind == TargetKind.GROUP
-                and self.charged_telegram_id == self.target.telegram_id
-                and ((self.actor_id is None) == (self.actor_generation is None))
-            )
-        else:
-            valid = (
-                self.actor_id is not None
-                and self.actor_id > 0
-                and self.actor_generation is not None
-                and self.actor_generation > 0
-                and self.charged_kind == TargetKind.USER
-                and self.charged_telegram_id == self.actor_id
-            )
-        if self.target.kind == TargetKind.USER:
-            valid = valid and self.target.telegram_id == self.actor_id
-        if not valid:
-            msg = "Job trigger, target and charged subject disagree."
-            raise ValueError(msg)
+            self._validate_automatic_binding()
+            return self
+        actor_id = self._require_direct_actor()
+        self._validate_direct_charge(actor_id)
+        self._validate_private_target(actor_id)
         return self
+
+    def _validate_deadline(self) -> None:
+        """Require the original execution window without renewing acceptance time."""
+        if self.deadline <= self.accepted_at or self.deadline - self.accepted_at > MAX_JOB_LIFETIME_SECONDS:
+            raise ValueError(_INVALID_JOB_DEADLINE_MESSAGE)
+
+    def _validate_automatic_binding(self) -> None:
+        """Charge only the canonical group and retain complete or absent actor metadata."""
+        if self.target.kind != TargetKind.GROUP:
+            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+        if self.charged_kind != TargetKind.GROUP or self.charged_telegram_id != self.target.telegram_id:
+            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+        if (self.actor_id is None) != (self.actor_generation is None):
+            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+
+    def _require_direct_actor(self) -> int:
+        """Establish the required current actor identity for a direct request."""
+        actor_id = self.actor_id
+        if actor_id is None or not actor_id > 0:
+            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+        generation = self.actor_generation
+        if generation is None or not generation > 0:
+            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+        return actor_id
+
+    def _validate_direct_charge(self, actor_id: int) -> None:
+        """Bind personal charging to the established direct actor."""
+        if self.charged_kind != TargetKind.USER or self.charged_telegram_id != actor_id:
+            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+
+    def _validate_private_target(self, actor_id: int) -> None:
+        """Prevent private delivery from selecting another user's identity."""
+        if self.target.kind == TargetKind.USER and self.target.telegram_id != actor_id:
+            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
 
 
 class JobOutcome(StrEnum):

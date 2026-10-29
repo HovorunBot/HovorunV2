@@ -40,6 +40,13 @@ class AdminRequest(BaseModel):
     @model_validator(mode="after")
     def validate_operation(self) -> AdminRequest:
         """Reject impossible scopes and incomplete decisions before showing confirmation."""
+        self._validate_action_scope()
+        self._validate_request_decision()
+        self._validate_ban_reason()
+        return self
+
+    def _validate_action_scope(self) -> None:
+        """Restrict trust to users and approval/request operations to groups."""
         if self.action in {AdminAction.TRUST, AdminAction.UNTRUST} and self.kind != TargetKind.USER:
             msg = "Trust applies only to users."
             raise ValueError(msg)
@@ -49,15 +56,22 @@ class AdminRequest(BaseModel):
         ):
             msg = "Approval and request operations require a group."
             raise ValueError(msg)
-        if self.action in {AdminAction.ACCEPT, AdminAction.REJECT} and (
-            self.request_id is None or self.request_id <= 0
-        ):
+
+    def _validate_request_decision(self) -> None:
+        """Require a concrete request only for operations that decide it."""
+        if self.action not in {AdminAction.ACCEPT, AdminAction.REJECT}:
+            return
+        if self.request_id is None or self.request_id <= 0:
             msg = "Request decisions require a positive request ID."
             raise ValueError(msg)
-        if self.action in {AdminAction.BAN, AdminAction.UNBAN} and (not self.reason or not self.reason.strip()):
+
+    def _validate_ban_reason(self) -> None:
+        """Require an operational reason only when changing a restriction."""
+        if self.action not in {AdminAction.BAN, AdminAction.UNBAN}:
+            return
+        if not self.reason or not self.reason.strip():
             msg = "Ban changes require an internal reason."
             raise ValueError(msg)
-        return self
 
 
 class AdminTarget(BaseModel):

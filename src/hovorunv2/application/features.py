@@ -3,8 +3,12 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final
 
 from hovorunv2.domain.enums import DEFAULT_COMMANDS, PROVIDER_SPLIT_COMMANDS, CommandName
+
+_MISSING_FEATURE_METADATA_MESSAGE: Final = "Feature identity, introduction, scopes and triggers must be defined"
+_MISSING_FEATURE_POLICY_MESSAGE: Final = "Feature usage, queue and notification policies must be defined"
 
 
 class FeatureChannel(StrEnum):
@@ -49,12 +53,36 @@ class FeatureDefinition:
 
     def __post_init__(self) -> None:
         """Reject incomplete definitions and implicit beta activation."""
-        if not self.key or not self.display_name or not self.introduction or not self.scopes or not self.triggers:
-            msg = "Feature identity, introduction, scopes and triggers must be defined"
-            raise ValueError(msg)
-        if not self.units or not self.usage_policy or not self.queue_policy or not self.notification_category:
-            msg = "Feature usage, queue and notification policies must be defined"
-            raise ValueError(msg)
+        self._validate_identity_metadata()
+        self._validate_capabilities()
+        self._validate_policy_references()
+        self._validate_release_defaults()
+
+    def _validate_identity_metadata(self) -> None:
+        """Require stable identity and release presentation metadata."""
+        if not self.key or not self.display_name or not self.introduction:
+            raise ValueError(_MISSING_FEATURE_METADATA_MESSAGE)
+
+    def _validate_capabilities(self) -> None:
+        """Require explicit supported scopes and entry triggers."""
+        if not self.scopes:
+            raise ValueError(_MISSING_FEATURE_METADATA_MESSAGE)
+        if not self.triggers:
+            raise ValueError(_MISSING_FEATURE_METADATA_MESSAGE)
+
+    def _validate_policy_references(self) -> None:
+        """Require accounting dimensions and each runtime policy reference."""
+        if not self.units:
+            raise ValueError(_MISSING_FEATURE_POLICY_MESSAGE)
+        if not self.usage_policy:
+            raise ValueError(_MISSING_FEATURE_POLICY_MESSAGE)
+        if not self.queue_policy:
+            raise ValueError(_MISSING_FEATURE_POLICY_MESSAGE)
+        if not self.notification_category:
+            raise ValueError(_MISSING_FEATURE_POLICY_MESSAGE)
+
+    def _validate_release_defaults(self) -> None:
+        """Keep beta activation an explicit decision rather than a release default."""
         if self.channel == FeatureChannel.BETA and self.default_enabled:
             msg = "Beta features must start disabled"
             raise ValueError(msg)
