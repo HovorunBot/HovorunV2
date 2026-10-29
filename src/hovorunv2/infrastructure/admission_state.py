@@ -4,7 +4,7 @@ import json
 import math
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Self
+from typing import Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -12,6 +12,9 @@ from hovorunv2.application.admission import AdmissionTicket, JobStage, TicketSta
 from hovorunv2.application.budgets import TECHNICAL_ID
 from hovorunv2.application.feature_jobs import EnqueueState, JobEnvelope, JobOutcome
 from hovorunv2.domain.enums import TargetKind
+
+_ACTIVE_CAPACITY_ERROR: Final = "Active admission capacity metadata is unavailable."
+_HANDOFF_CONFLICT_ERROR: Final = "Stage handoff token conflicts with current owner."
 
 
 class AdmissionUnavailableError(ValueError):
@@ -104,21 +107,30 @@ class AdmissionRecord(BaseModel):
     def validate_lifecycle(self) -> Self:
         """Reject uncertain owners, invalid terminal states and malformed original envelopes."""
         job = self.job
+        self._validate_schedule(job)
+        self._validate_execution_owner()
+        self._validate_terminal_outcome()
+        return self
+
+    def _validate_schedule(self, job: JobEnvelope) -> None:
         if self.not_before >= job.deadline:
             msg = "Admission schedule exceeds its original deadline."
             raise ValueError(msg)
-        if self.state in {TicketState.RUNNING, TicketState.CANCELLING} and (
-            TECHNICAL_ID.fullmatch(self.token) is None or self.attempt == 0
-        ):
-            msg = "Active admission requires an execution owner and attempt."
-            raise ValueError(msg)
+
+    def _validate_execution_owner(self) -> None:
+        if self.state in {TicketState.RUNNING, TicketState.CANCELLING}:
+            if TECHNICAL_ID.fullmatch(self.token) is None or self.attempt == 0:
+                msg = "Active admission requires an execution owner and attempt."
+                raise ValueError(msg)
+            return
         if self.state in {TicketState.ACCEPTED, TicketState.ENQUEUED} and self.token:
             msg = "Queued admission cannot retain an execution owner."
             raise ValueError(msg)
+
+    def _validate_terminal_outcome(self) -> None:
         if (self.state == TicketState.TERMINAL) != (self.outcome is not None):
             msg = "Admission terminal state requires exactly one safe outcome."
             raise ValueError(msg)
-        return self
 
     @property
     def job(self) -> JobEnvelope:
@@ -148,6 +160,16 @@ class AdmissionRecord(BaseModel):
             msg = "Admission pointers disagree with its immutable envelope."
             raise AdmissionUnavailableError(msg)
         return keys
+
+    def require_active_indexes(self, pointer: str, score: object, handoff_score: object) -> None:
+        """Require dedupe and pending indexes bound to this record's identity and deadline."""
+        job = self.job
+        if pointer != job.job_id:
+            raise AdmissionUnavailableError(_ACTIVE_CAPACITY_ERROR)
+        if score != job.deadline:
+            raise AdmissionUnavailableError(_ACTIVE_CAPACITY_ERROR)
+        if self.state == TicketState.ACCEPTED and handoff_score != job.deadline:
+            raise AdmissionUnavailableError(_ACTIVE_CAPACITY_ERROR)
 
 
 def read_record(raw: object) -> AdmissionRecord:
@@ -214,21 +236,17 @@ class AdmissionCapacity:
     def require_active(self, record: AdmissionRecord, dedupe: object, score: object, handoff_score: object) -> None:
         """Do not release or execute a ticket whose supporting metadata disappeared."""
         pointer = read_string(dedupe)
-        if (
-            self.count < 1
-            or self.byte_size < record.byte_size
-            or self.subject < 1
-            or self.ingress < 1
-            or pointer != record.job.job_id
-            or score != record.job.deadline
-            or (record.state == TicketState.ACCEPTED and handoff_score != record.job.deadline)
-        ):
-            msg = "Active admission capacity metadata is unavailable."
-            raise AdmissionUnavailableError(msg)
+        self._require_counts(record.byte_size)
+        record.require_active_indexes(pointer, score, handoff_score)
+
+    def _require_counts(self, byte_size: int) -> None:
+        if self.count < 1 or self.byte_size < byte_size:
+            raise AdmissionUnavailableError(_ACTIVE_CAPACITY_ERROR)
+        if self.subject < 1 or self.ingress < 1:
+            raise AdmissionUnavailableError(_ACTIVE_CAPACITY_ERROR)
 
 
-def read_capacity(totals: object, subject: object, ingress: object, pending: object) -> AdmissionCapacity:
-    """Allow a new empty namespace, but never reset a partially missing active ledger."""
+def _read_totals(totals: object) -> tuple[int, int]:
     if not isinstance(totals, dict):
         msg = "Admission totals are unavailable."
         raise AdmissionUnavailableError(msg)
@@ -238,6 +256,12 @@ def read_capacity(totals: object, subject: object, ingress: object, pending: obj
         raise AdmissionUnavailableError(msg)
     count = read_counter(normalized.get("count"), missing_zero=not normalized)
     byte_size = read_counter(normalized.get("bytes"), missing_zero=not normalized)
+    return count, byte_size
+
+
+def read_capacity(totals: object, subject: object, ingress: object, pending: object) -> AdmissionCapacity:
+    """Allow a new empty namespace, but never reset a partially missing active ledger."""
+    count, byte_size = _read_totals(totals)
     subject_count = read_counter(subject, missing_zero=True)
     ingress_count = read_counter(ingress, missing_zero=True)
     if count != read_counter(pending) or (count == 0) != (byte_size == 0) or max(subject_count, ingress_count) > count:
@@ -300,19 +324,26 @@ def _finish(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionC
         msg = "Admission completion requires a safe typed outcome."
         raise TypeError(msg)
     if record.state == TicketState.TERMINAL:
-        if request.token and request.token != record.token:
-            return AdmissionChange(None)
-        if record.outcome != request.outcome:
-            msg = "Admission terminal state conflicts with this transition."
-            raise ValueError(msg)
-        return AdmissionChange(record, success=True)
-    if record.state in {TicketState.RUNNING, TicketState.CANCELLING}:
-        if request.token != record.token:
-            return AdmissionChange(None)
-    elif request.token:
+        return _replay_finish(record, request)
+    if not _completion_owner_matches(record, request.token):
         return AdmissionChange(None)
     terminal = record.model_copy(update={"state": TicketState.TERMINAL, "outcome": request.outcome})
     return AdmissionChange(terminal, write=True, release=True, handoff=False, success=True)
+
+
+def _replay_finish(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if request.token and request.token != record.token:
+        return AdmissionChange(None)
+    if record.outcome != request.outcome:
+        msg = "Admission terminal state conflicts with this transition."
+        raise ValueError(msg)
+    return AdmissionChange(record, success=True)
+
+
+def _completion_owner_matches(record: AdmissionRecord, token: str) -> bool:
+    if record.state in {TicketState.RUNNING, TicketState.CANCELLING}:
+        return token == record.token
+    return not token
 
 
 def _claim(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
@@ -334,9 +365,7 @@ def _claim(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionCh
 def _handoff(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
     if record.state != TicketState.RUNNING:
         return AdmissionChange(None)
-    if record.token != request.token or record.stage != JobStage.MEDIA or request.stage != JobStage.BROWSER:
-        msg = "Stage handoff token conflicts with current owner."
-        raise ValueError(msg)
+    _require_stage_handoff(record, request)
     ready = record.model_copy(
         update={
             "state": TicketState.ACCEPTED,
@@ -348,6 +377,13 @@ def _handoff(record: AdmissionRecord, request: AdmissionTransition) -> Admission
         }
     )
     return AdmissionChange(ready, write=True, handoff=True, success=True)
+
+
+def _require_stage_handoff(record: AdmissionRecord, request: AdmissionTransition) -> None:
+    if record.token != request.token:
+        raise ValueError(_HANDOFF_CONFLICT_ERROR)
+    if record.stage != JobStage.MEDIA or request.stage != JobStage.BROWSER:
+        raise ValueError(_HANDOFF_CONFLICT_ERROR)
 
 
 def _register(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
