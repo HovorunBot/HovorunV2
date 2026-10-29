@@ -239,3 +239,48 @@ async def test_missing_subject_counter_blocks_owner_completion(test_container: A
         raw = await cache.client.get(keys.ticket)
         assert json.loads(raw)["state"] == TicketState.RUNNING
         assert (await payloads.load(sealed.reference, sealed.job_id)).state == PayloadState.READY
+
+
+@pytest.mark.parametrize("native_completions", [0, 1, 2])
+async def test_concurrent_completion_releases_once_and_preserves_other_work(
+    test_container: AsyncContainer, native_completions: int
+) -> None:
+    """Both runtimes replay one terminal write without refunding another ticket's capacity or ciphertext."""
+    settings = await test_container.get(Settings)
+    clock = ManualClock(time.time())
+    safety = UsageSafetyCaps()
+    async with runtime_cache(test_container) as (cache, namespace):
+        store = ValkeyAdmissionStore(cache, namespace)
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        completed = await payloads.seal("concurrent-completion", PRIVATE_BODY, clock.now() + 300)
+        survivor = await payloads.seal("surviving-work", PRIVATE_BODY, clock.now() + 300)
+        envelope = job_envelope(completed.reference, clock, job_id=completed.job_id)
+        other = job_envelope(survivor.reference, clock, job_id=survivor.job_id, dedupe_key="b" * 64)
+        limits = AdmissionLimits(2, 2, safety)
+        assert (await store.admit(envelope, completed, limits, clock.now())).state == AdmissionState.ACCEPTED
+        assert (await store.admit(other, survivor, limits, clock.now())).state == AdmissionState.ACCEPTED
+        with WorkerRuntime(settings, clock, namespace, safety) as runtime:
+            results = await asyncio.gather(
+                *(store.finish(envelope.job_id, JobOutcome.COMPLETE) for _ in range(2 - native_completions)),
+                *(
+                    asyncio.to_thread(runtime.admission.finish, envelope.job_id, JobOutcome.COMPLETE)
+                    for _ in range(native_completions)
+                ),
+            )
+        assert all(result is not None and result.state == TicketState.TERMINAL for result in results)
+        keys = admission_keys(namespace.value, envelope)
+        assert await cache.client.execute_command("HGETALL", keys.totals) == {
+            b"count": b"1",
+            b"bytes": str(survivor.byte_size).encode(),
+        }
+        assert await cache.client.get(keys.subject) == b"1"
+        assert await cache.client.get(keys.ingress) == b"1"
+        assert await cache.client.zrange(keys.pending, 0, -1) == [other.job_id.encode()]
+        assert await cache.client.zrange(keys.handoff, 0, -1) == [other.job_id.encode()]
+        assert await cache.client.ttl(keys.ticket) > 0
+        assert await cache.client.ttl(keys.dedupe) > 0
+        assert (await payloads.load(completed.reference, completed.job_id)).state == PayloadState.MISSING
+        assert (await payloads.load(survivor.reference, survivor.job_id)).state == PayloadState.READY
+        remaining = await store.get(other.job_id)
+        assert remaining is not None
+        assert remaining.state == TicketState.ACCEPTED

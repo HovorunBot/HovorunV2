@@ -50,16 +50,14 @@ MAX_ADMISSION_ATTEMPTS = 32
 
 
 def _validate_payload(envelope: JobEnvelope, payload: SealedPayload, now: float) -> None:
-    if (
-        not math.isfinite(now)
-        or now < envelope.accepted_at
-        or payload.reference != envelope.payload_ref
-        or payload.job_id != envelope.job_id
-        or payload.deadline != envelope.deadline
-        or payload.byte_size != len(payload.blob.encode())
-        or payload.byte_size <= 0
-    ):
-        msg = "Admission payload, original timing and envelope binding disagree."
+    msg = "Admission payload, original timing and envelope binding disagree."
+    if not math.isfinite(now) or now < envelope.accepted_at:
+        raise ValueError(msg)
+    if payload.reference != envelope.payload_ref or payload.job_id != envelope.job_id:
+        raise ValueError(msg)
+    if payload.deadline != envelope.deadline:
+        raise ValueError(msg)
+    if payload.byte_size != len(payload.blob.encode()) or payload.byte_size <= 0:
         raise ValueError(msg)
 
 
@@ -174,68 +172,94 @@ class ValkeyAdmissionStore(AdmissionPort):
         _validate_payload(envelope, payload, now)
         keys = admission_keys(self._namespace, envelope)
         try:
-            for _attempt in range(MAX_ADMISSION_ATTEMPTS):
-                async with self._cache.client.pipeline() as pipe:
-                    try:
-                        await pipe.watch(*keys.watched)
-                        duplicate = await pipe.get(keys.dedupe)
-                        if duplicate is not None:
-                            old_id = _duplicate_id(duplicate)
-                            await pipe.watch(self._id(old_id))
-                            record = read_record(await pipe.get(self._id(old_id)))
-                            record.keys(self._namespace)
-                            _validate_duplicate(record, old_id, envelope)
-                            pipe.multi()
-                            await pipe.execute()
-                            return AdmissionResult(AdmissionState.DUPLICATE, record.ticket)
-                        _require_new_identity(await pipe.exists(keys.ticket))
-                        if envelope.deadline <= now:
-                            return AdmissionResult(AdmissionState.EXPIRED)
-                        capacity = read_capacity(
-                            await pipe.execute_command("HGETALL", keys.totals),
-                            await pipe.get(keys.subject),
-                            await pipe.get(keys.ingress),
-                            await pipe.zcard(keys.pending),
-                        )
-                        if _is_full(capacity, payload, limits):
-                            return AdmissionResult(AdmissionState.FULL)
-                        existing = await pipe.get(keys.payload)
-                        _validate_key_type(await pipe.type(keys.handoff), "zset")
-                        _require_matching_blob(existing, payload)
-                        record = _initial_record(envelope, payload, keys)
-                        pipe.multi()
-                        if existing is None:
-                            pipe.set(
-                                keys.payload,
-                                payload.blob,
-                                ex=max(1, math.ceil(envelope.deadline - now) + PAYLOAD_CLEANUP_SECONDS),
-                            )
-                        pipe.hset(
-                            keys.totals,
-                            mapping={"count": capacity.count + 1, "bytes": capacity.byte_size + payload.byte_size},
-                        )
-                        pipe.set(keys.subject, capacity.subject + 1)
-                        pipe.set(keys.ingress, capacity.ingress + 1)
-                        pipe.set(keys.ticket, record.encode())
-                        pipe.set(keys.dedupe, envelope.job_id)
-                        pipe.zadd(keys.handoff, {envelope.job_id: envelope.deadline})
-                        pipe.zadd(keys.pending, {envelope.job_id: envelope.deadline})
-                        await pipe.execute()
-                        return AdmissionResult(AdmissionState.ACCEPTED, record.ticket)
-                    except AdmissionUnavailableError, ValueError, TypeError:
-                        # A partial snapshot can disagree while another valid transaction commits.
-                        # Confirm WATCH before treating it as stable corruption or a semantic conflict.
-                        try:
-                            pipe.multi()
-                            await pipe.execute()
-                        except WatchError:
-                            continue
-                        raise
-                    except WatchError:
-                        continue
+            return await self._admit_with_retries(keys, envelope, payload, limits, now)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
             return AdmissionResult(AdmissionState.UNAVAILABLE)
+
+    async def _admit_with_retries(
+        self, keys: AdmissionKeys, envelope: JobEnvelope, payload: SealedPayload, limits: AdmissionLimits, now: float
+    ) -> AdmissionResult:
+        for _attempt in range(MAX_ADMISSION_ATTEMPTS):
+            async with self._cache.client.pipeline() as pipe:
+                try:
+                    return await self._admit_attempt(pipe, keys, envelope, payload, limits, now)
+                except WatchError:
+                    continue
         return AdmissionResult(AdmissionState.UNAVAILABLE)
+
+    async def _admit_attempt(
+        self,
+        pipe: AsyncPipeline,
+        keys: AdmissionKeys,
+        envelope: JobEnvelope,
+        payload: SealedPayload,
+        limits: AdmissionLimits,
+        now: float,
+    ) -> AdmissionResult:
+        try:
+            await pipe.watch(*keys.watched)
+            duplicate = await pipe.get(keys.dedupe)
+            if duplicate is not None:
+                return await self._read_duplicate(pipe, duplicate, envelope)
+            _require_new_identity(await pipe.exists(keys.ticket))
+            if envelope.deadline <= now:
+                return AdmissionResult(AdmissionState.EXPIRED)
+            capacity = await self._read_capacity(pipe, keys)
+            if _is_full(capacity, payload, limits):
+                return AdmissionResult(AdmissionState.FULL)
+            existing = await pipe.get(keys.payload)
+            _validate_key_type(await pipe.type(keys.handoff), "zset")
+            _require_matching_blob(existing, payload)
+            record = _initial_record(envelope, payload, keys)
+            self._write_admission(pipe, keys, envelope, record, payload, capacity, now, existing=existing)
+            await pipe.execute()
+            return AdmissionResult(AdmissionState.ACCEPTED, record.ticket)
+        except AdmissionUnavailableError, ValueError, TypeError:
+            # A partial snapshot can disagree while another valid transaction commits.
+            # Confirm WATCH before treating it as stable corruption or a semantic conflict.
+            pipe.multi()
+            await pipe.execute()
+            raise
+
+    async def _read_duplicate(self, pipe: AsyncPipeline, duplicate: object, envelope: JobEnvelope) -> AdmissionResult:
+        old_id = _duplicate_id(duplicate)
+        await pipe.watch(self._id(old_id))
+        record = read_record(await pipe.get(self._id(old_id)))
+        record.keys(self._namespace)
+        _validate_duplicate(record, old_id, envelope)
+        pipe.multi()
+        await pipe.execute()
+        return AdmissionResult(AdmissionState.DUPLICATE, record.ticket)
+
+    def _write_admission(
+        self,
+        pipe: AsyncPipeline,
+        keys: AdmissionKeys,
+        envelope: JobEnvelope,
+        record: AdmissionRecord,
+        payload: SealedPayload,
+        capacity: AdmissionCapacity,
+        now: float,
+        *,
+        existing: object,
+    ) -> None:
+        pipe.multi()
+        if existing is None:
+            pipe.set(
+                keys.payload,
+                payload.blob,
+                ex=max(1, math.ceil(envelope.deadline - now) + PAYLOAD_CLEANUP_SECONDS),
+            )
+        pipe.hset(
+            keys.totals,
+            mapping={"count": capacity.count + 1, "bytes": capacity.byte_size + payload.byte_size},
+        )
+        pipe.set(keys.subject, capacity.subject + 1)
+        pipe.set(keys.ingress, capacity.ingress + 1)
+        pipe.set(keys.ticket, record.encode())
+        pipe.set(keys.dedupe, envelope.job_id)
+        pipe.zadd(keys.handoff, {envelope.job_id: envelope.deadline})
+        pipe.zadd(keys.pending, {envelope.job_id: envelope.deadline})
 
     async def get(self, job_id: str) -> AdmissionTicket | None:
         """Return only valid operational metadata, failing closed on unreadable or missing state."""
@@ -255,54 +279,69 @@ class ValkeyAdmissionStore(AdmissionPort):
     async def _apply(self, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         key = self._id(job_id)
         try:
-            for _attempt in range(MAX_ADMISSION_ATTEMPTS):
-                async with self._cache.client.pipeline() as pipe:
-                    try:
-                        await pipe.watch(key)
-                        raw = await pipe.get(key)
-                        if raw is None:
-                            return None
-                        record = read_record(raw)
-                        keys = record.keys(self._namespace)
-                        if keys.ticket != key:
-                            return None
-                        change = calculate_change(record, request)
-                        capacity = None
-                        if change.write and record.state != TicketState.TERMINAL:
-                            await pipe.watch(*keys.watched)
-                            capacity = read_capacity(
-                                await pipe.execute_command("HGETALL", keys.totals),
-                                await pipe.get(keys.subject),
-                                await pipe.get(keys.ingress),
-                                await pipe.zcard(keys.pending),
-                            )
-                            capacity.require_active(
-                                record,
-                                await pipe.get(keys.dedupe),
-                                await pipe.zscore(keys.pending, job_id),
-                                await pipe.zscore(keys.handoff, job_id),
-                            )
-                            _validate_key_type(await pipe.type(keys.handoff), "zset")
-                            _validate_key_type(await pipe.type(keys.payload), "string")
-                        pipe.multi()
-                        self._write_change(pipe, keys, change, capacity)
-                        await pipe.execute()
-                    except AdmissionUnavailableError, ValueError, TypeError:
-                        # A partial snapshot can disagree while another valid transaction commits.
-                        # Confirm WATCH before treating it as stable corruption or a semantic conflict.
-                        try:
-                            pipe.multi()
-                            await pipe.execute()
-                        except WatchError:
-                            continue
-                        raise
-                    except WatchError:
-                        continue
-                    else:
-                        return change
+            return await self._apply_with_retries(key, job_id, request)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
             return None
+
+    async def _apply_with_retries(self, key: str, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
+        for _attempt in range(MAX_ADMISSION_ATTEMPTS):
+            async with self._cache.client.pipeline() as pipe:
+                try:
+                    return await self._apply_attempt(pipe, key, job_id, request)
+                except WatchError:
+                    continue
         return None
+
+    async def _apply_attempt(
+        self, pipe: AsyncPipeline, key: str, job_id: str, request: AdmissionTransition
+    ) -> AdmissionChange | None:
+        try:
+            await pipe.watch(key)
+            raw = await pipe.get(key)
+            if raw is None:
+                return None
+            record = read_record(raw)
+            keys = record.keys(self._namespace)
+            if keys.ticket != key:
+                return None
+            change = calculate_change(record, request)
+            capacity = None
+            if change.write and record.state != TicketState.TERMINAL:
+                capacity = await self._read_active_capacity(pipe, keys, record, job_id)
+            pipe.multi()
+            self._write_change(pipe, keys, change, capacity)
+            await pipe.execute()
+        except AdmissionUnavailableError, ValueError, TypeError:
+            # A partial snapshot can disagree while another valid transaction commits.
+            # Confirm WATCH before treating it as stable corruption or a semantic conflict.
+            pipe.multi()
+            await pipe.execute()
+            raise
+        else:
+            return change
+
+    async def _read_capacity(self, pipe: AsyncPipeline, keys: AdmissionKeys) -> AdmissionCapacity:
+        return read_capacity(
+            await pipe.execute_command("HGETALL", keys.totals),
+            await pipe.get(keys.subject),
+            await pipe.get(keys.ingress),
+            await pipe.zcard(keys.pending),
+        )
+
+    async def _read_active_capacity(
+        self, pipe: AsyncPipeline, keys: AdmissionKeys, record: AdmissionRecord, job_id: str
+    ) -> AdmissionCapacity:
+        await pipe.watch(*keys.watched)
+        capacity = await self._read_capacity(pipe, keys)
+        capacity.require_active(
+            record,
+            await pipe.get(keys.dedupe),
+            await pipe.zscore(keys.pending, job_id),
+            await pipe.zscore(keys.handoff, job_id),
+        )
+        _validate_key_type(await pipe.type(keys.handoff), "zset")
+        _validate_key_type(await pipe.type(keys.payload), "string")
+        return capacity
 
     def _write_change(
         self, pipe: AsyncPipeline, keys: AdmissionKeys, change: AdmissionChange, capacity: AdmissionCapacity | None
@@ -439,54 +478,69 @@ class WorkerAdmissionClient:
     def _apply(self, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         key = self._id(job_id)
         try:
-            for _attempt in range(MAX_ADMISSION_ATTEMPTS):
-                with self._client.pipeline() as pipe:
-                    try:
-                        pipe.watch(key)
-                        raw = pipe.get(key)
-                        if raw is None:
-                            return None
-                        record = read_record(raw)
-                        keys = record.keys(self._namespace)
-                        if keys.ticket != key:
-                            return None
-                        change = calculate_change(record, request)
-                        capacity = None
-                        if change.write and record.state != TicketState.TERMINAL:
-                            pipe.watch(*keys.watched)
-                            capacity = read_capacity(
-                                pipe.hgetall(keys.totals),
-                                pipe.get(keys.subject),
-                                pipe.get(keys.ingress),
-                                pipe.zcard(keys.pending),
-                            )
-                            capacity.require_active(
-                                record,
-                                pipe.get(keys.dedupe),
-                                pipe.zscore(keys.pending, job_id),
-                                pipe.zscore(keys.handoff, job_id),
-                            )
-                            _validate_key_type(pipe.type(keys.handoff), "zset")
-                            _validate_key_type(pipe.type(keys.payload), "string")
-                        pipe.multi()
-                        self._write_change(pipe, keys, change, capacity)
-                        pipe.execute()
-                    except AdmissionUnavailableError, ValueError, TypeError:
-                        # A partial snapshot can disagree while another valid transaction commits.
-                        # Confirm WATCH before treating it as stable corruption or a semantic conflict.
-                        try:
-                            pipe.multi()
-                            pipe.execute()
-                        except WatchError:
-                            continue
-                        raise
-                    except WatchError:
-                        continue
-                    else:
-                        return change
+            return self._apply_with_retries(key, job_id, request)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
             return None
+
+    def _apply_with_retries(self, key: str, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
+        for _attempt in range(MAX_ADMISSION_ATTEMPTS):
+            with self._client.pipeline() as pipe:
+                try:
+                    return self._apply_attempt(pipe, key, job_id, request)
+                except WatchError:
+                    continue
         return None
+
+    def _apply_attempt(
+        self, pipe: Pipeline, key: str, job_id: str, request: AdmissionTransition
+    ) -> AdmissionChange | None:
+        try:
+            pipe.watch(key)
+            raw = pipe.get(key)
+            if raw is None:
+                return None
+            record = read_record(raw)
+            keys = record.keys(self._namespace)
+            if keys.ticket != key:
+                return None
+            change = calculate_change(record, request)
+            capacity = None
+            if change.write and record.state != TicketState.TERMINAL:
+                capacity = self._read_active_capacity(pipe, keys, record, job_id)
+            pipe.multi()
+            self._write_change(pipe, keys, change, capacity)
+            pipe.execute()
+        except AdmissionUnavailableError, ValueError, TypeError:
+            # A partial snapshot can disagree while another valid transaction commits.
+            # Confirm WATCH before treating it as stable corruption or a semantic conflict.
+            pipe.multi()
+            pipe.execute()
+            raise
+        else:
+            return change
+
+    def _read_capacity(self, pipe: Pipeline, keys: AdmissionKeys) -> AdmissionCapacity:
+        return read_capacity(
+            pipe.hgetall(keys.totals),
+            pipe.get(keys.subject),
+            pipe.get(keys.ingress),
+            pipe.zcard(keys.pending),
+        )
+
+    def _read_active_capacity(
+        self, pipe: Pipeline, keys: AdmissionKeys, record: AdmissionRecord, job_id: str
+    ) -> AdmissionCapacity:
+        pipe.watch(*keys.watched)
+        capacity = self._read_capacity(pipe, keys)
+        capacity.require_active(
+            record,
+            pipe.get(keys.dedupe),
+            pipe.zscore(keys.pending, job_id),
+            pipe.zscore(keys.handoff, job_id),
+        )
+        _validate_key_type(pipe.type(keys.handoff), "zset")
+        _validate_key_type(pipe.type(keys.payload), "string")
+        return capacity
 
     def _write_change(
         self, pipe: Pipeline, keys: AdmissionKeys, change: AdmissionChange, capacity: AdmissionCapacity | None
