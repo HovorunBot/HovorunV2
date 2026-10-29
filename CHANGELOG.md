@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **budgets**: separate replay and atomic reservation writes
 - **budgets**: separate record binding and resource specifications
 - **admission**: distinguish unavailable state from missing work
 - **admission**: decompose optimistic transaction attempts

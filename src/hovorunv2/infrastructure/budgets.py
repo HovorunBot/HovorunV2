@@ -18,6 +18,7 @@ from hovorunv2.application.budgets import (
 )
 from hovorunv2.infrastructure.budget_state import (
     TRANSACTION_ATTEMPTS,
+    BudgetMutation,
     BudgetRecord,
     BudgetStateUnavailableError,
     build_record,
@@ -73,33 +74,14 @@ class ValkeyBudgetStore(BudgetPort):
                 await pipe.watch(key)
                 raw = await pipe.get(key)
                 if raw is not None:
-                    old = parse_record(raw, self._prefix, record.id)
-                    if old.fingerprint != record.fingerprint:
-                        msg = "Reservation ID or settlement conflicts with its original operation."
-                        raise ValueError(msg)
-                    if old.state == ReservationState.RESERVED:
-                        if record.now >= record.deadline:
-                            return ReservationDecision(ReservationState.EXPIRED)
-                        hashes, members = await self._snapshot(pipe, old, require_active=True)
-                        verify_active_ownership(old, hashes, members)
-                    return ReservationDecision(old.state)
+                    return await self._replay_reservation(pipe, record, raw)
                 if record.deadline <= record.now:
                     return ReservationDecision(ReservationState.EXPIRED)
                 hashes, members = await self._snapshot(pipe, record)
                 mutation = calculate_reserve(record, hashes, members)
                 if mutation.record is None:
                     return mutation.decision
-                pipe.multi()
-                for update in mutation.updates:
-                    quota = update.quota
-                    pipe.hset(quota.key, mapping={"used": update.used, "held": update.held})
-                    pipe.hset(quota.rate, mapping={"tokens": update.tokens, "at": update.at})
-                    pipe.expire(quota.key, math.ceil(quota.ends - record.now + record.retention))
-                    pipe.expire(quota.rate, math.ceil(quota.seconds + record.retention))
-                for item in record.concurrency:
-                    pipe.sadd(item.key, record.id)
-                pipe.set(key, record.serialized())
-                pipe.zadd(self._prefix + "active", {record.id: record.deadline})
+                self._write_reservation_mutation(pipe, key, record, mutation)
                 await pipe.execute()
             except BudgetStateUnavailableError:
                 # Verify that missing ownership is stable rather than a concurrent settlement snapshot.
@@ -108,6 +90,33 @@ class ValkeyBudgetStore(BudgetPort):
                 raise
             else:
                 return mutation.decision
+
+    async def _replay_reservation(self, pipe: AsyncPipeline, record: BudgetRecord, raw: object) -> ReservationDecision:
+        old = parse_record(raw, self._prefix, record.id)
+        if old.fingerprint != record.fingerprint:
+            msg = "Reservation ID or settlement conflicts with its original operation."
+            raise ValueError(msg)
+        if old.state == ReservationState.RESERVED:
+            if record.now >= record.deadline:
+                return ReservationDecision(ReservationState.EXPIRED)
+            hashes, members = await self._snapshot(pipe, old, require_active=True)
+            verify_active_ownership(old, hashes, members)
+        return ReservationDecision(old.state)
+
+    def _write_reservation_mutation(
+        self, pipe: AsyncPipeline, key: str, record: BudgetRecord, mutation: BudgetMutation
+    ) -> None:
+        pipe.multi()
+        for update in mutation.updates:
+            quota = update.quota
+            pipe.hset(quota.key, mapping={"used": update.used, "held": update.held})
+            pipe.hset(quota.rate, mapping={"tokens": update.tokens, "at": update.at})
+            pipe.expire(quota.key, math.ceil(quota.ends - record.now + record.retention))
+            pipe.expire(quota.rate, math.ceil(quota.seconds + record.retention))
+        for item in record.concurrency:
+            pipe.sadd(item.key, record.id)
+        pipe.set(key, record.serialized())
+        pipe.zadd(self._prefix + "active", {record.id: record.deadline})
 
     async def reserve(self, request: BudgetRequest, now: float, durable_totals: tuple[int, ...]) -> ReservationDecision:
         """Acquire every resource or none; contention retries remain bounded and fail closed."""
@@ -140,14 +149,7 @@ class ValkeyBudgetStore(BudgetPort):
                 settled = mutation.record
                 if settled is None:
                     return mutation.decision
-                pipe.multi()
-                for update in mutation.updates:
-                    pipe.hset(update.quota.key, mapping={"held": update.held, "used": update.used})
-                    pipe.hset(update.quota.rate, mapping={"tokens": update.tokens, "at": update.at})
-                for item in record.concurrency:
-                    pipe.srem(item.key, record.id)
-                pipe.set(key, settled.serialized(), ex=record.retention)
-                pipe.zrem(self._prefix + "active", record.id)
+                self._write_settlement_mutation(pipe, key, record, settled, mutation)
                 await pipe.execute()
             except BudgetStateUnavailableError:
                 # Verify that missing ownership is stable rather than a concurrent settlement snapshot.
@@ -156,6 +158,18 @@ class ValkeyBudgetStore(BudgetPort):
                 raise
             else:
                 return mutation.decision
+
+    def _write_settlement_mutation(
+        self, pipe: AsyncPipeline, key: str, record: BudgetRecord, settled: BudgetRecord, mutation: BudgetMutation
+    ) -> None:
+        pipe.multi()
+        for update in mutation.updates:
+            pipe.hset(update.quota.key, mapping={"held": update.held, "used": update.used})
+            pipe.hset(update.quota.rate, mapping={"tokens": update.tokens, "at": update.at})
+        for item in record.concurrency:
+            pipe.srem(item.key, record.id)
+        pipe.set(key, settled.serialized(), ex=record.retention)
+        pipe.zrem(self._prefix + "active", record.id)
 
     async def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...], now: float) -> ReservationDecision:
         """Settle once without renewing terminal receipts or guessing missing ownership."""
@@ -203,33 +217,14 @@ class WorkerBudgetClient:
                 pipe.watch(key)
                 raw = pipe.get(key)
                 if raw is not None:
-                    old = parse_record(raw, self._prefix, record.id)
-                    if old.fingerprint != record.fingerprint:
-                        msg = "Reservation ID or settlement conflicts with its original operation."
-                        raise ValueError(msg)
-                    if old.state == ReservationState.RESERVED:
-                        if record.now >= record.deadline:
-                            return ReservationDecision(ReservationState.EXPIRED)
-                        hashes, members = self._snapshot(pipe, old, require_active=True)
-                        verify_active_ownership(old, hashes, members)
-                    return ReservationDecision(old.state)
+                    return self._replay_reservation(pipe, record, raw)
                 if record.deadline <= record.now:
                     return ReservationDecision(ReservationState.EXPIRED)
                 hashes, members = self._snapshot(pipe, record)
                 mutation = calculate_reserve(record, hashes, members)
                 if mutation.record is None:
                     return mutation.decision
-                pipe.multi()
-                for update in mutation.updates:
-                    quota = update.quota
-                    pipe.hset(quota.key, mapping={"used": update.used, "held": update.held})
-                    pipe.hset(quota.rate, mapping={"tokens": update.tokens, "at": update.at})
-                    pipe.expire(quota.key, math.ceil(quota.ends - record.now + record.retention))
-                    pipe.expire(quota.rate, math.ceil(quota.seconds + record.retention))
-                for item in record.concurrency:
-                    pipe.sadd(item.key, record.id)
-                pipe.set(key, record.serialized())
-                pipe.zadd(self._prefix + "active", {record.id: record.deadline})
+                self._write_reservation_mutation(pipe, key, record, mutation)
                 pipe.execute()
             except BudgetStateUnavailableError:
                 # Verify that missing ownership is stable rather than a concurrent settlement snapshot.
@@ -238,6 +233,33 @@ class WorkerBudgetClient:
                 raise
             else:
                 return mutation.decision
+
+    def _replay_reservation(self, pipe: Pipeline, record: BudgetRecord, raw: object) -> ReservationDecision:
+        old = parse_record(raw, self._prefix, record.id)
+        if old.fingerprint != record.fingerprint:
+            msg = "Reservation ID or settlement conflicts with its original operation."
+            raise ValueError(msg)
+        if old.state == ReservationState.RESERVED:
+            if record.now >= record.deadline:
+                return ReservationDecision(ReservationState.EXPIRED)
+            hashes, members = self._snapshot(pipe, old, require_active=True)
+            verify_active_ownership(old, hashes, members)
+        return ReservationDecision(old.state)
+
+    def _write_reservation_mutation(
+        self, pipe: Pipeline, key: str, record: BudgetRecord, mutation: BudgetMutation
+    ) -> None:
+        pipe.multi()
+        for update in mutation.updates:
+            quota = update.quota
+            pipe.hset(quota.key, mapping={"used": update.used, "held": update.held})
+            pipe.hset(quota.rate, mapping={"tokens": update.tokens, "at": update.at})
+            pipe.expire(quota.key, math.ceil(quota.ends - record.now + record.retention))
+            pipe.expire(quota.rate, math.ceil(quota.seconds + record.retention))
+        for item in record.concurrency:
+            pipe.sadd(item.key, record.id)
+        pipe.set(key, record.serialized())
+        pipe.zadd(self._prefix + "active", {record.id: record.deadline})
 
     def reserve(self, request: BudgetRequest, now: float, durable_totals: tuple[int, ...]) -> ReservationDecision:
         """Reserve synchronously with the same pure decisions and original identity as bot admission."""
@@ -271,14 +293,7 @@ class WorkerBudgetClient:
                 settled = mutation.record
                 if settled is None:
                     return mutation.decision
-                pipe.multi()
-                for update in mutation.updates:
-                    pipe.hset(update.quota.key, mapping={"held": update.held, "used": update.used})
-                    pipe.hset(update.quota.rate, mapping={"tokens": update.tokens, "at": update.at})
-                for item in record.concurrency:
-                    pipe.srem(item.key, record.id)
-                pipe.set(key, settled.serialized(), ex=record.retention)
-                pipe.zrem(self._prefix + "active", record.id)
+                self._write_settlement_mutation(pipe, key, record, settled, mutation)
                 pipe.execute()
             except BudgetStateUnavailableError:
                 # Verify that missing ownership is stable rather than a concurrent settlement snapshot.
@@ -287,6 +302,18 @@ class WorkerBudgetClient:
                 raise
             else:
                 return mutation.decision
+
+    def _write_settlement_mutation(
+        self, pipe: Pipeline, key: str, record: BudgetRecord, settled: BudgetRecord, mutation: BudgetMutation
+    ) -> None:
+        pipe.multi()
+        for update in mutation.updates:
+            pipe.hset(update.quota.key, mapping={"held": update.held, "used": update.used})
+            pipe.hset(update.quota.rate, mapping={"tokens": update.tokens, "at": update.at})
+        for item in record.concurrency:
+            pipe.srem(item.key, record.id)
+        pipe.set(key, settled.serialized(), ex=record.retention)
+        pipe.zrem(self._prefix + "active", record.id)
 
     def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...], now: float) -> ReservationDecision:
         """Reconcile actual consumption only after every held resource can be verified."""
