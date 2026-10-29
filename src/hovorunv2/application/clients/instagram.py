@@ -153,7 +153,7 @@ class InstagramService(BaseMediaClient):
             )
             self._session_initialized = True
         except Exception:
-            logger.exception("Failed to set Instaloader session cookie")
+            logger.warning("Failed to set Instaloader session cookie")
 
     async def extract_fallback(self, url: str) -> RichMediaPayload | None:
         """Try instaloader after yt-dlp fails, then fall back to headless browser."""
@@ -180,14 +180,21 @@ class InstagramService(BaseMediaClient):
             logger.warning("Instaloader extraction failed (%s)", type(e))
             return None
 
+        return self._build_instaloader_payload(post, url)
+
+    def _post_caption(self, post: instaloader.Post) -> str:
+        """Preserve usable cleaned captions and original short-caption/type fallbacks."""
         raw_text = post.caption or ""
         clean_desc = clean_caption_text(raw_text, strip_hashtags=True)
-        display_text = (
-            clean_desc
-            if len(clean_desc) >= self.MIN_DESCRIPTION_LENGTH
-            else (raw_text or f"Instagram {post.typename.replace('Graph', '').lower()}")
-        )
+        if len(clean_desc) >= self.MIN_DESCRIPTION_LENGTH:
+            return clean_desc
+        if raw_text:
+            return raw_text
+        return f"Instagram {post.typename.replace('Graph', '').lower()}"
 
+    def _build_instaloader_payload(self, post: instaloader.Post, url: str) -> RichMediaPayload:
+        """Map fetched post metadata after the backend request succeeds."""
+        display_text = self._post_caption(post)
         return RichMediaPayload(
             author_name=post.owner_profile.full_name or post.owner_username,
             author_handle=post.owner_username,

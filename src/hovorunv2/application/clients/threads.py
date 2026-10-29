@@ -68,12 +68,16 @@ class ThreadsService(BaseMediaClient):
         try:
             html_content = await self._browser.get_content(url, wait_selector="article")
         except Exception:
-            logger.exception("Failed to fetch Threads via BrowserService")
+            logger.warning("Failed to fetch Threads via BrowserService")
             return None
 
         if not html_content:
             return None
 
+        return self._parse_browser_post(html_content, url, tld, post_id)
+
+    def _parse_browser_post(self, html_content: str, url: str, tld: str, post_id: str) -> RichMediaPayload | None:
+        """Parse fetched DOM while keeping main, quoted and fallback media separate."""
         soup = BeautifulSoup(html_content, "html.parser")
         media_items = self._extract_media_from_soup(soup)
         if not media_items:
@@ -160,11 +164,14 @@ class ThreadsService(BaseMediaClient):
         """Identify common links to exclude (handle, timestamp)."""
         noise: set[Tag] = set()
         for link in main_container.find_all("a", role="link"):
-            href = str(link.get("href") or "")
-            if href.startswith("/@") and len(href.split("/")) <= self.MAX_PROFILE_LINK_DEPTH:
+            if self._is_profile_link(link):
                 noise.update(link.find_all(["div", "span"], dir="auto"))
                 noise.add(link)
         return noise
+
+    def _is_profile_link(self, link: Tag) -> bool:
+        href = str(link.get("href") or "")
+        return href.startswith("/@") and len(href.split("/")) <= self.MAX_PROFILE_LINK_DEPTH
 
     def _is_excluded_element(self, el: Tag, quoted: set[Tag], noise: set[Tag], quoted_container: Tag | None) -> bool:
         """Check if element should be excluded from text extraction."""
@@ -189,7 +196,7 @@ class ThreadsService(BaseMediaClient):
         quoted_elements: set[Tag] = set()
         if quoted_container:
             quoted_elements.add(quoted_container)
-            quoted_elements.update(quoted_container.find_all(lambda t: isinstance(t, Tag)))
+            quoted_elements.update(quoted_container.find_all(name=True))
 
         return self._collect_container_media(main_container, exclude=quoted_elements)
 
@@ -204,11 +211,16 @@ class ThreadsService(BaseMediaClient):
         items.extend(
             MediaItem(url=str(img.get("src")), is_video=False)
             for img in container.find_all("img")
-            if img not in excluded
-            and "cdninstagram.com" in str(img.get("src") or "")
-            and "profile picture" not in str(img.get("alt") or "").lower()
+            if self._is_post_image(img, excluded)
         )
         return items
+
+    def _is_post_image(self, image: Tag, excluded: set[Tag]) -> bool:
+        if image in excluded:
+            return False
+        if "cdninstagram.com" not in str(image.get("src") or ""):
+            return False
+        return "profile picture" not in str(image.get("alt") or "").lower()
 
     def _extract_thumbnail(self, soup: BeautifulSoup) -> list[MediaItem]:
         """Fallback to OG images (thumbnails) for media extraction."""
@@ -224,23 +236,24 @@ class ThreadsService(BaseMediaClient):
             return nested_article
 
         for link in container.find_all(role="link"):
-            href = str(link.get("href") or "")
-            if (
-                href.startswith("/@")
-                and len(href.split("/")) == self.PROFILE_PATH_PARTS
-                and len(link.get_text()) < self.MIN_QUOTE_LENGTH
-            ):
-                continue
-
-            text = link.get_text().strip()
-            if len(text) > self.MIN_QUOTED_TEXT_LENGTH or link.find("video"):
-                if img := link.find("img"):
-                    if "profile picture" in str(img.get("alt") or "").lower():
-                        continue
-                    return link
-                if len(text) > self.MIN_FALLBACK_QUOTE_LENGTH:
-                    return link
+            if self._is_quote_candidate(link):
+                return link
         return None
+
+    def _is_quote_candidate(self, link: Tag) -> bool:
+        href = str(link.get("href") or "")
+        if (
+            href.startswith("/@")
+            and len(href.split("/")) == self.PROFILE_PATH_PARTS
+            and len(link.get_text()) < self.MIN_QUOTE_LENGTH
+        ):
+            return False
+        text = link.get_text().strip()
+        if len(text) <= self.MIN_QUOTED_TEXT_LENGTH and not link.find("video"):
+            return False
+        if image := link.find("img"):
+            return "profile picture" not in str(image.get("alt") or "").lower()
+        return len(text) > self.MIN_FALLBACK_QUOTE_LENGTH
 
     def _extract_quoted_post(self, soup: BeautifulSoup) -> RichMediaPayload | None:
         """Attempt to find and parse a quoted post in the HTML."""
@@ -250,21 +263,8 @@ class ThreadsService(BaseMediaClient):
             return None
 
         try:
-            author_div = quoted_container.find("div", dir="auto", style=re.compile("font-weight: 600"))
-            first_auto = quoted_container.find("div", dir="auto")
-            author_name = (
-                author_div.get_text()
-                if author_div
-                else (first_auto.get_text().strip() if first_auto else "Quoted Post")
-            ) or "Quoted Post"
-
-            text_div = quoted_container.find("div", dir="auto", style=re.compile("font-weight: 400"))
-            if text_div:
-                text = text_div.get_text()
-            else:
-                text = quoted_container.get_text(separator=" ").strip()
-                if text.startswith(author_name):
-                    text = text[len(author_name) :].strip()
+            author_name = self._quoted_author(quoted_container)
+            text = self._quoted_text(quoted_container, author_name)
 
             return RichMediaPayload(
                 author_name=author_name,
@@ -277,3 +277,19 @@ class ThreadsService(BaseMediaClient):
         except Exception:
             logger.debug("Failed to parse quoted post details")
             return None
+
+    def _quoted_author(self, container: Tag) -> str:
+        author_div = container.find("div", dir="auto", style=re.compile("font-weight: 600"))
+        first_auto = container.find("div", dir="auto")
+        return (
+            author_div.get_text() if author_div else (first_auto.get_text().strip() if first_auto else "Quoted Post")
+        ) or "Quoted Post"
+
+    def _quoted_text(self, container: Tag, author_name: str) -> str:
+        text_div = container.find("div", dir="auto", style=re.compile("font-weight: 400"))
+        if text_div:
+            return text_div.get_text()
+        text = container.get_text(separator=" ").strip()
+        if text.startswith(author_name):
+            return text[len(author_name) :].strip()
+        return text
