@@ -21,3 +21,7 @@ class MediaDownloadError(OSError):
     def __init__(self, code: MediaFailure = MediaFailure.UNAVAILABLE) -> None:
         self.code = code
         super().__init__(code.value)
+
+
+class BrowserError(Exception):
+    """Allowlisted browser lifecycle failure without private page contents."""

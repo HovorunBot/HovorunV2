@@ -2,6 +2,8 @@
 
 import html
 import logging
+from collections.abc import Awaitable, Callable
+from functools import partial
 from typing import ClassVar
 
 from hovorunv2.application.clients.base import BaseMediaClient
@@ -59,10 +61,6 @@ class MediaPipeline:
         cleaned_url = url.rstrip(".,")
 
         raw_payload = await self._extract_raw(client, cleaned_url)
-        if not raw_payload:
-            logger.warning("Extraction returned empty payload for provider %s", client.name)
-            return None
-
         feature = self._features.registry.capture(client.name, is_video=raw_payload.is_video)
         decision = await self._features.evaluate(feature.key, chat_id, actor_id, trigger=trigger)
         if not decision.allowed:
@@ -76,27 +74,27 @@ class MediaPipeline:
 
         return await self._finalize_payload(raw_payload, client.config, cleaned_url, chat_id)
 
-    async def _extract_raw(self, client: BaseMediaClient, url: str) -> RichMediaPayload | None:
-        """Run 4-tier resilience pipeline: Direct API -> yt-dlp -> Browser Fallback -> Metadata."""
-        # 1. Direct API
-        if payload := await client.extract(url):
-            return payload
-
-        # 2. Generic MediaExtractor (yt-dlp) - skip for explicit post/text URLs
+    async def _extract_raw(self, client: BaseMediaClient, url: str) -> RichMediaPayload:
+        """Run ordered strategies; only semantic backend failure permits recovery."""
+        strategies: list[Callable[[], Awaitable[RichMediaPayload | None]]] = [partial(client.extract, url)]
         is_post_url = bool(client.config.post_url_pattern and client.config.post_url_pattern.search(url))
         if not is_post_url:
-            logger.info("%s direct API returned no payload, trying yt-dlp", client.name)
+            strategies.append(partial(self._extract_generic, client, url))
+        strategies.extend((partial(client.extract_fallback, url), partial(client.extract_metadata, url)))
+        for strategy in strategies:
             try:
-                return await self._extractor.extract(url, cookies=client.get_ytdlp_cookies())
+                payload = await strategy()
             except MediaExtractionError:
-                logger.info("Media backend strategy failed; trying provider fallback")
+                logger.info("Extraction strategy failed for provider %s", client.name)
+                continue
+            if payload is not None:
+                return payload
+        msg = "Media extraction strategies are exhausted."
+        raise MediaExtractionError(msg)
 
-        # 3. Browser Fallback
-        if payload := await client.extract_fallback(url):
-            return payload
-
-        # 4. Metadata / OpenGraph fallback
-        return await client.extract_metadata(url)
+    async def _extract_generic(self, client: BaseMediaClient, url: str) -> RichMediaPayload:
+        """Resolve provider credentials only when the generic backend strategy is attempted."""
+        return await self._extractor.extract(url, cookies=client.get_ytdlp_cookies())
 
     async def _finalize_payload(
         self,

@@ -12,6 +12,7 @@ from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
+from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.services.access_service import CommandPolicy
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
@@ -144,5 +145,7 @@ class RichMediaCommand(BaseCommand):
                     continue
 
                 await self._delivery.deliver(bot, message, payload, self.platform_name)
+            except MediaExtractionError:
+                logger.warning("Extraction strategies failed for %s", self.name)
             except Exception:
                 logger.exception("Failed to process %s link", self.name)

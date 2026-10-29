@@ -9,7 +9,8 @@ from urllib.parse import urlsplit
 from DrissionPage.errors import BrowserConnectError, PageDisconnectedError
 
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.infrastructure.browser_process import BrowserError, OwnedChromium
+from hovorunv2.application.media.errors import BrowserError
+from hovorunv2.infrastructure.browser_process import OwnedChromium
 from hovorunv2.infrastructure.native_http import NativeHTTPClient
 
 DEFAULT_BROWSER_TIMEOUT_SECONDS = 30

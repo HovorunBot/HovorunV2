@@ -10,6 +10,7 @@ import instaloader
 
 from hovorunv2.application.clients.base import BaseMediaClient, BrowserFallbackConfig, OGConfig, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.ports import AppSettings, BrowserPort
 from hovorunv2.application.text import clean_caption_text
 from hovorunv2.domain.enums import CommandName
@@ -152,15 +153,17 @@ class InstagramService(BaseMediaClient):
                 domain=".instagram.com",
             )
             self._session_initialized = True
-        except Exception:
-            logger.warning("Failed to set Instaloader session cookie")
+        except ValueError, TypeError:
+            msg = "Provider browser session is unavailable."
+            raise MediaExtractionError(msg) from None
 
     async def extract_fallback(self, url: str) -> RichMediaPayload | None:
         """Try instaloader after yt-dlp fails, then fall back to headless browser."""
         if match := self._config.pattern.search(url):
-            raw_payload = await self._extract_via_instaloader(url, match)
-            if raw_payload is not None:
-                return raw_payload
+            try:
+                return await self._extract_via_instaloader(url, match)
+            except MediaExtractionError:
+                logger.info("Provider backend strategy failed; trying browser")
 
         return await super().extract_fallback(url)
 
@@ -168,7 +171,7 @@ class InstagramService(BaseMediaClient):
         self,
         url: str,
         match: re.Match[str],
-    ) -> RichMediaPayload | None:
+    ) -> RichMediaPayload:
         """Fetch Instagram data using instaloader and construct raw RichMediaPayload."""
         shortcode = match.group("id")
         if self._settings.instagram_sessionid:
@@ -176,9 +179,9 @@ class InstagramService(BaseMediaClient):
 
         try:
             post = await asyncio.to_thread(instaloader.Post.from_shortcode, self._context, shortcode)
-        except Exception as e:
-            logger.warning("Instaloader extraction failed (%s)", type(e))
-            return None
+        except instaloader.exceptions.InstaloaderException, OSError:
+            msg = "Provider backend extraction failed."
+            raise MediaExtractionError(msg) from None
 
         return self._build_instaloader_payload(post, url)
 
@@ -195,21 +198,23 @@ class InstagramService(BaseMediaClient):
     def _build_instaloader_payload(self, post: instaloader.Post, url: str) -> RichMediaPayload:
         """Map fetched post metadata after the backend request succeeds."""
         display_text = self._post_caption(post)
-        return RichMediaPayload(
-            author_name=post.owner_profile.full_name or post.owner_username,
-            author_handle=post.owner_username,
-            author_url=f"https://www.instagram.com/{post.owner_username}/",
-            content=display_text,
-            footer_text=self._build_metrics_footer(
-                ("❤️", post.likes),
-                ("💬", post.comments),
-                ("👁️", post.video_view_count if post.is_video else None),
-                ("▶️", getattr(post, "video_play_count", None) if post.is_video else None),
-                prefix="📊 ",
-                include_zero=True,
-            ),
-            original_url=url,
-            media_items=self._extract_media_items(post),
+        return self._require_usable_payload(
+            RichMediaPayload(
+                author_name=post.owner_profile.full_name or post.owner_username,
+                author_handle=post.owner_username,
+                author_url=f"https://www.instagram.com/{post.owner_username}/",
+                content=display_text,
+                footer_text=self._build_metrics_footer(
+                    ("❤️", post.likes),
+                    ("💬", post.comments),
+                    ("👁️", post.video_view_count if post.is_video else None),
+                    ("▶️", getattr(post, "video_play_count", None) if post.is_video else None),
+                    prefix="📊 ",
+                    include_zero=True,
+                ),
+                original_url=url,
+                media_items=self._extract_media_items(post),
+            )
         )
 
     def _extract_media_items(self, post: instaloader.Post) -> list[MediaItem]:

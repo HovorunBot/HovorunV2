@@ -36,11 +36,11 @@ def escape_payload_authors(payload: RichMediaPayload, original_url: str) -> None
 def merge_quoted_media(payload: RichMediaPayload, config: ProviderConfig) -> None:
     """Apply provider-specific quote merge policy after text processing."""
     quote = payload.quoted_payload
-    if (
-        quote is not None
-        and quote.media_items
-        and config.merge_quoted_media
-        and (not config.merge_quoted_only_when_empty or not payload.media_items)
-    ):
-        payload.media_items.extend(quote.media_items)
-        payload.content += QUOTED_MEDIA_NOTE
+    if quote is None or not quote.media_items:
+        return
+    if not config.merge_quoted_media:
+        return
+    if config.merge_quoted_only_when_empty and payload.media_items:
+        return
+    payload.media_items.extend(quote.media_items)
+    payload.content += QUOTED_MEDIA_NOTE

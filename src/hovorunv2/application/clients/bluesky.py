@@ -7,6 +7,7 @@ import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
@@ -33,12 +34,10 @@ class BlueskyService(BaseMediaClient):
             return None
 
         did = handle if handle.startswith("did:") else await self._resolve_did(handle)
-        if not did:
-            return None
-
         thread_data = await self._fetch_thread(did, match.group("rkey"))
         if not isinstance(thread_data, dict) or "thread" not in thread_data:
-            return None
+            msg = "Provider returned unusable extraction metadata."
+            raise MediaExtractionError(msg)
 
         post = thread_data["thread"]["post"]
         record = post.get("record", {})
@@ -71,10 +70,14 @@ class BlueskyService(BaseMediaClient):
             f"{self.API_BASE_URL}/app.bsky.feed.getPostThread", params={"uri": at_uri, "depth": 0}
         )
 
-    async def _resolve_did(self, handle: str) -> str | None:
+    async def _resolve_did(self, handle: str) -> str:
         """Resolve Bluesky handle to DID."""
         profile = await self._fetch_json(f"{self.API_BASE_URL}/app.bsky.actor.getProfile", params={"actor": handle})
-        return profile.get("did") if isinstance(profile, dict) else None
+        did = profile.get("did") if isinstance(profile, dict) else None
+        if not isinstance(did, str) or not did:
+            msg = "Provider actor identity is unavailable."
+            raise MediaExtractionError(msg)
+        return did
 
     def _get_record_view(self, embed: dict[str, Any]) -> dict[str, Any] | None:
         """Retrieve the record view from the embed if present."""

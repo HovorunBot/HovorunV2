@@ -9,7 +9,9 @@ from tempfile import TemporaryDirectory
 from threading import RLock
 
 from DrissionPage import ChromiumOptions, ChromiumPage
+from DrissionPage.errors import BaseError
 
+from hovorunv2.application.media.errors import BrowserError
 from hovorunv2.infrastructure.browser_discovery import find_browser_executable
 from hovorunv2.infrastructure.logger import get_logger
 
@@ -34,10 +36,6 @@ DEFAULT_BROWSER_FLAGS = (
     "--no-first-run",
     "--no-default-browser-check",
 )
-
-
-class BrowserError(Exception):
-    """Allowlisted browser lifecycle failure without private page contents."""
 
 
 class OwnedChromium:
@@ -105,6 +103,10 @@ class OwnedChromium:
                 options.set_retry(times=0, interval=0)
                 options.set_timeouts(base=DEFAULT_STARTUP_SECONDS, page_load=DEFAULT_STARTUP_SECONDS)
                 self._page = ChromiumPage(options)
+            except BaseError, OSError:
+                self.close()
+                msg = "Browser startup is unavailable."
+                raise BrowserError(msg) from None
             except BaseException:
                 self.close()
                 raise

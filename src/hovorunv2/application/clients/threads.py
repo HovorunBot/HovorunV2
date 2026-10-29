@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.clients.base import BaseMediaClient, OGConfig, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.media.errors import BrowserError, MediaExtractionError
 from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
@@ -67,9 +68,9 @@ class ThreadsService(BaseMediaClient):
 
         try:
             html_content = await self._browser.get_content(url, wait_selector="article")
-        except Exception:
-            logger.warning("Failed to fetch Threads via BrowserService")
-            return None
+        except BrowserError:
+            msg = "Provider browser extraction failed."
+            raise MediaExtractionError(msg) from None
 
         if not html_content:
             return None
@@ -86,15 +87,17 @@ class ThreadsService(BaseMediaClient):
             media_items = self._extract_thumbnail(soup)
 
         author_name, author_handle = self._extract_author_from_soup(soup)
-        return RichMediaPayload(
-            author_name=author_name,
-            author_handle=author_handle,
-            author_url=f"https://www.threads.{tld}/@{urllib.parse.quote(author_handle)}",
-            content=self._extract_text_from_soup(soup),
-            footer_text=self._extract_footer_from_soup(soup, post_id) or "Threads",
-            original_url=url,
-            media_items=media_items,
-            quoted_payload=self._extract_quoted_post(soup),
+        return self._require_usable_payload(
+            RichMediaPayload(
+                author_name=author_name,
+                author_handle=author_handle,
+                author_url=f"https://www.threads.{tld}/@{urllib.parse.quote(author_handle)}",
+                content=self._extract_text_from_soup(soup),
+                footer_text=self._extract_footer_from_soup(soup, post_id) or "Threads",
+                original_url=url,
+                media_items=media_items,
+                quoted_payload=self._extract_quoted_post(soup),
+            )
         )
 
     def _extract_footer_from_soup(self, soup: BeautifulSoup, post_id: str) -> str:

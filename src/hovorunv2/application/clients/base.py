@@ -9,6 +9,7 @@ from http import HTTPStatus
 from typing import Any, ClassVar, Protocol
 
 import aiohttp
+from DrissionPage.errors import BaseError
 
 from hovorunv2.application.clients.config import (
     FACEBOOK_CONFIG,
@@ -18,6 +19,7 @@ from hovorunv2.application.clients.config import (
 )
 from hovorunv2.application.clients.parsing import MediaParser
 from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.media.errors import BrowserError, MediaExtractionError
 from hovorunv2.application.ports import BrowserPort
 from hovorunv2.application.text import extract_og_metadata
 from hovorunv2.domain.enums import CommandName
@@ -89,13 +91,19 @@ class BaseMediaClient(MediaParser):
             return None
 
         resolved_url = await self.resolve_url(url)
-        if not resolved_url:
-            return None
-
         if not (match := self._config.pattern.search(resolved_url)):
             return None
 
-        return await self._extract_raw_payload(resolved_url, match)
+        try:
+            payload = await self._extract_raw_payload(resolved_url, match)
+        except MediaExtractionError:
+            raise
+        except KeyError, TypeError, ValueError, IndexError, AttributeError:
+            msg = "Provider returned unusable extraction metadata."
+            raise MediaExtractionError(msg) from None
+        if payload is None:
+            return None
+        return self._require_usable_payload(payload)
 
     async def extract_metadata(self, url: str) -> RichMediaPayload | None:
         """Execute OpenGraph / HTML metadata extraction as final fallback."""
@@ -103,12 +111,9 @@ class BaseMediaClient(MediaParser):
             return None
 
         resolved_url = await self.resolve_url(url)
-        if not resolved_url:
-            return None
-
         return await self._extract_via_og(resolved_url, self._config.og_config)
 
-    async def resolve_url(self, url: str) -> str | None:
+    async def resolve_url(self, url: str) -> str:
         """Resolve redirects when configured on the provider."""
         if self._config.redirect_pattern and self._config.redirect_pattern.search(url):
             return await self._resolve_redirect(url, headers=self._config.headers or None)
@@ -121,6 +126,35 @@ class BaseMediaClient(MediaParser):
     ) -> RichMediaPayload | None:
         """Override in subclasses for provider-specific raw extraction."""
         return None
+
+    def _require_usable_payload(self, payload: RichMediaPayload) -> RichMediaPayload:
+        self._require_provider_fields(payload)
+        if not payload.content and not payload.media_items and payload.quoted_payload is None:
+            msg = "Provider returned unusable extraction metadata."
+            raise MediaExtractionError(msg)
+        return payload
+
+    def _require_provider_fields(self, payload: RichMediaPayload) -> None:
+        msg = "Provider returned unusable extraction metadata."
+        for value in (
+            payload.author_name,
+            payload.author_handle,
+            payload.author_url,
+            payload.content,
+            payload.footer_text,
+            payload.original_url,
+        ):
+            if not isinstance(value, str):
+                raise MediaExtractionError(msg)
+        for item in payload.media_items:
+            if not isinstance(item.url, str) or not isinstance(item.is_video, bool):
+                raise MediaExtractionError(msg)
+            if item.data is not None and not isinstance(item.data, bytes):
+                raise MediaExtractionError(msg)
+            if not item.url and not item.data:
+                raise MediaExtractionError(msg)
+        if payload.quoted_payload is not None:
+            self._require_provider_fields(payload.quoted_payload)
 
     def get_ytdlp_cookies(self) -> dict[str, str] | None:
         """Return optional cookies to pass to yt-dlp fallback."""
@@ -147,11 +181,11 @@ class BaseMediaClient(MediaParser):
                 return None
             for item, content in zip(payload.media_items, media_bytes, strict=False):
                 item.data = content
-        except Exception:
-            logger.exception("Browser fallback failed for %s", self.name)
-            return None
+        except BrowserError, MediaExtractionError:
+            msg = "Provider browser extraction failed."
+            raise MediaExtractionError(msg) from None
         else:
-            return payload
+            return self._require_usable_payload(payload)
 
     # Compatibility aliases
     extract_payload = extract
@@ -179,7 +213,7 @@ class BaseMediaClient(MediaParser):
                 if btn := tab.ele(f"text={btn_text}", timeout=1):
                     btn.click()
                     time.sleep(1)
-            except Exception:
+            except BaseError, OSError:
                 logger.debug("Gate button '%s' not clickable", btn_text)
 
     def _extract_browser_script(
@@ -190,8 +224,8 @@ class BaseMediaClient(MediaParser):
                 js_results = tab.run_js(b_cfg.js_extractor)
                 if isinstance(js_results, dict) and (js_results.get("video") or js_results.get("image")):
                     return self._build_browser_payload(js_results, url, b_cfg)
-            except Exception:
-                logger.exception("JS extraction failed for %s", self.name)
+            except BaseError, OSError, ValueError, TypeError:
+                logger.warning("JS extraction failed for %s", self.name)
 
         return None
 
@@ -208,8 +242,8 @@ class BaseMediaClient(MediaParser):
         *,
         params: Mapping[str, str | int] | None = None,
         headers: Mapping[str, str] | None = None,
-    ) -> Any:
-        """Perform GET request and return parsed JSON or None on failure."""
+    ) -> object:
+        """Require decoded provider JSON; malformed or unavailable I/O raises a safe error."""
         try:
             async with self._http.get(
                 url,
@@ -217,42 +251,38 @@ class BaseMediaClient(MediaParser):
                 headers=headers or self._config.headers or None,
                 timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
             ) as resp:
-                if resp.status != HTTPStatus.OK:
-                    logger.warning("%s API returned HTTP %d", self.name, resp.status)
-                    return None
+                self._require_success(resp.status)
                 return await resp.json()
-        except Exception:
-            logger.exception("Error fetching provider JSON for %s", self.name)
-            return None
+        except aiohttp.ClientError, OSError, ValueError:
+            msg = "Provider JSON request failed."
+            raise MediaExtractionError(msg) from None
 
     async def _fetch_html(
         self,
         url: str,
         *,
         headers: Mapping[str, str] | None = None,
-    ) -> str | None:
-        """Perform GET request and return HTML text or None on failure."""
+    ) -> str:
+        """Require provider HTML without exposing request-bearing backend diagnostics."""
         try:
             async with self._http.get(
                 url,
                 headers=headers or self._config.headers or self.DEFAULT_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
             ) as resp:
-                if resp.status != HTTPStatus.OK:
-                    logger.warning("%s fetch returned HTTP %d", self.name, resp.status)
-                    return None
+                self._require_success(resp.status)
                 return await resp.text()
-        except Exception:
-            logger.exception("Error fetching provider HTML for %s", self.name)
-            return None
+        except aiohttp.ClientError, OSError, ValueError:
+            msg = "Provider HTML request failed."
+            raise MediaExtractionError(msg) from None
 
     async def _resolve_redirect(
         self,
         url: str,
         *,
         headers: Mapping[str, str] | None = None,
-    ) -> str | None:
-        """Follow HTTP redirects and return final resolved URL."""
+    ) -> str:
+        """Require a successful resolved URL, preserving configured request headers."""
         try:
             async with self._http.get(
                 url,
@@ -260,7 +290,13 @@ class BaseMediaClient(MediaParser):
                 allow_redirects=True,
                 timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
             ) as resp:
+                self._require_success(resp.status)
                 return str(resp.url)
-        except Exception:
-            logger.exception("Failed to follow provider redirect for %s", self.name)
-            return None
+        except aiohttp.ClientError, OSError, ValueError:
+            msg = "Provider redirect request failed."
+            raise MediaExtractionError(msg) from None
+
+    def _require_success(self, status: int) -> None:
+        if status != HTTPStatus.OK:
+            msg = "Provider request did not return a usable response."
+            raise MediaExtractionError(msg)

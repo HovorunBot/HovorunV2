@@ -7,6 +7,7 @@ import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
@@ -25,11 +26,12 @@ class TwitterService(BaseMediaClient):
         """Initialize with HTTP session and browser adapter."""
         super().__init__(config=TWITTER_CONFIG, http=http, browser=browser)
 
-    async def _extract_raw_payload(self, url: str, match: re.Match[str]) -> RichMediaPayload | None:
+    async def _extract_raw_payload(self, url: str, match: re.Match[str]) -> RichMediaPayload:
         """Fetch tweet data from vxtwitter API and return raw RichMediaPayload."""
         tweet_data = await self._fetch_json(f"https://api.vxtwitter.com/i/status/{match.group('post_id')}")
         if not isinstance(tweet_data, dict) or "text" not in tweet_data:
-            return None
+            msg = "Provider returned unusable extraction metadata."
+            raise MediaExtractionError(msg)
 
         raw_text = self._post_text(tweet_data.get("text", ""), tweet_data.get("qrtURL"))
 

@@ -8,7 +8,8 @@ from DrissionPage import ChromiumPage
 from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.infrastructure.browser_process import BrowserError, OwnedChromium
+from hovorunv2.application.media.errors import BrowserError
+from hovorunv2.infrastructure.browser_process import OwnedChromium
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.infrastructure.native_browser import download_tab_media
 
@@ -176,12 +177,13 @@ class BrowserService:
                 await self._manager.acquire()
                 try:
                     return await self._fetch_url_content(url, wait_selector)
-                except (BaseError, Exception) as e:
+                except (BaseError, BrowserError, OSError) as e:
                     if self._is_recoverable_error(e) and attempt == 0:
                         logger.warning("Browser error, retrying (%s)", type(e))
                         await self._manager.close()
                         continue
-                    raise
+                    msg = "Browser content is unavailable."
+                    raise BrowserError(msg) from None
                 finally:
                     await self._manager.release()
 
@@ -218,6 +220,9 @@ class BrowserService:
                 return await asyncio.to_thread(
                     self._sync_extract_and_download, page, url, extractor_fn, wait_selector, cookies
                 )
+            except BaseError, OSError:
+                msg = "Browser extraction is unavailable."
+                raise BrowserError(msg) from None
             finally:
                 await self._manager.release()
 
