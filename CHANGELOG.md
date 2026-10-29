@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **infrastructure**: replace Valkey Lua scripts with native Redis transactions
 - **queue**: make admission the lifecycle owner
 - **browser**: rank Unix browser installation targets
 - **workers**: add native persistence and Celery foundations

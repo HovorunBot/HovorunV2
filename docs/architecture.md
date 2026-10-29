@@ -163,3 +163,10 @@ cooperation; only verified terminal completion releases its counted resources. P
 Its admission, encrypted payload and execution budget adapters reject retained references after close or fork. Sender
 attribution stays inside bounded short-lived ciphertext and appears only in the in-process decrypted payload. This runtime
 composition does not register Celery tasks; R09 owns native task composition and R10 owns handler cutover.
+
+
+Admission, execution budgets and encrypted payload CAS use native Valkey commands. Conditional multi-key admission and
+budget changes use bounded WATCH/MULTI/EXEC transactions. Both runtimes share typed persisted records and pure decision
+calculations; each adapter owns its concrete asynchronous or synchronous I/O. Missing or malformed active resource
+metadata fails closed. Payload SET NX writes and equality checks never extend the original retention on replay. No embedded
+Valkey Lua, second runtime receipt ledger or PostgreSQL executable queue is required.

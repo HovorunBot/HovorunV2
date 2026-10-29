@@ -147,8 +147,8 @@ async def test_deadline_impossible_estimate_and_partial_settlement(test_containe
         assert (await store.finish("refund", ZERO, 121)).state == ReservationState.RELEASED
 
 
-async def test_fractional_deadline_replay_does_not_use_lua_rounded_timestamp(test_container: AsyncContainer) -> None:
-    """Stored Lua metadata may round floats; a retry must compare its exact bound original deadline."""
+async def test_fractional_deadline_replay_preserves_exact_original_timestamp(test_container: AsyncContainer) -> None:
+    """Reservation replays compare the exact bound original deadline, including fractional seconds."""
     await usage_subjects(test_container)
     usage = await (await test_container.get(UsagePolicyService)).resolve(FEATURE, TriggerKind.DIRECT, USER)
     async with runtime_cache(test_container) as (cache, namespace):

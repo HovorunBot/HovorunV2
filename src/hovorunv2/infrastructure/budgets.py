@@ -1,16 +1,14 @@
-"""Valkey implementation of atomic quota, burst and concurrency reservations."""
+"""Native Valkey optimistic transactions for quota, burst and concurrency reservations."""
 
-import hashlib
-import json
 import math
 from collections.abc import Callable
 
 import redis
-from redis.exceptions import RedisError
+from redis.asyncio.client import Pipeline as AsyncPipeline
+from redis.client import Pipeline
+from redis.exceptions import RedisError, WatchError
 
 from hovorunv2.application.budgets import (
-    RUNTIME_RETENTION_SECONDS,
-    TECHNICAL_ID,
     BudgetPort,
     BudgetRequest,
     ReservationDecision,
@@ -18,170 +16,287 @@ from hovorunv2.application.budgets import (
     RuntimeNamespace,
     UnitAmount,
 )
-from hovorunv2.domain.enums import TargetKind
-from hovorunv2.infrastructure.budget_scripts import FINISH_BUDGET, RESERVE_BUDGET
+from hovorunv2.infrastructure.budget_state import (
+    TRANSACTION_ATTEMPTS,
+    BudgetRecord,
+    BudgetStateUnavailableError,
+    build_record,
+    calculate_finish,
+    calculate_reserve,
+    parse_hash,
+    parse_members,
+    parse_record,
+    validate_finish_args,
+    validate_reserve_args,
+    verify_active_ownership,
+)
 from hovorunv2.infrastructure.cache import CacheService
 
 
-def build_budget_payload(prefix: str, request: BudgetRequest, now: float, totals: tuple[int, ...]) -> dict[str, object]:
-    """Build canonical budget reservation payload for the atomic Lua script."""
-    usage = request.usage
-    subject = f"{usage.subject.kind.value}:{usage.subject.telegram_id}"
-    estimates = {amount.unit.value: amount.amount for amount in request.estimates}
-    bypass = usage.bypass_personal_quota and usage.subject.kind == TargetKind.USER
-    quotas = []
-    concurrency = [{"key": prefix + "global", "limit": usage.safety.global_concurrency}]
-    for policy, baseline in zip(usage.policies, totals, strict=True):
-        scope = f"{subject}:{policy.bucket}:{policy.unit.value}:{policy.window.seconds}"
-        start = policy.window.start(int(now))
-        if not bypass:
-            quotas.append(
-                {
-                    "key": prefix + f"quota:{scope}:{start}",
-                    "rate": prefix + f"rate:{scope}",
-                    "unit": policy.unit.value,
-                    "amount": estimates[policy.unit.value],
-                    "baseline": baseline,
-                    "limit": policy.limit,
-                    "burst": policy.burst,
-                    "seconds": policy.window.seconds,
-                    "ends": start + policy.window.seconds,
-                }
-            )
-            concurrency.append({"key": prefix + f"concurrency:{scope}", "limit": policy.concurrency})
-    binding = {
-        "subject": subject,
-        "generation": usage.subject.generation,
-        "deadline": request.deadline,
-        "estimates": estimates,
-        "quotas": quotas,
-        "concurrency": concurrency,
-    }
-    identity = {
-        **binding,
-        "quotas": [
-            {key: value for key, value in quota.items() if key not in {"baseline", "key", "ends"}} for quota in quotas
-        ],
-    }
-    return {
-        **binding,
-        "id": request.reservation_id,
-        "now": now,
-        "retention": RUNTIME_RETENTION_SECONDS,
-        "fingerprint": hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest(),
-    }
-
-
-def validate_reserve_args(request: BudgetRequest, now: float, durable_totals: tuple[int, ...]) -> None:
-    """Validate reserve inputs against invariants."""
-    if (
-        not math.isfinite(now)
-        or now < 0
-        or len(durable_totals) != len(request.usage.policies)
-        or any(type(total) is not int or total < 0 or total > (1 << 53) - 1 for total in durable_totals)
-    ):
-        msg = "Reservations require finite time and exact nonnegative durable totals for every policy."
-        raise ValueError(msg)
-    values = [request.usage.safety.global_concurrency]
-    for policy in request.usage.policies:
-        values.extend((policy.limit, policy.burst, policy.concurrency, policy.window.seconds))
-    if any(value > (1 << 53) - 1 for value in values):
-        msg = "Runtime policy exceeds exact Lua integer capacity."
-        raise ValueError(msg)
-
-
-def validate_finish_args(reservation_id: str, actual: tuple[UnitAmount, ...], now: float) -> dict[str, int]:
-    """Validate finish inputs and return amount dictionary."""
-    if TECHNICAL_ID.fullmatch(reservation_id) is None or not math.isfinite(now) or now < 0 or not actual:
-        msg = "Settlement requires a technical reservation ID, finite time and actual amounts."
-        raise ValueError(msg)
-    amounts = {item.unit.value: item.amount for item in actual}
-    if len(amounts) != len(actual):
-        msg = "Settlement units must be unique."
-        raise ValueError(msg)
-    return amounts
+def _require_index_type(raw: object) -> None:
+    value = raw.decode() if isinstance(raw, bytes) else raw
+    if value not in {"none", "zset"}:
+        raise BudgetStateUnavailableError
 
 
 class ValkeyBudgetStore(BudgetPort):
-    """Fail closed on unavailable Valkey; never log request or dependency exception contents."""
+    """Keep explicit async transactions separate from the synchronous worker connection owner."""
 
     def __init__(self, cache: CacheService, namespace: RuntimeNamespace) -> None:
         self._cache = cache
         self._prefix = namespace.value + "budget:"
 
-    async def _run(self, script: str, reservation_id: str, arguments: list[str]) -> ReservationDecision:
-        try:
-            result = await self._cache.run_script(
-                script, [self._prefix + f"reservation:{reservation_id}", self._prefix + "active"], arguments
-            )
-        except RedisError, OSError:
-            return ReservationDecision(ReservationState.UNAVAILABLE)
-        if not isinstance(result, list) or not result:
-            return ReservationDecision(ReservationState.UNAVAILABLE)
-        state = result[0].decode() if isinstance(result[0], bytes) else str(result[0])
-        if state == "conflict":
-            msg = "Reservation ID or settlement conflicts with its original operation."
-            raise ValueError(msg)
-        retry = float(result[1]) if len(result) > 1 else None
-        return ReservationDecision(ReservationState(state), retry)
+    async def _snapshot(
+        self,
+        pipe: AsyncPipeline,
+        record: BudgetRecord,
+        *,
+        require_active: bool = False,
+    ) -> tuple[dict[str, dict[str, str]], dict[str, frozenset[str]]]:
+        await pipe.watch(*record.resource_keys(), self._prefix + "active")
+        _require_index_type(await pipe.type(self._prefix + "active"))
+        if require_active and await pipe.zscore(self._prefix + "active", record.id) is None:
+            raise BudgetStateUnavailableError
+        hashes = {}
+        for quota in record.quotas:
+            hashes[quota.key] = parse_hash(await pipe.execute_command("HGETALL", quota.key))
+            hashes[quota.rate] = parse_hash(await pipe.execute_command("HGETALL", quota.rate))
+        members = {
+            item.key: parse_members(await pipe.execute_command("SMEMBERS", item.key)) for item in record.concurrency
+        }
+        return hashes, members
+
+    async def _reserve_attempt(self, record: BudgetRecord) -> ReservationDecision:
+        key = self._prefix + "reservation:" + record.id
+        async with self._cache.client.pipeline() as pipe:
+            try:
+                await pipe.watch(key)
+                raw = await pipe.get(key)
+                if raw is not None:
+                    old = parse_record(raw, self._prefix, record.id)
+                    if old.fingerprint != record.fingerprint:
+                        msg = "Reservation ID or settlement conflicts with its original operation."
+                        raise ValueError(msg)
+                    if old.state == ReservationState.RESERVED:
+                        if record.now >= record.deadline:
+                            return ReservationDecision(ReservationState.EXPIRED)
+                        hashes, members = await self._snapshot(pipe, old, require_active=True)
+                        verify_active_ownership(old, hashes, members)
+                    return ReservationDecision(old.state)
+                if record.deadline <= record.now:
+                    return ReservationDecision(ReservationState.EXPIRED)
+                hashes, members = await self._snapshot(pipe, record)
+                mutation = calculate_reserve(record, hashes, members)
+                if mutation.record is None:
+                    return mutation.decision
+                pipe.multi()
+                for update in mutation.updates:
+                    quota = update.quota
+                    pipe.hset(quota.key, mapping={"used": update.used, "held": update.held})
+                    pipe.hset(quota.rate, mapping={"tokens": update.tokens, "at": update.at})
+                    pipe.expire(quota.key, math.ceil(quota.ends - record.now + record.retention))
+                    pipe.expire(quota.rate, math.ceil(quota.seconds + record.retention))
+                for item in record.concurrency:
+                    pipe.sadd(item.key, record.id)
+                pipe.set(key, record.serialized())
+                pipe.zadd(self._prefix + "active", {record.id: record.deadline})
+                await pipe.execute()
+            except BudgetStateUnavailableError:
+                # Verify that missing ownership is stable rather than a concurrent settlement snapshot.
+                pipe.multi()
+                await pipe.execute()
+                raise
+            else:
+                return mutation.decision
 
     async def reserve(self, request: BudgetRequest, now: float, durable_totals: tuple[int, ...]) -> ReservationDecision:
-        """Acquire all dimensions in one script; durable totals seed missing quota windows."""
+        """Acquire every resource or none; contention retries remain bounded and fail closed."""
         validate_reserve_args(request, now, durable_totals)
-        return await self._run(
-            RESERVE_BUDGET,
-            request.reservation_id,
-            [json.dumps(build_budget_payload(self._prefix, request, now, durable_totals))],
-        )
+        record = build_record(self._prefix, request, now, durable_totals)
+        for _ in range(TRANSACTION_ATTEMPTS):
+            try:
+                return await self._reserve_attempt(record)
+            except WatchError:
+                continue
+            except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
+                break
+        return ReservationDecision(ReservationState.UNAVAILABLE)
+
+    async def _finish_attempt(self, reservation_id: str, actual: dict[str, int], now: float) -> ReservationDecision:
+        key = self._prefix + "reservation:" + reservation_id
+        async with self._cache.client.pipeline() as pipe:
+            try:
+                await pipe.watch(key)
+                raw = await pipe.get(key)
+                if raw is None:
+                    return ReservationDecision(ReservationState.UNAVAILABLE)
+                record = parse_record(raw, self._prefix, reservation_id)
+                hashes, members = (
+                    await self._snapshot(pipe, record, require_active=True)
+                    if record.state == ReservationState.RESERVED
+                    else ({}, {})
+                )
+                mutation = calculate_finish(record, actual, now, hashes, members)
+                settled = mutation.record
+                if settled is None:
+                    return mutation.decision
+                pipe.multi()
+                for update in mutation.updates:
+                    pipe.hset(update.quota.key, mapping={"held": update.held, "used": update.used})
+                    pipe.hset(update.quota.rate, mapping={"tokens": update.tokens, "at": update.at})
+                for item in record.concurrency:
+                    pipe.srem(item.key, record.id)
+                pipe.set(key, settled.serialized(), ex=record.retention)
+                pipe.zrem(self._prefix + "active", record.id)
+                await pipe.execute()
+            except BudgetStateUnavailableError:
+                # Verify that missing ownership is stable rather than a concurrent settlement snapshot.
+                pipe.multi()
+                await pipe.execute()
+                raise
+            else:
+                return mutation.decision
 
     async def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...], now: float) -> ReservationDecision:
-        """Settle once; missing runtime state pauses rather than silently resetting usage."""
+        """Settle once without renewing terminal receipts or guessing missing ownership."""
         amounts = validate_finish_args(reservation_id, actual, now)
-        return await self._run(FINISH_BUDGET, reservation_id, [json.dumps(amounts), str(now)])
+        for _ in range(TRANSACTION_ATTEMPTS):
+            try:
+                return await self._finish_attempt(reservation_id, amounts, now)
+            except WatchError:
+                continue
+            except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
+                break
+        return ReservationDecision(ReservationState.UNAVAILABLE)
 
 
 class WorkerBudgetClient:
-    """Synchronous worker Valkey client sharing Lua scripts and payload builder with async bot."""
+    """Use native synchronous optimistic transactions inside the resource-owning worker child."""
 
-    def __init__(
-        self,
-        client: redis.Redis,
-        namespace: RuntimeNamespace,
-        require_owner: Callable[[], None],
-    ) -> None:
+    def __init__(self, client: redis.Redis, namespace: RuntimeNamespace, require_owner: Callable[[], None]) -> None:
         self._client = client
-        self._namespace = namespace.value
         self._prefix = namespace.value + "budget:"
         self._require_owner = require_owner
 
-    def _run(self, script: str, reservation_id: str, arguments: list[str]) -> ReservationDecision:
-        self._require_owner()
-        try:
-            result = self._client.eval(
-                script,
-                2,
-                self._prefix + f"reservation:{reservation_id}",
-                self._prefix + "active",
-                *arguments,
-            )
-        except RedisError, OSError:
-            return ReservationDecision(ReservationState.UNAVAILABLE)
-        if not isinstance(result, list) or not result:
-            return ReservationDecision(ReservationState.UNAVAILABLE)
-        state = result[0].decode() if isinstance(result[0], bytes) else str(result[0])
-        if state == "conflict":
-            msg = "Reservation ID or settlement conflicts with its original operation."
-            raise ValueError(msg)
-        retry = float(result[1]) if len(result) > 1 else None
-        return ReservationDecision(ReservationState(state), retry)
+    def _snapshot(
+        self,
+        pipe: Pipeline,
+        record: BudgetRecord,
+        *,
+        require_active: bool = False,
+    ) -> tuple[dict[str, dict[str, str]], dict[str, frozenset[str]]]:
+        pipe.watch(*record.resource_keys(), self._prefix + "active")
+        _require_index_type(pipe.type(self._prefix + "active"))
+        if require_active and pipe.zscore(self._prefix + "active", record.id) is None:
+            raise BudgetStateUnavailableError
+        hashes = {}
+        for quota in record.quotas:
+            hashes[quota.key] = parse_hash(pipe.hgetall(quota.key))
+            hashes[quota.rate] = parse_hash(pipe.hgetall(quota.rate))
+        members = {item.key: parse_members(pipe.smembers(item.key)) for item in record.concurrency}
+        return hashes, members
+
+    def _reserve_attempt(self, record: BudgetRecord) -> ReservationDecision:
+        key = self._prefix + "reservation:" + record.id
+        with self._client.pipeline() as pipe:
+            try:
+                pipe.watch(key)
+                raw = pipe.get(key)
+                if raw is not None:
+                    old = parse_record(raw, self._prefix, record.id)
+                    if old.fingerprint != record.fingerprint:
+                        msg = "Reservation ID or settlement conflicts with its original operation."
+                        raise ValueError(msg)
+                    if old.state == ReservationState.RESERVED:
+                        if record.now >= record.deadline:
+                            return ReservationDecision(ReservationState.EXPIRED)
+                        hashes, members = self._snapshot(pipe, old, require_active=True)
+                        verify_active_ownership(old, hashes, members)
+                    return ReservationDecision(old.state)
+                if record.deadline <= record.now:
+                    return ReservationDecision(ReservationState.EXPIRED)
+                hashes, members = self._snapshot(pipe, record)
+                mutation = calculate_reserve(record, hashes, members)
+                if mutation.record is None:
+                    return mutation.decision
+                pipe.multi()
+                for update in mutation.updates:
+                    quota = update.quota
+                    pipe.hset(quota.key, mapping={"used": update.used, "held": update.held})
+                    pipe.hset(quota.rate, mapping={"tokens": update.tokens, "at": update.at})
+                    pipe.expire(quota.key, math.ceil(quota.ends - record.now + record.retention))
+                    pipe.expire(quota.rate, math.ceil(quota.seconds + record.retention))
+                for item in record.concurrency:
+                    pipe.sadd(item.key, record.id)
+                pipe.set(key, record.serialized())
+                pipe.zadd(self._prefix + "active", {record.id: record.deadline})
+                pipe.execute()
+            except BudgetStateUnavailableError:
+                # Verify that missing ownership is stable rather than a concurrent settlement snapshot.
+                pipe.multi()
+                pipe.execute()
+                raise
+            else:
+                return mutation.decision
 
     def reserve(self, request: BudgetRequest, now: float, durable_totals: tuple[int, ...]) -> ReservationDecision:
-        """Acquire all dimensions in one script synchronously."""
+        """Reserve synchronously with the same pure decisions and original identity as bot admission."""
+        self._require_owner()
         validate_reserve_args(request, now, durable_totals)
-        payload = build_budget_payload(self._prefix, request, now, durable_totals)
-        return self._run(RESERVE_BUDGET, request.reservation_id, [json.dumps(payload)])
+        record = build_record(self._prefix, request, now, durable_totals)
+        for _ in range(TRANSACTION_ATTEMPTS):
+            try:
+                return self._reserve_attempt(record)
+            except WatchError:
+                continue
+            except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
+                break
+        return ReservationDecision(ReservationState.UNAVAILABLE)
+
+    def _finish_attempt(self, reservation_id: str, actual: dict[str, int], now: float) -> ReservationDecision:
+        key = self._prefix + "reservation:" + reservation_id
+        with self._client.pipeline() as pipe:
+            try:
+                pipe.watch(key)
+                raw = pipe.get(key)
+                if raw is None:
+                    return ReservationDecision(ReservationState.UNAVAILABLE)
+                record = parse_record(raw, self._prefix, reservation_id)
+                hashes, members = (
+                    self._snapshot(pipe, record, require_active=True)
+                    if record.state == ReservationState.RESERVED
+                    else ({}, {})
+                )
+                mutation = calculate_finish(record, actual, now, hashes, members)
+                settled = mutation.record
+                if settled is None:
+                    return mutation.decision
+                pipe.multi()
+                for update in mutation.updates:
+                    pipe.hset(update.quota.key, mapping={"held": update.held, "used": update.used})
+                    pipe.hset(update.quota.rate, mapping={"tokens": update.tokens, "at": update.at})
+                for item in record.concurrency:
+                    pipe.srem(item.key, record.id)
+                pipe.set(key, settled.serialized(), ex=record.retention)
+                pipe.zrem(self._prefix + "active", record.id)
+                pipe.execute()
+            except BudgetStateUnavailableError:
+                # Verify that missing ownership is stable rather than a concurrent settlement snapshot.
+                pipe.multi()
+                pipe.execute()
+                raise
+            else:
+                return mutation.decision
 
     def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...], now: float) -> ReservationDecision:
-        """Settle once synchronously."""
+        """Reconcile actual consumption only after every held resource can be verified."""
+        self._require_owner()
         amounts = validate_finish_args(reservation_id, actual, now)
-        return self._run(FINISH_BUDGET, reservation_id, [json.dumps(amounts), str(now)])
+        for _ in range(TRANSACTION_ATTEMPTS):
+            try:
+                return self._finish_attempt(reservation_id, amounts, now)
+            except WatchError:
+                continue
+            except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
+                break
+        return ReservationDecision(ReservationState.UNAVAILABLE)

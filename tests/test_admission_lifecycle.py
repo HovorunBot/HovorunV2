@@ -416,7 +416,11 @@ async def test_sender_chat_automatic_group_duplicates_share_one_ticket_and_encry
 
 def verify_inherited_runtime_rejected(namespace: RuntimeNamespace) -> None:
     """Open a real pool before a fork in a fresh, single-threaded interpreter."""
-    settings = Settings(_env_file=None)
+    settings = Settings(
+        _env_file=None,
+        bot_token="123456:synthetic-token",  # noqa: S106
+        cache_encryption_key="synthetic-test-key",
+    )
     with WorkerRuntime(settings, WallClock(), namespace, UsageSafetyCaps()) as runtime:
         admission = runtime.admission
         admission.get("inheritance-probe")

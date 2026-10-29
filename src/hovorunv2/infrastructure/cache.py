@@ -22,6 +22,11 @@ class CacheService:
         logger.info("Initializing CacheService")
         self._cache = redis.from_url(valkey_url)
 
+    @property
+    def client(self) -> redis.Redis:
+        """Expose native transactions to infrastructure adapters within this cache lifetime."""
+        return self._cache
+
     async def set(self, key: str, value: Any, expire: int | None = None) -> None:
         """Store a value in the cache with an optional expiration time in seconds."""
         logger.debug("Caching key: %s (expire: %s)", key, expire)
@@ -76,10 +81,6 @@ class CacheService:
         if withscores:
             return [(r[0].decode("utf-8") if isinstance(r[0], bytes) else r[0], r[1]) for r in results]
         return [r.decode("utf-8") if isinstance(r, bytes) else r for r in results]
-
-    async def run_script(self, script: str, keys: list[str], arguments: list[str]) -> object:
-        """Execute an infrastructure-owned atomic script without exposing Redis to application services."""
-        return await self._cache.execute_command("EVAL", script, len(keys), *keys, *arguments)
 
     async def close(self) -> None:
         """Close cache connection."""

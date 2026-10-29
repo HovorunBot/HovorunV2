@@ -1,12 +1,10 @@
 """Celery feature publication with Valkey-owned execution facts and exclusive runner claims."""
 
 import asyncio
-import json
 import math
 import secrets
 from datetime import UTC, datetime
 
-import redis.asyncio as redis
 from celery import Celery
 from kombu.exceptions import OperationalError
 from redis.exceptions import RedisError
@@ -24,23 +22,12 @@ from hovorunv2.application.feature_jobs import (
 )
 from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.usage import UsageSafetyCaps
-from hovorunv2.infrastructure.admission import admission_ticket_key, parse_ticket
-from hovorunv2.infrastructure.admission_scripts import (
-    CANCEL_WORK,
-    CLAIM_STAGE,
-    REGISTER_PUBLICATION,
-    SET_PUBLISHED,
-    TRANSITION_WORK,
-)
+from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 
 BROKER_VISIBILITY_SECONDS = 2 * RUNTIME_RETENTION_SECONDS
 BROKER_SOCKET_SECONDS = 2
-MISSING_ADMISSION = -2
-
-
-def _envelope_json(envelope: JobEnvelope) -> str:
-    return json.dumps(envelope.model_dump(mode="json"), separators=(",", ":"))
 
 
 class CeleryFeatureQueue(FeatureQueuePort):
@@ -54,8 +41,8 @@ class CeleryFeatureQueue(FeatureQueuePort):
     def __init__(self, settings: Settings, clock: Clock, namespace: RuntimeNamespace, safety: UsageSafetyCaps) -> None:
         self._clock = clock
         self._safety = safety
-        self._prefix = namespace.value + "admission:"
-        self._client = redis.from_url(settings.valkey_url, decode_responses=True)
+        self._cache = CacheService(settings.valkey_url)
+        self._admission = ValkeyAdmissionStore(self._cache, namespace)
         self._queue_name = namespace.value + "features"
         self._app = Celery("hovorun_features", broker=settings.valkey_url)
         self._app.conf.update(
@@ -79,9 +66,6 @@ class CeleryFeatureQueue(FeatureQueuePort):
             },
         )
 
-    def _key(self, job_id: str) -> str:
-        return admission_ticket_key(self._prefix, job_id)
-
     async def enqueue(self, envelope: JobEnvelope, *, not_before: float = 0) -> EnqueueState:
         """Retry uncertain publication with original metadata; the consumer claim blocks duplicate execution."""
         now = self._clock.now()
@@ -90,29 +74,17 @@ class CeleryFeatureQueue(FeatureQueuePort):
             raise ValueError(msg)
         if now >= envelope.deadline or not_before >= envelope.deadline:
             return EnqueueState.EXPIRED
-        key = self._key(envelope.job_id)
         try:
-            registered = await self._client.execute_command(
-                "EVAL", REGISTER_PUBLICATION, 1, key, _envelope_json(envelope), repr(not_before)
-            )
-            code = registered[0]
-            if code == MISSING_ADMISSION:
-                return EnqueueState.UNAVAILABLE
-            if code == -1:
-                msg = "Feature job ID conflicts with another envelope."
-                raise ValueError(msg)
-            if code == 0:
-                return EnqueueState.EXISTS
-            ticket_data = json.loads(registered[1])
-            schedule = float(ticket_data.get("not_before", 0))
-            if not await asyncio.to_thread(self._publish, envelope, schedule):
+            publication = await self._admission.register_publication(envelope, not_before)
+            if not publication.should_publish or publication.ticket is None:
+                return publication.state
+            if not await asyncio.to_thread(self._publish, envelope, publication.not_before):
                 return EnqueueState.EXPIRED
-            await self._client.execute_command(
-                "EVAL", SET_PUBLISHED, 1, key, ticket_data["stage"], ticket_data["attempt"]
-            )
+            ticket = publication.ticket
+            await self._admission.ack_publication(envelope.job_id, ticket.stage, ticket.attempt)
         except RedisError, OperationalError, OSError:
             return EnqueueState.UNAVAILABLE
-        return EnqueueState.ENQUEUED if code == 1 else EnqueueState.EXISTS
+        return publication.state
 
     def _publish(self, envelope: JobEnvelope, not_before: float) -> bool:
         """Run synchronous broker I/O only through to_thread; never share async resources with that thread."""
@@ -138,10 +110,9 @@ class CeleryFeatureQueue(FeatureQueuePort):
 
     async def inspect(self, job_id: str) -> QueuedFeature | None:
         """Read application facts; Celery PENDING cannot distinguish unknown, queued and lost jobs."""
-        raw = await self._client.execute_command("GET", self._key(job_id))
-        if not raw:
+        ticket = await self._admission.get(job_id)
+        if ticket is None:
             return None
-        ticket = parse_ticket(raw)
         status_map = {
             TicketState.ACCEPTED: JobStatus.PENDING,
             TicketState.ENQUEUED: JobStatus.PENDING,
@@ -158,68 +129,32 @@ class CeleryFeatureQueue(FeatureQueuePort):
     async def claim(self, envelope: JobEnvelope, stage: JobStage = JobStage.MEDIA) -> str | None:
         """Acquire one execution owner; duplicates, missing state, cancellation and expiry cannot execute."""
         token = secrets.token_hex(16)
-        result = await self._client.execute_command(
-            "EVAL",
-            CLAIM_STAGE,
-            4,
-            self._key(envelope.job_id),
-            self._prefix + "totals",
-            self._prefix + "handoff",
-            self._prefix + "pending",
-            stage.value,
-            repr(self._clock.now()),
-            token,
-            RUNTIME_RETENTION_SECONDS,
-            _envelope_json(envelope),
+        ticket = await self._admission.claim_stage(
+            envelope.job_id, stage, self._clock.now(), token, expected_envelope=envelope
         )
-        if not isinstance(result, list) or not result:
-            return None
-        code = result[1] if len(result) > 1 else ""
-        return token if code == "claimed" else None
+        return token if ticket is not None else None
 
     async def finish(self, job_id: str, token: str, outcome: JobOutcome) -> bool:
-        """Only the actual execution owner may record a safe outcome; never settle admission or budgets here."""
+        """Complete only the current execution owner through admission lifecycle fencing."""
         if not isinstance(outcome, JobOutcome):
             msg = "Feature completion requires a safe typed outcome."
             raise TypeError(msg)
-        result = await self._client.execute_command(
-            "EVAL",
-            TRANSITION_WORK,
-            4,
-            self._key(job_id),
-            self._prefix + "totals",
-            self._prefix + "handoff",
-            self._prefix + "pending",
-            TicketState.TERMINAL.value,
-            outcome.value,
-            RUNTIME_RETENTION_SECONDS,
-            token,
-        )
-        if not isinstance(result, list) or not result:
+        try:
+            ticket = await self._admission.finish(job_id, outcome, token=token)
+        except ValueError:
             return False
-        code = result[0]
-        return code not in {"wrong_owner", "conflict", "unavailable"}
+        return ticket is not None
 
     async def cancel(self, job_id: str) -> bool:
         """Tombstone queued work atomically; running work retains its claim pending cooperative cancellation."""
-        result = await self._client.execute_command(
-            "EVAL",
-            CANCEL_WORK,
-            4,
-            self._key(job_id),
-            self._prefix + "totals",
-            self._prefix + "handoff",
-            self._prefix + "pending",
-            RUNTIME_RETENTION_SECONDS,
-        )
-        return bool(result and result[0] == 1)
+        return await self._admission.cancel(job_id)
 
     async def close(self) -> None:
         """Close owned clients without starting a worker or touching other queues."""
         try:
             await asyncio.to_thread(self._app.close)
         finally:
-            await self._client.aclose()
+            await self._cache.close()
 
 
 class FeatureWorkerBridge:

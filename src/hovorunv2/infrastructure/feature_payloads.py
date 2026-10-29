@@ -24,13 +24,6 @@ from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.usage import UsageSafetyCaps
 from hovorunv2.infrastructure.cache import CacheService
 
-PUT_PAYLOAD = """
-local old = redis.call('GET',KEYS[1])
-if old then return old == ARGV[1] and 1 or 0 end
-redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2])
-return 1
-"""
-
 REFERENCE_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 MAX_SENDER_LABEL_LEN = 256
 
@@ -118,9 +111,11 @@ class ValkeyPayloadStore(PayloadPort):
             return PayloadState.EXPIRED
         ttl = math.ceil(payload.deadline - self._clock.now()) + PAYLOAD_CLEANUP_SECONDS
         try:
-            stored = await self._cache.run_script(
-                PUT_PAYLOAD, [self._prefix + payload.reference], [payload.blob, str(ttl)]
-            )
+            key = self._prefix + payload.reference
+            stored = await self._cache.client.set(key, payload.blob, nx=True, ex=ttl)
+            if not stored:
+                current = await self._cache.client.get(key)
+                stored = current == payload.blob.encode()
         except RedisError, OSError:
             return PayloadState.UNAVAILABLE
         return PayloadState.READY if stored == 1 else PayloadState.UNREADABLE
@@ -207,13 +202,11 @@ class WorkerPayloadClient:
             return PayloadState.EXPIRED
         ttl = math.ceil(payload.deadline - self._clock.now()) + PAYLOAD_CLEANUP_SECONDS
         try:
-            stored = self._client.eval(
-                PUT_PAYLOAD,
-                1,
-                self._prefix + payload.reference,
-                payload.blob,
-                str(ttl),
-            )
+            key = self._prefix + payload.reference
+            stored = self._client.set(key, payload.blob, nx=True, ex=ttl)
+            if not stored:
+                current = self._client.get(key)
+                stored = current in (payload.blob, payload.blob.encode())
         except RedisError, OSError:
             return PayloadState.UNAVAILABLE
         return PayloadState.READY if stored == 1 else PayloadState.UNREADABLE

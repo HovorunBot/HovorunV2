@@ -62,7 +62,7 @@ class UnitAmount:
     amount: int
 
     def __post_init__(self) -> None:
-        """Keep Lua arithmetic within exact integer representation."""
+        """Keep runtime arithmetic within the established exact integer bound."""
         if (
             not isinstance(self.unit, UsageUnit)
             or type(self.amount) is not int

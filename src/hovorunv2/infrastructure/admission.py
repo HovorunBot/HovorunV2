@@ -1,11 +1,12 @@
-"""Valkey-owned admission tickets, counted ciphertext and recoverable handoff indexes."""
+"""Valkey-owned admission with bounded optimistic transactions and shared pure transitions."""
 
-import json
 import math
 from collections.abc import Callable
 
 import redis
-from redis.exceptions import RedisError
+from redis.asyncio.client import Pipeline as AsyncPipeline
+from redis.client import Pipeline
+from redis.exceptions import RedisError, WatchError
 
 from hovorunv2.application.admission import (
     RECOVERY_PAGE_LIMIT,
@@ -17,55 +18,146 @@ from hovorunv2.application.admission import (
     JobStage,
     TicketState,
 )
-from hovorunv2.application.budgets import RUNTIME_RETENTION_SECONDS, TECHNICAL_ID, RuntimeNamespace
-from hovorunv2.application.feature_jobs import PAYLOAD_CLEANUP_SECONDS, JobEnvelope, JobOutcome, SealedPayload
-from hovorunv2.domain.enums import TargetKind
-from hovorunv2.infrastructure.admission_scripts import (
-    ADMIT_WORK,
-    CANCEL_WORK,
-    CLAIM_STAGE,
-    STAGE_HANDOFF,
-    TRANSITION_WORK,
+from hovorunv2.application.budgets import RUNTIME_RETENTION_SECONDS, RuntimeNamespace
+from hovorunv2.application.feature_jobs import (
+    PAYLOAD_CLEANUP_SECONDS,
+    EnqueueState,
+    JobEnvelope,
+    JobOutcome,
+    SealedPayload,
+)
+from hovorunv2.infrastructure.admission_state import (
+    AdmissionCapacity,
+    AdmissionChange,
+    AdmissionKeys,
+    AdmissionOperation,
+    AdmissionRecord,
+    AdmissionTransition,
+    AdmissionUnavailableError,
+    PublicationDecision,
+    admission_keys,
+    admission_ticket_key,
+    calculate_change,
+    envelope_json,
+    read_capacity,
+    read_record,
+    read_string,
+    validate_claim,
 )
 from hovorunv2.infrastructure.cache import CacheService
 
+MAX_ADMISSION_ATTEMPTS = 32
 
-def admission_ticket_key(prefix: str, job_id: str) -> str:
-    """Build the canonical admission ticket key."""
-    if TECHNICAL_ID.fullmatch(job_id) is None:
-        msg = "Admission requires a technical job identity."
+
+def _validate_payload(envelope: JobEnvelope, payload: SealedPayload, now: float) -> None:
+    if (
+        not math.isfinite(now)
+        or now < envelope.accepted_at
+        or payload.reference != envelope.payload_ref
+        or payload.job_id != envelope.job_id
+        or payload.deadline != envelope.deadline
+        or payload.byte_size != len(payload.blob.encode())
+        or payload.byte_size <= 0
+    ):
+        msg = "Admission payload, original timing and envelope binding disagree."
         raise ValueError(msg)
-    return prefix + "ticket:" + job_id
 
 
-def parse_ticket(raw: object) -> AdmissionTicket:
-    """Parse JSON ticket into immutable typed AdmissionTicket."""
-    if isinstance(raw, bytes):
-        raw = raw.decode()
-    value = json.loads(raw) if isinstance(raw, str) else raw
-    if not isinstance(value, dict):
-        msg = "Admission ticket metadata is unavailable."
-        raise TypeError(msg)
-    return AdmissionTicket(
-        envelope=JobEnvelope.model_validate_json(value["envelope"]),
-        state=TicketState(value["state"]),
-        byte_size=int(value["byte_size"]),
-        stage=JobStage(value.get("stage", JobStage.MEDIA.value)),
-        token=value.get("token") or None,
-        attempt=int(value.get("attempt", 0)),
-        outcome=JobOutcome(value["outcome"]) if value.get("outcome") else None,
+def _initial_record(envelope: JobEnvelope, payload: SealedPayload, keys: AdmissionKeys) -> AdmissionRecord:
+    return AdmissionRecord(
+        envelope=envelope_json(envelope),
+        state=TicketState.ACCEPTED,
+        stage=JobStage.MEDIA,
+        byte_size=payload.byte_size,
+        attempt=0,
+        token="",
+        published=0,
+        not_before=0,
+        subject_key=keys.subject,
+        ingress_key=keys.ingress,
+        payload_key=keys.payload,
+        dedupe_key=keys.dedupe,
     )
 
 
-def validate_claim(now: float, token: str) -> None:
-    """Require a finite clock and a nonempty operational owner token before claiming."""
-    if not math.isfinite(now) or now < 0 or TECHNICAL_ID.fullmatch(token) is None:
-        msg = "Stage claims require finite time and a technical owner token."
+def _duplicate_id(raw: object) -> str:
+    value = read_string(raw)
+    try:
+        admission_ticket_key("", value)
+    except ValueError:
+        msg = "Admission deduplication metadata is unavailable."
+        raise AdmissionUnavailableError(msg) from None
+    return value
+
+
+def _is_full(capacity: AdmissionCapacity, payload: SealedPayload, limits: AdmissionLimits) -> bool:
+    return (
+        capacity.count >= limits.safety.global_pending
+        or capacity.byte_size + payload.byte_size > limits.safety.total_payload_bytes
+        or payload.byte_size > limits.safety.payload_bytes
+        or capacity.subject >= limits.subject_pending
+        or capacity.ingress >= limits.ingress_pending
+    )
+
+
+def _validate_duplicate(record: AdmissionRecord, job_id: str, envelope: JobEnvelope) -> None:
+    if record.job.job_id != job_id or record.job.dedupe_key != envelope.dedupe_key:
+        msg = "Admission deduplication metadata is unavailable."
+        raise AdmissionUnavailableError(msg)
+
+
+def _require_new_identity(exists: object) -> None:
+    if exists:
+        msg = "Admission identity conflicts with existing work."
         raise ValueError(msg)
 
 
+def _require_matching_blob(raw: object, payload: SealedPayload) -> None:
+    if raw is not None and read_string(raw) != payload.blob:
+        msg = "Admission identity conflicts with existing work."
+        raise ValueError(msg)
+
+
+def _validate_publication(envelope: JobEnvelope, not_before: float) -> None:
+    if not math.isfinite(not_before) or not_before < 0:
+        msg = "Scheduled feature time must be finite and nonnegative."
+        raise ValueError(msg)
+    if not_before >= envelope.deadline:
+        msg = "Scheduled feature time exceeds the original deadline."
+        raise ValueError(msg)
+
+
+def _publication(change: AdmissionChange | None) -> PublicationDecision:
+    if change is None or change.record is None:
+        return PublicationDecision(EnqueueState.UNAVAILABLE)
+    return PublicationDecision(
+        change.publication_state, change.record.ticket, change.record.not_before, change.should_publish
+    )
+
+
+def _ticket(change: AdmissionChange | None) -> AdmissionTicket | None:
+    return change.record.ticket if change is not None and change.record is not None else None
+
+
+def _claimed(change: AdmissionChange | None) -> AdmissionTicket | None:
+    return _ticket(change) if change is not None and change.success else None
+
+
+def _validate_recovery(now: float, limit: int) -> None:
+    if not math.isfinite(now) or now < 0 or not 0 < limit <= RECOVERY_PAGE_LIMIT:
+        msg = "Recovery requires finite time and a bounded positive page size."
+        raise ValueError(msg)
+
+
+def _validate_key_type(raw: object, expected: str) -> None:
+    kind = raw.decode() if isinstance(raw, bytes) else raw
+    if kind not in {"none", expected}:
+        msg = "Admission key type is unavailable."
+        raise AdmissionUnavailableError(msg)
+
+
 class ValkeyAdmissionStore(AdmissionPort):
-    """Never evict accepted work or expire its capacity before explicit terminal reconciliation."""
+    """Keep accepted work counted until an explicit, owner-fenced terminal transaction."""
 
     def __init__(self, cache: CacheService, namespace: RuntimeNamespace) -> None:
         self._cache = cache
@@ -75,173 +167,251 @@ class ValkeyAdmissionStore(AdmissionPort):
     def _id(self, job_id: str) -> str:
         return admission_ticket_key(self._prefix, job_id)
 
-    def _ticket(self, raw: object) -> AdmissionTicket:
-        return parse_ticket(raw)
-
     async def admit(
         self, envelope: JobEnvelope, payload: SealedPayload, limits: AdmissionLimits, now: float
     ) -> AdmissionResult:
-        """Write ciphertext and all counter reservations in the same script as the accepted ticket."""
-        if (
-            not math.isfinite(now)
-            or now < envelope.accepted_at
-            or payload.reference != envelope.payload_ref
-            or payload.job_id != envelope.job_id
-            or payload.deadline != envelope.deadline
-            or payload.byte_size != len(payload.blob.encode())
-            or payload.byte_size <= 0
-        ):
-            msg = "Admission payload, original timing and envelope binding disagree."
-            raise ValueError(msg)
-        owner = f"{envelope.charged_kind.value}:{envelope.charged_telegram_id}"
-        ingress = (
-            f"group:{envelope.target.telegram_id}:sender:{envelope.actor_id or 0}"
-            if envelope.target.kind == TargetKind.GROUP
-            else f"user:{envelope.actor_id}"
-        )
-        keys = [
-            self._id(envelope.job_id),
-            self._prefix + "dedupe:" + envelope.dedupe_key,
-            self._prefix + "totals",
-            self._prefix + "subject:" + owner,
-            self._prefix + "ingress:" + ingress,
-            self._namespace + "payload:" + payload.reference,
-            self._prefix + "handoff",
-            self._prefix + "pending",
-        ]
-        values = {
-            "envelope": envelope.model_dump(mode="json"),
-            "envelope_json": json.dumps(envelope.model_dump(mode="json"), separators=(",", ":")),
-            "blob": payload.blob,
-            "byte_size": payload.byte_size,
-            "now": now,
-            "ticket_prefix": self._prefix + "ticket:",
-            "global_limit": limits.safety.global_pending,
-            "bytes_limit": limits.safety.total_payload_bytes,
-            "payload_limit": limits.safety.payload_bytes,
-            "subject_limit": limits.subject_pending,
-            "ingress_limit": limits.ingress_pending,
-            "payload_ttl": max(1, math.ceil(envelope.deadline - now) + PAYLOAD_CLEANUP_SECONDS),
-        }
+        """Atomically reserve every counter, index and ciphertext reference without embedded scripts."""
+        _validate_payload(envelope, payload, now)
+        keys = admission_keys(self._namespace, envelope)
         try:
-            result = await self._cache.run_script(ADMIT_WORK, keys, [json.dumps(values)])
-        except RedisError, OSError:
+            for _attempt in range(MAX_ADMISSION_ATTEMPTS):
+                async with self._cache.client.pipeline() as pipe:
+                    try:
+                        await pipe.watch(*keys.watched)
+                        duplicate = await pipe.get(keys.dedupe)
+                        if duplicate is not None:
+                            old_id = _duplicate_id(duplicate)
+                            await pipe.watch(self._id(old_id))
+                            record = read_record(await pipe.get(self._id(old_id)))
+                            record.keys(self._namespace)
+                            _validate_duplicate(record, old_id, envelope)
+                            pipe.multi()
+                            await pipe.execute()
+                            return AdmissionResult(AdmissionState.DUPLICATE, record.ticket)
+                        _require_new_identity(await pipe.exists(keys.ticket))
+                        if envelope.deadline <= now:
+                            return AdmissionResult(AdmissionState.EXPIRED)
+                        capacity = read_capacity(
+                            await pipe.execute_command("HGETALL", keys.totals),
+                            await pipe.get(keys.subject),
+                            await pipe.get(keys.ingress),
+                            await pipe.zcard(keys.pending),
+                        )
+                        if _is_full(capacity, payload, limits):
+                            return AdmissionResult(AdmissionState.FULL)
+                        existing = await pipe.get(keys.payload)
+                        _validate_key_type(await pipe.type(keys.handoff), "zset")
+                        _require_matching_blob(existing, payload)
+                        record = _initial_record(envelope, payload, keys)
+                        pipe.multi()
+                        if existing is None:
+                            pipe.set(
+                                keys.payload,
+                                payload.blob,
+                                ex=max(1, math.ceil(envelope.deadline - now) + PAYLOAD_CLEANUP_SECONDS),
+                            )
+                        pipe.hset(
+                            keys.totals,
+                            mapping={"count": capacity.count + 1, "bytes": capacity.byte_size + payload.byte_size},
+                        )
+                        pipe.set(keys.subject, capacity.subject + 1)
+                        pipe.set(keys.ingress, capacity.ingress + 1)
+                        pipe.set(keys.ticket, record.encode())
+                        pipe.set(keys.dedupe, envelope.job_id)
+                        pipe.zadd(keys.handoff, {envelope.job_id: envelope.deadline})
+                        pipe.zadd(keys.pending, {envelope.job_id: envelope.deadline})
+                        await pipe.execute()
+                        return AdmissionResult(AdmissionState.ACCEPTED, record.ticket)
+                    except AdmissionUnavailableError, ValueError, TypeError:
+                        # A partial snapshot can disagree while another valid transaction commits.
+                        # Confirm WATCH before treating it as stable corruption or a semantic conflict.
+                        try:
+                            pipe.multi()
+                            await pipe.execute()
+                        except WatchError:
+                            continue
+                        raise
+                    except WatchError:
+                        continue
+        except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
             return AdmissionResult(AdmissionState.UNAVAILABLE)
-        if not isinstance(result, list) or not result:
-            return AdmissionResult(AdmissionState.UNAVAILABLE)
-        state = result[0].decode() if isinstance(result[0], bytes) else str(result[0])
-        if state == "conflict":
-            msg = "Admission identity conflicts with existing work."
-            raise ValueError(msg)
-        return AdmissionResult(AdmissionState(state), self._ticket(result[1]) if len(result) > 1 else None)
+        return AdmissionResult(AdmissionState.UNAVAILABLE)
 
     async def get(self, job_id: str) -> AdmissionTicket | None:
-        """Read the stored immutable envelope, never ciphertext or broker implementation fields."""
-        raw = await self._cache.get(self._id(job_id))
-        return self._ticket(raw) if raw is not None else None
+        """Return only valid operational metadata, failing closed on unreadable or missing state."""
+        key = self._id(job_id)
+        try:
+            raw = await self._cache.client.get(key)
+            if raw is None:
+                return None
+            record = read_record(raw)
+            if record.keys(self._namespace).ticket != key:
+                return None
+        except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
+            return None
+        else:
+            return record.ticket
 
-    async def _transition(
-        self, job_id: str, state: str, outcome: str = "", token: str = "", stage: str = "", attempt: int = 0
-    ) -> AdmissionTicket | None:
-        result = await self._cache.run_script(
-            TRANSITION_WORK,
-            [self._id(job_id), self._prefix + "totals", self._prefix + "handoff", self._prefix + "pending"],
-            [state, outcome, str(RUNTIME_RETENTION_SECONDS), token, stage, str(attempt)],
-        )
-        if not isinstance(result, list) or not result:
+    async def _apply(self, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
+        key = self._id(job_id)
+        try:
+            for _attempt in range(MAX_ADMISSION_ATTEMPTS):
+                async with self._cache.client.pipeline() as pipe:
+                    try:
+                        await pipe.watch(key)
+                        raw = await pipe.get(key)
+                        if raw is None:
+                            return None
+                        record = read_record(raw)
+                        keys = record.keys(self._namespace)
+                        if keys.ticket != key:
+                            return None
+                        change = calculate_change(record, request)
+                        capacity = None
+                        if change.write and record.state != TicketState.TERMINAL:
+                            await pipe.watch(*keys.watched)
+                            capacity = read_capacity(
+                                await pipe.execute_command("HGETALL", keys.totals),
+                                await pipe.get(keys.subject),
+                                await pipe.get(keys.ingress),
+                                await pipe.zcard(keys.pending),
+                            )
+                            capacity.require_active(
+                                record,
+                                await pipe.get(keys.dedupe),
+                                await pipe.zscore(keys.pending, job_id),
+                                await pipe.zscore(keys.handoff, job_id),
+                            )
+                            _validate_key_type(await pipe.type(keys.handoff), "zset")
+                            _validate_key_type(await pipe.type(keys.payload), "string")
+                        pipe.multi()
+                        self._write_change(pipe, keys, change, capacity)
+                        await pipe.execute()
+                    except AdmissionUnavailableError, ValueError, TypeError:
+                        # A partial snapshot can disagree while another valid transaction commits.
+                        # Confirm WATCH before treating it as stable corruption or a semantic conflict.
+                        try:
+                            pipe.multi()
+                            await pipe.execute()
+                        except WatchError:
+                            continue
+                        raise
+                    except WatchError:
+                        continue
+                    else:
+                        return change
+        except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
             return None
-        code = result[0].decode() if isinstance(result[0], bytes) else str(result[0])
-        if code == "wrong_owner":
-            return None
-        if code in {"conflict", "unavailable"}:
-            msg = "Admission terminal state or capacity metadata conflicts with this transition."
-            raise ValueError(msg)
-        return self._ticket(result[0])
+        return None
+
+    def _write_change(
+        self, pipe: AsyncPipeline, keys: AdmissionKeys, change: AdmissionChange, capacity: AdmissionCapacity | None
+    ) -> None:
+        if not change.write or change.record is None:
+            return
+        record = change.record
+        job = record.job
+        if change.release:
+            assert capacity is not None
+            pipe.hset(
+                keys.totals, mapping={"count": capacity.count - 1, "bytes": capacity.byte_size - record.byte_size}
+            )
+            if capacity.subject > 1:
+                pipe.set(keys.subject, capacity.subject - 1)
+            else:
+                pipe.delete(keys.subject)
+            if capacity.ingress > 1:
+                pipe.set(keys.ingress, capacity.ingress - 1)
+            else:
+                pipe.delete(keys.ingress)
+            pipe.delete(keys.payload)
+            pipe.zrem(keys.pending, job.job_id)
+            pipe.set(keys.ticket, record.encode(), ex=RUNTIME_RETENTION_SECONDS)
+            pipe.expire(keys.dedupe, RUNTIME_RETENTION_SECONDS)
+        else:
+            pipe.set(keys.ticket, record.encode(), keepttl=True)
+        if change.handoff is True:
+            pipe.zadd(keys.handoff, {job.job_id: job.deadline})
+        elif change.handoff is False:
+            pipe.zrem(keys.handoff, job.job_id)
 
     async def mark_enqueued(self, job_id: str, stage: JobStage, attempt: int) -> AdmissionTicket | None:
-        """Acknowledge enqueue without reviving or re-counting a terminal ticket."""
-        return await self._transition(job_id, TicketState.ENQUEUED.value, stage=stage.value, attempt=attempt)
+        """Acknowledge only the stage and attempt captured before publication."""
+        return _ticket(
+            await self._apply(job_id, AdmissionTransition(AdmissionOperation.ENQUEUED, stage=stage, attempt=attempt))
+        )
 
-    async def claim_stage(self, job_id: str, stage: JobStage, now: float, token: str) -> AdmissionTicket | None:
-        """Acquire exclusive stage execution owner; wrong stage, expired deadline or another owner cannot claim."""
+    async def claim_stage(
+        self, job_id: str, stage: JobStage, now: float, token: str, *, expected_envelope: JobEnvelope | None = None
+    ) -> AdmissionTicket | None:
+        """Claim one owner before private access; expiry never releases an existing runner."""
         validate_claim(now, token)
-        result = await self._cache.run_script(
-            CLAIM_STAGE,
-            [self._id(job_id), self._prefix + "totals", self._prefix + "handoff", self._prefix + "pending"],
-            [stage.value, str(now), token, str(RUNTIME_RETENTION_SECONDS)],
+        return _claimed(
+            await self._apply(
+                job_id,
+                AdmissionTransition(
+                    AdmissionOperation.CLAIM, stage=stage, now=now, token=token, expected_envelope=expected_envelope
+                ),
+            )
         )
-        if not isinstance(result, list) or not result:
-            return None
-        code = (
-            result[1].decode()
-            if len(result) > 1 and isinstance(result[1], bytes)
-            else str(result[1])
-            if len(result) > 1
-            else ""
-        )
-        if code != "claimed":
-            return None
-        return self._ticket(result[0])
 
     async def handoff_stage(self, job_id: str, token: str, next_stage: JobStage) -> AdmissionTicket | None:
-        """Hand off the running stage without releasing capacity or renewing its deadline."""
-        result = await self._cache.run_script(
-            STAGE_HANDOFF,
-            [self._id(job_id), self._prefix + "handoff"],
-            [token, next_stage.value],
+        """Release the media owner while retaining capacity, payload and original deadline."""
+        return _ticket(
+            await self._apply(job_id, AdmissionTransition(AdmissionOperation.HANDOFF, token=token, stage=next_stage))
         )
-        if not isinstance(result, list) or not result:
-            return None
-        code = result[0].decode() if isinstance(result[0], bytes) else str(result[0])
-        if code == "conflict":
-            msg = "Stage handoff token conflicts with current owner."
-            raise ValueError(msg)
-        return self._ticket(result[0])
 
     async def cancel(self, job_id: str) -> bool:
-        """Tombstone queued work atomically; running work transitions to cancelling."""
-        result = await self._cache.run_script(
-            CANCEL_WORK,
-            [self._id(job_id), self._prefix + "totals", self._prefix + "handoff", self._prefix + "pending"],
-            [str(RUNTIME_RETENTION_SECONDS)],
-        )
-        if not isinstance(result, list) or not result:
-            return False
-        return result[0] == 1
+        """Queued cancellation releases capacity; running cancellation retains the live owner."""
+        change = await self._apply(job_id, AdmissionTransition(AdmissionOperation.CANCEL))
+        return change is not None and change.success
 
     async def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
-        """Release once only after the caller has verified terminal execution/delivery semantics."""
-        return await self._transition(job_id, TicketState.TERMINAL.value, outcome.value, token or "")
+        """Release once after verified terminal execution using the current owner's fence."""
+        return _ticket(
+            await self._apply(
+                job_id, AdmissionTransition(AdmissionOperation.FINISH, outcome=outcome, token=token or "")
+            )
+        )
+
+    async def register_publication(self, envelope: JobEnvelope, not_before: float = 0) -> PublicationDecision:
+        """Register the first schedule without extending it on uncertain broker retries."""
+        _validate_publication(envelope, not_before)
+        return _publication(
+            await self._apply(
+                envelope.job_id,
+                AdmissionTransition(AdmissionOperation.REGISTER, expected_envelope=envelope, not_before=not_before),
+            )
+        )
+
+    async def ack_publication(self, job_id: str, stage: JobStage, attempt: int) -> bool:
+        """Fence broker acknowledgement against a newer stage or owner attempt."""
+        change = await self._apply(
+            job_id, AdmissionTransition(AdmissionOperation.PUBLISHED, stage=stage, attempt=attempt)
+        )
+        return change is not None and change.success
 
     async def recoverable(self, now: float, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
-        """Skip expired tickets for handoff; they retain capacity until the separate terminal sweeper."""
-        if not math.isfinite(now) or now < 0 or not 0 < limit <= RECOVERY_PAGE_LIMIT:
-            msg = "Recovery requires finite time and a bounded positive page size."
-            raise ValueError(msg)
-        keys = await self._cache.run_script(
-            "return redis.call('ZRANGEBYSCORE',KEYS[1],ARGV[1],'+inf','LIMIT',0,ARGV[2])",
-            [self._prefix + "handoff"],
-            [f"({now}", str(limit)],
-        )
-        if not isinstance(keys, list):
+        """Read a bounded native sorted-set page without reclaiming possibly running work."""
+        _validate_recovery(now, limit)
+        try:
+            ids = await self._cache.client.zrangebyscore(
+                self._prefix + "handoff", f"({now}", "+inf", start=0, num=limit
+            )
+            tickets = []
+            for job_id in ids:
+                ticket = await self.get(_duplicate_id(job_id))
+                if ticket is not None and ticket.state == TicketState.ACCEPTED and ticket.envelope.deadline > now:
+                    tickets.append(ticket)
+            return tuple(tickets)
+        except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
             return ()
-        tickets = []
-        for key in keys:
-            ticket = await self.get(key.decode() if isinstance(key, bytes) else str(key))
-            if ticket is not None and ticket.state == TicketState.ACCEPTED:
-                tickets.append(ticket)
-        return tuple(tickets)
 
 
 class WorkerAdmissionClient:
-    """Synchronous worker Valkey client sharing exact Lua scripts and key builders with async bot."""
+    """Native worker transactions share pure state rules while retaining child-owned I/O."""
 
-    def __init__(
-        self,
-        client: redis.Redis,
-        namespace: RuntimeNamespace,
-        require_owner: Callable[[], None],
-    ) -> None:
+    def __init__(self, client: redis.Redis, namespace: RuntimeNamespace, require_owner: Callable[[], None]) -> None:
         self._client = client
         self._namespace = namespace.value
         self._prefix = namespace.value + "admission:"
@@ -252,96 +422,153 @@ class WorkerAdmissionClient:
         return admission_ticket_key(self._prefix, job_id)
 
     def get(self, job_id: str) -> AdmissionTicket | None:
-        """Read ticket metadata synchronously."""
-        self._require_owner()
-        raw = self._client.get(self._id(job_id))
-        return parse_ticket(raw) if raw is not None else None
+        """Read validated ticket metadata only within the owning child context."""
+        key = self._id(job_id)
+        try:
+            raw = self._client.get(key)
+            if raw is None:
+                return None
+            record = read_record(raw)
+            if record.keys(self._namespace).ticket != key:
+                return None
+        except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
+            return None
+        else:
+            return record.ticket
 
-    def claim_stage(self, job_id: str, stage: JobStage, now: float, token: str) -> AdmissionTicket | None:
-        """Acquire exclusive stage execution owner synchronously."""
+    def _apply(self, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
+        key = self._id(job_id)
+        try:
+            for _attempt in range(MAX_ADMISSION_ATTEMPTS):
+                with self._client.pipeline() as pipe:
+                    try:
+                        pipe.watch(key)
+                        raw = pipe.get(key)
+                        if raw is None:
+                            return None
+                        record = read_record(raw)
+                        keys = record.keys(self._namespace)
+                        if keys.ticket != key:
+                            return None
+                        change = calculate_change(record, request)
+                        capacity = None
+                        if change.write and record.state != TicketState.TERMINAL:
+                            pipe.watch(*keys.watched)
+                            capacity = read_capacity(
+                                pipe.hgetall(keys.totals),
+                                pipe.get(keys.subject),
+                                pipe.get(keys.ingress),
+                                pipe.zcard(keys.pending),
+                            )
+                            capacity.require_active(
+                                record,
+                                pipe.get(keys.dedupe),
+                                pipe.zscore(keys.pending, job_id),
+                                pipe.zscore(keys.handoff, job_id),
+                            )
+                            _validate_key_type(pipe.type(keys.handoff), "zset")
+                            _validate_key_type(pipe.type(keys.payload), "string")
+                        pipe.multi()
+                        self._write_change(pipe, keys, change, capacity)
+                        pipe.execute()
+                    except AdmissionUnavailableError, ValueError, TypeError:
+                        # A partial snapshot can disagree while another valid transaction commits.
+                        # Confirm WATCH before treating it as stable corruption or a semantic conflict.
+                        try:
+                            pipe.multi()
+                            pipe.execute()
+                        except WatchError:
+                            continue
+                        raise
+                    except WatchError:
+                        continue
+                    else:
+                        return change
+        except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
+            return None
+        return None
+
+    def _write_change(
+        self, pipe: Pipeline, keys: AdmissionKeys, change: AdmissionChange, capacity: AdmissionCapacity | None
+    ) -> None:
+        if not change.write or change.record is None:
+            return
+        record = change.record
+        job = record.job
+        if change.release:
+            assert capacity is not None
+            pipe.hset(
+                keys.totals, mapping={"count": capacity.count - 1, "bytes": capacity.byte_size - record.byte_size}
+            )
+            if capacity.subject > 1:
+                pipe.set(keys.subject, capacity.subject - 1)
+            else:
+                pipe.delete(keys.subject)
+            if capacity.ingress > 1:
+                pipe.set(keys.ingress, capacity.ingress - 1)
+            else:
+                pipe.delete(keys.ingress)
+            pipe.delete(keys.payload)
+            pipe.zrem(keys.pending, job.job_id)
+            pipe.set(keys.ticket, record.encode(), ex=RUNTIME_RETENTION_SECONDS)
+            pipe.expire(keys.dedupe, RUNTIME_RETENTION_SECONDS)
+        else:
+            pipe.set(keys.ticket, record.encode(), keepttl=True)
+        if change.handoff is True:
+            pipe.zadd(keys.handoff, {job.job_id: job.deadline})
+        elif change.handoff is False:
+            pipe.zrem(keys.handoff, job.job_id)
+
+    def mark_enqueued(self, job_id: str, stage: JobStage, attempt: int) -> AdmissionTicket | None:
+        """Acknowledge only the captured stage and attempt in the owning child."""
+        return _ticket(
+            self._apply(job_id, AdmissionTransition(AdmissionOperation.ENQUEUED, stage=stage, attempt=attempt))
+        )
+
+    def claim_stage(
+        self, job_id: str, stage: JobStage, now: float, token: str, *, expected_envelope: JobEnvelope | None = None
+    ) -> AdmissionTicket | None:
+        """Claim exclusively with exact envelope checking before any private access."""
         self._require_owner()
         validate_claim(now, token)
-        result = self._client.eval(
-            CLAIM_STAGE,
-            4,
-            self._id(job_id),
-            self._prefix + "totals",
-            self._prefix + "handoff",
-            self._prefix + "pending",
-            stage.value,
-            str(now),
-            token,
-            str(RUNTIME_RETENTION_SECONDS),
+        return _claimed(
+            self._apply(
+                job_id,
+                AdmissionTransition(
+                    AdmissionOperation.CLAIM, stage=stage, now=now, token=token, expected_envelope=expected_envelope
+                ),
+            )
         )
-        if not isinstance(result, list) or not result:
-            return None
-        code = (
-            result[1].decode()
-            if len(result) > 1 and isinstance(result[1], bytes)
-            else str(result[1])
-            if len(result) > 1
-            else ""
-        )
-        if code != "claimed":
-            return None
-        return parse_ticket(result[0])
 
     def handoff_stage(self, job_id: str, token: str, next_stage: JobStage) -> AdmissionTicket | None:
-        """Transition running stage to next stage ready for consumption synchronously."""
-        self._require_owner()
-        result = self._client.eval(
-            STAGE_HANDOFF,
-            2,
-            self._id(job_id),
-            self._prefix + "handoff",
-            token,
-            next_stage.value,
+        """Hand off without a second ciphertext, new deadline or admission refund."""
+        return _ticket(
+            self._apply(job_id, AdmissionTransition(AdmissionOperation.HANDOFF, token=token, stage=next_stage))
         )
-        if not isinstance(result, list) or not result:
-            return None
-        code = result[0].decode() if isinstance(result[0], bytes) else str(result[0])
-        if code == "conflict":
-            msg = "Stage handoff token conflicts with current owner."
-            raise ValueError(msg)
-        return parse_ticket(result[0])
 
     def cancel(self, job_id: str) -> bool:
-        """Tombstone queued work atomically; running work transitions to cancelling synchronously."""
-        self._require_owner()
-        result = self._client.eval(
-            CANCEL_WORK,
-            4,
-            self._id(job_id),
-            self._prefix + "totals",
-            self._prefix + "handoff",
-            self._prefix + "pending",
-            str(RUNTIME_RETENTION_SECONDS),
-        )
-        if not isinstance(result, list) or not result:
-            return False
-        return result[0] == 1
+        """Retain running ownership until execution effects are verified terminal."""
+        change = self._apply(job_id, AdmissionTransition(AdmissionOperation.CANCEL))
+        return change is not None and change.success
 
     def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
-        """Release terminal capacity and payload once synchronously."""
-        self._require_owner()
-        result = self._client.eval(
-            TRANSITION_WORK,
-            4,
-            self._id(job_id),
-            self._prefix + "totals",
-            self._prefix + "handoff",
-            self._prefix + "pending",
-            TicketState.TERMINAL.value,
-            outcome.value,
-            str(RUNTIME_RETENTION_SECONDS),
-            token or "",
+        """Settle once using the current owner's token and the shared terminal rules."""
+        return _ticket(
+            self._apply(job_id, AdmissionTransition(AdmissionOperation.FINISH, outcome=outcome, token=token or ""))
         )
-        if not isinstance(result, list) or not result:
-            return None
-        code = result[0].decode() if isinstance(result[0], bytes) else str(result[0])
-        if code == "wrong_owner":
-            return None
-        if code in {"conflict", "unavailable"}:
-            msg = "Admission terminal state or capacity metadata conflicts with this transition."
-            raise ValueError(msg)
-        return parse_ticket(result[0])
+
+    def register_publication(self, envelope: JobEnvelope, not_before: float = 0) -> PublicationDecision:
+        """Preserve the first publication schedule in synchronous worker continuations."""
+        self._require_owner()
+        _validate_publication(envelope, not_before)
+        return _publication(
+            self._apply(
+                envelope.job_id,
+                AdmissionTransition(AdmissionOperation.REGISTER, expected_envelope=envelope, not_before=not_before),
+            )
+        )
+
+    def ack_publication(self, job_id: str, stage: JobStage, attempt: int) -> bool:
+        """Acknowledge only the current synchronous publisher's captured stage and attempt."""
+        change = self._apply(job_id, AdmissionTransition(AdmissionOperation.PUBLISHED, stage=stage, attempt=attempt))
+        return change is not None and change.success
