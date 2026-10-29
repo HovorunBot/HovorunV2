@@ -33,22 +33,49 @@ def resolve_usage(
 ) -> ResolvedUsage:
     """Intersect feature/family restrictions; unsupported units never become unlimited."""
     buckets = {f"feature:{definition.key}", f"family:{definition.usage_policy}"}
-    policies: dict[tuple[str, int], UsagePolicy] = {}
     group = subject.kind == TargetKind.GROUP
+    policies = _default_policies(definition, buckets, unit, group=group, trusted=trusted)
+    _apply_overrides(policies, overrides, buckets, unit)
+    _require_policy_coverage(policies, buckets)
+    return ResolvedUsage(subject, tuple(policies.values()), bypass and not group, safety)
+
+
+def _default_policies(
+    definition: FeatureDefinition,
+    buckets: set[str],
+    unit: UsageUnit,
+    *,
+    group: bool,
+    trusted: bool,
+) -> dict[tuple[str, int], UsagePolicy]:
+    if unit != UsageUnit.REQUESTS or definition.usage_policy != "media":
+        return {}
     elevated = group or trusted
-    if unit == UsageUnit.REQUESTS and definition.usage_policy == "media":
-        for bucket in sorted(buckets):
-            policies[bucket, MINUTE_SECONDS] = UsagePolicy(
-                bucket,
-                TRUSTED_REQUEST_LIMIT if elevated else NORMAL_REQUEST_LIMIT,
-                TRUSTED_BURST if elevated else NORMAL_BURST,
-                TRUSTED_CONCURRENCY if elevated else NORMAL_CONCURRENCY,
-                GROUP_PENDING if group else NORMAL_PENDING,
-            )
+    return {
+        (bucket, MINUTE_SECONDS): UsagePolicy(
+            bucket,
+            TRUSTED_REQUEST_LIMIT if elevated else NORMAL_REQUEST_LIMIT,
+            TRUSTED_BURST if elevated else NORMAL_BURST,
+            TRUSTED_CONCURRENCY if elevated else NORMAL_CONCURRENCY,
+            GROUP_PENDING if group else NORMAL_PENDING,
+        )
+        for bucket in sorted(buckets)
+    }
+
+
+def _apply_overrides(
+    policies: dict[tuple[str, int], UsagePolicy],
+    overrides: tuple[UsagePolicy, ...],
+    buckets: set[str],
+    unit: UsageUnit,
+) -> None:
     for override in overrides:
         if override.bucket in buckets and override.unit == unit:
             policies[override.bucket, override.window.seconds] = override
-    if any(not any(policy.bucket == bucket for policy in policies.values()) for bucket in buckets):
+
+
+def _require_policy_coverage(policies: dict[tuple[str, int], UsagePolicy], buckets: set[str]) -> None:
+    covered_buckets = {policy.bucket for policy in policies.values()}
+    if not buckets <= covered_buckets:
         msg = "Usage policies are missing; unsupported resources cannot run with unlimited defaults."
         raise ValueError(msg)
-    return ResolvedUsage(subject, tuple(policies.values()), bypass and not group, safety)

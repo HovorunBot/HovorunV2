@@ -4,9 +4,9 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Final, Protocol
 
-from hovorunv2.application.features import FeatureRegistry
+from hovorunv2.application.features import FeatureDefinition, FeatureRegistry
 from hovorunv2.application.usage import UsageUnit, UsageWindow
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
@@ -15,6 +15,8 @@ MAX_USAGE_BATCH = 256
 MAX_ACCOUNTING_INTEGER = (1 << 63) - 1
 MAX_BUCKET_LENGTH = 160
 EVENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
+_EVENT_SHAPE_ERROR: Final = "Accounting requires a bounded technical event ID and nonempty bounded charges."
+_UNSUPPORTED_CHARGE_ERROR: Final = "Accounting bucket or unit is unsupported by the feature registry."
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,9 +49,17 @@ class UsageCharge:
 
     def __post_init__(self) -> None:
         """Validate bounded integer amounts and typed dimensions before persistence."""
+        self._validate_amount()
+        self._validate_bucket()
+        self._validate_dimensions()
+        self._validate_window_capacity()
+
+    def _validate_amount(self) -> None:
         if type(self.amount) is not int or not 0 < self.amount <= MAX_ACCOUNTING_INTEGER:
             msg = "Accounting amount must be a positive signed 64-bit integer."
             raise ValueError(msg)
+
+    def _validate_bucket(self) -> None:
         if (
             not self.bucket.startswith(("feature:", "family:"))
             or not self.bucket.partition(":")[2]
@@ -57,9 +67,13 @@ class UsageCharge:
         ):
             msg = "Accounting bucket must identify a bounded feature or family."
             raise ValueError(msg)
+
+    def _validate_dimensions(self) -> None:
         if not isinstance(self.unit, UsageUnit) or not isinstance(self.window, UsageWindow):
             msg = "Accounting requires typed units and windows."
             raise TypeError(msg)
+
+    def _validate_window_capacity(self) -> None:
         if self.window.seconds > MAX_ACCOUNTING_INTEGER:
             msg = "Accounting window exceeds database integer capacity."
             raise ValueError(msg)
@@ -76,12 +90,25 @@ class UsageEvent:
 
     def __post_init__(self) -> None:
         """Require deterministic dimensions and bounded technical event identities."""
-        if EVENT_ID_PATTERN.fullmatch(self.event_id) is None or not self.charges or len(self.charges) > MAX_USAGE_BATCH:
-            msg = "Accounting requires a bounded technical event ID and nonempty bounded charges."
-            raise ValueError(msg)
+        self._validate_event_id()
+        self._validate_charge_count()
+        self._validate_timestamp()
+        self._validate_unique_dimensions()
+
+    def _validate_event_id(self) -> None:
+        if EVENT_ID_PATTERN.fullmatch(self.event_id) is None:
+            raise ValueError(_EVENT_SHAPE_ERROR)
+
+    def _validate_charge_count(self) -> None:
+        if not self.charges or len(self.charges) > MAX_USAGE_BATCH:
+            raise ValueError(_EVENT_SHAPE_ERROR)
+
+    def _validate_timestamp(self) -> None:
         if type(self.occurred_at) is not int or not 0 <= self.occurred_at <= MAX_ACCOUNTING_INTEGER:
             msg = "Accounting timestamp must be a nonnegative signed 64-bit integer."
             raise ValueError(msg)
+
+    def _validate_unique_dimensions(self) -> None:
         dimensions = {(charge.bucket, charge.unit, charge.window.seconds) for charge in self.charges}
         if len(dimensions) != len(self.charges):
             msg = "Accounting event must charge each bucket/unit/window at most once."
@@ -135,12 +162,20 @@ def validate_usage_batch(registry: FeatureRegistry, events: tuple[UsageEvent, ..
         raise ValueError(msg)
     for event in events:
         for charge in event.charges:
-            scope, _, key = charge.bucket.partition(":")
-            definitions = (
-                (registry.require(key),)
-                if scope == "feature"
-                else tuple(definition for definition in registry.all() if definition.usage_policy == key)
-            )
-            if not definitions or not any(charge.unit in definition.units for definition in definitions):
-                msg = "Accounting bucket or unit is unsupported by the feature registry."
-                raise ValueError(msg)
+            _require_supported_charge(registry, charge)
+
+
+def _require_supported_charge(registry: FeatureRegistry, charge: UsageCharge) -> None:
+    definitions = _require_bucket_definitions(registry, charge.bucket)
+    if not any(charge.unit in definition.units for definition in definitions):
+        raise ValueError(_UNSUPPORTED_CHARGE_ERROR)
+
+
+def _require_bucket_definitions(registry: FeatureRegistry, bucket: str) -> tuple[FeatureDefinition, ...]:
+    scope, _, key = bucket.partition(":")
+    if scope == "feature":
+        return (registry.require(key),)
+    definitions = tuple(definition for definition in registry.all() if definition.usage_policy == key)
+    if not definitions:
+        raise ValueError(_UNSUPPORTED_CHARGE_ERROR)
+    return definitions
