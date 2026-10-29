@@ -27,6 +27,15 @@ DISALLOWED_AUDIT_FIELDS: Final[frozenset[str]] = frozenset(
 )
 
 SENSITIVE_FIELD_MARKER: Final = "[REDACTED_CHANGED]"
+_SENSITIVE_FIELD_FRAGMENTS: Final = ("salt", "token", "key", "secret")
+
+
+def _is_sensitive_audit_field(field: str) -> bool:
+    """Match explicit private fields and credential-bearing name fragments."""
+    lower_field = field.lower()
+    if lower_field in DISALLOWED_AUDIT_FIELDS:
+        return True
+    return any(fragment in lower_field for fragment in _SENSITIVE_FIELD_FRAGMENTS)
 
 
 def sanitize_audit_changes(changes: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -36,14 +45,7 @@ def sanitize_audit_changes(changes: dict[str, Any] | None) -> dict[str, Any] | N
 
     sanitized: dict[str, Any] = {}
     for key, val in changes.items():
-        lower_key = key.lower()
-        if (
-            lower_key in DISALLOWED_AUDIT_FIELDS
-            or "salt" in lower_key
-            or "token" in lower_key
-            or "key" in lower_key
-            or "secret" in lower_key
-        ):
+        if _is_sensitive_audit_field(key):
             sanitized[key] = SENSITIVE_FIELD_MARKER
             continue
         sanitized[key] = _sanitize_audit_value(val)

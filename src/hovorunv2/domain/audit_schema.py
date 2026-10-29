@@ -15,6 +15,8 @@ type StatusValue = Annotated[StrictStr, AfterValidator(partial(_enum, kind=ChatS
 type CommandValue = Annotated[StrictStr, AfterValidator(partial(_enum, kind=CommandName))]
 type RequestStatusValue = Annotated[StrictStr, AfterValidator(partial(_enum, kind=RequestStatus))]
 
+_INVALID_AUDIT_FIELD_MESSAGE: Final = "Unsupported audit field or value shape"
+
 
 def _enum(value: str | int, *, kind: type[Enum]) -> Enum:
     return kind(value)
@@ -133,29 +135,40 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
 }
 
 
-def validate_audit_changes(target_type: str, action: str, changes: dict[str, object] | None) -> None:
-    """Reject unknown events, fields and unsupported shapes without exposing rejected values."""
+def _require_audit_schema(target_type: str, action: str) -> dict[str, TypeAdapter[object]]:
+    """Require an explicitly supported audit entity/action before inspecting its changes."""
     schema = AUDIT_SCHEMAS.get((target_type, action))
     if schema is None:
         msg = "Unsupported audit entity/action"
         raise ValueError(msg)
+    return schema
+
+
+def _validate_audit_field(schema: dict[str, TypeAdapter[object]], field: str, value: object) -> None:
+    """Require an allowlisted field and reject invalid values without retaining private error context."""
+    specification = schema.get(field)
+    if specification is None:
+        raise ValueError(_INVALID_AUDIT_FIELD_MESSAGE)
+    try:
+        specification.validate_python(value)
+    except ValidationError:
+        # Raise outside the handler so the public error retains no rejected-input exception context.
+        pass
+    else:
+        return
+    raise ValueError(_INVALID_AUDIT_FIELD_MESSAGE)
+
+
+def validate_audit_changes(target_type: str, action: str, changes: dict[str, object] | None) -> None:
+    """Reject unknown events, fields and unsupported shapes without exposing rejected values."""
+    schema = _require_audit_schema(target_type, action)
     if changes is None:
         return
     if not isinstance(changes, dict):
         msg = "Audit changes must be a field dictionary"
         raise TypeError(msg)
     for field, value in changes.items():
-        specification = schema.get(field)
-        valid = False
-        if specification is not None:
-            try:
-                specification.validate_python(value)
-                valid = True
-            except ValidationError:
-                pass
-        if not valid:
-            msg = "Unsupported audit field or value shape"
-            raise ValueError(msg)
+        _validate_audit_field(schema, field, value)
 
 
 def validate_audit_reason(reason: object) -> None:

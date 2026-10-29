@@ -96,6 +96,24 @@ def test_sanitize_empty_changes(changes: dict[str, object] | None) -> None:
     assert sanitize_audit_changes(changes) == changes
 
 
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        ("PASSWORD", SENSITIVE_FIELD_MARKER),
+        ("raw_payload", SENSITIVE_FIELD_MARKER),
+        ("credential_salt_version", SENSITIVE_FIELD_MARKER),
+        ("TOKEN_STATE", SENSITIVE_FIELD_MARKER),
+        ("lookup_key", SENSITIVE_FIELD_MARKER),
+        ("client_secret_hint", SENSITIVE_FIELD_MARKER),
+        ("status", "synthetic-value"),
+        ("private_body_copy", "synthetic-value"),
+    ],
+)
+def test_sanitize_field_names_preserves_exact_and_fragment_rules(field: str, expected: str) -> None:
+    """Preserve case-insensitive names and fragments without broadening exact-name rules."""
+    assert sanitize_audit_changes({field: "synthetic-value"}) == {field: expected}
+
+
 async def create_chat_op(session: AsyncSession, chat_id: int) -> ChatDB:
     """Add a chat entity in session."""
     chat = ChatDB(chat_id=chat_id, status=ChatStatus.APPROVED)
