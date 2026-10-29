@@ -110,27 +110,7 @@ def build_record(prefix: str, request: BudgetRequest, now: float, totals: tuple[
     usage = request.usage
     subject = f"{usage.subject.kind.value}:{usage.subject.telegram_id}"
     estimates = {amount.unit.value: amount.amount for amount in request.estimates}
-    quotas = []
-    concurrency = [ConcurrencySpec(key=prefix + "global", limit=usage.safety.global_concurrency)]
-    bypass = usage.bypass_personal_quota and usage.subject.kind == TargetKind.USER
-    for policy, baseline in zip(usage.policies, totals, strict=True):
-        scope = f"{subject}:{policy.bucket}:{policy.unit.value}:{policy.window.seconds}"
-        start = policy.window.start(int(now))
-        if not bypass:
-            quotas.append(
-                QuotaSpec(
-                    key=prefix + f"quota:{scope}:{start}",
-                    rate=prefix + f"rate:{scope}",
-                    unit=policy.unit.value,
-                    amount=estimates[policy.unit.value],
-                    baseline=baseline,
-                    limit=policy.limit,
-                    burst=policy.burst,
-                    seconds=policy.window.seconds,
-                    ends=start + policy.window.seconds,
-                )
-            )
-            concurrency.append(ConcurrencySpec(key=prefix + f"concurrency:{scope}", limit=policy.concurrency))
+    quotas, concurrency = _build_resource_specs(prefix, request, now, totals, subject, estimates)
     binding = {
         "subject": subject,
         "generation": usage.subject.generation,
@@ -162,6 +142,35 @@ def build_record(prefix: str, request: BudgetRequest, now: float, totals: tuple[
         retention=RUNTIME_RETENTION_SECONDS,
         fingerprint=hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest(),
     )
+
+
+def _build_resource_specs(
+    prefix: str, request: BudgetRequest, now: float, totals: tuple[int, ...], subject: str, estimates: dict[str, int]
+) -> tuple[tuple[QuotaSpec, ...], tuple[ConcurrencySpec, ...]]:
+    usage = request.usage
+    quotas = []
+    concurrency = [ConcurrencySpec(key=prefix + "global", limit=usage.safety.global_concurrency)]
+    bypass = usage.bypass_personal_quota and usage.subject.kind == TargetKind.USER
+    for policy, baseline in zip(usage.policies, totals, strict=True):
+        scope = f"{subject}:{policy.bucket}:{policy.unit.value}:{policy.window.seconds}"
+        start = policy.window.start(int(now))
+        if bypass:
+            continue
+        quotas.append(
+            QuotaSpec(
+                key=prefix + f"quota:{scope}:{start}",
+                rate=prefix + f"rate:{scope}",
+                unit=policy.unit.value,
+                amount=estimates[policy.unit.value],
+                baseline=baseline,
+                limit=policy.limit,
+                burst=policy.burst,
+                seconds=policy.window.seconds,
+                ends=start + policy.window.seconds,
+            )
+        )
+        concurrency.append(ConcurrencySpec(key=prefix + f"concurrency:{scope}", limit=policy.concurrency))
+    return tuple(quotas), tuple(concurrency)
 
 
 def validate_reserve_args(request: BudgetRequest, now: float, durable_totals: tuple[int, ...]) -> None:
@@ -207,59 +216,93 @@ def parse_record(raw: object, prefix: str, reservation_id: str) -> BudgetRecord:
         if isinstance(data, dict) and data.get("quotas") == {}:
             data["quotas"] = []
         record = BudgetRecord.model_validate(data)
-        if (
-            record.id != reservation_id
-            or not record.concurrency
-            or not record.estimates
-            or record.retention != RUNTIME_RETENTION_SECONDS
-            or (not record.quotas and not record.subject.startswith("user:"))
-            or record.state not in {ReservationState.RESERVED, ReservationState.COMMITTED, ReservationState.RELEASED}
-            or any(not key.startswith(prefix) for key in record.resource_keys())
-            or any(type(value) is not int or not 0 < value <= MAX_EXACT_INTEGER for value in record.estimates.values())
-            or any(unit not in {item.value for item in UsageUnit} for unit in record.estimates)
-            or any(
-                quota.unit not in record.estimates or quota.amount != record.estimates[quota.unit]
-                for quota in record.quotas
-            )
-        ):
-            raise BudgetStateUnavailableError
+        _require_record_binding(record, reservation_id)
+        _require_resource_namespace(record, prefix)
+        _require_estimate_coverage(record)
         _verify_record_keys(record, prefix)
-        if record.state != ReservationState.RESERVED and (
-            record.actual is None
-            or record.actual.keys() != record.estimates.keys()
-            or any(not 0 <= amount <= record.estimates[unit] for unit, amount in record.actual.items())
-            or (record.state == ReservationState.COMMITTED) != any(record.actual.values())
-        ):
-            raise BudgetStateUnavailableError
+        _require_settlement(record)
     except ValidationError, ValueError, TypeError:
         raise BudgetStateUnavailableError from None
     return record
 
 
+def _require_record_binding(record: BudgetRecord, reservation_id: str) -> None:
+    if record.id != reservation_id:
+        raise BudgetStateUnavailableError
+    if not record.concurrency or not record.estimates:
+        raise BudgetStateUnavailableError
+    if record.retention != RUNTIME_RETENTION_SECONDS:
+        raise BudgetStateUnavailableError
+    if not record.quotas and not record.subject.startswith("user:"):
+        raise BudgetStateUnavailableError
+    if record.state not in {ReservationState.RESERVED, ReservationState.COMMITTED, ReservationState.RELEASED}:
+        raise BudgetStateUnavailableError
+
+
+def _require_resource_namespace(record: BudgetRecord, prefix: str) -> None:
+    if any(not key.startswith(prefix) for key in record.resource_keys()):
+        raise BudgetStateUnavailableError
+
+
+def _require_estimate_coverage(record: BudgetRecord) -> None:
+    if any(type(value) is not int or not 0 < value <= MAX_EXACT_INTEGER for value in record.estimates.values()):
+        raise BudgetStateUnavailableError
+    if any(unit not in {item.value for item in UsageUnit} for unit in record.estimates):
+        raise BudgetStateUnavailableError
+    if any(
+        quota.unit not in record.estimates or quota.amount != record.estimates[quota.unit] for quota in record.quotas
+    ):
+        raise BudgetStateUnavailableError
+
+
+def _require_settlement(record: BudgetRecord) -> None:
+    if record.state == ReservationState.RESERVED:
+        return
+    actual = record.actual
+    if actual is None:
+        raise BudgetStateUnavailableError
+    if actual.keys() != record.estimates.keys():
+        raise BudgetStateUnavailableError
+    if any(not 0 <= amount <= record.estimates[unit] for unit, amount in actual.items()):
+        raise BudgetStateUnavailableError
+    if (record.state == ReservationState.COMMITTED) != any(actual.values()):
+        raise BudgetStateUnavailableError
+
+
 def _verify_record_keys(record: BudgetRecord, prefix: str) -> None:
     expected = [prefix + "global"]
     for quota in record.quotas:
-        if not quota.key.startswith(prefix + "quota:" + record.subject + ":"):
-            raise BudgetStateUnavailableError
-        scope, _, window = quota.key.removeprefix(prefix + "quota:").rpartition(":")
-        bucket, _, dimensions = scope.removeprefix(record.subject + ":").rpartition(":")
-        bucket, _, unit = bucket.rpartition(":")
-        start = int(window)
-        if (
-            not bucket.startswith(("feature:", "family:"))
-            or not bucket.partition(":")[2]
-            or unit != quota.unit
-            or dimensions != str(quota.seconds)
-            or start < 0
-            or start % quota.seconds
-            or start != int(record.now) - int(record.now) % quota.seconds
-            or quota.ends != start + quota.seconds
-            or quota.rate != prefix + "rate:" + scope
-            or quota.burst > quota.limit
-        ):
-            raise BudgetStateUnavailableError
+        scope = _require_quota_key(quota, record, prefix)
         expected.append(prefix + "concurrency:" + scope)
     if [item.key for item in record.concurrency] != expected or len(set(expected)) != len(expected):
+        raise BudgetStateUnavailableError
+
+
+def _require_quota_key(quota: QuotaSpec, record: BudgetRecord, prefix: str) -> str:
+    if not quota.key.startswith(prefix + "quota:" + record.subject + ":"):
+        raise BudgetStateUnavailableError
+    scope, _, window = quota.key.removeprefix(prefix + "quota:").rpartition(":")
+    bucket, _, dimensions = scope.removeprefix(record.subject + ":").rpartition(":")
+    bucket, _, unit = bucket.rpartition(":")
+    start = int(window)
+    if not bucket.startswith(("feature:", "family:")) or not bucket.partition(":")[2]:
+        raise BudgetStateUnavailableError
+    if unit != quota.unit or dimensions != str(quota.seconds):
+        raise BudgetStateUnavailableError
+    _require_quota_window(quota, record.now, start)
+    if quota.rate != prefix + "rate:" + scope:
+        raise BudgetStateUnavailableError
+    if quota.burst > quota.limit:
+        raise BudgetStateUnavailableError
+    return scope
+
+
+def _require_quota_window(quota: QuotaSpec, now: float, start: int) -> None:
+    if start < 0 or start % quota.seconds:
+        raise BudgetStateUnavailableError
+    if start != int(now) - int(now) % quota.seconds:
+        raise BudgetStateUnavailableError
+    if quota.ends != start + quota.seconds:
         raise BudgetStateUnavailableError
 
 
