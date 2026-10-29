@@ -77,6 +77,11 @@ def verify_encryption_key(key: str | None) -> None:
         msg = "Master encryption key is missing or blank. Please configure CACHE_ENCRYPTION_KEY."
         raise ValueError(msg)
 
+    _require_encryption_roundtrip(key)
+
+
+def _require_encryption_roundtrip(key: str) -> None:
+    """Require a usable key without exposing underlying cryptographic exceptions."""
     # Use a fixed synthetic 16-byte hex salt for startup self-check
     synthetic_salt_hex = "00" * 16
     try:
@@ -85,9 +90,9 @@ def verify_encryption_key(key: str | None) -> None:
         encrypted = encrypt_payload(test_payload, fernet)
         decrypted = decrypt_payload(encrypted, fernet)
         is_match = decrypted == test_payload
-    except Exception as exc:
+    except Exception:
         msg = "Master encryption key is invalid or unusable for key derivation."
-        raise ValueError(msg) from exc
+        raise ValueError(msg) from None
 
     if not is_match:
         msg = "Encryption self-check failed: decrypted payload mismatch."

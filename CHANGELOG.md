@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **payloads**: share required encryption and metadata validation
 - **budgets**: separate replay and atomic reservation writes
 - **budgets**: separate record binding and resource specifications
 - **admission**: distinguish unavailable state from missing work

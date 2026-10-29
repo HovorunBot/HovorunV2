@@ -311,3 +311,11 @@ async def test_cache_message_failure_does_not_crash(
 
     # Should not raise exception
     await service.cache_message(message)
+
+
+def test_encryption_self_check_suppresses_underlying_key_error() -> None:
+    """An unusable synthetic passphrase never becomes a chained cryptographic exception."""
+    with pytest.raises(ValueError, match="invalid or unusable") as error:
+        verify_encryption_key("synthetic-\ud800")
+    assert error.value.__cause__ is None
+    assert error.value.__suppress_context__
