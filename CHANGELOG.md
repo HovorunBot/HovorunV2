@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **browser**: separate lifecycle attempts and retain operation ownership
 - **translation**: separate provider failure from display policy
 - **media**: flatten semantic strategy recovery and finalization
 - **media**: require usable extraction and download results

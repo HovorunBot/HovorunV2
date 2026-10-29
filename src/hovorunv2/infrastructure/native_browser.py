@@ -3,13 +3,14 @@
 import html
 from collections.abc import Callable
 from threading import BoundedSemaphore
-from typing import Protocol
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
-from DrissionPage.errors import BrowserConnectError, PageDisconnectedError
+from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
+from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.media.errors import BrowserError
+from hovorunv2.application.media.errors import BrowserError, MediaFailure
+from hovorunv2.application.worker_io import HTTPFailure, HTTPTransportError
 from hovorunv2.infrastructure.browser_process import OwnedChromium
 from hovorunv2.infrastructure.native_http import NativeHTTPClient
 
@@ -20,101 +21,79 @@ MAX_BROWSER_HTML_BYTES = 2 * 1024 * 1024
 MAX_BROWSER_MEDIA_BYTES = 50 * 1024 * 1024
 
 
-class BrowserTabSettings(Protocol):
-    """The narrow public cookie-setting operation used before browser navigation."""
-
-    def cookies(self, cookie: dict[str, object], /) -> None:
-        """Set one transient browser cookie without retaining it outside this process."""
-        ...
-
-
-class BrowserTab(Protocol):
-    """Public DrissionPage tab operations needed by extraction callbacks."""
-
-    @property
-    def html(self) -> str:
-        """Return current page HTML."""
-        ...
-
-    @property
-    def user_agent(self) -> str:
-        """Return the browser's HTTP user agent."""
-        ...
-
-    @property
-    def set(self) -> BrowserTabSettings:
-        """Expose the public tab settings API."""
-        ...
-
-    def get(self, url: str, *, timeout: float) -> bool | None:
-        """Navigate once with a finite page timeout."""
-        ...
-
-    def ele(self, locator: str, *, timeout: float) -> object:
-        """Wait for a provider selector within its bounded timeout."""
-        ...
-
-    def cookies(self, *, all_domains: bool = False, all_info: bool = False) -> list[dict[str, object]]:
-        """Return transient browser cookies for domain-scoped HTTP transfer."""
-        ...
-
-    def run_js(self, script: str) -> object:
-        """Execute a provider's configured extraction script."""
-        ...
-
-    def close(self) -> None:
-        """Close the isolated extraction tab."""
-        ...
-
-
 def cookies_for_url(cookies: list[dict[str, object]], url: str) -> dict[str, str]:
     """Transfer only cookies applicable to the destination host, path and transport."""
     target = urlsplit(url)
-    hostname = target.hostname or ""
-    target_path = target.path or "/"
     result = {}
     for cookie in cookies:
-        name, value, domain = cookie.get("name"), cookie.get("value"), cookie.get("domain")
-        path = cookie.get("path", "/")
-        if (
-            not isinstance(name, str)
-            or not isinstance(value, str)
-            or not isinstance(domain, str)
-            or not isinstance(path, str)
-        ):
+        pair = _cookie_pair(cookie, target)
+        if pair is None:
             continue
-        domain_matches = hostname == domain or (
-            domain.startswith(".") and (hostname == domain[1:] or hostname.endswith(domain))
-        )
-        path_matches = target_path == path or (
-            target_path.startswith(path) and (path.endswith("/") or target_path[len(path) :].startswith("/"))
-        )
-        if domain_matches and path_matches and (not cookie.get("secure") or target.scheme == "https"):
-            result[name] = value
+        name, value = pair
+        result[name] = value
     return result
 
 
-def download_tab_media(tab: BrowserTab, payload: RichMediaPayload, referer: str) -> list[bytes]:
-    """Download with browser cookies in memory, preserving media alignment when individual downloads fail."""
+def _domain_applies(hostname: str, domain: str) -> bool:
+    if hostname == domain:
+        return True
+    if not domain.startswith("."):
+        return False
+    return hostname == domain[1:] or hostname.endswith(domain)
+
+
+def _path_applies(target: str, path: str) -> bool:
+    if target == path:
+        return True
+    if not target.startswith(path):
+        return False
+    return path.endswith("/") or target[len(path) :].startswith("/")
+
+
+def _cookie_pair(cookie: dict[str, object], target: SplitResult) -> tuple[str, str] | None:
+    name, value = cookie.get("name"), cookie.get("value")
+    domain, path = cookie.get("domain"), cookie.get("path", "/")
+    if not isinstance(name, str) or not isinstance(value, str):
+        return None
+    if not isinstance(domain, str) or not isinstance(path, str):
+        return None
+    if not _domain_applies(target.hostname or "", domain):
+        return None
+    if not _path_applies(target.path or "/", path):
+        return None
+    if cookie.get("secure") and target.scheme != "https":
+        return None
+    return name, value
+
+
+def download_tab_media(tab: BrowserTab, payload: RichMediaPayload, referer: str) -> list[bytes | MediaFailure]:
+    """Keep every media position explicit, retaining successful transient bytes on the payload."""
     cookies = tab.cookies(all_domains=True, all_info=True)
-    downloaded = []
+    downloaded: list[bytes | MediaFailure] = []
     total_bytes = 0
     headers = {"Referer": referer, "User-Agent": tab.user_agent}
     with NativeHTTPClient() as http:
         for item in payload.media_items:
             if not item.url:
+                downloaded.append(MediaFailure.UNUSABLE)
                 continue
             url = html.unescape(item.url)
-            content = http.download(url, headers, cookies=cookies_for_url(cookies, url))
-            if content is not None:
-                total_bytes += len(content)
-                if total_bytes > MAX_BROWSER_MEDIA_BYTES:
-                    msg = "Browser media exceeds its aggregate byte limit."
-                    raise BrowserError(msg)
-                item.data = content
-                downloaded.append(content)
-    # Existing async callers zip a complete byte list onto items. An incomplete list would shift media bytes.
-    return downloaded if len(downloaded) == len(payload.media_items) else []
+            try:
+                content = http.download_bytes(url, headers, cookies=cookies_for_url(cookies, url))
+            except HTTPTransportError as error:
+                code = MediaFailure.TOO_LARGE if error.code == HTTPFailure.TOO_LARGE else MediaFailure.UNAVAILABLE
+                downloaded.append(code)
+                continue
+            if not content:
+                downloaded.append(MediaFailure.UNUSABLE)
+                continue
+            total_bytes += len(content)
+            if total_bytes > MAX_BROWSER_MEDIA_BYTES:
+                msg = "Browser media exceeds its aggregate byte limit."
+                raise BrowserError(msg)
+            item.data = content
+            downloaded.append(content)
+    return downloaded
 
 
 class NativeBrowserService:
@@ -135,14 +114,20 @@ class NativeBrowserService:
     def get_content(self, url: str, wait_selector: str | None = None) -> str:
         """Fetch one tab synchronously, retrying only a disconnected browser once."""
         with self._semaphore:
-            for attempt in range(MAX_BROWSER_ATTEMPTS):
-                try:
-                    return self._fetch(url, wait_selector)
-                except BrowserConnectError, PageDisconnectedError, ConnectionError:
-                    self._browser.close()
-                    if attempt == MAX_BROWSER_ATTEMPTS - 1:
-                        msg = "Browser content is unavailable."
-                        raise BrowserError(msg) from None
+            return self._fetch_with_retries(url, wait_selector)
+
+    def _fetch_with_retries(self, url: str, wait_selector: str | None) -> str:
+        for attempt in range(MAX_BROWSER_ATTEMPTS):
+            try:
+                return self._fetch(url, wait_selector)
+            except BrowserConnectError, PageDisconnectedError, ConnectionError:
+                self._browser.close()
+                if attempt == MAX_BROWSER_ATTEMPTS - 1:
+                    msg = "Browser content is unavailable."
+                    raise BrowserError(msg) from None
+            except BaseError, OSError:
+                msg = "Browser content is unavailable."
+                raise BrowserError(msg) from None
         msg = "Browser content is unavailable."
         raise BrowserError(msg)
 
@@ -172,21 +157,34 @@ class NativeBrowserService:
         extractor_fn: Callable[[BrowserTab, str], RichMediaPayload | None],
         wait_selector: str | None = None,
         cookies: list[dict[str, object]] | None = None,
-    ) -> tuple[RichMediaPayload | None, list[bytes]]:
+    ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
         """Extract in an isolated tab and download through a fresh bounded cookie-bearing HTTP session."""
         with self._semaphore:
-            page = self._browser.start()
-            tab: BrowserTab = page.new_tab()
             try:
-                for cookie in cookies or ():
-                    tab.set.cookies(cookie)
-                self._navigate(tab, url, wait_selector)
-                payload = extractor_fn(tab, url)
-                if payload is None:
-                    return None, []
-                return payload, download_tab_media(tab, payload, url)
-            finally:
-                tab.close()
+                return self._extract_attempt(url, extractor_fn, wait_selector, cookies)
+            except BaseError, OSError:
+                msg = "Browser extraction is unavailable."
+                raise BrowserError(msg) from None
+
+    def _extract_attempt(
+        self,
+        url: str,
+        extractor_fn: Callable[[BrowserTab, str], RichMediaPayload | None],
+        wait_selector: str | None,
+        cookies: list[dict[str, object]] | None,
+    ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
+        page = self._browser.start()
+        tab: BrowserTab = page.new_tab()
+        try:
+            for cookie in cookies or ():
+                tab.set.cookies(cookie)
+            self._navigate(tab, url, wait_selector)
+            payload = extractor_fn(tab, url)
+            if payload is None:
+                return None, []
+            return payload, download_tab_media(tab, payload, url)
+        finally:
+            tab.close()
 
     def close(self) -> None:
         """Deterministically close browser drivers, reap Chromium, and remove its temporary profile."""

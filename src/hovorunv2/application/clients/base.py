@@ -6,11 +6,12 @@ import time
 from collections.abc import Mapping
 from functools import partial
 from http import HTTPStatus
-from typing import Any, ClassVar, Protocol
+from typing import ClassVar
 
 import aiohttp
 from DrissionPage.errors import BaseError
 
+from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.clients.config import (
     FACEBOOK_CONFIG,
     BrowserFallbackConfig,
@@ -27,19 +28,6 @@ from hovorunv2.domain.enums import CommandName
 __all__ = ["FACEBOOK_CONFIG", "BaseMediaClient", "BrowserFallbackConfig", "OGConfig", "ProviderConfig"]
 
 logger = logging.getLogger(__name__)
-
-
-class _BrowserElement(Protocol):
-    def click(self) -> None: ...
-
-
-class _BrowserTab(Protocol):
-    @property
-    def html(self) -> str: ...
-
-    def ele(self, locator: str, *, timeout: int) -> _BrowserElement | None: ...
-
-    def run_js(self, script: str) -> object: ...
 
 
 class BaseMediaClient(MediaParser):
@@ -160,7 +148,7 @@ class BaseMediaClient(MediaParser):
         """Return optional cookies to pass to yt-dlp fallback."""
         return None
 
-    def get_browser_cookies(self) -> list[dict[str, Any]]:
+    def get_browser_cookies(self) -> list[dict[str, object]]:
         """Return optional cookies to inject into headless browser fallback."""
         return []
 
@@ -180,7 +168,8 @@ class BaseMediaClient(MediaParser):
             if not payload:
                 return None
             for item, content in zip(payload.media_items, media_bytes, strict=False):
-                item.data = content
+                if isinstance(content, bytes):
+                    item.data = content
         except BrowserError, MediaExtractionError:
             msg = "Provider browser extraction failed."
             raise MediaExtractionError(msg) from None
@@ -192,7 +181,7 @@ class BaseMediaClient(MediaParser):
     extract_metadata_payload = extract_metadata
 
     def _extract_from_browser_tab(
-        self, tab: _BrowserTab, url: str, b_cfg: BrowserFallbackConfig
+        self, tab: BrowserTab, url: str, b_cfg: BrowserFallbackConfig
     ) -> RichMediaPayload | None:
         """Extract metadata from browser tab via JS, JSON scripts, or OG tags."""
         self._dismiss_gate_buttons(tab, b_cfg)
@@ -207,7 +196,7 @@ class BaseMediaClient(MediaParser):
             return self._build_browser_payload(og_meta, url, b_cfg)
         return None
 
-    def _dismiss_gate_buttons(self, tab: _BrowserTab, b_cfg: BrowserFallbackConfig) -> None:
+    def _dismiss_gate_buttons(self, tab: BrowserTab, b_cfg: BrowserFallbackConfig) -> None:
         for btn_text in b_cfg.gate_buttons:
             try:
                 if btn := tab.ele(f"text={btn_text}", timeout=1):
@@ -217,7 +206,7 @@ class BaseMediaClient(MediaParser):
                 logger.debug("Gate button '%s' not clickable", btn_text)
 
     def _extract_browser_script(
-        self, tab: _BrowserTab, url: str, b_cfg: BrowserFallbackConfig
+        self, tab: BrowserTab, url: str, b_cfg: BrowserFallbackConfig
     ) -> RichMediaPayload | None:
         if b_cfg.js_extractor:
             try:

@@ -94,15 +94,9 @@ class OwnedChromium:
             self.close()
             self._owner = getpid()
             try:
-                self._launch()
-                address = self._wait_for_address()
-                options = ChromiumOptions(read_file=False)
-                options.set_address(address)
-                options.existing_only(on_off=True)
-                options.headless(on_off=True)
-                options.set_retry(times=0, interval=0)
-                options.set_timeouts(base=DEFAULT_STARTUP_SECONDS, page_load=DEFAULT_STARTUP_SECONDS)
-                self._page = ChromiumPage(options)
+                process, profile = self._launch()
+                address = self._wait_for_address(process, profile)
+                self._page = self._attach_page(address)
             except BaseError, OSError:
                 self.close()
                 msg = "Browser startup is unavailable."
@@ -113,7 +107,16 @@ class OwnedChromium:
             else:
                 return self._page
 
-    def _launch(self) -> None:
+    def _attach_page(self, address: str) -> ChromiumPage:
+        options = ChromiumOptions(read_file=False)
+        options.set_address(address)
+        options.existing_only(on_off=True)
+        options.headless(on_off=True)
+        options.set_retry(times=0, interval=0)
+        options.set_timeouts(base=DEFAULT_STARTUP_SECONDS, page_load=DEFAULT_STARTUP_SECONDS)
+        return ChromiumPage(options)
+
+    def _launch(self) -> tuple[subprocess.Popen[bytes], Path]:
         self._owner = getpid()
         executable = find_browser_executable()
         if executable is None:
@@ -130,22 +133,26 @@ class OwnedChromium:
             "about:blank",
         ]
         self._process = subprocess.Popen(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: S603
+        return self._process, Path(self._profile.name)
 
-    def _wait_for_address(self) -> str:
-        assert self._profile is not None
-        assert self._process is not None
-        active_port = Path(self._profile.name) / "DevToolsActivePort"
+    def _read_debug_address(self, active_port: Path) -> str | None:
+        if not active_port.is_file():
+            return None
+        try:
+            port = int(active_port.read_text(encoding="utf-8").splitlines()[0])
+        except OSError, ValueError, IndexError:
+            return None
+        if 0 < port <= MAX_TCP_PORT:
+            return f"127.0.0.1:{port}"
+        return None
+
+    def _wait_for_address(self, process: subprocess.Popen[bytes], profile: Path) -> str:
+        active_port = profile / "DevToolsActivePort"
         deadline = time.monotonic() + self._startup_timeout
         while time.monotonic() < deadline:
-            if active_port.is_file():
-                try:
-                    port = int(active_port.read_text(encoding="utf-8").splitlines()[0])
-                except OSError, ValueError, IndexError:
-                    pass
-                else:
-                    if 0 < port <= MAX_TCP_PORT:
-                        return f"127.0.0.1:{port}"
-            if self._process.poll() is not None:
+            if address := self._read_debug_address(active_port):
+                return address
+            if process.poll() is not None:
                 msg = "Browser process exited before attachment."
                 raise BrowserError(msg)
             time.sleep(STARTUP_POLL_SECONDS)
@@ -153,37 +160,57 @@ class OwnedChromium:
         raise BrowserError(msg)
 
     def close(self) -> None:
-        """Close attached drivers, terminate if necessary, reap the process, and remove its profile."""
+        """Close drivers, always reap the owned process, and clean its temporary profile."""
         with self._lock:
             self._require_owner()
             try:
-                if self._page is not None:
-                    try:
-                        self._page.quit(timeout=PROCESS_STOP_SECONDS, force=False)
-                    except Exception:
-                        # The owned subprocess is still reaped when the browser connection already died.
-                        logger.debug("Browser connection was already closed during shutdown")
-                    finally:
-                        self._page = None
-                self._stop_process()
+                self._close_page()
             finally:
-                if self._profile is not None:
-                    self._profile.cleanup()
-                    self._profile = None
+                try:
+                    self._stop_process()
+                finally:
+                    self._cleanup_profile()
+
+    def _close_page(self) -> None:
+        page = self._page
+        if page is None:
+            return
+        try:
+            page.quit(timeout=PROCESS_STOP_SECONDS, force=False)
+        except BaseError, OSError:
+            # The owned subprocess is still reaped when the browser connection already died.
+            logger.debug("Browser connection was already closed during shutdown")
+        finally:
+            self._page = None
+
+    def _cleanup_profile(self) -> None:
+        profile = self._profile
+        if profile is None:
+            return
+        try:
+            profile.cleanup()
+        finally:
+            self._profile = None
+
+    def _wait_for_exit(self, process: subprocess.Popen[bytes]) -> bool:
+        try:
+            process.wait(timeout=PROCESS_STOP_SECONDS)
+        except subprocess.TimeoutExpired:
+            return False
+        return True
 
     def _stop_process(self) -> None:
         process = self._process
         if process is None:
             return
         try:
-            try:
-                process.wait(timeout=PROCESS_STOP_SECONDS)
-            except subprocess.TimeoutExpired:
-                process.terminate()
-                try:
-                    process.wait(timeout=PROCESS_STOP_SECONDS)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=PROCESS_STOP_SECONDS)
+            if self._wait_for_exit(process):
+                return
+            process.terminate()
+            if self._wait_for_exit(process):
+                return
+            process.kill()
+            process.wait(timeout=PROCESS_STOP_SECONDS)
         finally:
-            self._process = None
+            if process.poll() is not None:
+                self._process = None

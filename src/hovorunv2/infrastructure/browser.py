@@ -2,18 +2,39 @@
 
 import asyncio
 from collections.abc import Callable
-from typing import Any
+from functools import partial
 
 from DrissionPage import ChromiumPage
 from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
+from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.media.errors import BrowserError
+from hovorunv2.application.media.errors import BrowserError, MediaFailure
 from hovorunv2.infrastructure.browser_process import OwnedChromium
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.infrastructure.native_browser import download_tab_media
 
 logger = get_logger(__name__)
+
+
+async def _run_owned_operation[T](operation: Callable[[], T]) -> T:
+    """Retain the active request and semaphore until its blocking browser work is finished."""
+    task = asyncio.create_task(asyncio.to_thread(operation))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await _finish_cancelled_operation(task)
+        raise
+
+
+async def _finish_cancelled_operation[T](task: asyncio.Task[T]) -> None:
+    """Drain cancelled work without leaking backend exceptions or yielding its resources early."""
+    completion = asyncio.gather(task, return_exceptions=True)
+    while not completion.done():
+        try:
+            await asyncio.shield(completion)
+        except asyncio.CancelledError:
+            continue
 
 
 class BrowserLifecycleManager:
@@ -40,7 +61,7 @@ class BrowserLifecycleManager:
         self._flags = flags or []
         self._browser = OwnedChromium(flags)
         self._page: ChromiumPage | None = None
-        self._idle_timer: asyncio.Task | None = None
+        self._idle_timer: asyncio.Task[None] | None = None
         self._active_requests = 0
         self._lock = asyncio.Lock()
 
@@ -53,6 +74,14 @@ class BrowserLifecycleManager:
 
         """
         return self._page
+
+    def require_page(self) -> ChromiumPage:
+        """Require the page established by this manager's active request boundary."""
+        page = self._page
+        if page is None:
+            msg = "Browser instance is not initialized"
+            raise BrowserError(msg)
+        return page
 
     @property
     def is_running(self) -> bool:
@@ -80,18 +109,17 @@ class BrowserLifecycleManager:
 
     async def _ensure_browser(self) -> None:
         """Ensure browser instance is running."""
-        if not self._page:
-            logger.info("Starting new headless DrissionPage instance")
-            task = asyncio.create_task(asyncio.to_thread(self._init_page))
+        if self._page is not None:
+            return
+        logger.info("Starting new headless DrissionPage instance")
+        try:
+            await _run_owned_operation(self._init_page)
+        except asyncio.CancelledError:
             try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                try:
-                    await task
-                finally:
-                    await asyncio.to_thread(self._browser.close)
-                    self._page = None
-                raise
+                await _run_owned_operation(self._browser.close)
+            finally:
+                self._page = None
+            raise
 
     def _init_page(self) -> None:
         """Initialize ChromiumPage in a thread with detected browser path."""
@@ -123,12 +151,8 @@ class BrowserLifecycleManager:
     async def _perform_close(self) -> None:
         """Close without lock."""
         self._stop_idle_timer()
-        task = asyncio.create_task(asyncio.to_thread(self._browser.close))
         try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            await task
-            raise
+            await _run_owned_operation(self._browser.close)
         finally:
             self._page = None
         logger.info("Browser lifecycle manager closed")
@@ -173,30 +197,33 @@ class BrowserService:
     async def get_content(self, url: str, wait_selector: str | None = None) -> str:
         """Fetch HTML content of given URL with retries."""
         async with self._semaphore:
-            for attempt in range(self.MAX_RETRIES):
-                await self._manager.acquire()
-                try:
-                    return await self._fetch_url_content(url, wait_selector)
-                except (BaseError, BrowserError, OSError) as e:
-                    if self._is_recoverable_error(e) and attempt == 0:
-                        logger.warning("Browser error, retrying (%s)", type(e))
-                        await self._manager.close()
-                        continue
-                    msg = "Browser content is unavailable."
-                    raise BrowserError(msg) from None
-                finally:
-                    await self._manager.release()
+            return await self._content_with_retries(url, wait_selector)
+
+    async def _content_with_retries(self, url: str, wait_selector: str | None) -> str:
+        for attempt in range(self.MAX_RETRIES):
+            await self._manager.acquire()
+            try:
+                return await self._fetch_url_content(url, wait_selector)
+            except (BaseError, BrowserError, OSError) as e:
+                if self._is_recoverable_error(e) and attempt == 0:
+                    logger.warning("Browser error, retrying (%s)", type(e))
+                    await self._manager.close()
+                    continue
+                msg = "Browser content is unavailable."
+                raise BrowserError(msg) from None
+            finally:
+                await self._manager.release()
 
         msg = "Failed to fetch browser content after retries."
         raise BrowserError(msg)
 
-    async def extract_and_download(
+    async def extract_and_download[T](
         self,
         url: str,
-        extractor_fn: Callable,
+        extractor_fn: Callable[[BrowserTab, str], T | None],
         wait_selector: str | None = None,
-        cookies: list[dict[str, Any]] | None = None,
-    ) -> tuple[Any, list[bytes]]:
+        cookies: list[dict[str, object]] | None = None,
+    ) -> tuple[T | None, list[bytes | MediaFailure]]:
         """Fetch URL, extract metadata, and download media in one browser session.
 
         Args:
@@ -212,41 +239,34 @@ class BrowserService:
         async with self._semaphore:
             await self._manager.acquire()
             try:
-                page = self._manager.page
-                if not page:
-                    msg = "Browser instance is not initialized"
-                    raise BrowserError(msg)
-
-                return await asyncio.to_thread(
-                    self._sync_extract_and_download, page, url, extractor_fn, wait_selector, cookies
-                )
+                page = self._manager.require_page()
+                operation = partial(self._sync_extract_and_download, page, url, extractor_fn, wait_selector, cookies)
+                return await _run_owned_operation(operation)
             except BaseError, OSError:
                 msg = "Browser extraction is unavailable."
                 raise BrowserError(msg) from None
             finally:
                 await self._manager.release()
 
-    def _sync_extract_and_download(
+    def _sync_extract_and_download[T](
         self,
         page: ChromiumPage,
         url: str,
-        extractor_fn: Callable,
+        extractor_fn: Callable[[BrowserTab, str], T | None],
         wait_selector: str | None,
-        cookies: list[dict[str, Any]] | None,
-    ) -> tuple[Any, list[bytes]]:
+        cookies: list[dict[str, object]] | None,
+    ) -> tuple[T | None, list[bytes | MediaFailure]]:
         """Perform extraction and download synchronously in a tab."""
         logger.info("Extracting and downloading via browser")
         # Create tab but don't load URL yet if we need to set cookies
-        tab = page.new_tab()
+        tab: BrowserTab = page.new_tab()
         try:
             if cookies:
                 logger.info("Injecting %d cookies into browser session", len(cookies))
                 for cookie in cookies:
                     tab.set.cookies(cookie)
 
-            tab.get(url, timeout=self.DEFAULT_TIMEOUT_S)
-            if wait_selector:
-                self._wait_for_selector_sync(tab, url, wait_selector)
+            self._navigate(tab, url, wait_selector)
 
             # Try to extract using the provided function.
             # We pass the tab instead of just HTML so the extractor can run JS if needed.
@@ -288,12 +308,8 @@ class BrowserService:
             HTML content.
 
         """
-        page = self._manager.page
-        if not page:
-            msg = "Browser instance is not initialized"
-            raise BrowserError(msg)
-
-        return await asyncio.to_thread(self._sync_fetch, page, url, wait_selector)
+        page = self._manager.require_page()
+        return await _run_owned_operation(partial(self._sync_fetch, page, url, wait_selector))
 
     def _sync_fetch(self, page: ChromiumPage, url: str, wait_selector: str | None) -> str:
         """Fetch content synchronously in a thread.
@@ -313,19 +329,23 @@ class BrowserService:
         """
         logger.info("Fetching browser content")
         # new_tab creates an empty tab; the bounded get(url) below performs its only navigation.
-        tab = page.new_tab()
+        tab: BrowserTab = page.new_tab()
         try:
-            tab.get(url, timeout=self.DEFAULT_TIMEOUT_S)
-
-            if wait_selector:
-                self._wait_for_selector_sync(tab, url, wait_selector)
+            self._navigate(tab, url, wait_selector)
 
             return tab.html
         finally:
             # Closing the tab ensures we don't leak resources
             tab.close()
 
-    def _wait_for_selector_sync(self, tab: Any, url: str, selector: str) -> None:
+    def _navigate(self, tab: BrowserTab, url: str, wait_selector: str | None) -> None:
+        if not tab.get(url, timeout=self.DEFAULT_TIMEOUT_S):
+            msg = "Browser navigation failed."
+            raise BrowserError(msg)
+        if wait_selector:
+            self._wait_for_selector_sync(tab, url, wait_selector)
+
+    def _wait_for_selector_sync(self, tab: BrowserTab, url: str, selector: str) -> None:
         """Wait for selector synchronously.
 
         Args:
@@ -337,7 +357,7 @@ class BrowserService:
         try:
             logger.debug("Waiting for selector: %s", selector)
             tab.ele(selector, timeout=self.SELECTOR_TIMEOUT_S)
-        except Exception:
+        except BaseError, OSError:
             logger.warning(
                 "Timeout waiting for selector, returning current content",
             )

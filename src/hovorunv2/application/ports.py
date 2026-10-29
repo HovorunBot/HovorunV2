@@ -11,6 +11,8 @@ from typing import Any, Protocol, runtime_checkable
 
 from aiogram import Bot
 
+from hovorunv2.application.browser import BrowserTab
+from hovorunv2.application.media.errors import MediaFailure
 from hovorunv2.application.permissions import PermissionFacts
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
@@ -61,17 +63,18 @@ class BrowserPort(Protocol):
         """Return rendered HTML; navigation or browser failures raise."""
         ...
 
-    async def extract_and_download(
+    async def extract_and_download[T](
         self,
         url: str,
-        extractor_fn: Callable[..., Any],
+        extractor_fn: Callable[[BrowserTab, str], T | None],
         wait_selector: str | None = None,
-        cookies: list[dict[str, Any]] | None = None,
-    ) -> tuple[Any, list[bytes]]:
+        cookies: list[dict[str, object]] | None = None,
+    ) -> tuple[T | None, list[bytes | MediaFailure]]:
         """Run extraction and download in one browser session.
 
         The current adapter returns (None, []) when extraction finds no metadata.
-        Navigation and browser failures raise; media bytes may be empty.
+        Navigation and browser failures raise BrowserError.
+        Each media position contains bytes or an explicit MediaFailure.
         """
         ...
 

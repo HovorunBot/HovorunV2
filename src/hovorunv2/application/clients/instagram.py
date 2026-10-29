@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import re
-from typing import Any, ClassVar
+from typing import ClassVar
 
 import aiohttp
 import instaloader
@@ -127,7 +127,7 @@ class InstagramService(BaseMediaClient):
         """Provide sessionid cookie to yt-dlp when configured."""
         return {"sessionid": self._settings.instagram_sessionid} if self._settings.instagram_sessionid else None
 
-    def get_browser_cookies(self) -> list[dict[str, Any]]:
+    def get_browser_cookies(self) -> list[dict[str, object]]:
         """Provide sessionid cookie to headless browser fallback when configured."""
         if not self._settings.instagram_sessionid:
             return []

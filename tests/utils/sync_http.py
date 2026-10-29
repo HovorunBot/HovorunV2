@@ -1,13 +1,14 @@
 """Real loopback HTTP fixtures with synthetic request capture and deterministic server cleanup."""
 
 import json
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socket import SHUT_RDWR
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 from types import TracebackType
 from typing import Self
 
@@ -20,6 +21,8 @@ class HTTPReply:
     status: HTTPStatus = HTTPStatus.OK
     headers: Mapping[str, str] = field(default_factory=dict)
     disconnect: bool = False
+    delay_seconds: float = 0
+    started: Event | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +52,10 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         request = CapturedRequest(self.command, self.path, dict(self.headers.items()), self.rfile.read(length))
         response = self._fixture.response(request)
+        if response.started is not None:
+            response.started.set()
+        if response.delay_seconds:
+            time.sleep(response.delay_seconds)
         if response.disconnect:
             self.connection.shutdown(SHUT_RDWR)
             self.connection.close()
@@ -61,6 +68,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(response.body)
+        self._fixture.complete(request)
 
     def do_GET(self) -> None:
         """Serve a synthetic GET endpoint."""
@@ -82,6 +90,7 @@ class HTTPFixture:
         self._routes = dict(routes)
         self._lock = Lock()
         self.requests: list[CapturedRequest] = []
+        self.completed: list[CapturedRequest] = []
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), partial(_FixtureHandler, fixture=self))
         self._thread = Thread(target=self._server.serve_forever, daemon=True)
 
@@ -111,3 +120,8 @@ class HTTPFixture:
             if isinstance(reply, list):
                 return reply.pop(0) if reply else HTTPReply(status=HTTPStatus.NOT_FOUND)
             return reply if reply is not None else HTTPReply(status=HTTPStatus.NOT_FOUND)
+
+    def complete(self, request: CapturedRequest) -> None:
+        """Record that a delayed response has finished sending before a caller releases its resource."""
+        with self._lock:
+            self.completed.append(request)
