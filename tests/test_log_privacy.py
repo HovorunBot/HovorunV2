@@ -14,6 +14,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.clients.instagram import PrivateInstaloaderContext
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.media.downloader import MediaDownloader
+from hovorunv2.application.media.errors import MediaDownloadError
 from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.enums import Role
 from hovorunv2.infrastructure.logger import (
@@ -98,11 +99,14 @@ async def test_media_download_failure_logs_no_message_url(
     monkeypatch.setattr(logging.getLogger("hovorunv2.application.media.downloader"), "disabled", False)
     async with aiohttp.ClientSession() as session:
         downloader = MediaDownloader(session)
-        with caplog.at_level(logging.ERROR), aioresponses(response_class=RecordedResponse) as http:
+        with caplog.at_level(logging.WARNING), aioresponses(response_class=RecordedResponse) as http:
             http.get(PRIVATE_URL, exception=ValueError(SENTINEL))
-            assert await downloader.download_as_buffered_file(PRIVATE_URL, "image.jpg", is_video=False) is None
+            with pytest.raises(MediaDownloadError) as error:
+                await downloader.download_as_buffered_file(PRIVATE_URL, "image.jpg", is_video=False)
+            assert error.value.__cause__ is None
+            assert error.value.__suppress_context__
     assert all(PRIVATE_URL not in record.getMessage() for record in caplog.records)
-    assert any(record.msg == "Exception during media download" for record in caplog.records), caplog.record_tuples
+    assert any(record.msg == "Media download failed" for record in caplog.records), caplog.record_tuples
 
 
 def test_safe_debug_metadata_survives_privacy_formatting() -> None:

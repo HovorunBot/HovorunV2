@@ -8,6 +8,7 @@ from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.clients.config import ProviderConfig
 from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.features import TriggerKind
+from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.media.finalization import (
     QUOTED_MEDIA_NOTE,
@@ -85,8 +86,10 @@ class MediaPipeline:
         is_post_url = bool(client.config.post_url_pattern and client.config.post_url_pattern.search(url))
         if not is_post_url:
             logger.info("%s direct API returned no payload, trying yt-dlp", client.name)
-            if payload := await self._extractor.extract(url, cookies=client.get_ytdlp_cookies()):
-                return payload
+            try:
+                return await self._extractor.extract(url, cookies=client.get_ytdlp_cookies())
+            except MediaExtractionError:
+                logger.info("Media backend strategy failed; trying provider fallback")
 
         # 3. Browser Fallback
         if payload := await client.extract_fallback(url):

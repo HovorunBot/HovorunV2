@@ -183,7 +183,9 @@ class TelegramMediaDelivery:
             self._build_input_media(
                 file, is_video=payload.media_items[i].is_video, caption=caption if idx == 0 else None
             )
-            for idx, (i, file) in enumerate((i, f) for i, f in enumerate(downloaded_files) if f is not None)
+            for idx, (i, file) in enumerate(
+                (i, f) for i, f in enumerate(downloaded_files) if isinstance(f, BufferedInputFile)
+            )
         ]
 
         if not final_group:

@@ -1,18 +1,18 @@
 """Tests for Instagram rich media command."""
 
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-import aiohttp
 import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.clients.instagram import InstagramService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
+from tests.utils.sync_http import HTTPFixture, HTTPReply
 
 
 @pytest.fixture
@@ -91,46 +91,18 @@ async def test_handle_instagram_reel(instagram_command: RichMediaCommand, init_c
     assert "instagram.com" in caption
 
 
-@pytest.mark.asyncio
-async def test_handle_instagram_browser_fallback(
-    instagram_command: RichMediaCommand, init_container: AsyncContainer
-) -> None:
-    """Test handling an Instagram post using browser fallback when other services fail."""
-    chat_id = 789
-    url = "https://www.instagram.com/p/C-2v0r0nQ1A/"
-    message = create_private_media_message(url, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
-
-    chat_status_service = await init_container.get(ChatStatusService)
-    await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
-
-    session = await init_container.get(aiohttp.ClientSession)
-
-    payload = RichMediaPayload(
-        author_name="Instagram User",
-        author_handle="instagram",
-        author_url="https://www.instagram.com/",
-        content="Fallback Title\n\nFallback Description",
-        footer_text="📷 Instagram (Browser Fallback)",
-        original_url=url,
-        media_items=[MediaItem(url="https://example.com/fallback.jpg", is_video=False)],
-    )
-
-    with (
-        patch("instaloader.Post.from_shortcode", side_effect=Exception("Instaloader failed")),
-        patch("hovorunv2.application.media.extractor.MediaExtractor.extract", return_value=None),
-        patch(
-            "hovorunv2.infrastructure.browser.BrowserService.extract_and_download",
-            return_value=(payload, [b"fake_image_bytes"]),
-        ),
-    ):
-        await instagram_command.handle(message, cast("Bot", bot), session=session)
-
-    bot.send_media_group.assert_called_once()
-    _args, kwargs = bot.send_media_group.call_args
-    caption = kwargs["media"][0].caption
-    assert "Fallback Title" in caption
-    assert "Fallback Description" in caption
-    assert "📷 Instagram" in caption
+async def test_instagram_browser_fallback_uses_real_dom_and_media(init_container: AsyncContainer) -> None:
+    """Real browser extraction downloads loopback media without replacing an internal strategy/service."""
+    service = await init_container.get(InstagramService)
+    with HTTPFixture({"/image.jpg": HTTPReply(b"synthetic image")}) as media:
+        document = (
+            '<html><head><meta property="og:title" content="Synthetic fallback">'
+            f'<meta property="og:image" content="{media.url("/image.jpg")}">'
+            "</head><body><main>Synthetic fallback</main></body></html>"
+        )
+        with HTTPFixture({"/post": HTTPReply(document.encode(), headers={"Content-Type": "text/html"})}) as server:
+            payload = await service.extract_fallback(server.url("/post"))
+            assert payload is not None
+            assert "Synthetic fallback" in payload.content
+            assert payload.media_items[0].data == b"synthetic image"
+            assert payload.media_items[0].url == media.url("/image.jpg")

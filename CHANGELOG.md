@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **media**: require usable extraction and download results
 - **providers**: separate browser quote and media eligibility
 - **providers**: separate community parsing and post attribution
 - **providers**: separate quote text and media selection rules

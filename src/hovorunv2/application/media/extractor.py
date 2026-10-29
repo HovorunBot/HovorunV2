@@ -11,6 +11,7 @@ import yt_dlp
 
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
+from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.text import clean_caption_text, format_number
 
 logger = logging.getLogger(__name__)
@@ -64,11 +65,12 @@ def _media_items(info: dict[str, object]) -> list[MediaItem]:
     return [MediaItem(media_url, is_video)] if media_url else []
 
 
-def process_extraction_info(raw: object, url: str) -> RichMediaPayload | None:
+def process_extraction_info(raw: object, url: str) -> RichMediaPayload:
     """Parse provider-independent yt-dlp facts without any network, Telegram object or worker state."""
     info = _mapping(raw)
     if not info:
-        return None
+        msg = "Media extraction returned unusable metadata."
+        raise MediaExtractionError(msg)
     title = _text(info, "title", "No Title")
     clean_desc = clean_caption_text(_text(info, "description"), strip_hashtags=True)
     likes, views = _count(info, "like_count"), _count(info, "view_count")
@@ -77,6 +79,10 @@ def process_extraction_info(raw: object, url: str) -> RichMediaPayload | None:
         stats.append(f"❤️ {format_number(likes)}")
     if views:
         stats.append(f"👁️ {format_number(views)}")
+    items = _media_items(info)
+    if not items and not (_text(info, "title") or _text(info, "description")):
+        msg = "Media extraction returned unusable metadata."
+        raise MediaExtractionError(msg)
     return RichMediaPayload(
         author_name=_text(info, "uploader") or _text(info, "channel", "Unknown"),
         author_handle=_text(info, "uploader_id", "unknown"),
@@ -84,7 +90,7 @@ def process_extraction_info(raw: object, url: str) -> RichMediaPayload | None:
         content=clean_desc if len(clean_desc) > MIN_DESCRIPTION_LENGTH else title,
         footer_text=" | ".join(stats),
         original_url=url,
-        media_items=_media_items(info),
+        media_items=items,
     )
 
 
@@ -128,22 +134,23 @@ def extract_info(url: str, cookies: dict[str, str] | None = None) -> object:
         "extractor_retries": 0,
         "playlistend": MAX_PLAYLIST_ITEMS,
     }
-    with yt_dlp.YoutubeDL(options) as ydl:
-        if cookies:
-            _add_cookies(ydl, url, cookies)
-        return ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            if cookies:
+                _add_cookies(ydl, url, cookies)
+            return ydl.extract_info(url, download=False)
+    except yt_dlp.utils.YoutubeDLError, OSError, ValueError:
+        logger.warning("Media extraction failed")
+        msg = "Media extraction failed."
+        raise MediaExtractionError(msg) from None
 
 
 class NativeMediaExtractor:
     """Synchronous worker entrypoint sharing the same extraction and parsing as the bot."""
 
-    def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload | None:
+    def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
         """Return provider facts without crossing an asynchronous execution boundary."""
-        try:
-            return process_extraction_info(extract_info(url, cookies), url)
-        except Exception:
-            logger.warning("Media extraction failed")
-            return None
+        return process_extraction_info(extract_info(url, cookies), url)
 
     extract_payload = extract
 
@@ -154,21 +161,17 @@ class MediaExtractor:
     MIN_DESCRIPTION_LENGTH = MIN_DESCRIPTION_LENGTH
     YT_SHORTS_PATTERN = re.compile(r"https?://(?:www\.)?youtube\.com/shorts/(?P<id>[\w-]+)")
 
-    async def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload | None:
+    async def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
         """Offload the blocking backend only for the async bot path."""
-        try:
-            info = await asyncio.to_thread(self._extract_info, url, cookies)
-            return process_extraction_info(info, url)
-        except Exception:
-            logger.warning("Media extraction failed")
-            return None
+        info = await asyncio.to_thread(self._extract_info, url, cookies)
+        return process_extraction_info(info, url)
 
     extract_payload = extract
 
     def _extract_info(self, url: str, cookies: dict[str, str] | None = None) -> object:
         return extract_info(url, cookies)
 
-    def _process_info(self, info: object, url: str) -> RichMediaPayload | None:
+    def _process_info(self, info: object, url: str) -> RichMediaPayload:
         return process_extraction_info(info, url)
 
     def _extract_media_items(self, info: object) -> list[MediaItem]:

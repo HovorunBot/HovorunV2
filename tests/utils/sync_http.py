@@ -59,10 +59,15 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         if "Content-Length" not in response.headers:
             self.send_header("Content-Length", str(len(response.body)))
         self.end_headers()
-        self.wfile.write(response.body)
+        if self.command != "HEAD":
+            self.wfile.write(response.body)
 
     def do_GET(self) -> None:
         """Serve a synthetic GET endpoint."""
+        self._respond()
+
+    def do_HEAD(self) -> None:
+        """Serve the same external metadata without sending response content."""
         self._respond()
 
     def do_POST(self) -> None:

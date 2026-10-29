@@ -172,7 +172,7 @@ class NativeTelegramDelivery:
         items = [
             MediaItem(item.url, item.is_video, data)
             for item, data in zip(payload.media_items, contents, strict=True)
-            if data is not None
+            if isinstance(data, bytes)
         ]
         if not items:
             return self._text(chat_id, caption + "\n\n⚠️ <i>Failed to download media.</i>", message_id=placeholder)
