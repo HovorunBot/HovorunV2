@@ -28,7 +28,25 @@ class HTTPTransportError(OSError):
 
 
 class SyncHTTPPort(Protocol):
-    """Bounded native network I/O; ordinary extraction failures return no payload."""
+    """Bounded native I/O with strict reads and temporary optional extraction wrappers."""
+
+    def read_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
+        """Return decoded JSON, including null; raise HTTPTransportError for transport/decode failure."""
+        ...
+
+    def read_text(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> str:
+        """Return bounded text or raise HTTPTransportError."""
+        ...
+
+    def resolve(self, url: str, headers: HTTPHeaders | None = None) -> str:
+        """Return a successful bounded redirect result or raise HTTPTransportError."""
+        ...
+
+    def download_bytes(
+        self, url: str, headers: HTTPHeaders | None = None, *, cookies: Mapping[str, str] | None = None
+    ) -> bytes:
+        """Return bounded media bytes or raise HTTPTransportError."""
+        ...
 
     def get_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
         """Return decoded JSON or None for an unavailable extraction endpoint."""

@@ -42,13 +42,39 @@ SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"}
 def _validate_url(url: str) -> tuple[str, str, int | None]:
     try:
         parts = urlsplit(url)
-        if parts.scheme not in {"http", "https"} or not parts.hostname or parts.username or parts.password:
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise HTTPTransportError(HTTPFailure.REJECTED)
+        if parts.username or parts.password:
             raise HTTPTransportError(HTTPFailure.REJECTED)
         origin = parts.scheme, parts.hostname, parts.port
     except ValueError:
         raise HTTPTransportError(HTTPFailure.REJECTED) from None
     else:
         return origin
+
+
+def _require_success(response: requests.Response) -> None:
+    if response.status_code != HTTPStatus.OK:
+        raise HTTPTransportError(HTTPFailure.REJECTED)
+
+
+def _decode_json(raw: bytes) -> object:
+    try:
+        return json.loads(raw)
+    except ValueError, UnicodeError:
+        raise HTTPTransportError(HTTPFailure.MALFORMED) from None
+
+
+def _redirect_target(response: requests.Response, current: str, method: str) -> tuple[str, tuple[str, str, int | None]]:
+    try:
+        target = urljoin(current, response.headers.get("Location", ""))
+        next_origin = _validate_url(target)
+    finally:
+        response.close()
+    # A mutating request is never automatically resent to a redirect target.
+    if method != "GET":
+        raise HTTPTransportError(HTTPFailure.REJECTED)
+    return target, next_origin
 
 
 class NativeHTTPClient:
@@ -130,14 +156,7 @@ class NativeHTTPClient:
             )
             if response.status_code not in REDIRECT_STATUSES:
                 return response
-            try:
-                target = urljoin(current, response.headers.get("Location", ""))
-                next_origin = _validate_url(target)
-            finally:
-                response.close()
-            # A mutating request is never automatically resent to a redirect target.
-            if method != "GET":
-                raise HTTPTransportError(HTTPFailure.REJECTED)
+            target, next_origin = _redirect_target(response, current, method)
             if next_origin != origin:
                 request_headers = {
                     key: value for key, value in request_headers.items() if key.lower() not in SENSITIVE_HEADERS
@@ -161,7 +180,7 @@ class NativeHTTPClient:
             chunks.append(chunk)
         return b"".join(chunks)
 
-    def _get_bytes(
+    def _get_bytes_required(
         self,
         url: str,
         limit: int,
@@ -169,46 +188,71 @@ class NativeHTTPClient:
         params: HTTPQuery | None = None,
         headers: HTTPHeaders | None = None,
         cookies: Mapping[str, str] | None = None,
-    ) -> bytes | None:
+    ) -> bytes:
         started = time.monotonic()
         self._require_session()
         try:
             with self._request("GET", url, params=params, headers=headers, cookies=cookies) as response:
-                if response.status_code != HTTPStatus.OK:
-                    return None
+                _require_success(response)
                 return self._read(response, limit, started)
-        except requests.RequestException, HTTPTransportError, UnicodeError:
-            return None
+        except requests.RequestException, UnicodeError:
+            raise HTTPTransportError from None
 
-    def get_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
-        """Read bounded UTF-8 JSON without retaining malformed response details."""
-        raw = self._get_bytes(url, self._response_bytes, params=params, headers=headers)
-        if raw is None:
-            return None
-        try:
-            return json.loads(raw)
-        except ValueError, UnicodeError:
-            return None
+    def read_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
+        """Return bounded decoded JSON, including null; operational failure raises a safe transport error."""
+        return _decode_json(self._get_bytes_required(url, self._response_bytes, params=params, headers=headers))
 
-    def get_text(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> str | None:
-        """Read bounded provider HTML as UTF-8 text."""
-        raw = self._get_bytes(url, self._response_bytes, params=params, headers=headers)
-        return raw.decode("utf-8", errors="replace") if raw is not None else None
+    def read_text(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> str:
+        """Return bounded provider text; preserve replacement decoding for non-UTF-8 HTML."""
+        return self._get_bytes_required(url, self._response_bytes, params=params, headers=headers).decode(
+            "utf-8", errors="replace"
+        )
 
-    def resolve_url(self, url: str, headers: HTTPHeaders | None = None) -> str | None:
-        """Resolve only a bounded chain of valid GET redirects."""
+    def resolve(self, url: str, headers: HTTPHeaders | None = None) -> str:
+        """Require a successful response after the bounded credential-safe redirect chain."""
         self._require_session()
         try:
             with self._request("GET", url, headers=headers) as response:
-                return response.url if response.status_code == HTTPStatus.OK else None
-        except requests.RequestException, HTTPTransportError, UnicodeError:
+                _require_success(response)
+                return response.url
+        except requests.RequestException, UnicodeError:
+            raise HTTPTransportError from None
+
+    def download_bytes(
+        self, url: str, headers: HTTPHeaders | None = None, *, cookies: Mapping[str, str] | None = None
+    ) -> bytes:
+        """Return bounded decompressed media bytes or a safe transport failure."""
+        return self._get_bytes_required(url, self._max_bytes, headers=headers, cookies=cookies)
+
+    def get_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
+        """Transitional optional extraction wrapper; consumers migrate before C16a removal."""
+        try:
+            return self.read_json(url, params, headers)
+        except HTTPTransportError:
+            return None
+
+    def get_text(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> str | None:
+        """Transitional optional text wrapper; consumers migrate before C16a removal."""
+        try:
+            return self.read_text(url, params, headers)
+        except HTTPTransportError:
+            return None
+
+    def resolve_url(self, url: str, headers: HTTPHeaders | None = None) -> str | None:
+        """Transitional optional redirect wrapper; consumers migrate before C16a removal."""
+        try:
+            return self.resolve(url, headers)
+        except HTTPTransportError:
             return None
 
     def download(
         self, url: str, headers: HTTPHeaders | None = None, *, cookies: Mapping[str, str] | None = None
     ) -> bytes | None:
-        """Count decompressed streaming bytes and keep browser cookies transient."""
-        return self._get_bytes(url, self._max_bytes, headers=headers, cookies=cookies)
+        """Transitional optional download wrapper; consumers migrate before C16a removal."""
+        try:
+            return self.download_bytes(url, headers, cookies=cookies)
+        except HTTPTransportError:
+            return None
 
     def request_json(
         self, method: str, url: str, *, data: HTTPForm | None = None, files: HTTPFiles | None = None
@@ -219,10 +263,7 @@ class NativeHTTPClient:
         try:
             with self._request(method.upper(), url, data=data, files=files) as response:
                 raw = self._read(response, self._response_bytes, started)
-                try:
-                    result = json.loads(raw)
-                except ValueError, UnicodeError:
-                    raise HTTPTransportError(HTTPFailure.MALFORMED) from None
+                result = _decode_json(raw)
                 if response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
                     raise HTTPTransportError
                 return result
