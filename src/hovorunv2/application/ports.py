@@ -1,4 +1,9 @@
-"""Application ports (Protocols) defining boundaries for external adapters."""
+"""Application ports (Protocols) defining boundaries for external adapters.
+
+Optional lookups describe expected absence. Boolean mutations report their documented
+no-op or acceptance outcome; they are not generic availability checks. Required
+operations propagate failures to the owning workflow. Injected adapters are mandatory.
+"""
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -17,7 +22,7 @@ class CachePort(Protocol):
     """Protocol for key-value and sorted-set caching operations."""
 
     async def get(self, key: str, default: Any = None) -> Any:
-        """Retrieve a value from the cache by key."""
+        """Return decoded data or default for a missing or malformed JSON value."""
         ...
 
     async def set(self, key: str, value: Any, expire: int | None = None) -> None:
@@ -25,7 +30,7 @@ class CachePort(Protocol):
         ...
 
     async def pop(self, key: str) -> Any:
-        """Atomically retrieve and delete a cached value; return None when absent."""
+        """Consume a value atomically; absent keys return None, malformed JSON raises."""
         ...
 
     async def delete(self, key: str) -> None:
@@ -53,7 +58,7 @@ class BrowserPort(Protocol):
     """Protocol for headless browser automation."""
 
     async def get_content(self, url: str, wait_selector: str | None = None) -> str:
-        """Fetch rendered HTML content of given URL."""
+        """Return rendered HTML; navigation or browser failures raise."""
         ...
 
     async def extract_and_download(
@@ -63,7 +68,11 @@ class BrowserPort(Protocol):
         wait_selector: str | None = None,
         cookies: list[dict[str, Any]] | None = None,
     ) -> tuple[Any, list[bytes]]:
-        """Fetch URL, extract metadata, and download media in browser session."""
+        """Run extraction and download in one browser session.
+
+        The current adapter returns (None, []) when extraction finds no metadata.
+        Navigation and browser failures raise; media bytes may be empty.
+        """
         ...
 
 
@@ -79,7 +88,7 @@ class TaskQueuePort(Protocol):
         ...
 
     async def enqueue(self, function_name: str, **kwargs: Any) -> None:
-        """Enqueue a background task by registered name."""
+        """Submit work by name; this command contract provides no execution receipt."""
         ...
 
 
@@ -88,7 +97,7 @@ class AppSettings(Protocol):
 
     @property
     def cache_encryption_key(self) -> str | None:
-        """Master secret key for per-chat PBKDF2 message encryption."""
+        """Optional encryption configuration; absence disables encrypted message caching."""
         ...
 
     @property
@@ -136,11 +145,11 @@ class UserStore(Protocol):
     """Protocol for user identity persistence operations."""
 
     async def get_by_id(self, user_id: int) -> UserDB | None:
-        """Fetch active user by internal entity ID."""
+        """Return an active user, or None for a missing or deleted identity."""
         ...
 
     async def get_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> UserDB | None:
-        """Fetch active user by platform and numeric Telegram ID."""
+        """Return an active user by numeric identity, or None when missing/deleted."""
         ...
 
     async def ingest_user(
@@ -156,17 +165,17 @@ class UserStore(Protocol):
     async def soft_delete_user(
         self, telegram_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
     ) -> bool:
-        """Soft-delete an active user identity recording actor and reason."""
+        """Delete and audit an active identity; return False when already absent/deleted."""
         ...
 
     async def set_trust(
         self, telegram_id: int, *, is_trusted: bool, actor: ActorContext | None = None, platform: str = "telegram"
     ) -> bool:
-        """Update trust flag for an active user."""
+        """Return whether an active user exists, including an unchanged trust flag."""
         ...
 
     async def get_historical_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> list[UserDB]:
-        """Fetch all generations of user identity for explicit recovery workflows."""
+        """List identity generations for recovery; an empty list means no history."""
         ...
 
 
@@ -185,13 +194,13 @@ class PublicHandleStore(Protocol):
     """Protocol for active public-handle registry operations."""
 
     async def resolve_handle(self, handle: str, platform: Platform = Platform.TELEGRAM) -> ResolvedTarget | None:
-        """Resolve public @username to stable numeric target (active only)."""
+        """Return an active public target, or None for invalid, absent or stale handles."""
         ...
 
     async def get_handle_by_target(
         self, target_kind: TargetKind, target_id: int, platform: Platform = Platform.TELEGRAM
     ) -> ResolvedTarget | None:
-        """Get current public handle for a numeric target entity."""
+        """Return the stored handle mapping, or None when no mapping exists."""
         ...
 
     async def sync_handle(
@@ -202,7 +211,11 @@ class PublicHandleStore(Protocol):
         actor: ActorContext,
         platform: Platform = Platform.TELEGRAM,
     ) -> ResolvedTarget | None:
-        """Synchronize public handle from verified Telegram evidence with audit."""
+        """Synchronize a handle with audit; return None when evidence removes it.
+
+        Invalid nonempty handles raise InvalidHandleError. An unchanged valid
+        mapping remains a successful result.
+        """
         ...
 
     async def release_handle(
@@ -212,7 +225,7 @@ class PublicHandleStore(Protocol):
         actor: ActorContext,
         platform: Platform = Platform.TELEGRAM,
     ) -> bool:
-        """Release public handle on target soft-deletion or removal with audit."""
+        """Release a handle with audit; return False when no mapping exists."""
         ...
 
 
@@ -234,7 +247,11 @@ class RoleStore(Protocol):
         actor: ActorContext,
         platform: Platform = Platform.TELEGRAM,
     ) -> bool:
-        """Set one role atomically with audit; USER explicitly demotes authority."""
+        """Set one role with audit; USER demotes authority.
+
+        Return False for an unchanged role or tombstoned identity. Non-CLI
+        actors raise PermissionError.
+        """
         ...
 
 
@@ -242,7 +259,7 @@ class ChatStore(Protocol):
     """Protocol for chat persistence operations."""
 
     async def get_chat(self, chat_id: int, platform: str = "telegram") -> ChatDB | None:
-        """Fetch chat from database."""
+        """Return the active chat for a current or historical route, or None if absent."""
         ...
 
     async def list_groups(self, after_id: int, limit: int, *, present_only: bool) -> list[ChatDB]:
@@ -252,13 +269,13 @@ class ChatStore(Protocol):
     async def get_or_create_chat(
         self, chat_id: int, platform: str = "telegram", actor: ActorContext | None = None
     ) -> ChatDB:
-        """Fetch chat from database or create it if not exists."""
+        """Return an active chat or create it; unavailable historical routes raise ValueError."""
         ...
 
     async def update_status(
         self, chat_id: int, status: ChatStatus, platform: str = "telegram", actor: ActorContext | None = None
     ) -> None:
-        """Update lifecycle status for a chat."""
+        """Persist lifecycle status, provisioning a missing current route; invalid old routes raise."""
         ...
 
     async def update_translation_settings(
@@ -269,13 +286,13 @@ class ChatStore(Protocol):
         platform: str = "telegram",
         actor: ActorContext | None = None,
     ) -> None:
-        """Update translation settings for a chat."""
+        """Persist translation settings, provisioning a missing current route; invalid old routes raise."""
         ...
 
     async def set_encryption_salt(
         self, chat_id: int, salt: str, platform: str = "telegram", actor: ActorContext | None = None
     ) -> None:
-        """Set encryption salt for a chat."""
+        """Persist the encryption salt, provisioning a missing current route; invalid old routes raise."""
         ...
 
     async def get_all_by_status(self, status: ChatStatus, platform: str = "telegram") -> list[ChatDB]:
@@ -285,11 +302,11 @@ class ChatStore(Protocol):
     async def soft_delete_chat(
         self, chat_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
     ) -> bool:
-        """Soft-delete an active chat identity recording actor and reason."""
+        """Delete and audit an active identity; return False when already absent/deleted."""
         ...
 
     async def get_historical_by_chat_id(self, chat_id: int, platform: str = "telegram") -> list[ChatDB]:
-        """Fetch all generations of chat identity for explicit recovery workflows."""
+        """List chat identity generations; an empty list means no history."""
         ...
 
 
@@ -301,23 +318,35 @@ class CommandStore(Protocol):
         ...
 
     async def initialize_defaults(self, chat_id: int, commands: tuple[str, ...], platform: str = "telegram") -> None:
-        """Initialize defaults once without overwriting deliberate selections or legacy state."""
+        """Initialize defaults once, preserving explicit selections and legacy state.
+
+        Already configured or absent chats are no-ops; unknown default commands
+        raise ValueError when initialization is needed.
+        """
         ...
 
     async def get_allowed_commands(self, chat_id: int, platform: str = "telegram") -> list[str]:
-        """Fetch allowed commands for a chat."""
+        """List configured commands; no selections or missing chat yields an empty list."""
         ...
 
     async def enable_command(
         self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None
     ) -> bool:
-        """Enable specific command for a chat."""
+        """Return command acceptance, including an already enabled command.
+
+        Unknown commands or deleted chats return False; failed authorization
+        raises PermissionError. Acceptance does not imply a new audit change.
+        """
         ...
 
     async def disable_command(
         self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None
     ) -> bool:
-        """Disable specific command for a chat."""
+        """Return removal or legacy-state change, not generic persistence success.
+
+        Missing chat/command or an already disabled command may return False;
+        failed authorization raises PermissionError.
+        """
         ...
 
 
@@ -325,7 +354,7 @@ class SystemStore(Protocol):
     """Protocol for system-wide state persistence operations."""
 
     async def get_last_notified_version(self) -> str | None:
-        """Fetch last notified version from database."""
+        """Return the notification marker, or None before any marker is stored."""
         ...
 
     async def set_last_notified_version(self, version: str, actor: ActorContext | None = None) -> None:
@@ -333,7 +362,7 @@ class SystemStore(Protocol):
         ...
 
     async def get_value(self, key: str) -> str | None:
-        """Fetch arbitrary value from system storage."""
+        """Return a stored value, or None when the setting is absent."""
         ...
 
     async def set_value(self, key: str, value: str, actor: ActorContext | None = None) -> None:
@@ -345,7 +374,10 @@ class UnauthorizedPromptSender(Protocol):
     """Protocol for sending unauthorized guidance and approval prompts."""
 
     async def send(self, bot: Bot, chat_id: int) -> bool:
-        """Send prompt to chat. Returns True if sent, False otherwise."""
+        """Return True after sending, False for an ineligible target or caught send failure.
+
+        This is best-effort guidance, not a delivery receipt or retry guarantee.
+        """
         ...
 
 
@@ -363,7 +395,12 @@ class AuditedUnitOfWork(Protocol):
         changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None = None,
         audit_if: Callable[[Any], bool] | None = None,
     ) -> Any:
-        """Execute a business operation and append an audit event atomically."""
+        """Return the callback result after atomic mutation and conditional audit.
+
+        Callbacks perform database work only because a whole transaction may
+        retry. Validation and exhausted persistence failures raise and roll back
+        mutation and audit together; audit_if only controls event creation.
+        """
         ...
 
 

@@ -27,21 +27,25 @@ class GroupGrantStore(Protocol):
         ...
 
     async def approve(self, group_id: int, actor: ActorContext) -> bool:
-        """Idempotently add explicit approval with audit."""
+        """Add approval; already approved returns False, an invalid group raises ValueError."""
         ...
 
     async def revoke_approval(self, group_id: int, basis: ApprovalBasis, actor: ActorContext) -> bool:
-        """Revoke an access basis while retaining history."""
+        """Revoke an access basis; absent approval is False, an invalid group raises ValueError."""
         ...
 
     async def request(self, group_id: int, user_id: int, actor: ActorContext) -> int:
-        """Create or return a pending request without changing group status."""
+        """Return a pending request ID; missing active group/user generations raise ValueError."""
         ...
 
     async def decide(self, request_id: int, status: RequestStatus, actor: ActorContext) -> bool:
-        """Atomically decide a pending request and add explicit approval only on approval."""
+        """Decide with atomic audit/approval; missing, deleted or decided requests return False.
+
+        PENDING is not a decision and raises ValueError, as do unavailable
+        required group/user generations for an existing request.
+        """
         ...
 
     async def delete_request(self, request_id: int, actor: ActorContext) -> bool:
-        """Soft-delete a request retaining its history."""
+        """Delete a request; missing/deleted requests are False, an invalid parent raises ValueError."""
         ...

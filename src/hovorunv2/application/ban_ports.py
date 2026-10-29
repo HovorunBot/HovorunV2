@@ -11,11 +11,11 @@ class BanStore(Protocol):
     """Store stable-subject restrictions with atomic audit and policy revision."""
 
     async def list_active(self, target: TargetKind, telegram_id: int) -> list[BanDB]:
-        """Return restrictions for an active entity."""
+        """List restrictions for an active entity; missing/deleted identities yield an empty list."""
         ...
 
     async def policy_revision(self, target: TargetKind, telegram_id: int) -> int:
-        """Return monotonic subject revision, including revoked history."""
+        """Return the monotonic revision including revoked history, or zero without history."""
         ...
 
     async def set_ban(
@@ -28,5 +28,9 @@ class BanStore(Protocol):
         actor: ActorContext,
         public_explanation: str | None = None,
     ) -> bool:
-        """Apply or revoke a restriction without changing roles or grants."""
+        """Return whether a restriction changed; an already applied/revoked state is a no-op.
+
+        Invalid targets or restriction combinations raise ValueError; rejected
+        authority or protected-target changes raise PermissionError.
+        """
         ...

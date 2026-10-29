@@ -57,9 +57,9 @@ class MembershipPort(Protocol):
         ...
 
     async def list_administrators(self, group_telegram_id: int) -> AdministratorEvidence:
-        """Fetch administrators only, never a full member directory."""
+        """Return administrator evidence; known=False denotes API uncertainty, even with no rows."""
         ...
 
     async def verify_bot(self, group_telegram_id: int) -> BotCapabilityEvidence:
-        """Return the bot's presence and each independently checked right."""
+        """Return bot evidence; UNKNOWN membership and None rights preserve API uncertainty."""
         ...

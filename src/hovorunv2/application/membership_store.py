@@ -27,15 +27,19 @@ class MembershipStore(Protocol):
         ...
 
     async def full_banned_admin_status(self, group_id: int, now: datetime) -> MembershipStatus | None:
-        """Return a full-ban blocker across all active administrator candidates, without batching."""
+        """Return ADMIN for a verified full-ban blocker, UNKNOWN for unresolved evidence.
+
+        None means no full-banned administrator candidate requires blocking or
+        verification. The query is not truncated by maintenance batch sizes.
+        """
         ...
 
     async def get_member(self, group_id: int, user_id: int) -> MembershipEvidence | None:
-        """Read active-generation evidence; callers must check its explicit expiry."""
+        """Return active-generation evidence or None; callers still check explicit expiry."""
         ...
 
     async def get_state(self, group_id: int) -> GroupMembershipStateDB | None:
-        """Read current bot/admin freshness and policy revision for an active generation."""
+        """Return active-generation freshness/revision state, or None when no state exists."""
         ...
 
     async def is_admin_any(self, user_telegram_id: int, now: datetime) -> bool:
@@ -50,15 +54,23 @@ class MembershipStore(Protocol):
         *,
         expected_user_id: int | None = None,
     ) -> bool:
-        """Persist relevant evidence, rejecting stale or mismatched identity updates."""
+        """Return whether relevant evidence changed; stale or inapplicable updates return False.
+
+        Mismatched group routing raises ValueError. expected_user_id optionally
+        binds the observed identity to the caller's current generation.
+        """
         ...
 
     async def save_bot(self, group_id: int, evidence: BotCapabilityEvidence, actor: ActorContext | None = None) -> bool:
-        """Update physical presence and individual capabilities without changing grants/bans."""
+        """Return whether bot evidence changed; stale/inapplicable evidence is a no-op."""
         ...
 
     async def save_admins(
         self, group_id: int, evidence: AdministratorEvidence, actor: ActorContext | None = None
     ) -> bool:
-        """Persist current administrator evidence; failure retains prior candidates as UNKNOWN."""
+        """Return whether administrator evidence changed; stale/inapplicable input is a no-op.
+
+        Unknown API evidence preserves prior candidates as UNKNOWN; this state
+        is distinct from a persistence failure, which raises.
+        """
         ...
