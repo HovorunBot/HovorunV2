@@ -9,7 +9,13 @@ from dataclasses import replace
 import pytest
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import AdmissionLimits, AdmissionState, JobStage, TicketState
+from hovorunv2.application.admission import (
+    AdmissionLimits,
+    AdmissionState,
+    AdmissionUnavailableError,
+    JobStage,
+    TicketState,
+)
 from hovorunv2.application.feature_jobs import EnqueueState, JobOutcome, PayloadState
 from hovorunv2.application.usage import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
@@ -61,9 +67,13 @@ async def test_nontext_dedupe_pointer_fails_closed_without_mutation(test_contain
         assert (await store.admit(envelope, sealed, AdmissionLimits(1, 1, safety), clock.now())).state == (
             AdmissionState.UNAVAILABLE
         )
-        assert not await store.cancel(envelope.job_id)
-        with WorkerRuntime(settings, clock, namespace, safety) as runtime:
-            assert not await asyncio.to_thread(runtime.admission.cancel, envelope.job_id)
+        with pytest.raises(AdmissionUnavailableError):
+            await store.cancel(envelope.job_id)
+        with (
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            pytest.raises(AdmissionUnavailableError),
+        ):
+            await asyncio.to_thread(runtime.admission.cancel, envelope.job_id)
         assert await asyncio.gather(*(cache.client.dump(key) for key in keys.watched)) == before
 
 
@@ -91,9 +101,13 @@ async def test_wrong_key_types_never_partially_release_admission(
         else:
             await cache.client.hset(key, mapping={"unexpected": "wrong-type"})
         before = await asyncio.gather(*(cache.client.dump(key) for key in keys.watched))
-        assert not await store.cancel(envelope.job_id)
-        with WorkerRuntime(settings, clock, namespace, safety) as runtime:
-            assert await asyncio.to_thread(runtime.admission.finish, envelope.job_id, JobOutcome.CANCELLED) is None
+        with pytest.raises(AdmissionUnavailableError):
+            await store.cancel(envelope.job_id)
+        with (
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            pytest.raises(AdmissionUnavailableError),
+        ):
+            await asyncio.to_thread(runtime.admission.finish, envelope.job_id, JobOutcome.CANCELLED)
         after = await asyncio.gather(*(cache.client.dump(key) for key in keys.watched))
         assert after == before
         ticket = await store.get(envelope.job_id)
@@ -146,8 +160,10 @@ async def test_corrupt_ticket_pointer_cannot_delete_another_payload(test_contain
         raw = await cache.get(keys.ticket)
         raw["payload_key"] = other
         await cache.set(keys.ticket, raw)
-        assert not await store.cancel(envelope.job_id)
-        assert await store.get(envelope.job_id) is None
+        with pytest.raises(AdmissionUnavailableError):
+            await store.cancel(envelope.job_id)
+        with pytest.raises(AdmissionUnavailableError):
+            await store.get(envelope.job_id)
         assert await cache.client.get(other) == b"synthetic-other-payload"
         assert (await payloads.load(sealed.reference, sealed.job_id)).state == PayloadState.READY
 
@@ -235,7 +251,8 @@ async def test_missing_subject_counter_blocks_owner_completion(test_container: A
         assert await store.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), owner) is not None
         keys = admission_keys(namespace.value, envelope)
         await cache.client.delete(keys.subject)
-        assert await store.finish(envelope.job_id, JobOutcome.COMPLETE, token=owner) is None
+        with pytest.raises(AdmissionUnavailableError):
+            await store.finish(envelope.job_id, JobOutcome.COMPLETE, token=owner)
         raw = await cache.client.get(keys.ticket)
         assert json.loads(raw)["state"] == TicketState.RUNNING
         assert (await payloads.load(sealed.reference, sealed.job_id)).state == PayloadState.READY

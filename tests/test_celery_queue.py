@@ -3,17 +3,22 @@
 import asyncio
 import json
 import time
+from contextlib import AsyncExitStack
 
 import pytest
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
+from hovorunv2.application.admission import AdmissionState, AdmissionUnavailableError
 from hovorunv2.application.feature_jobs import EnqueueState, JobOutcome, JobStatus
 from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
+from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
 from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue, FeatureWorkerBridge
+from tests.test_admission import admission_service
 from tests.test_feature_jobs import PRIVATE_BODY, HTTPExecutor, admit_test_job, broker_envelopes, job_envelope
 from tests.utils.runtime import ManualClock, runtime_cache
 
@@ -151,3 +156,49 @@ async def test_runner_bridge_claims_before_private_payload_load(test_container: 
             assert inspected.outcome == JobOutcome.PAYLOAD_UNAVAILABLE
         finally:
             await queue.close()
+
+
+async def test_unreadable_admission_raises_inside_queue_and_is_contained_at_worker(
+    test_container: AsyncContainer,
+) -> None:
+    """Missing work stays optional; corrupt state cannot masquerade as a missing or stale claim."""
+    settings = await test_container.get(Settings)
+    clock = ManualClock(time.time())
+    safety = UsageSafetyCaps()
+    async with runtime_cache(test_container) as (cache, namespace), AsyncExitStack() as resources:
+        queue = CeleryFeatureQueue(settings, clock, namespace, safety)
+        store = ValkeyAdmissionStore(cache, namespace)
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        resources.push_async_callback(queue.close)
+        envelope = job_envelope("a" * 32, clock)
+        assert await queue.inspect(envelope.job_id) is None
+        runtime = resources.enter_context(WorkerRuntime(settings, clock, namespace, safety))
+        assert await asyncio.to_thread(runtime.admission.get, envelope.job_id) is None
+        key = namespace.value + "admission:ticket:" + envelope.job_id
+        await cache.client.set(key, "invalid-json")
+        with pytest.raises(AdmissionUnavailableError):
+            await store.get(envelope.job_id)
+        with pytest.raises(AdmissionUnavailableError):
+            await asyncio.to_thread(runtime.admission.get, envelope.job_id)
+        with pytest.raises(AdmissionUnavailableError):
+            await queue.inspect(envelope.job_id)
+        with pytest.raises(AdmissionUnavailableError):
+            await queue.claim(envelope)
+        with pytest.raises(AdmissionUnavailableError):
+            await queue.cancel(envelope.job_id)
+        with pytest.raises(AdmissionUnavailableError):
+            await queue.finish(envelope.job_id, "test-owner", JobOutcome.COMPLETE)
+        assert await queue.enqueue(envelope) == EnqueueState.UNAVAILABLE
+        bridge = FeatureWorkerBridge(FeatureJobRunner(HTTPExecutor(), payloads, clock), queue)
+        assert await bridge.run_feature_job(envelope.model_dump(mode="json")) == JobOutcome.FAILED
+        service = await admission_service(test_container, store, queue, clock)
+        assert (await service.handoff(envelope.job_id)).state == AdmissionState.UNAVAILABLE
+        await cache.client.zadd(namespace.value + "admission:handoff", {envelope.job_id: envelope.deadline})
+        assert (await service.recover())[0].state == AdmissionState.UNAVAILABLE
+        # A wrong Redis type is an inaccessible ticket, never expected absence.
+        await cache.client.delete(key)
+        await cache.client.hset(key, mapping={"invalid": "shape"})
+        with pytest.raises(AdmissionUnavailableError):
+            await queue.inspect(envelope.job_id)
+        with pytest.raises(AdmissionUnavailableError):
+            await asyncio.to_thread(runtime.admission.get, envelope.job_id)

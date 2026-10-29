@@ -14,6 +14,14 @@ DEFAULT_INGRESS_PENDING = 10
 RECOVERY_PAGE_LIMIT = 100
 
 
+class AdmissionUnavailableError(ValueError):
+    """Required admission state cannot be read, verified or updated safely."""
+
+
+class AdmissionConflictError(ValueError):
+    """A terminal completion conflicts with the recorded outcome."""
+
+
 def incoming_action_key(feature: str, chat_id: int, actor_id: int | None, message_id: int, trigger: TriggerKind) -> str:
     """Hash stable incoming action metadata, never URL/message contents or current processing time."""
     identity = ["telegram", chat_id, actor_id or 0, message_id, trigger.value, feature]
@@ -100,15 +108,15 @@ class AdmissionPort(Protocol):
         ...
 
     async def get(self, job_id: str) -> AdmissionTicket | None:
-        """Read operational ticket metadata only."""
+        """Return None only for a missing ticket; raise AdmissionUnavailableError for unusable state."""
         ...
 
     async def mark_enqueued(self, job_id: str, stage: JobStage, attempt: int) -> AdmissionTicket | None:
-        """CAS accepted to enqueued after an idempotent queue operation."""
+        """CAS accepted to enqueued; stale stage/attempt retains current metadata, failure raises."""
         ...
 
     async def claim_stage(self, job_id: str, stage: JobStage, now: float, token: str) -> AdmissionTicket | None:
-        """Acquire exclusive stage execution owner; wrong stage, expired deadline or another owner cannot claim."""
+        """Return None for missing work or rejected ownership; raise AdmissionUnavailableError on runtime failure."""
         ...
 
     async def handoff_stage(self, job_id: str, token: str, next_stage: JobStage) -> AdmissionTicket | None:
@@ -120,9 +128,9 @@ class AdmissionPort(Protocol):
         ...
 
     async def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
-        """Release pending capacity and encrypted payload once after verified terminal execution."""
+        """Release once; missing/stale ownership returns None, conflicts or unavailable state raise."""
         ...
 
     async def recoverable(self, now: float, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
-        """Return a bounded set of live accepted tickets awaiting enqueue acknowledgement."""
+        """Return a bounded page, possibly empty; raise AdmissionUnavailableError on inaccessible or corrupt state."""
         ...

@@ -15,6 +15,7 @@ from hovorunv2.application.admission import (
     AdmissionResult,
     AdmissionState,
     AdmissionTicket,
+    AdmissionUnavailableError,
     JobStage,
     TicketState,
 )
@@ -33,7 +34,6 @@ from hovorunv2.infrastructure.admission_state import (
     AdmissionOperation,
     AdmissionRecord,
     AdmissionTransition,
-    AdmissionUnavailableError,
     PublicationDecision,
     admission_keys,
     admission_ticket_key,
@@ -154,6 +154,12 @@ def _validate_key_type(raw: object, expected: str) -> None:
         raise AdmissionUnavailableError(msg)
 
 
+def _require_ticket_identity(keys: AdmissionKeys, ticket_key: str) -> None:
+    if keys.ticket != ticket_key:
+        msg = "Admission ticket identity is unavailable."
+        raise AdmissionUnavailableError(msg)
+
+
 class ValkeyAdmissionStore(AdmissionPort):
     """Keep accepted work counted until an explicit, owner-fenced terminal transaction."""
 
@@ -262,17 +268,17 @@ class ValkeyAdmissionStore(AdmissionPort):
         pipe.zadd(keys.pending, {envelope.job_id: envelope.deadline})
 
     async def get(self, job_id: str) -> AdmissionTicket | None:
-        """Return only valid operational metadata, failing closed on unreadable or missing state."""
+        """Return None only for absence; reject unreadable or misbound required metadata."""
         key = self._id(job_id)
         try:
             raw = await self._cache.client.get(key)
             if raw is None:
                 return None
             record = read_record(raw)
-            if record.keys(self._namespace).ticket != key:
-                return None
+            _require_ticket_identity(record.keys(self._namespace), key)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
-            return None
+            msg = "Admission runtime state is unavailable."
+            raise AdmissionUnavailableError(msg) from None
         else:
             return record.ticket
 
@@ -281,7 +287,8 @@ class ValkeyAdmissionStore(AdmissionPort):
         try:
             return await self._apply_with_retries(key, job_id, request)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
-            return None
+            msg = "Admission runtime state is unavailable."
+            raise AdmissionUnavailableError(msg) from None
 
     async def _apply_with_retries(self, key: str, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         for _attempt in range(MAX_ADMISSION_ATTEMPTS):
@@ -290,7 +297,8 @@ class ValkeyAdmissionStore(AdmissionPort):
                     return await self._apply_attempt(pipe, key, job_id, request)
                 except WatchError:
                     continue
-        return None
+        msg = "Admission transaction retry limit exhausted."
+        raise AdmissionUnavailableError(msg)
 
     async def _apply_attempt(
         self, pipe: AsyncPipeline, key: str, job_id: str, request: AdmissionTransition
@@ -302,8 +310,7 @@ class ValkeyAdmissionStore(AdmissionPort):
                 return None
             record = read_record(raw)
             keys = record.keys(self._namespace)
-            if keys.ticket != key:
-                return None
+            _require_ticket_identity(keys, key)
             change = calculate_change(record, request)
             capacity = None
             if change.write and record.state != TicketState.TERMINAL:
@@ -444,7 +451,8 @@ class ValkeyAdmissionStore(AdmissionPort):
                     tickets.append(ticket)
             return tuple(tickets)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
-            return ()
+            msg = "Admission recovery state is unavailable."
+            raise AdmissionUnavailableError(msg) from None
 
 
 class WorkerAdmissionClient:
@@ -468,10 +476,10 @@ class WorkerAdmissionClient:
             if raw is None:
                 return None
             record = read_record(raw)
-            if record.keys(self._namespace).ticket != key:
-                return None
+            _require_ticket_identity(record.keys(self._namespace), key)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
-            return None
+            msg = "Admission runtime state is unavailable."
+            raise AdmissionUnavailableError(msg) from None
         else:
             return record.ticket
 
@@ -480,7 +488,8 @@ class WorkerAdmissionClient:
         try:
             return self._apply_with_retries(key, job_id, request)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
-            return None
+            msg = "Admission runtime state is unavailable."
+            raise AdmissionUnavailableError(msg) from None
 
     def _apply_with_retries(self, key: str, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         for _attempt in range(MAX_ADMISSION_ATTEMPTS):
@@ -489,7 +498,8 @@ class WorkerAdmissionClient:
                     return self._apply_attempt(pipe, key, job_id, request)
                 except WatchError:
                     continue
-        return None
+        msg = "Admission transaction retry limit exhausted."
+        raise AdmissionUnavailableError(msg)
 
     def _apply_attempt(
         self, pipe: Pipeline, key: str, job_id: str, request: AdmissionTransition
@@ -501,8 +511,7 @@ class WorkerAdmissionClient:
                 return None
             record = read_record(raw)
             keys = record.keys(self._namespace)
-            if keys.ticket != key:
-                return None
+            _require_ticket_identity(keys, key)
             change = calculate_change(record, request)
             capacity = None
             if change.write and record.state != TicketState.TERMINAL:

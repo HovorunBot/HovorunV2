@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **admission**: distinguish unavailable state from missing work
 - **admission**: decompose optimistic transaction attempts
 - **admission**: separate record validation and transition preconditions
 - **admission**: separate ingress validation and policy resolution

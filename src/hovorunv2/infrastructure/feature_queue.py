@@ -9,7 +9,7 @@ from celery import Celery
 from kombu.exceptions import OperationalError
 from redis.exceptions import RedisError
 
-from hovorunv2.application.admission import JobStage, TicketState
+from hovorunv2.application.admission import AdmissionConflictError, AdmissionUnavailableError, JobStage, TicketState
 from hovorunv2.application.budgets import RUNTIME_RETENTION_SECONDS, Clock, RuntimeNamespace
 from hovorunv2.application.feature_jobs import (
     FEATURE_JOB_FUNCTION,
@@ -82,7 +82,7 @@ class CeleryFeatureQueue(FeatureQueuePort):
                 return EnqueueState.EXPIRED
             ticket = publication.ticket
             await self._admission.ack_publication(envelope.job_id, ticket.stage, ticket.attempt)
-        except RedisError, OperationalError, OSError:
+        except AdmissionUnavailableError, RedisError, OperationalError, OSError:
             return EnqueueState.UNAVAILABLE
         return publication.state
 
@@ -141,7 +141,7 @@ class CeleryFeatureQueue(FeatureQueuePort):
             raise TypeError(msg)
         try:
             ticket = await self._admission.finish(job_id, outcome, token=token)
-        except ValueError:
+        except AdmissionConflictError:
             return False
         return ticket is not None
 
@@ -166,6 +166,12 @@ class FeatureWorkerBridge:
 
     async def run_feature_job(self, envelope: dict[str, object]) -> str:
         """Claim before loading private bytes; duplicate deliveries never invoke the runner twice."""
+        try:
+            return await self._run_claimed(envelope)
+        except AdmissionUnavailableError:
+            return JobOutcome.FAILED.value
+
+    async def _run_claimed(self, envelope: dict[str, object]) -> str:
         job = JobEnvelope.model_validate(envelope)
         token = await self._queue.claim(job)
         if token is None:

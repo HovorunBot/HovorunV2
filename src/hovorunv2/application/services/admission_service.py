@@ -7,6 +7,8 @@ from hovorunv2.application.admission import (
     AdmissionPort,
     AdmissionResult,
     AdmissionState,
+    AdmissionTicket,
+    AdmissionUnavailableError,
     TicketState,
     incoming_action_key,
 )
@@ -126,19 +128,26 @@ class AdmissionService:
 
     async def handoff(self, job_id: str) -> AdmissionResult:
         """Keep accepted capacity on failure; retry after either side of an enqueue/acknowledgement crash."""
-        ticket = await self._admission.get(job_id)
-        if ticket is None:
-            return AdmissionResult(AdmissionState.UNAVAILABLE)
-        if ticket.state != TicketState.ACCEPTED:
-            state = AdmissionState.TERMINAL if ticket.state == TicketState.TERMINAL else AdmissionState.ENQUEUED
-            return AdmissionResult(state, ticket)
-        if ticket.envelope.deadline <= self._clock.now():
-            return AdmissionResult(AdmissionState.EXPIRED, ticket)
+        ticket = None
+        try:
+            ticket = await self._admission.get(job_id)
+            if ticket is None:
+                return AdmissionResult(AdmissionState.UNAVAILABLE)
+            if ticket.state != TicketState.ACCEPTED:
+                state = AdmissionState.TERMINAL if ticket.state == TicketState.TERMINAL else AdmissionState.ENQUEUED
+                return AdmissionResult(state, ticket)
+            if ticket.envelope.deadline <= self._clock.now():
+                return AdmissionResult(AdmissionState.EXPIRED, ticket)
+            return await self._enqueue_ticket(ticket)
+        except AdmissionUnavailableError:
+            return AdmissionResult(AdmissionState.UNAVAILABLE, ticket)
+
+    async def _enqueue_ticket(self, ticket: AdmissionTicket) -> AdmissionResult:
         enqueued = await self._queue.enqueue(ticket.envelope)
         if enqueued in {EnqueueState.UNAVAILABLE, EnqueueState.EXPIRED}:
             state = AdmissionState.UNAVAILABLE if enqueued == EnqueueState.UNAVAILABLE else AdmissionState.EXPIRED
             return AdmissionResult(state, ticket)
-        acknowledged = await self._admission.mark_enqueued(job_id, ticket.stage, ticket.attempt)
+        acknowledged = await self._admission.mark_enqueued(ticket.envelope.job_id, ticket.stage, ticket.attempt)
         if acknowledged is None:
             return AdmissionResult(AdmissionState.UNAVAILABLE, ticket)
         state = AdmissionState.TERMINAL if acknowledged.state == TicketState.TERMINAL else AdmissionState.ENQUEUED
@@ -146,5 +155,8 @@ class AdmissionService:
 
     async def recover(self, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionResult, ...]:
         """Recover one bounded page; full scheduling and terminal expiry remain later blocks."""
-        tickets = await self._admission.recoverable(self._clock.now(), limit)
+        try:
+            tickets = await self._admission.recoverable(self._clock.now(), limit)
+        except AdmissionUnavailableError:
+            return (AdmissionResult(AdmissionState.UNAVAILABLE),)
         return tuple([await self.handoff(ticket.envelope.job_id) for ticket in tickets])

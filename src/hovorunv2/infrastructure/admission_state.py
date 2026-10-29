@@ -8,17 +8,19 @@ from typing import Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from hovorunv2.application.admission import AdmissionTicket, JobStage, TicketState
+from hovorunv2.application.admission import (
+    AdmissionConflictError,
+    AdmissionTicket,
+    AdmissionUnavailableError,
+    JobStage,
+    TicketState,
+)
 from hovorunv2.application.budgets import TECHNICAL_ID
 from hovorunv2.application.feature_jobs import EnqueueState, JobEnvelope, JobOutcome
 from hovorunv2.domain.enums import TargetKind
 
 _ACTIVE_CAPACITY_ERROR: Final = "Active admission capacity metadata is unavailable."
 _HANDOFF_CONFLICT_ERROR: Final = "Stage handoff token conflicts with current owner."
-
-
-class AdmissionUnavailableError(ValueError):
-    """Stored admission metadata cannot safely authorize a runtime mutation."""
 
 
 def envelope_json(envelope: JobEnvelope) -> str:
@@ -336,7 +338,7 @@ def _replay_finish(record: AdmissionRecord, request: AdmissionTransition) -> Adm
         return AdmissionChange(None)
     if record.outcome != request.outcome:
         msg = "Admission terminal state conflicts with this transition."
-        raise ValueError(msg)
+        raise AdmissionConflictError(msg)
     return AdmissionChange(record, success=True)
 
 
