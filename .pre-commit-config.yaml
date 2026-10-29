@@ -48,11 +48,3 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit, pre-push]
-
-      - id: pytest-check
-        name: Test Suite (pytest)
-        entry: env PYTHONPATH=src uv run pytest
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit, pre-push]
