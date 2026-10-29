@@ -4,8 +4,9 @@ import logging
 import re
 import time
 from collections.abc import Mapping
+from functools import partial
 from http import HTTPStatus
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Protocol
 
 import aiohttp
 
@@ -24,6 +25,19 @@ from hovorunv2.domain.enums import CommandName
 __all__ = ["FACEBOOK_CONFIG", "BaseMediaClient", "BrowserFallbackConfig", "OGConfig", "ProviderConfig"]
 
 logger = logging.getLogger(__name__)
+
+
+class _BrowserElement(Protocol):
+    def click(self) -> None: ...
+
+
+class _BrowserTab(Protocol):
+    @property
+    def html(self) -> str: ...
+
+    def ele(self, locator: str, *, timeout: int) -> _BrowserElement | None: ...
+
+    def run_js(self, script: str) -> object: ...
 
 
 class BaseMediaClient(MediaParser):
@@ -125,7 +139,7 @@ class BaseMediaClient(MediaParser):
         try:
             payload, media_bytes = await self._browser.extract_and_download(
                 url,
-                extractor_fn=lambda tab, target_url: self._extract_from_browser_tab(tab, target_url, b_cfg),
+                extractor_fn=partial(self._extract_from_browser_tab, b_cfg=b_cfg),
                 wait_selector=b_cfg.wait_selector,
                 cookies=self.get_browser_cookies(),
             )
@@ -143,8 +157,23 @@ class BaseMediaClient(MediaParser):
     extract_payload = extract
     extract_metadata_payload = extract_metadata
 
-    def _extract_from_browser_tab(self, tab: Any, url: str, b_cfg: BrowserFallbackConfig) -> RichMediaPayload | None:
+    def _extract_from_browser_tab(
+        self, tab: _BrowserTab, url: str, b_cfg: BrowserFallbackConfig
+    ) -> RichMediaPayload | None:
         """Extract metadata from browser tab via JS, JSON scripts, or OG tags."""
+        self._dismiss_gate_buttons(tab, b_cfg)
+        if payload := self._extract_browser_script(tab, url, b_cfg):
+            return payload
+
+        if script_results := self._extract_from_json_scripts(tab.html):
+            return self._build_browser_payload(script_results, url, b_cfg)
+
+        og_meta = extract_og_metadata(tab.html)
+        if og_meta.get("video") or og_meta.get("image"):
+            return self._build_browser_payload(og_meta, url, b_cfg)
+        return None
+
+    def _dismiss_gate_buttons(self, tab: _BrowserTab, b_cfg: BrowserFallbackConfig) -> None:
         for btn_text in b_cfg.gate_buttons:
             try:
                 if btn := tab.ele(f"text={btn_text}", timeout=1):
@@ -153,6 +182,9 @@ class BaseMediaClient(MediaParser):
             except Exception:
                 logger.debug("Gate button '%s' not clickable", btn_text)
 
+    def _extract_browser_script(
+        self, tab: _BrowserTab, url: str, b_cfg: BrowserFallbackConfig
+    ) -> RichMediaPayload | None:
         if b_cfg.js_extractor:
             try:
                 js_results = tab.run_js(b_cfg.js_extractor)
@@ -161,12 +193,6 @@ class BaseMediaClient(MediaParser):
             except Exception:
                 logger.exception("JS extraction failed for %s", self.name)
 
-        if script_results := self._extract_from_json_scripts(tab.html):
-            return self._build_browser_payload(script_results, url, b_cfg)
-
-        og_meta = extract_og_metadata(tab.html)
-        if og_meta.get("video") or og_meta.get("image"):
-            return self._build_browser_payload(og_meta, url, b_cfg)
         return None
 
     async def _extract_via_og(self, url: str, og_cfg: OGConfig) -> RichMediaPayload | None:

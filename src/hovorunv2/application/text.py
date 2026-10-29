@@ -11,16 +11,12 @@ THOUSAND: Final = 1_000
 
 def format_number(num: int) -> str:
     """Format large numbers into readable text (e.g. 1.2K, 3.4M)."""
-    billion_threshold = 1_000_000_000
-    million_threshold = 1_000_000
-    thousand_threshold = 1_000
-
-    if num >= billion_threshold:
-        return f"{num / billion_threshold:.1f}B".replace(".0B", "B")
-    if num >= million_threshold:
-        return f"{num / million_threshold:.1f}M".replace(".0M", "M")
-    if num >= thousand_threshold:
-        return f"{num / thousand_threshold:.1f}K".replace(".0K", "K")
+    if num >= BILLION:
+        return f"{num / BILLION:.1f}B".replace(".0B", "B")
+    if num >= MILLION:
+        return f"{num / MILLION:.1f}M".replace(".0M", "M")
+    if num >= THOUSAND:
+        return f"{num / THOUSAND:.1f}K".replace(".0K", "K")
     return str(num)
 
 

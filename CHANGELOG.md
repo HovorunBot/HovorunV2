@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **providers**: separate browser candidates and media selection
 - **http**: add strict native reads and bounded transport chunks
 - **payloads**: share required encryption and metadata validation
 - **budgets**: separate replay and atomic reservation writes

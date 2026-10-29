@@ -23,20 +23,25 @@ class MediaParser:
             if "video_url" not in json_str and "display_url" not in json_str:
                 continue
             try:
-                script_data = json.loads(json_str)
-                video = self._find_key_in_json(script_data, "video_url")
-                image = self._find_key_in_json(script_data, "display_url")
-                if video or image:
-                    return {"video": video, "image": image}
+                if results := self._parse_json_script(json_str):
+                    return results
             except Exception:
                 logger.debug("Failed to parse JSON script blob")
+        return None
+
+    def _parse_json_script(self, json_str: str) -> dict[str, object] | None:
+        script_data = json.loads(json_str)
+        video = self._find_key_in_json(script_data, "video_url")
+        image = self._find_key_in_json(script_data, "display_url")
+        if video or image:
+            return {"video": video, "image": image}
         return None
 
     def _build_browser_payload(
         self, results: Mapping[str, object], url: str, b_cfg: BrowserFallbackConfig
     ) -> RichMediaPayload:
         """Build RichMediaPayload from browser extraction dictionary."""
-        media_url = results.get("video") or results.get("image")
+        media = self._require_browser_media(results)
         raw_title, raw_description = results.get("title"), results.get("description")
         title = raw_title if isinstance(raw_title, str) and raw_title else b_cfg.default_title
         description = raw_description if isinstance(raw_description, str) else ""
@@ -60,8 +65,15 @@ class MediaParser:
             content=f"<b>{title}</b>\n\n{description}".strip(),
             footer_text=footer,
             original_url=url,
-            media_items=[MediaItem(url=str(media_url), is_video=bool(results.get("video")))],
+            media_items=[media],
         )
+
+    def _require_browser_media(self, results: Mapping[str, object]) -> MediaItem:
+        media_url = results.get("video") or results.get("image")
+        if not media_url:
+            msg = "Browser extraction requires usable media metadata."
+            raise ValueError(msg)
+        return MediaItem(url=str(media_url), is_video=bool(results.get("video")))
 
     def _parse_og_html(self, html_content: str, url: str, og_cfg: OGConfig) -> RichMediaPayload | None:
         """Parse OpenGraph metadata from HTML string into raw RichMediaPayload."""
