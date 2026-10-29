@@ -36,10 +36,7 @@ class BlueskyService(BaseMediaClient):
         if not did:
             return None
 
-        at_uri = f"at://{did}/app.bsky.feed.post/{match.group('rkey')}"
-        thread_data = await self._fetch_json(
-            f"{self.API_BASE_URL}/app.bsky.feed.getPostThread", params={"uri": at_uri, "depth": 0}
-        )
+        thread_data = await self._fetch_thread(did, match.group("rkey"))
         if not isinstance(thread_data, dict) or "thread" not in thread_data:
             return None
 
@@ -65,6 +62,13 @@ class BlueskyService(BaseMediaClient):
             original_url=url,
             media_items=self._extract_media_from_embed(embed),
             quoted_payload=self._extract_quote(embed),
+        )
+
+    async def _fetch_thread(self, did: str, record_key: str) -> object:
+        """Read only the selected post thread after actor identity resolution."""
+        at_uri = f"at://{did}/app.bsky.feed.post/{record_key}"
+        return await self._fetch_json(
+            f"{self.API_BASE_URL}/app.bsky.feed.getPostThread", params={"uri": at_uri, "depth": 0}
         )
 
     async def _resolve_did(self, handle: str) -> str | None:

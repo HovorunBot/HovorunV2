@@ -31,9 +31,7 @@ class TwitterService(BaseMediaClient):
         if not isinstance(tweet_data, dict) or "text" not in tweet_data:
             return None
 
-        raw_text = tweet_data.get("text", "")
-        if (qrt_url := tweet_data.get("qrtURL")) and qrt_url in raw_text:
-            raw_text = raw_text.replace(qrt_url, "").strip()
+        raw_text = self._post_text(tweet_data.get("text", ""), tweet_data.get("qrtURL"))
 
         handle = tweet_data.get("user_screen_name", "unknown")
         return RichMediaPayload(
@@ -51,6 +49,12 @@ class TwitterService(BaseMediaClient):
             media_items=self._extract_media(tweet_data),
             quoted_payload=self._extract_quote(tweet_data),
         )
+
+    def _post_text(self, text: str, quote_url: str | None) -> str:
+        """Remove the attached quote link without changing unrelated post text or polls."""
+        if not quote_url or quote_url not in text:
+            return text
+        return text.replace(quote_url, "").strip()
 
     def _extract_media(self, data: dict[str, Any]) -> list[MediaItem]:
         """Extract MediaItem list from vxtwitter media_extended."""

@@ -45,10 +45,11 @@ class TikTokService(BaseMediaClient):
             return None
 
         if images := video_data.get("images"):
-            media_items = [MediaItem(url=img, is_video=False) for img in images]
+            media_items = [MediaItem(url=image, is_video=False) for image in images]
         else:
-            video_url = video_data.get("play") or video_data.get("hdplay") or video_data.get("wmplay", "")
-            media_items = [MediaItem(url=video_url, is_video=True)] if video_url else []
+            media_items = self._select_video(
+                video_data.get("play"), video_data.get("hdplay"), video_data.get("wmplay", "")
+            )
 
         author = video_data.get("author", {})
         handle = author.get("unique_id", "unknown")
@@ -65,3 +66,10 @@ class TikTokService(BaseMediaClient):
             original_url=url,
             media_items=media_items,
         )
+
+    def _select_video(self, play: str | None, hdplay: str | None, wmplay: str | None) -> list[MediaItem]:
+        """Select the original video rendition fallback without inventing a missing media URL."""
+        video_url = play or hdplay or wmplay
+        if not video_url:
+            return []
+        return [MediaItem(url=video_url, is_video=True)]
