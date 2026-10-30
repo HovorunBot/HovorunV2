@@ -224,36 +224,6 @@ class NativeHTTPClient:
         """Return bounded decompressed media bytes or a safe transport failure."""
         return self._get_bytes_required(url, self._max_bytes, headers=headers, cookies=cookies)
 
-    def get_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
-        """Transitional optional extraction wrapper; consumers migrate before C16a removal."""
-        try:
-            return self.read_json(url, params, headers)
-        except HTTPTransportError:
-            return None
-
-    def get_text(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> str | None:
-        """Transitional optional text wrapper; consumers migrate before C16a removal."""
-        try:
-            return self.read_text(url, params, headers)
-        except HTTPTransportError:
-            return None
-
-    def resolve_url(self, url: str, headers: HTTPHeaders | None = None) -> str | None:
-        """Transitional optional redirect wrapper; consumers migrate before C16a removal."""
-        try:
-            return self.resolve(url, headers)
-        except HTTPTransportError:
-            return None
-
-    def download(
-        self, url: str, headers: HTTPHeaders | None = None, *, cookies: Mapping[str, str] | None = None
-    ) -> bytes | None:
-        """Transitional optional download wrapper; consumers migrate before C16a removal."""
-        try:
-            return self.download_bytes(url, headers, cookies=cookies)
-        except HTTPTransportError:
-            return None
-
     def request_json(
         self, method: str, url: str, *, data: HTTPForm | None = None, files: HTTPFiles | None = None
     ) -> object:

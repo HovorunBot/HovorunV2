@@ -55,6 +55,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **http**: retire optional native wrappers
 - **activation**: separate authorization and dispatch
 - **commands**: share explicit selection mutation
 - **beta**: separate enabler reconciliation

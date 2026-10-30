@@ -28,7 +28,7 @@ class HTTPTransportError(OSError):
 
 
 class SyncHTTPPort(Protocol):
-    """Bounded native I/O with strict reads and temporary optional extraction wrappers."""
+    """Bounded native I/O with required reads and explicit transport failures."""
 
     def read_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
         """Return decoded JSON, including null; raise HTTPTransportError for transport/decode failure."""
@@ -46,28 +46,6 @@ class SyncHTTPPort(Protocol):
         self, url: str, headers: HTTPHeaders | None = None, *, cookies: Mapping[str, str] | None = None
     ) -> bytes:
         """Return bounded media bytes or raise HTTPTransportError."""
-        ...
-
-    def get_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
-        """Return decoded JSON or None for an unavailable extraction endpoint."""
-        ...
-
-    def get_text(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> str | None:
-        """Return bounded response text without exposing remote errors."""
-        ...
-
-    def resolve_url(self, url: str, headers: HTTPHeaders | None = None) -> str | None:
-        """Resolve a bounded chain of HTTP redirects."""
-        ...
-
-    def download(
-        self,
-        url: str,
-        headers: HTTPHeaders | None = None,
-        *,
-        cookies: Mapping[str, str] | None = None,
-    ) -> bytes | None:
-        """Return bounded media bytes with optional host-bound browser cookies."""
         ...
 
     def request_json(

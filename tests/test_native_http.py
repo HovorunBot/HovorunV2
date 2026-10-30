@@ -29,8 +29,6 @@ def test_strict_json_distinguishes_null_from_transport_and_decode_failure() -> N
         with pytest.raises(HTTPTransportError) as rejected:
             client.read_json(server.url("/rejected"))
         assert rejected.value.code == HTTPFailure.REJECTED
-        assert client.get_json(server.url("/bad")) is None
-        assert client.get_json(server.url("/rejected")) is None
 
 
 @pytest.mark.parametrize("declared", [False, True])
@@ -42,7 +40,6 @@ def test_strict_reads_enforce_declared_and_streamed_byte_bounds(*, declared: boo
         with pytest.raises(HTTPTransportError) as error:
             client.download_bytes(server.url("/large"))
         assert error.value.code == HTTPFailure.TOO_LARGE
-        assert client.download(server.url("/large")) is None
 
 
 def test_strict_redirect_strips_cross_origin_credentials_and_never_replays_post() -> None:
