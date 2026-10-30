@@ -51,13 +51,11 @@ class AdministrationCommand(BaseCommand):
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
         """Preview exact active target; never mutate on initial command entry."""
-        if (
-            message.chat.type != ChatType.PRIVATE
-            or message.from_user is None
-            or message.from_user.is_bot
-            or message.sender_chat is not None
-            or message.chat.id != message.from_user.id
-        ):
+        if message.chat.type != ChatType.PRIVATE or message.from_user is None:
+            return
+        if message.from_user.is_bot or message.sender_chat is not None:
+            return
+        if message.chat.id != message.from_user.id:
             return
         actor = ActorContext.telegram(message.from_user.id)
         try:
