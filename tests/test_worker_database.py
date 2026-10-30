@@ -13,7 +13,7 @@ import pytest
 from dishka import AsyncContainer
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry, TriggerKind
@@ -67,19 +67,23 @@ async def change_group_state(container: AsyncContainer, bot: FeatureAccessServic
         await change_group_rows(sessions, state, now)
 
 
+async def _update_membership_evidence(session: AsyncSession, state: str, now: datetime) -> None:
+    for evidence in await session.scalars(select(GroupMembershipStateDB)):
+        if state == "expired":
+            evidence.admins_expires_at = now - timedelta(seconds=1)
+        else:
+            evidence.admins_known = False
+
+
 async def change_group_rows(sessions: async_sessionmaker, state: str, now: datetime) -> None:
     """Exercise stale and deleted facts through committed real rows."""
     async with sessions.begin() as session:
         if state == "grant_revoked":
             for grant in await session.scalars(select(BetaEntitlementDB)):
                 grant.revoked_at = now
-        if state in {"expired", "unknown"}:
-            for evidence in await session.scalars(select(GroupMembershipStateDB)):
-                if state == "expired":
-                    evidence.admins_expires_at = now - timedelta(seconds=1)
-                else:
-                    evidence.admins_known = False
-        if state == "deleted_admin":
+        elif state in {"expired", "unknown"}:
+            await _update_membership_evidence(session, state, now)
+        elif state == "deleted_admin":
             for member in await session.scalars(select(MemberEvidenceDB)):
                 member.deleted_at = now
 

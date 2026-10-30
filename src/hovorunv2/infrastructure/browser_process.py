@@ -1,6 +1,7 @@
 """Explicit Chromium subprocess ownership using DrissionPage's public attachment API."""
 
 import math
+import shutil
 import subprocess
 import time
 from os import getpid
@@ -187,8 +188,14 @@ class OwnedChromium:
         profile = self._profile
         if profile is None:
             return
+        path = Path(profile.name)
         try:
             profile.cleanup()
+            deadline = time.monotonic() + 1.0
+            while path.exists() and time.monotonic() < deadline:
+                shutil.rmtree(path, ignore_errors=True)
+                if path.exists():
+                    time.sleep(0.05)
         finally:
             self._profile = None
 

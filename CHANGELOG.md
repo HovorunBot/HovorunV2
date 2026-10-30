@@ -56,6 +56,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **clean-code**: verify complete application coverage and strict acceptance
 - **bootstrap**: review sqlite import pipeline and admin entrypoint
 - **bootstrap**: decompose application startup and teardown
 - **bootstrap**: group providers and extract worker resource accessors

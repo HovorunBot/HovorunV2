@@ -6,6 +6,7 @@ import time
 from dataclasses import replace
 from http import HTTPStatus
 from queue import Empty
+from typing import Any
 
 import aiohttp
 import pytest
@@ -134,24 +135,62 @@ async def test_runner_never_executes_missing_or_expired_payload(test_container: 
             assert not http.requests
 
 
+def _drain_queue_messages(queue: Any) -> list[dict[str, object]]:
+    envelopes = []
+    while True:
+        try:
+            message = queue.get_nowait()
+        except Empty:
+            return envelopes
+        assert PRIVATE_URL not in json.dumps(message.payload)
+        assert message.headers["kwargsrepr"] == "<feature envelope>"
+        envelopes.append(message.payload[1]["envelope"])
+        message.ack()
+
+
 def broker_envelopes(settings: Settings, namespace: str) -> list[dict[str, object]]:
     """Consume real broker messages without starting a production executor or worker."""
     app = Celery("test_features", broker=settings.valkey_url)
     app.conf.broker_transport_options = {"global_keyprefix": namespace}
-    envelopes = []
     try:
         with app.connection_for_read() as connection, connection.SimpleQueue(namespace + "features") as queue:
-            while True:
-                try:
-                    message = queue.get_nowait()
-                except Empty:
-                    return envelopes
-                assert PRIVATE_URL not in json.dumps(message.payload)
-                assert message.headers["kwargsrepr"] == "<feature envelope>"
-                envelopes.append(message.payload[1]["envelope"])
-                message.ack()
+            return _drain_queue_messages(queue)
     finally:
         app.close()
+
+
+async def _exercise_enqueued_job(
+    queue: CeleryFeatureQueue,
+    payloads: ValkeyPayloadStore,
+    envelope: JobEnvelope,
+    clock: ManualClock,
+    settings: Settings,
+    namespace_value: str,
+) -> None:
+    publications = await asyncio.gather(*(queue.enqueue(envelope) for _ in range(8)))
+    assert publications.count(EnqueueState.ENQUEUED) == 1
+    assert publications.count(EnqueueState.EXISTS) == 7
+    assert await queue.enqueue(envelope) == EnqueueState.EXISTS
+    messages = await asyncio.to_thread(broker_envelopes, settings, namespace_value)
+    assert messages
+    assert all(message == envelope.model_dump(mode="json") for message in messages)
+    bridge = FeatureWorkerBridge(FeatureJobRunner(HTTPExecutor(), payloads, clock), queue)
+    with aioresponses() as http:
+        http.get(PRIVATE_URL, status=HTTPStatus.FORBIDDEN)
+        await asyncio.gather(*(bridge.run_feature_job(message) for message in messages))
+        assert sum(len(requests) for requests in http.requests.values()) == 1
+    inspected = await queue.inspect(envelope.job_id)
+    assert inspected is not None
+    assert inspected.status == JobStatus.TERMINAL
+    assert inspected.outcome == JobOutcome.FAILED
+    assert await bridge.run_feature_job(envelope.model_dump(mode="json")) == JobOutcome.FAILED
+    for key in ("text", "url", "message", "raw_payload"):
+        with pytest.raises(ValueError, match="Extra inputs"):
+            JobEnvelope.model_validate({**envelope.model_dump(mode="json"), key: PRIVATE_URL})
+    with pytest.raises(ValueError, match="conflicts"):
+        await queue.enqueue(envelope.model_copy(update={"feature_epoch": 8}))
+    clock.value = envelope.deadline
+    assert await queue.enqueue(envelope) == EnqueueState.EXPIRED
 
 
 async def test_real_celery_messages_are_private_and_duplicate_execution_is_blocked(
@@ -168,30 +207,7 @@ async def test_real_celery_messages_are_private_and_duplicate_execution_is_block
             await payloads.put(sealed)
             envelope = job_envelope(sealed.reference, clock)
             await admit_test_job(settings, cache, namespace, clock, envelope)
-            publications = await asyncio.gather(*(queue.enqueue(envelope) for _ in range(8)))
-            assert publications.count(EnqueueState.ENQUEUED) == 1
-            assert publications.count(EnqueueState.EXISTS) == 7
-            assert await queue.enqueue(envelope) == EnqueueState.EXISTS
-            messages = await asyncio.to_thread(broker_envelopes, settings, namespace.value)
-            assert messages
-            assert all(message == envelope.model_dump(mode="json") for message in messages)
-            bridge = FeatureWorkerBridge(FeatureJobRunner(HTTPExecutor(), payloads, clock), queue)
-            with aioresponses() as http:
-                http.get(PRIVATE_URL, status=HTTPStatus.FORBIDDEN)
-                await asyncio.gather(*(bridge.run_feature_job(message) for message in messages))
-                assert sum(len(requests) for requests in http.requests.values()) == 1
-            inspected = await queue.inspect(envelope.job_id)
-            assert inspected is not None
-            assert inspected.status == JobStatus.TERMINAL
-            assert inspected.outcome == JobOutcome.FAILED
-            assert await bridge.run_feature_job(envelope.model_dump(mode="json")) == JobOutcome.FAILED
-            for key in ("text", "url", "message", "raw_payload"):
-                with pytest.raises(ValueError, match="Extra inputs"):
-                    JobEnvelope.model_validate({**envelope.model_dump(mode="json"), key: PRIVATE_URL})
-            with pytest.raises(ValueError, match="conflicts"):
-                await queue.enqueue(envelope.model_copy(update={"feature_epoch": 8}))
-            clock.value = envelope.deadline
-            assert await queue.enqueue(envelope) == EnqueueState.EXPIRED
+            await _exercise_enqueued_job(queue, payloads, envelope, clock, settings, namespace.value)
         finally:
             await queue.close()
     async with redis.from_url(settings.valkey_url) as client:
