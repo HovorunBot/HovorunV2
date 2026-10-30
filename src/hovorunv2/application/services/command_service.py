@@ -9,6 +9,15 @@ from hovorunv2.domain.enums import (
 )
 
 
+def _provider_split(command_name: str) -> tuple[CommandName, CommandName] | None:
+    """Resolve only registered provider parents to their capture commands."""
+    try:
+        command = CommandName(command_name)
+    except ValueError:
+        return None
+    return PROVIDER_SPLIT_COMMANDS.get(command)
+
+
 class CommandService:
     """Service to handle command availability business rules."""
 
@@ -39,14 +48,10 @@ class CommandService:
         allowed = set(await self._command_data_service.get_allowed_commands(chat_id))
         cmd_str = str(command_name)
 
-        try:
-            cmd_enum = CommandName(cmd_str)
-        except ValueError:
-            return cmd_str in allowed
-
         # Parent provider command is allowed if either video or post is enabled.
-        if cmd_enum in PROVIDER_SPLIT_COMMANDS:
-            video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[cmd_enum]
+        split = _provider_split(cmd_str)
+        if split is not None:
+            video_cmd, post_cmd = split
             return str(video_cmd) in allowed or str(post_cmd) in allowed
 
         return cmd_str in allowed
@@ -95,13 +100,9 @@ class CommandService:
 
         """
         cmd_str = str(command_name)
-        try:
-            cmd_enum = CommandName(cmd_str)
-        except ValueError:
-            return await self._command_data_service.enable_command(chat_id, cmd_str, actor=actor)
-
-        if cmd_enum in PROVIDER_SPLIT_COMMANDS:
-            video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[cmd_enum]
+        split = _provider_split(cmd_str)
+        if split is not None:
+            video_cmd, post_cmd = split
             res_video = await self._command_data_service.enable_command(chat_id, str(video_cmd), actor=actor)
             res_post = await self._command_data_service.enable_command(chat_id, str(post_cmd), actor=actor)
             return res_video and res_post
@@ -127,13 +128,9 @@ class CommandService:
             return False
 
         cmd_str = str(command_name)
-        try:
-            cmd_enum = CommandName(cmd_str)
-        except ValueError:
-            return await self._command_data_service.disable_command(chat_id, cmd_str, actor=actor)
-
-        if cmd_enum in PROVIDER_SPLIT_COMMANDS:
-            video_cmd, post_cmd = PROVIDER_SPLIT_COMMANDS[cmd_enum]
+        split = _provider_split(cmd_str)
+        if split is not None:
+            video_cmd, post_cmd = split
             res_video = await self._command_data_service.disable_command(chat_id, str(video_cmd), actor=actor)
             res_post = await self._command_data_service.disable_command(chat_id, str(post_cmd), actor=actor)
             return res_video or res_post

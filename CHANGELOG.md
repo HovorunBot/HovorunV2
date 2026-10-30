@@ -56,6 +56,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **commands**: share provider split resolution
 - **settings**: separate session validation guards
 - **trust**: separate administration authority checks
 - **admin**: separate target resolution and dispatch
