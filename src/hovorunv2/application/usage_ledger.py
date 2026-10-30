@@ -166,6 +166,25 @@ class UsageLedgerStore(Protocol):
         ...
 
 
+class SyncLedgerPort(Protocol):
+    """Synchronous worker durable accounting ledger contract."""
+
+    def apply_batch(self, events: tuple[UsageEvent, ...], *, actor: ActorContext) -> AppliedUsage:
+        """Commit receipts, guarded upserts and payload-free audit together."""
+        ...
+
+    def total(
+        self,
+        subject: AccountingSubject,
+        bucket: str,
+        unit: UsageUnit,
+        window: UsageWindow,
+        timestamp: int,
+    ) -> int:
+        """Account retained historical subjects without granting execution rights."""
+        ...
+
+
 def validate_usage_batch(registry: FeatureRegistry, events: tuple[UsageEvent, ...], actor: ActorContext) -> None:
     """Validate trusted accounting origin and supported dimensions in either runtime."""
     if actor.origin not in {ActorOrigin.SYSTEM, ActorOrigin.CLI}:

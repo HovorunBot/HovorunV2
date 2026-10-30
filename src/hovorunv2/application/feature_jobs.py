@@ -210,9 +210,9 @@ class FeatureQueuePort(Protocol):
         ...
 
 
-class FeatureExecutor(Protocol):
-    """Later worker integration consumes private bytes only in process."""
+class SyncPayloadPort(Protocol):
+    """Synchronous worker payload loading contract."""
 
-    async def execute(self, envelope: JobEnvelope, payload: bytes) -> JobOutcome:
-        """Return a safe code; implementation must revalidate execution and delivery authority."""
+    def load(self, reference: str, job_id: str) -> LoadedPayload:
+        """Return safe unavailable state when payload is missing, expired or undecryptable."""
         ...

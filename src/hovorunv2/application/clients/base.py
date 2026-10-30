@@ -9,7 +9,6 @@ from http import HTTPStatus
 from typing import ClassVar, Self
 
 import aiohttp
-from DrissionPage.errors import BaseError
 
 from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.clients.config import (
@@ -377,7 +376,7 @@ class BaseMediaClient(MediaParser):
                 if btn := tab.ele(f"text={btn_text}", timeout=1):
                     btn.click()
                     time.sleep(1)
-            except BaseError, OSError:
+            except BrowserError, OSError:
                 logger.debug("Gate button '%s' not clickable", btn_text)
 
     def _extract_browser_script(
@@ -388,7 +387,7 @@ class BaseMediaClient(MediaParser):
                 js_results = tab.run_js(b_cfg.js_extractor)
                 if isinstance(js_results, dict) and (js_results.get("video") or js_results.get("image")):
                     return self._build_browser_payload(js_results, url, b_cfg)
-            except BaseError, OSError, ValueError, TypeError:
+            except BrowserError, OSError, ValueError, TypeError:
                 logger.warning("JS extraction failed for %s", self.name)
 
         return None

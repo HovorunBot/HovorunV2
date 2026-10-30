@@ -4,8 +4,10 @@ from collections.abc import Callable, Mapping
 from enum import StrEnum
 from typing import Protocol
 
+from hovorunv2.application.admission import JobStage
 from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.feature_jobs import JobEnvelope
 from hovorunv2.application.media.errors import MediaFailure
 
 HTTPHeaders = Mapping[str, str]
@@ -79,4 +81,50 @@ class SyncBrowserPort(Protocol):
         cookies: list[dict[str, object]] | None = None,
     ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
         """Run extraction and download in one synchronous browser session."""
+        ...
+
+    def close(self) -> None:
+        """Dispose child-owned browser process and resources."""
+        ...
+
+
+class TelegramRejection(StrEnum):
+    """Safe explicit remote rejection classes, never the original response description."""
+
+    FETCH = "telegram_fetch_rejected"
+    TOO_LARGE = "telegram_too_large"
+    OTHER = "telegram_rejected"
+
+
+class TelegramRejectedError(ValueError):
+    """The API explicitly rejected this request without accepting its delivery."""
+
+    def __init__(self, reason: TelegramRejection) -> None:
+        self.reason = reason
+        super().__init__(reason.value)
+
+
+class TelegramDeliveryUncertainError(OSError):
+    """Missing or malformed acknowledgement cannot authorize an automatic duplicate delivery."""
+
+    def __init__(self, receipts: tuple[int, ...] = ()) -> None:
+        self.receipts = receipts
+        super().__init__("telegram_delivery_uncertain")
+
+
+class SyncTelegramDeliveryPort(Protocol):
+    """Synchronous Telegram delivery adapter contract for workers."""
+
+    def deliver(
+        self, chat_id: int, message_id: int, payload: RichMediaPayload, platform_name: str, sender_label: str | None
+    ) -> tuple[int, ...]:
+        """Deliver using canonical route facts and the transient decrypted sender label."""
+        ...
+
+
+class SyncQueuePublisherPort(Protocol):
+    """Synchronous Celery task queue publication contract for stage handoffs."""
+
+    def publish_stage(self, envelope: JobEnvelope, stage: JobStage, not_before: float = 0) -> bool:
+        """Publish an envelope to the appropriate stage queue."""
         ...

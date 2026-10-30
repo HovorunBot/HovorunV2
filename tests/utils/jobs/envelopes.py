@@ -93,12 +93,12 @@ def _drain_queue_messages(queue: Any) -> list[dict[str, object]]:
         message.ack()
 
 
-def broker_envelopes(settings: Settings, namespace: str) -> list[dict[str, object]]:
+def broker_envelopes(settings: Settings, namespace: str, queue_name: str = "media") -> list[dict[str, object]]:
     """Consume real broker messages without starting a production executor or worker."""
     app = Celery("test_features", broker=settings.valkey_url)
     app.conf.broker_transport_options = {"global_keyprefix": namespace}
     try:
-        with app.connection_for_read() as connection, connection.SimpleQueue(namespace + "features") as queue:
+        with app.connection_for_read() as connection, connection.SimpleQueue(namespace + queue_name) as queue:
             return _drain_queue_messages(queue)
     finally:
         app.close()

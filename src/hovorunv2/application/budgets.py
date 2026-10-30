@@ -140,3 +140,15 @@ class BudgetPort(Protocol):
     async def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...], now: float) -> ReservationDecision:
         """Commit actual consumption or release with zero amounts; repeated settlement cannot credit twice."""
         ...
+
+
+class SyncBudgetPort(Protocol):
+    """Synchronous worker execution budget reservation and settlement contract."""
+
+    def reserve(self, request: BudgetRequest, now: float, durable_totals: tuple[int, ...]) -> ReservationDecision:
+        """Reserve synchronously with the same pure decisions and original identity as bot admission."""
+        ...
+
+    def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...], now: float) -> ReservationDecision:
+        """Reconcile actual consumption only after every held resource can be verified."""
+        ...

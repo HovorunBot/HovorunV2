@@ -11,16 +11,14 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.admission import AdmissionState, AdmissionUnavailableError
 from hovorunv2.application.feature_jobs import EnqueueState, JobOutcome, JobStatus
-from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.usage import UsageSafetyCaps
-from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
+from hovorunv2.bootstrap.worker_runtime import WorkerRuntime, worker_child_context
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue, FeatureWorkerBridge
+from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
 from tests.utils.jobs import (
     PRIVATE_BODY,
-    HTTPExecutor,
     admission_service,
     admit_test_job,
     broker_envelopes,
@@ -150,13 +148,16 @@ async def test_runner_bridge_claims_before_private_payload_load(test_container: 
             await admit_test_job(settings, cache, namespace, clock, envelope)
             await queue.enqueue(envelope)
             await queue.cancel(envelope.job_id)
-            bridge = FeatureWorkerBridge(FeatureJobRunner(HTTPExecutor(), payloads, clock), queue)
-            assert await bridge.run_feature_job(envelope.model_dump(mode="json")) == JobOutcome.CANCELLED
-            missing = job_envelope("a" * 32, clock, job_id="missing", dedupe_key="b" * 64)
-            await admit_test_job(settings, cache, namespace, clock, missing)
-            await queue.enqueue(missing)
-            await payloads.delete(missing.payload_ref)
-            assert await bridge.run_feature_job(missing.model_dump(mode="json")) == JobOutcome.PAYLOAD_UNAVAILABLE
+            with worker_child_context(settings, namespace, UsageSafetyCaps()) as runner:
+                assert await asyncio.to_thread(runner.run, envelope.model_dump(mode="json")) == JobOutcome.CANCELLED
+                missing = job_envelope("a" * 32, clock, job_id="missing", dedupe_key="b" * 64)
+                await admit_test_job(settings, cache, namespace, clock, missing)
+                await queue.enqueue(missing)
+                await payloads.delete(missing.payload_ref)
+                assert (
+                    await asyncio.to_thread(runner.run, missing.model_dump(mode="json"))
+                    == JobOutcome.PAYLOAD_UNAVAILABLE
+                )
             inspected = await queue.inspect(missing.job_id)
             assert inspected.status == JobStatus.TERMINAL
             assert inspected.outcome == JobOutcome.PAYLOAD_UNAVAILABLE
@@ -174,7 +175,6 @@ async def test_unreadable_admission_raises_inside_queue_and_is_contained_at_work
     async with runtime_cache(test_container) as (cache, namespace), AsyncExitStack() as resources:
         queue = CeleryFeatureQueue(settings, clock, namespace, safety)
         store = ValkeyAdmissionStore(cache, namespace)
-        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
         resources.push_async_callback(queue.close)
         envelope = job_envelope("a" * 32, clock)
         assert await queue.inspect(envelope.job_id) is None
@@ -195,8 +195,8 @@ async def test_unreadable_admission_raises_inside_queue_and_is_contained_at_work
         with pytest.raises(AdmissionUnavailableError):
             await queue.finish(envelope.job_id, "test-owner", JobOutcome.COMPLETE)
         assert await queue.enqueue(envelope) == EnqueueState.UNAVAILABLE
-        bridge = FeatureWorkerBridge(FeatureJobRunner(HTTPExecutor(), payloads, clock), queue)
-        assert await bridge.run_feature_job(envelope.model_dump(mode="json")) == JobOutcome.FAILED
+        with worker_child_context(settings, namespace, safety) as runner:
+            assert await asyncio.to_thread(runner.run, envelope.model_dump(mode="json")) == JobOutcome.FAILED
         service = await admission_service(test_container, store, queue, clock)
         assert (await service.handoff(envelope.job_id)).state == AdmissionState.UNAVAILABLE
         await cache.client.zadd(namespace.value + "admission:handoff", {envelope.job_id: envelope.deadline})

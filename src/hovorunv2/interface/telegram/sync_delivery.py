@@ -8,7 +8,15 @@ from http import HTTPStatus
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.rendering import build_caption, plan_caption
-from hovorunv2.application.worker_io import HTTPFiles, HTTPForm, HTTPTransportError, SyncHTTPPort
+from hovorunv2.application.worker_io import (
+    HTTPFiles,
+    HTTPForm,
+    HTTPTransportError,
+    SyncHTTPPort,
+    TelegramDeliveryUncertainError,
+    TelegramRejectedError,
+    TelegramRejection,
+)
 
 MAX_MEDIA_GROUP = 10
 
@@ -25,30 +33,6 @@ class TelegramMethod(StrEnum):
     DELETE_MESSAGE = "deleteMessage"
     GET_CHAT_MEMBER = "getChatMember"
     GET_CHAT_ADMINISTRATORS = "getChatAdministrators"
-
-
-class TelegramRejection(StrEnum):
-    """Safe explicit remote rejection classes, never the original response description."""
-
-    FETCH = "telegram_fetch_rejected"
-    TOO_LARGE = "telegram_too_large"
-    OTHER = "telegram_rejected"
-
-
-class TelegramRejectedError(ValueError):
-    """The API explicitly rejected this request without accepting its delivery."""
-
-    def __init__(self, reason: TelegramRejection) -> None:
-        self.reason = reason
-        super().__init__(reason.value)
-
-
-class TelegramDeliveryUncertainError(OSError):
-    """Missing or malformed acknowledgement cannot authorize an automatic duplicate delivery."""
-
-    def __init__(self, receipts: tuple[int, ...] = ()) -> None:
-        self.receipts = receipts
-        super().__init__("telegram_delivery_uncertain")
 
 
 class NativeTelegramAPI:

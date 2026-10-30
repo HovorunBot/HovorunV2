@@ -1,9 +1,11 @@
 """Pure feature decisions shared by async ingress and native worker execution."""
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from hovorunv2.application.features import FeatureDefinition, FeatureScope, TriggerKind
-from hovorunv2.application.permissions import DecisionReason
+from hovorunv2.application.permissions import DecisionReason, PermissionTarget
+from hovorunv2.application.usage import ResolvedUsage, UsageUnit
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,3 +107,35 @@ def _private_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecisio
         allowed=facts.capable and (configure or facts.selected),
         selected=facts.selected,
     )
+
+
+class SyncPolicyPort(Protocol):
+    """Synchronous worker policy evaluation contract."""
+
+    def evaluate(
+        self,
+        feature: str,
+        chat_id: int,
+        actor_id: int | None,
+        *,
+        trigger: TriggerKind = TriggerKind.DIRECT,
+        configure: bool = False,
+    ) -> FeatureDecision:
+        """Apply the bot's exact evaluator and database facts without an event loop."""
+        ...
+
+    def active_target(self, target: PermissionTarget) -> bool:
+        """Validate a queued reference without converting a prior decision into an access grant."""
+        ...
+
+    def resolve(
+        self,
+        feature: str,
+        trigger: TriggerKind,
+        actor_id: int | None = None,
+        *,
+        group_id: int | None = None,
+        unit: UsageUnit = UsageUnit.REQUESTS,
+    ) -> ResolvedUsage:
+        """Resolve charged subject and intersect restrictions using the shared pure rule."""
+        ...

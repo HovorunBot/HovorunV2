@@ -134,3 +134,29 @@ class AdmissionPort(Protocol):
     async def recoverable(self, now: float, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
         """Return a bounded page, possibly empty; raise AdmissionUnavailableError on inaccessible or corrupt state."""
         ...
+
+
+class SyncAdmissionPort(Protocol):
+    """Synchronous worker admission lifecycle and stage claim contract."""
+
+    def get(self, job_id: str) -> AdmissionTicket | None:
+        """Read validated ticket metadata only within the owning child context."""
+        ...
+
+    def claim_stage(
+        self, job_id: str, stage: JobStage, now: float, token: str, *, expected_envelope: JobEnvelope | None = None
+    ) -> AdmissionTicket | None:
+        """Claim exclusively with exact envelope checking before any private access."""
+        ...
+
+    def handoff_stage(self, job_id: str, token: str, next_stage: JobStage) -> AdmissionTicket | None:
+        """Hand off without a second ciphertext, new deadline or admission refund."""
+        ...
+
+    def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
+        """Settle once using the current owner's token and the shared terminal rules."""
+        ...
+
+    def cancel(self, job_id: str) -> bool:
+        """Retain running ownership until execution effects are verified terminal."""
+        ...
