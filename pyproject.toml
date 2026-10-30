@@ -37,7 +37,7 @@ dependencies = [
     "saq",
     "celery[redis]>=5.7.0rc1",
     "casbin",
-    "psycopg[binary]>=3.3",
+    "psycopg[binary]",
     "requests",
 ]
 
@@ -63,7 +63,7 @@ packages = ["src/hovorunv2"]
 [dependency-groups]
 dev = [
     "aiosqlite",
-    "aioresponses>=0.7.9",
+    "aioresponses",
     "commitizen",
     "import-linter",
     "pre-commit",
@@ -73,8 +73,8 @@ dev = [
     "pytest-recording",
     "ruff",
     "ty",
-    "pytest-xdist>=3.8.0",
-    "pytest-cov>=7.1.0",
+    "pytest-xdist",
+    "pytest-cov",
 ]
 
 [tool.ruff]
