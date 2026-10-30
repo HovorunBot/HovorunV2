@@ -8,7 +8,12 @@ from hovorunv2.interface.telegram.callbacks import SettingsCallback
 
 
 async def bind_settings_callback(
-    container: AsyncContainer, message: Message, actor_id: int, callback: SettingsCallback, *, target: int | None = None
+    container: AsyncContainer,
+    message: Message,
+    actor_id: int,
+    callback: SettingsCallback,
+    *,
+    target: int | None = None,
 ) -> SettingsCallback:
     """Issue a real bounded session without pretending callback fields establish authority."""
     sessions = await container.get(SettingsSessionService)

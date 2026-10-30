@@ -18,8 +18,14 @@ from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
 from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue, FeatureWorkerBridge
-from tests.test_admission import admission_service
-from tests.test_feature_jobs import PRIVATE_BODY, HTTPExecutor, admit_test_job, broker_envelopes, job_envelope
+from tests.utils.jobs import (
+    PRIVATE_BODY,
+    HTTPExecutor,
+    admission_service,
+    admit_test_job,
+    broker_envelopes,
+    job_envelope,
+)
 from tests.utils.runtime import ManualClock, runtime_cache
 
 

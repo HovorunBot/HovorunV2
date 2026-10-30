@@ -23,7 +23,7 @@ from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.middlewares import MessageCacheMiddleware
-from tests.test_membership_adapter import BOT_CREDENTIAL, RecordedResponse
+from tests.utils.telegram import BOT_CREDENTIAL, RecordedResponse
 
 
 @pytest.fixture

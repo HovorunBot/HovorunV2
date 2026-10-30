@@ -27,7 +27,7 @@ from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
 from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue, FeatureWorkerBridge
-from tests.test_usage_policies import FEATURE
+from tests.utils.identities import FEATURE
 from tests.utils.runtime import ManualClock, runtime_cache
 
 PRIVATE_URL = "https://synthetic.invalid/private-request?secret=never-store"

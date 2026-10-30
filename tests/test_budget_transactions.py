@@ -16,8 +16,7 @@ from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.infrastructure.budget_state import MAX_EXACT_INTEGER, build_record
 from hovorunv2.infrastructure.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.config import Settings
-from tests.test_runtime_budgets import ONE, ZERO
-from tests.test_usage_policies import FEATURE
+from tests.utils.identities import FEATURE, ONE, ZERO
 from tests.utils.runtime import ManualClock, runtime_cache
 from tests.utils.usage import USER, usage_subjects
 

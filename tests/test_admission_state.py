@@ -17,7 +17,7 @@ from hovorunv2.infrastructure.admission_state import (
     envelope_json,
     read_capacity,
 )
-from tests.test_feature_jobs import job_envelope
+from tests.utils.jobs import job_envelope
 from tests.utils.runtime import ManualClock
 
 OTHER_OWNER = "other"

@@ -18,7 +18,7 @@ from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter
-from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
+from tests.utils.telegram.transport import API, BOT_CREDENTIAL, RecordedResponse
 
 GROUP = -100230001
 ACTOR = 230001

@@ -14,7 +14,7 @@ from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.native_http import NativeHTTPClient
-from tests.test_worker_database import database_config
+from tests.utils.identities import database_config
 from tests.utils.sync_http import HTTPFixture, json_reply
 from tests.utils.usage import GROUP, usage_subjects
 

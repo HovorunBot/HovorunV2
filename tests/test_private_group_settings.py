@@ -45,12 +45,12 @@ from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter
 from tests.conftest import get_media_command, provision_role
-from tests.test_feature_access import feature_runtime
-from tests.test_group_beta import BETA, GROUP, MEMBER, SECOND
-from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
-from tests.test_settings_sessions import DENIED, button, query_for, settings_message
 from tests.utils.activation import sent_fields
 from tests.utils.recorded_responses import RecordedResponses
+from tests.utils.runtimes.beta import BETA, GROUP, MEMBER, SECOND
+from tests.utils.runtimes.features import feature_runtime
+from tests.utils.settings import DENIED, button, query_for, settings_message
+from tests.utils.telegram import API, BOT_CREDENTIAL, RecordedResponse
 
 OTHER = GROUP - 1
 

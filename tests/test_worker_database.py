@@ -36,10 +36,10 @@ from hovorunv2.domain.role import UserRoleDB
 from hovorunv2.domain.usage_accounting import UsageAccountingEventDB, UsageAggregateDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.config import DatabaseSettings
-from tests.test_feature_access import CAPABLE, feature_runtime
-from tests.test_group_beta import BETA, FIRST, GROUP, MEMBER, REGISTRY
-from tests.test_usage_ledger import ACTOR, SUBJECT, usage_event
+from tests.utils.identities import ACTOR, SUBJECT, usage_event
 from tests.utils.postgres import reject_audit
+from tests.utils.runtimes.beta import BETA, FIRST, GROUP, MEMBER, REGISTRY
+from tests.utils.runtimes.features import CAPABLE, feature_runtime
 from tests.utils.usage import USER, usage_subjects
 
 

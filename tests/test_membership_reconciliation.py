@@ -17,7 +17,7 @@ from hovorunv2.application.services import membership_reconciliation as reconcil
 from hovorunv2.application.services.membership_reconciliation import GROUP_BATCH_SIZE, MembershipReconciliationService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter
-from tests.test_membership_adapter import API, BOT_CREDENTIAL, GROUP_ID, USER_ID, RecordedResponse, member_payload
+from tests.utils.telegram import API, BOT_CREDENTIAL, GROUP_ID, USER_ID, RecordedResponse, member_payload
 
 
 async def prepare_group(container: AsyncContainer) -> int:

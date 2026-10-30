@@ -23,7 +23,7 @@ from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.admission_state import admission_keys
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from tests.test_feature_jobs import PRIVATE_BODY, job_envelope
+from tests.utils.jobs import PRIVATE_BODY, job_envelope
 from tests.utils.runtime import ManualClock, runtime_cache
 
 

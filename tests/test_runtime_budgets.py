@@ -16,7 +16,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.cache import CacheService
-from tests.test_usage_policies import FEATURE
+from tests.utils.identities import FEATURE
 from tests.utils.runtime import ManualClock, runtime_cache
 from tests.utils.usage import USER, usage_subjects
 

@@ -20,22 +20,14 @@ from hovorunv2.domain.enums import ActorOrigin, Role, TargetKind
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.config import DatabaseSettings
 from hovorunv2.interface.cli.roles import RoleArguments, RoleCLI, build_parser
+from tests.utils.network import reject_network
 
-ORIGINAL_CONNECT = socket.socket.connect
 pytestmark = pytest.mark.usefixtures("postgres_database_url")
 
 
 def role_arguments(*arguments: str) -> RoleArguments:
     """Parse the actual CLI contract used by the process entry point."""
     return build_parser().parse_args(["role", *arguments], namespace=RoleArguments())
-
-
-def reject_network(connection: socket.socket, address: object) -> None:
-    """Reject any attempted network connection in offline administration tests."""
-    if isinstance(address, tuple) and address[1] in {5432, 15432}:
-        return ORIGINAL_CONNECT(connection, address)
-    msg = "Offline administration attempted an external network connection."
-    raise AssertionError(msg)
 
 
 async def test_numeric_owner_bootstrap_without_bot_credentials_or_network(

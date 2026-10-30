@@ -23,7 +23,7 @@ from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.config import DatabaseSettings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.cli.roles import RoleArguments, build_parser
-from tests.test_admin_cli import reject_network
+from tests.utils.network import reject_network
 
 pytestmark = pytest.mark.usefixtures("postgres_database_url")
 

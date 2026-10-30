@@ -21,7 +21,7 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import verify_group_admins
-from tests.test_membership_adapter import RecordedResponse
+from tests.utils.telegram import RecordedResponse
 
 
 class SettingsMutation:

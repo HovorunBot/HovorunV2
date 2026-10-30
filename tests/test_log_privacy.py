@@ -25,8 +25,8 @@ from hovorunv2.infrastructure.logger import (
     setup_telegram_logging,
 )
 from tests.conftest import provision_role
-from tests.test_membership_adapter import API, BOT_CREDENTIAL
 from tests.utils.recorded_responses import RecordedResponses
+from tests.utils.telegram import API, BOT_CREDENTIAL
 
 SENTINEL = "synthetic-private-payload-022e"
 PRIVATE_URL = f"https://example.invalid/media?credential={SENTINEL}"

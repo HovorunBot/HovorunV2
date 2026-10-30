@@ -1,5 +1,6 @@
 """Shared test configuration and fixtures."""
 
+import ast
 import os
 import time
 import urllib.parse
@@ -7,11 +8,9 @@ from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import redis
-from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer, Scope, make_async_container, provide
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
@@ -30,6 +29,57 @@ from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.utils.browser_cache import TestBrowserService
 from tests.utils.postgres import postgres_database
+from tests.utils.telegram import create_mock_message, create_private_media_message
+
+__all__ = [
+    "DEFAULT_TEST_VALKEY_URL",
+    "create_mock_message",
+    "create_private_media_message",
+    "get_media_command",
+    "provision_role",
+    "resolve_worker_valkey_url",
+    "worker_valkey_url",
+]
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Verify that test modules never import from other test modules."""
+    _check_no_cross_test_imports()
+
+
+def _node_violation(file_name: str, node: ast.AST) -> str | None:
+    if (
+        isinstance(node, ast.ImportFrom)
+        and node.module
+        and (node.module.startswith("tests.test_") or ".test_" in node.module)
+    ):
+        return f"{file_name}:{node.lineno}: from {node.module} import ..."
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.name.startswith("tests.test_") or ".test_" in alias.name:
+                return f"{file_name}:{node.lineno}: import {alias.name}"
+    return None
+
+
+def _file_violations(py_file: Path) -> list[str]:
+    try:
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+    except SyntaxError:
+        return []
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        violation = _node_violation(py_file.name, node)
+        if violation is not None:
+            violations.append(violation)
+    return violations
+
+
+def _check_no_cross_test_imports(tests_root: Path | None = None) -> None:
+    root = tests_root if tests_root is not None else Path(__file__).resolve().parent
+    violations = [v for py_file in root.rglob("*.py") for v in _file_violations(py_file)]
+    if violations:
+        msg = "Forbidden cross-test imports detected:\n" + "\n".join(violations)
+        raise pytest.UsageError(msg)
 
 
 async def provision_role(container: AsyncContainer, user_id: int = 101, role: Role = Role.ADMIN) -> int:
@@ -47,27 +97,6 @@ async def get_media_command(container: AsyncContainer, name: CommandName) -> Ric
             return cmd
     msg = f"RichMediaCommand for {name} not found in container"
     raise LookupError(msg)
-
-
-def create_mock_message(text: str | None, *, is_bot: bool = False, chat_id: int = 456, user_id: int = 123) -> MagicMock:
-    """Create a standardized mock Telegram message for command tests."""
-    message = MagicMock(spec=Message)
-    message.text = text
-    message.message_id = 12345
-    message.from_user = MagicMock(spec=User)
-    message.from_user.id = user_id
-    message.from_user.is_bot = is_bot
-    message.sender_chat = None
-    message.from_user.full_name = "Mock User"
-    message.from_user.username = "mockuser"
-    message.chat = MagicMock(spec=Chat)
-    message.chat.id = chat_id
-    message.chat.type = "group"
-    message.chat.title = "Mock Group"
-    message.answer = AsyncMock()
-    message.delete = AsyncMock()
-    message.__class__ = Message
-    return message
 
 
 DEFAULT_TEST_VALKEY_URL: str = "redis://localhost:6379/1"
@@ -209,13 +238,6 @@ async def verify_group_admins(container: AsyncContainer, telegram_id: int) -> No
     await memberships.save_admins(
         group.id, AdministratorEvidence(telegram_id, True, (), now, now + timedelta(minutes=10)), ActorContext.cli()
     )
-
-
-def create_private_media_message(text: str | None, *, chat_id: int = 456, is_bot: bool = False) -> MagicMock:
-    """Use a consistent private Telegram transport and matching actor identity."""
-    message = create_mock_message(text, chat_id=chat_id, user_id=chat_id, is_bot=is_bot)
-    message.chat.type = "private"
-    return message
 
 
 async def authorize_private_media(container: AsyncContainer, telegram_id: int) -> None:

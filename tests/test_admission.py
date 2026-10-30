@@ -22,8 +22,8 @@ from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
 from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
-from tests.test_feature_jobs import PRIVATE_BODY, job_envelope
-from tests.test_usage_policies import FEATURE
+from tests.utils.identities import FEATURE
+from tests.utils.jobs import PRIVATE_BODY, job_envelope
 from tests.utils.runtime import ManualClock, runtime_cache
 from tests.utils.usage import USER, usage_subjects
 

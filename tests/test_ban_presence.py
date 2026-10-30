@@ -20,8 +20,8 @@ from hovorunv2.interface.telegram.handlers.membership import MembershipEventHand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
 from tests.conftest import provision_role
-from tests.test_chat_status_state_machine import bot_event
 from tests.utils.activation import ACTOR, activation_runtime, group_message, sent_fields, stub_telegram
+from tests.utils.telegram import bot_event
 
 
 async def forbidden_handler(_event: object, _data: object) -> None:

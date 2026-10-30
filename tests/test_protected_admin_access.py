@@ -28,7 +28,7 @@ from hovorunv2.domain.enums import ActorOrigin, CommandName, Role, TargetKind
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import verify_group_admins
-from tests.test_membership_adapter import RecordedResponse
+from tests.utils.telegram import RecordedResponse
 
 ALICE_ID = 220001
 BOB_ID = 220002

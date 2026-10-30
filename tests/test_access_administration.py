@@ -26,9 +26,9 @@ from hovorunv2.interface.access_arguments import parse_access
 from hovorunv2.interface.telegram.callbacks import AdminCallback
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
 from tests.conftest import provision_role
-from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
-from tests.test_settings_sessions import query_for, settings_http, settings_message
 from tests.utils.activation import sent_fields
+from tests.utils.settings import query_for, settings_http, settings_message
+from tests.utils.telegram import API, BOT_CREDENTIAL, RecordedResponse
 
 ADMIN = 340010
 USER = 340011

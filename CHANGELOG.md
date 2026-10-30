@@ -57,6 +57,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **tests**: move shared helpers into structured tests utils package
 - **tests**: remove dead methods and deduplicate legacy mock tests
 - **clean-code**: verify complete application coverage and strict acceptance
 - **bootstrap**: review sqlite import pipeline and admin entrypoint

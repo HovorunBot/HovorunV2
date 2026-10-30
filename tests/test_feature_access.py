@@ -43,11 +43,11 @@ from hovorunv2.interface.telegram.callbacks import SettingsAction, SettingsCallb
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
-from tests.test_group_beta import BETA, FIRST, FUTURE, GROUP, MEMBER, REGISTRY, group_beta_runtime
-from tests.test_membership_adapter import BOT_CREDENTIAL
 from tests.utils.activation import sent_fields, stub_telegram
 from tests.utils.recorded_responses import RecordedResponses
+from tests.utils.runtimes.beta import BETA, FIRST, FUTURE, GROUP, MEMBER, REGISTRY, group_beta_runtime
 from tests.utils.settings import bind_settings_callback
+from tests.utils.telegram import BOT_CREDENTIAL
 
 CAPABLE = FeatureDefinition(
     "capability_feature", "Capability feature", required_bot_capabilities=frozenset({"can_pin_messages"})

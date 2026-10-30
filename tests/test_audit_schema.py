@@ -13,7 +13,7 @@ from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, CommandName, Platform, Role
 from hovorunv2.domain.group_grant import RequestStatus
-from tests.test_audit_transaction import create_chat_op
+from tests.utils.identities import create_chat_op
 
 
 async def create_flushed_chat(session: AsyncSession, chat_id: int) -> ChatDB:

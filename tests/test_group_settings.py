@@ -14,12 +14,12 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.interface.telegram.callbacks import SettingsMenu
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from tests.conftest import provision_role
-from tests.test_feature_access import CAPABLE, feature_runtime
-from tests.test_group_beta import BETA, BOT_ADMIN, FUTURE, GROUP, MEMBER, REGISTRY, SECOND
-from tests.test_membership_adapter import BOT_CREDENTIAL
-from tests.test_settings_sessions import button, query_for, settings_http, settings_message
 from tests.utils.activation import sent_fields
 from tests.utils.recorded_responses import RecordedResponses
+from tests.utils.runtimes.beta import BETA, BOT_ADMIN, FUTURE, GROUP, MEMBER, REGISTRY, SECOND
+from tests.utils.runtimes.features import CAPABLE, feature_runtime
+from tests.utils.settings import button, query_for, settings_http, settings_message
+from tests.utils.telegram import BOT_CREDENTIAL
 
 
 @pytest.mark.parametrize("actor", [SECOND, BOT_ADMIN])
