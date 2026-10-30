@@ -1,6 +1,5 @@
 """Atomic PostgreSQL accounting transactions with replay-safe receipts and one batch audit."""
 
-import hashlib
 from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,6 +12,8 @@ from hovorunv2.application.usage_ledger import (
     AppliedUsage,
     UsageEvent,
     UsageLedgerStore,
+    usage_audit_changes,
+    usage_batch_id,
     validate_usage_batch,
 )
 from hovorunv2.domain.audit import ActorContext
@@ -35,18 +36,14 @@ class SQLAlchemyUsageLedgerStore(UsageLedgerStore):
     async def apply_batch(self, events: tuple[UsageEvent, ...], *, actor: ActorContext) -> AppliedUsage:
         """Commit receipts, counters and one payload-free audit summary or roll back all three."""
         validate_usage_batch(self._registry, events, actor)
-        batch_id = hashlib.sha256("\n".join(event.event_id for event in events).encode()).hexdigest()
+        batch_id = usage_batch_id(events)
         return await self._audited_uow.execute(
             actor=actor,
             target_type="usage_batch",
             target_id=batch_id,
             action="apply",
             operation=partial(self._apply, events=events),
-            changed_fields=lambda result: {
-                "events_applied": result.events_applied,
-                "aggregates_updated": result.aggregates_updated,
-                "units_added": result.units_added,
-            },
+            changed_fields=usage_audit_changes,
             audit_if=lambda result: result.events_applied > 0,
         )
 

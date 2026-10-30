@@ -1,18 +1,24 @@
 """Small native PostgreSQL adapters for worker policy reads and durable accounting."""
 
-import hashlib
 from collections.abc import Callable
 from datetime import UTC, datetime
 
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from hovorunv2.application.feature_policy import FeatureDecision, evaluate_feature
 from hovorunv2.application.features import FeatureRegistry, TriggerKind
 from hovorunv2.application.permissions import AccessDecision, PermissionRequest, PermissionTarget
 from hovorunv2.application.ports import AuthorizationPolicy
 from hovorunv2.application.usage import ResolvedUsage, UsageSafetyCaps, UsageUnit, UsageWindow
-from hovorunv2.application.usage_ledger import AccountingSubject, AppliedUsage, UsageEvent, validate_usage_batch
+from hovorunv2.application.usage_ledger import (
+    AccountingSubject,
+    AppliedUsage,
+    UsageEvent,
+    usage_audit_changes,
+    usage_batch_id,
+    validate_usage_batch,
+)
 from hovorunv2.application.usage_resolution import resolve_usage
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
@@ -137,39 +143,40 @@ class WorkerUsageLedgerStore:
         validate_audit_reason(actor.reason)
         for attempt in range(MAX_TRANSACTION_ATTEMPTS):
             try:
-                with self._sessions.begin() as session:
-                    result = UsageLedgerRepository(session).apply(events)
-                    if result.events_applied:
-                        changes: dict[str, object] = {
-                            "events_applied": result.events_applied,
-                            "aggregates_updated": result.aggregates_updated,
-                            "units_added": result.units_added,
-                        }
-                        validate_audit_changes("usage_batch", "apply", changes)
-                        session.add(
-                            AuditEventDB(
-                                actor_origin=actor.origin,
-                                actor_id=actor.actor_id,
-                                target_type="usage_batch",
-                                target_id=hashlib.sha256(
-                                    "\n".join(event.event_id for event in events).encode()
-                                ).hexdigest(),
-                                action="apply",
-                                changed_fields=changes,
-                                reason=actor.reason,
-                                correlation_id=actor.correlation_id,
-                            )
-                        )
+                return self._apply_usage_attempt(events, actor)
             except DBAPIError as error:
                 if (
                     getattr(error.orig, "sqlstate", None) not in RETRYABLE_TRANSACTION_STATES
                     or attempt == MAX_TRANSACTION_ATTEMPTS - 1
                 ):
                     raise
-            else:
-                return result
         msg = "Accounting transaction exhausted its attempts."
         raise ValueError(msg)
+
+    def _apply_usage_attempt(self, events: tuple[UsageEvent, ...], actor: ActorContext) -> AppliedUsage:
+        with self._sessions.begin() as session:
+            result = UsageLedgerRepository(session).apply(events)
+            if result.events_applied:
+                self._append_audit_event(session, events, actor, result)
+            return result
+
+    def _append_audit_event(
+        self, session: Session, events: tuple[UsageEvent, ...], actor: ActorContext, result: AppliedUsage
+    ) -> None:
+        changes = usage_audit_changes(result)
+        validate_audit_changes("usage_batch", "apply", changes)
+        session.add(
+            AuditEventDB(
+                actor_origin=actor.origin,
+                actor_id=actor.actor_id,
+                target_type="usage_batch",
+                target_id=usage_batch_id(events),
+                action="apply",
+                changed_fields=changes,
+                reason=actor.reason,
+                correlation_id=actor.correlation_id,
+            )
+        )
 
     def total(
         self,

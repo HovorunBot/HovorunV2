@@ -133,6 +133,20 @@ class AppliedUsage:
     units_added: int = 0
 
 
+def usage_batch_id(events: tuple[UsageEvent, ...]) -> str:
+    """Identify the ordered batch without including accounting payloads."""
+    return hashlib.sha256("\n".join(event.event_id for event in events).encode()).hexdigest()
+
+
+def usage_audit_changes(result: AppliedUsage) -> dict[str, object]:
+    """Build the operational summary shared by native and async accounting."""
+    return {
+        "events_applied": result.events_applied,
+        "aggregates_updated": result.aggregates_updated,
+        "units_added": result.units_added,
+    }
+
+
 class UsageLedgerStore(Protocol):
     """Durable aggregates and replay receipts; never executable queued work."""
 

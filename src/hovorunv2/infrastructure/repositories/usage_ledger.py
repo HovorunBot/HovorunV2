@@ -88,20 +88,7 @@ class UsageLedgerRepository:
         applied, units = 0, 0
         aggregates: set[int] = set()
         for event in sorted(events, key=lambda item: item.event_id):
-            inserted = self._session.scalar(
-                insert(UsageAccountingEventDB)
-                .values(event_id=event.event_id, fingerprint=event.fingerprint)
-                .on_conflict_do_nothing()
-                .returning(UsageAccountingEventDB.event_id)
-            )
-            if inserted is None:
-                receipt = self._session.get(UsageAccountingEventDB, event.event_id)
-                if receipt is None:
-                    msg = "Accounting receipt is unavailable after conflicting insertion."
-                    raise ValueError(msg)
-                if receipt.fingerprint != event.fingerprint:
-                    msg = "Accounting event ID was already used for different charges."
-                    raise ValueError(msg)
+            if not self._claim_event(event):
                 continue
             self.require_known_subject(event.subject)
             for charge in event.charges:
@@ -109,3 +96,21 @@ class UsageLedgerRepository:
                 units += charge.amount
             applied += 1
         return AppliedUsage(applied, len(aggregates), units)
+
+    def _claim_event(self, event: UsageEvent) -> bool:
+        inserted = self._session.scalar(
+            insert(UsageAccountingEventDB)
+            .values(event_id=event.event_id, fingerprint=event.fingerprint)
+            .on_conflict_do_nothing()
+            .returning(UsageAccountingEventDB.event_id)
+        )
+        if inserted is not None:
+            return True
+        receipt = self._session.get(UsageAccountingEventDB, event.event_id)
+        if receipt is None:
+            msg = "Accounting receipt is unavailable after conflicting insertion."
+            raise ValueError(msg)
+        if receipt.fingerprint != event.fingerprint:
+            msg = "Accounting event ID was already used for different charges."
+            raise ValueError(msg)
+        return False

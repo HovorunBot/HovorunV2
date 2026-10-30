@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **usage**: simplify ledger transactions
 - **audit**: split transaction attempts and lock preparation
 - **clean-code**: complete telegram delivery recovery
 - **clean-code**: decompose telegram delivery and semantic recovery
