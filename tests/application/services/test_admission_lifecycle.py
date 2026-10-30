@@ -447,7 +447,7 @@ async def test_native_runtime_rejects_inherited_live_pool(test_container: AsyncC
                 "-W",
                 "error",
                 "-m",
-                "tests.test_admission_lifecycle",
+                "tests.application.services.test_admission_lifecycle",
                 namespace.value,
             ],
             capture_output=True,

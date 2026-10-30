@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-HOOK = Path(__file__).resolve().parents[1] / "scripts" / "update-changelog-after-commit.sh"
+HOOK = Path(__file__).resolve().parents[2] / "scripts" / "update-changelog-after-commit.sh"
 
 pytestmark = [pytest.mark.subprocess]
 

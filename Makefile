@@ -179,6 +179,11 @@ changelog:
 test:
 	@PYTHONPATH=src uv run pytest
 
+## Run pure tests without PostgreSQL or Valkey.
+.PHONY: test-unit
+test-unit:
+	@PYTHONPATH=src uv run pytest -n 0 -m unit
+
 ## Run fast tests excluding slow, browser, and subprocess suites.
 test-fast:
 	@PYTHONPATH=src uv run pytest -m "not slow and not browser and not subprocess"

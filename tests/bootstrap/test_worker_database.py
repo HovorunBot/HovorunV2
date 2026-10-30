@@ -234,7 +234,7 @@ async def native_probe(url: str, event_id: str) -> dict[str, int]:
         sys.executable,
         "-W",
         "error",
-        str(Path(__file__).parent / "utils" / "native_database_probe.py"),
+        str(Path(__file__).parents[1] / "utils" / "native_database_probe.py"),
         url,
         event_id,
         stdout=asyncio.subprocess.PIPE,

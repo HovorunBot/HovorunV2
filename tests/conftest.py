@@ -132,7 +132,7 @@ def resolve_worker_valkey_url(worker_id: str, base_url: str | None = None) -> st
     return urllib.parse.urlunparse(parsed._replace(path=new_path))
 
 
-@pytest.fixture(autouse=True, scope="session")
+@pytest.fixture(scope="session")
 def worker_valkey_url(request: pytest.FixtureRequest) -> Generator[str]:
     """Isolate real Valkey storage per parallel test worker away from DB 0."""
     worker_id = getattr(request.config, "workerinput", {}).get("workerid", "master")
@@ -303,3 +303,45 @@ async def recording_bot() -> AsyncGenerator[Bot]:
     """Use real Telegram models with a recording external transport."""
     async with Bot(BOT_CREDENTIAL, session=RecordingSession()) as bot:
         yield bot
+
+
+@pytest.fixture(autouse=True)
+def require_test_valkey(request: pytest.FixtureRequest) -> None:
+    """Initialize worker storage only for tests allowed to use infrastructure."""
+    if request.node.get_closest_marker("unit") is None:
+        request.getfixturevalue("worker_valkey_url")
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir(request: pytest.FixtureRequest) -> str:
+    """Keep provider cassette paths stable across architecture directories."""
+    return str(Path(__file__).resolve().parent / "cassettes" / request.path.stem)
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Mark pure tests and reject infrastructure fixture dependencies before execution."""
+    pure_modules = {
+        "test_provider_parsing",
+        "test_http_responses",
+        "test_changelog",
+        "test_telegram_delivery_contracts",
+        "test_media_finalization",
+        "test_suite_hygiene",
+        "test_threads_metrics_extraction",
+    }
+    forbidden = {
+        "test_container",
+        "test_engine",
+        "postgres_database_url",
+        "worker_postgres_schema",
+        "worker_valkey_url",
+    }
+    for item in items:
+        if "domain" in item.path.parts or item.path.stem in pure_modules:
+            item.add_marker(pytest.mark.unit)
+        if item.get_closest_marker("unit") is None:
+            continue
+        dependencies = forbidden.intersection(item.fixturenames)
+        if dependencies:
+            msg = f"Unit test {item.nodeid} requests infrastructure fixtures: {sorted(dependencies)}"
+            raise pytest.UsageError(msg)

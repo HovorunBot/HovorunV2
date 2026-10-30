@@ -57,6 +57,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **tests**: organize suite by application architecture layers
 - **tests**: use real Telegram models and remove container alias
 - **tests**: consolidate provider trigger cases
 - **tests**: move shared helpers into structured tests utils package
