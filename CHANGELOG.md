@@ -56,6 +56,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **settings**: separate language picker rendering
 - **admin**: separate private transport guards
 - **release**: separate notification and changelog processing
 - **cleanup**: separate expired message processing

@@ -2,6 +2,7 @@
 
 import contextlib
 import math
+from functools import partial
 from typing import Any, ClassVar, Final
 
 from aiogram import Bot, Router
@@ -36,6 +37,7 @@ logger = get_logger(__name__)
 
 CONFIG_WINDOW_TTL: Final = SETTINGS_SESSION_TTL
 LANGS_PER_PAGE: Final = 10
+UNPOPULAR_LANGUAGE_RANK: Final = 999
 
 
 class SettingsCommand(BaseCommand):
@@ -313,26 +315,9 @@ class SettingsCommand(BaseCommand):
         chat_id = context.target_chat_id
         target, ignored = await self._language_service.get_chat_settings(chat_id)
 
-        # Smart sorting logic
-        def get_sort_key(code: str) -> tuple[int, int, str]:
-            # 1. Selected status (0 if selected, 1 otherwise)
-            is_selected = (menu_type == SettingsMenu.LANG_TARGET and code == target) or (
-                menu_type == SettingsMenu.LANG_IGNORED and code in ignored
-            )
-            selected_rank = 0 if is_selected else 1
-
-            # 2. Popularity rank
-            try:
-                pop_rank = POPULAR_LANGUAGES.index(code)
-            except ValueError:
-                pop_rank = 999  # Not in popular list
-
-            # 3. Alphabetical name
-            name = LANGUAGES[code].name
-
-            return selected_rank, pop_rank, name
-
-        lang_codes = sorted(LANGUAGES.keys(), key=get_sort_key)
+        lang_codes = sorted(
+            LANGUAGES.keys(), key=partial(self._language_sort_key, menu_type=menu_type, target=target, ignored=ignored)
+        )
 
         total_pages = math.ceil(len(lang_codes) / LANGS_PER_PAGE)
         page = max(0, min(page, total_pages - 1)) if total_pages > 0 else 0
@@ -342,36 +327,8 @@ class SettingsCommand(BaseCommand):
 
         builder = InlineKeyboardBuilder()
         for code in page_langs:
-            lang = LANGUAGES[code]
-            label = lang.display_name
-            if menu_type == SettingsMenu.LANG_TARGET:
-                is_selected = code == target
-                prefix = "✅ " if is_selected else ""
-                callback = SettingsCallback(
-                    menu=SettingsMenu.LANG_TARGET, action=SettingsAction.SELECT, value=code
-                ).pack()
-            else:
-                is_selected = code in ignored
-                prefix = "✅ " if is_selected else "❌ "
-                callback = SettingsCallback(
-                    menu=SettingsMenu.LANG_IGNORED, action=SettingsAction.TOGGLE, value=code, page=page
-                ).pack()
-
-            builder.row(InlineKeyboardButton(text=f"{prefix}{label}", callback_data=callback))
-
-        # Pagination row
-        nav_row = []
-        if total_pages > 1:
-            if page > 0:
-                nav_row.append(
-                    InlineKeyboardButton(text="⬅️", callback_data=SettingsCallback(menu=menu_type, page=page - 1).pack())
-                )
-            nav_row.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
-            if page < total_pages - 1:
-                nav_row.append(
-                    InlineKeyboardButton(text="➡️", callback_data=SettingsCallback(menu=menu_type, page=page + 1).pack())
-                )
-            builder.row(*nav_row)
+            builder.row(self._build_language_button(code, menu_type, page, target, ignored))
+        self._add_language_navigation(builder, menu_type, page, total_pages)
 
         builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()))
 
@@ -381,6 +338,49 @@ class SettingsCommand(BaseCommand):
             else "🚫 <b>Toggle Ignored Languages</b>"
         )
         await self._render(message, title, builder, context)
+
+    def _language_sort_key(
+        self, code: str, *, menu_type: SettingsMenu, target: str, ignored: list[str]
+    ) -> tuple[int, int, str]:
+        selected = (menu_type == SettingsMenu.LANG_TARGET and code == target) or (
+            menu_type == SettingsMenu.LANG_IGNORED and code in ignored
+        )
+        try:
+            popularity = POPULAR_LANGUAGES.index(code)
+        except ValueError:
+            popularity = UNPOPULAR_LANGUAGE_RANK
+        return (0 if selected else 1, popularity, LANGUAGES[code].name)
+
+    def _build_language_button(
+        self, code: str, menu_type: SettingsMenu, page: int, target: str, ignored: list[str]
+    ) -> InlineKeyboardButton:
+        label = LANGUAGES[code].display_name
+        if menu_type == SettingsMenu.LANG_TARGET:
+            prefix = "✅ " if code == target else ""
+            callback = SettingsCallback(menu=SettingsMenu.LANG_TARGET, action=SettingsAction.SELECT, value=code).pack()
+        else:
+            prefix = "✅ " if code in ignored else "❌ "
+            callback = SettingsCallback(
+                menu=SettingsMenu.LANG_IGNORED, action=SettingsAction.TOGGLE, value=code, page=page
+            ).pack()
+        return InlineKeyboardButton(text=f"{prefix}{label}", callback_data=callback)
+
+    def _add_language_navigation(
+        self, builder: InlineKeyboardBuilder, menu_type: SettingsMenu, page: int, total_pages: int
+    ) -> None:
+        if total_pages <= 1:
+            return
+        nav_row = []
+        if page > 0:
+            nav_row.append(
+                InlineKeyboardButton(text="⬅️", callback_data=SettingsCallback(menu=menu_type, page=page - 1).pack())
+            )
+        nav_row.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav_row.append(
+                InlineKeyboardButton(text="➡️", callback_data=SettingsCallback(menu=menu_type, page=page + 1).pack())
+            )
+        builder.row(*nav_row)
 
     async def _show_modules_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
         """Show modules (commands) configuration menu with split Video and Post toggles."""

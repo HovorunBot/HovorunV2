@@ -301,3 +301,31 @@ async def test_language_audit_failure_rolls_back_settings(test_container: AsyncC
     with pytest.raises(IntegrityError, match="synthetic audit failure"):
         await languages.update_settings(GROUP, "pl", ["de"], actor=ActorContext.telegram(FIRST))
     assert await languages.get_chat_settings(GROUP) == original
+
+
+async def test_language_picker_preserves_selection_and_navigation(test_container: AsyncContainer) -> None:
+    """The current selection sorts first, and navigation retains the target menu and page."""
+    await group_beta_runtime(test_container)
+    command = await test_container.get(SettingsCommand)
+    language = await test_container.get(LanguageService)
+    target, _ignored = await language.get_chat_settings(GROUP)
+    message = settings_message()
+    async with Bot(BOT_CREDENTIAL) as bot:
+        with RecordedResponses() as http:
+            settings_http(http, message)
+            await command.handle(message.as_(bot), bot)
+            query = query_for(message, bot)
+            await command.handle_callback(query, button(http, SettingsMenu.LANG))
+            await command.handle_callback(query, button(http, SettingsMenu.LANG_TARGET))
+            markup = json.loads(sent_fields(http, "editMessageText")[-1]["reply_markup"])["inline_keyboard"]
+            first = markup[0][0]
+            assert first["text"].startswith("✅ ")
+            assert SettingsCallback.unpack(first["callback_data"]).value == target
+            arrow = next(item for row in markup for item in row if item["text"] == "➡️")
+            next_page = SettingsCallback.unpack(arrow["callback_data"])
+            assert next_page.menu == SettingsMenu.LANG_TARGET
+            assert next_page.page == 1
+            await command.handle_callback(query, next_page)
+            markup = json.loads(sent_fields(http, "editMessageText")[-1]["reply_markup"])["inline_keyboard"]
+            previous = next(item for row in markup for item in row if item["text"] == "⬅️")
+            assert SettingsCallback.unpack(previous["callback_data"]).page == 0
