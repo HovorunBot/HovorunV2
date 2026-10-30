@@ -73,6 +73,7 @@ dev = [
     "pytest-recording",
     "ruff",
     "ty",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.ruff]
@@ -121,6 +122,7 @@ max-bool-expr = 4
 "tests/*" = ["FBT", "PLR2004"]
 
 [tool.pytest.ini_options]
+addopts = "-n auto"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

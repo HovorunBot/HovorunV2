@@ -1,13 +1,15 @@
 """Shared test configuration and fixtures."""
 
+import os
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import redis
 from aiogram.types import Chat, Message, User
 from dishka import AsyncContainer, Scope, make_async_container, provide
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
@@ -65,6 +67,30 @@ def create_mock_message(text: str | None, *, is_bot: bool = False, chat_id: int 
     message.delete = AsyncMock()
     message.__class__ = Message
     return message
+
+
+@pytest.fixture(autouse=True, scope="session")
+def configure_worker_valkey(request: pytest.FixtureRequest) -> Generator[None]:
+    """Isolate real Valkey storage per parallel test worker."""
+    worker_id = getattr(request.config, "workerinput", {}).get("workerid", "master")
+    if worker_id.startswith("gw"):
+        db_num = int(worker_id[2:]) % 16
+        valkey_url = f"redis://localhost:6379/{db_num}"
+        os.environ["VALKEY_URL"] = valkey_url
+        client = redis.from_url(valkey_url)
+        try:
+            client.flushdb()
+        finally:
+            client.close()
+    yield
+    if worker_id.startswith("gw"):
+        valkey_url = os.environ.get("VALKEY_URL")
+        if valkey_url:
+            client = redis.from_url(valkey_url)
+            try:
+                client.flushdb()
+            finally:
+                client.close()
 
 
 @pytest.fixture
