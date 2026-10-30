@@ -14,13 +14,13 @@ from tests.conftest import authorize_private_media, create_private_media_message
 
 
 @pytest.fixture
-async def facebook_command(init_container: AsyncContainer) -> RichMediaCommand:
+async def facebook_command(test_container: AsyncContainer) -> RichMediaCommand:
     """Fixture to provide the Facebook RichMediaCommand instance."""
-    return await get_media_command(init_container, CommandName.FACEBOOK)
+    return await get_media_command(test_container, CommandName.FACEBOOK)
 
 
 @pytest.mark.vcr
-async def test_handle_facebook_photo_post(facebook_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_facebook_photo_post(facebook_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling a Facebook photo post using real extraction and VCR."""
     chat_id = 789
     url = "https://www.facebook.com/share/p/1B37pk4bUf/"
@@ -28,9 +28,9 @@ async def test_handle_facebook_photo_post(facebook_command: RichMediaCommand, in
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await facebook_command.handle(message, cast("Bot", bot))
 
@@ -43,7 +43,7 @@ async def test_handle_facebook_photo_post(facebook_command: RichMediaCommand, in
 
 @pytest.mark.vcr
 async def test_handle_facebook_video_fallback(
-    facebook_command: RichMediaCommand, init_container: AsyncContainer
+    facebook_command: RichMediaCommand, test_container: AsyncContainer
 ) -> None:
     """Test handling a Facebook video using real extraction and VCR (yt-dlp fallback)."""
     chat_id = 789
@@ -52,9 +52,9 @@ async def test_handle_facebook_video_fallback(
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await facebook_command.handle(message, cast("Bot", bot))
 

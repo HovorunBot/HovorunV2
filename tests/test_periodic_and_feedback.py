@@ -1,12 +1,11 @@
 """Tests for Feedback, ChatReminderService, and TaskQueueService components."""
 
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
-from aiogram import types
+from aiogram import Bot
+from aiogram.types import Message
 from dishka import AsyncContainer
 
-from hovorunv2.application.ports import ChatStore
+from hovorunv2.application.ports import CachePort, ChatStore
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import (
@@ -15,9 +14,7 @@ from hovorunv2.application.services.reminder_service import (
     scheduled_unauthorized_reminder_job,
 )
 from hovorunv2.domain.enums import CommandName, Role
-from hovorunv2.infrastructure.task_queue import TaskQueueService
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
-from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
 from tests.conftest import provision_role
 
 
@@ -29,11 +26,10 @@ async def owner_notifier(test_container: AsyncContainer) -> OwnerNotifier:
     return await test_container.get(OwnerNotifier)
 
 
-async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier) -> None:
+async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier, recording_bot: Bot) -> None:
     """Test feedback service properly formats and delivers feedback to all owners."""
     service = FeedbackService(owner_notifier)
-    bot = MagicMock()
-    bot.send_message = AsyncMock()
+    bot = recording_bot
 
     delivered = await service.submit_feedback(
         bot,
@@ -47,99 +43,83 @@ async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier)
     )
 
     assert delivered is True
-    assert bot.send_message.call_count == 2
-    called_owner_ids = [call.kwargs["chat_id"] for call in bot.send_message.call_args_list]
+    assert len(bot.session.calls) == 2
+    called_owner_ids = [call.chat_id for call in bot.session.calls]
     assert 111 in called_owner_ids
     assert 222 in called_owner_ids
 
-    sent_text = bot.send_message.call_args_list[0].kwargs["text"]
+    sent_text = bot.session.calls[0].text
     assert "Alice Smith" in sent_text
     assert "Developers Chat" in sent_text
     assert "Please add Bluesky media support!" in sent_text
 
 
-async def test_feedback_command_validation_and_delegation() -> None:
-    """Test feedback command requires message argument and delegates to service."""
-    feedback_service = MagicMock(spec=FeedbackService)
-    feedback_service.submit_feedback = AsyncMock(return_value=True)
-
-    command = FeedbackCommand(feedback_service)
+async def test_feedback_command_validation_and_delegation(
+    owner_notifier: OwnerNotifier,
+    recording_bot: Bot,
+) -> None:
+    """Validate input and deliver through the real feedback service to durable owners."""
+    command = FeedbackCommand(FeedbackService(owner_notifier))
     assert command.name == CommandName.FEEDBACK
     assert not command.policy.requires_approval
-
-    bot = MagicMock()
-
-    # 1. Empty message text
-    empty_msg = MagicMock(spec=types.Message, text="/feedback")
-    empty_msg.reply = AsyncMock()
-    await command.handle(empty_msg, bot)
-    empty_msg.reply.assert_called_once()
-    assert "How to send feedback" in empty_msg.reply.call_args[0][0]
-    feedback_service.submit_feedback.assert_not_called()
-
-    # 2. Valid message text
-    valid_msg = MagicMock(spec=types.Message, text="/feedback Hello world")
-    valid_msg.from_user = MagicMock(id=1, full_name="User", username="user")
-    valid_msg.chat = MagicMock(id=2, title="Chat", type="group")
-    valid_msg.reply = AsyncMock()
-
-    await command.handle(valid_msg, bot)
-    feedback_service.submit_feedback.assert_called_once_with(
-        bot,
-        user_id=1,
-        user_name="User",
-        username="user",
-        chat_id=2,
-        chat_title="Chat",
-        chat_type="group",
-        message_text="Hello world",
-    )
-    valid_msg.reply.assert_called_once()
-    assert "Thank you!" in valid_msg.reply.call_args[0][0]
+    empty_msg = Message.model_validate(
+        {
+            "message_id": 1,
+            "date": 1,
+            "chat": {"id": 2, "title": "Chat", "type": "group"},
+            "from_user": {"id": 1, "first_name": "User", "username": "user", "is_bot": False},
+            "text": "/feedback",
+        }
+    ).as_(recording_bot)
+    await command.handle(empty_msg, recording_bot)
+    assert len(recording_bot.session.calls) == 1
+    assert "How to send feedback" in recording_bot.session.calls[0].text
+    recording_bot.session.calls.clear()
+    valid_msg = empty_msg.model_copy(update={"text": "/feedback Hello world"}).as_(recording_bot)
+    await command.handle(valid_msg, recording_bot)
+    assert len(recording_bot.session.calls) == 3
+    deliveries = recording_bot.session.calls[:2]
+    assert {call.chat_id for call in deliveries} == {111, 222}
+    for call in deliveries:
+        assert "User" in call.text
+        assert "Chat" in call.text
+        assert "Hello world" in call.text
+    assert "Thank you!" in recording_bot.session.calls[-1].text
 
 
 async def test_reminder_service_send_prompt_cooldown(
-    owner_notifier: OwnerNotifier, test_container: AsyncContainer
+    owner_notifier: OwnerNotifier, test_container: AsyncContainer, recording_bot: Bot
 ) -> None:
     """Test ChatReminderService sets Valkey cooldown when sending unauthorized prompt."""
-    chat_service = MagicMock()
-    cache_service = MagicMock()
-    cache_service.get = AsyncMock(return_value=None)
-    cache_service.set = AsyncMock()
-    task_queue = MagicMock(spec=TaskQueueService)
+    reminder_service = await test_container.get(ChatReminderService)
+    cache_service = await test_container.get(CachePort)
+    await cache_service.delete("periodic:unauthorized_prompt:-100444")
     chats = await test_container.get(ChatStore)
     await chats.get_or_create_chat(-100444)
-    prompt_sender = TelegramUnauthorizedPromptSender(chats)
-
-    reminder_service = ChatReminderService(chat_service, cache_service, task_queue, owner_notifier, prompt_sender)
-
-    bot = MagicMock()
-    bot.send_message = AsyncMock()
+    bot = recording_bot
 
     sent = await reminder_service.send_unauthorized_prompt(bot, -100444, force=False)
     assert sent is True
-    bot.send_message.assert_called_once()
-    cache_service.set.assert_called_once_with("periodic:unauthorized_prompt:-100444", 1, expire=86400)
+    assert len(bot.session.calls) == 1
+    assert await cache_service.get("periodic:unauthorized_prompt:-100444") == 1
 
     # Calling again while in cooldown returns False and does not send
-    cache_service.get.return_value = 1
-    bot.send_message.reset_mock()
+    bot.session.calls.clear()
     sent_again = await reminder_service.send_unauthorized_prompt(bot, -100444, force=False)
     assert sent_again is False
-    bot.send_message.assert_not_called()
+    assert bot.session.calls == []
 
 
-async def test_scheduled_job_callbacks() -> None:
-    """Test the standalone worker callback functions."""
-    reminder_service = MagicMock(spec=ChatReminderService)
-    reminder_service.send_unauthorized_prompt = AsyncMock()
-    reminder_service.run_maintenance_cycle = AsyncMock()
-
-    bot = MagicMock()
-    ctx = {"reminder_service": reminder_service, "bot": bot}
-
+async def test_scheduled_job_callbacks(test_container: AsyncContainer, recording_bot: Bot) -> None:
+    """Run worker callbacks through real reminder service and check durable cooldown."""
+    reminder_service = await test_container.get(ChatReminderService)
+    chats = await test_container.get(ChatStore)
+    await chats.get_or_create_chat(-100999)
+    cache = await test_container.get(CachePort)
+    await cache.delete("periodic:unauthorized_prompt:-100999")
+    ctx = {"reminder_service": reminder_service, "bot": recording_bot}
     await scheduled_unauthorized_reminder_job(ctx, chat_id=-100999)
-    reminder_service.send_unauthorized_prompt.assert_called_once_with(bot, -100999, force=False)
-
+    assert await cache.get("periodic:unauthorized_prompt:-100999") == 1
+    assert len(recording_bot.session.calls) == 1
     await maintenance_cron_job(ctx)
-    reminder_service.run_maintenance_cycle.assert_called_once_with(bot)
+    assert len(recording_bot.session.calls) == 1

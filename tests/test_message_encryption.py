@@ -1,11 +1,16 @@
 """Tests for MessageService per-chat encryption."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from functools import partial
+from unittest.mock import patch
 
 import pytest
 from aiogram import types
+from cryptography.fernet import Fernet
+from dishka import AsyncContainer
+from redis.exceptions import ConnectionError as RedisConnectionError
 
+import hovorunv2.application.services.message_service as message_module
 from hovorunv2.application.crypto import (
     decrypt_payload,
     encrypt_payload,
@@ -13,166 +18,60 @@ from hovorunv2.application.crypto import (
     verify_encryption_key,
 )
 from hovorunv2.application.services.message_service import MessageService
+from hovorunv2.infrastructure.cache import CacheService
 
 
 @pytest.fixture
-def mock_cache_service() -> MagicMock:
-    """Create a mock cache service."""
-    service = MagicMock()
-    service.set = AsyncMock()
-    service.get_text = AsyncMock()
+async def encryption_service(test_container: AsyncContainer) -> MessageService:
+    """Use real PostgreSQL chat storage and worker-isolated Valkey."""
+    service = await test_container.get(MessageService)
+    await service.cache.delete("msg:123:456")
+    await service.cache.delete("msg:12345:67890")
     return service
 
 
-@pytest.fixture
-def mock_chat_service() -> MagicMock:
-    """Create a mock chat service."""
-    service = MagicMock()
-    service.get_or_create_chat = AsyncMock()
-    service.set_encryption_salt = AsyncMock()
-    service.update_chat = AsyncMock()
-    return service
+def encrypted_message(text: str, chat_id: int = 123, message_id: int = 456) -> types.Message:
+    """Build the minimum real Telegram message."""
+    return types.Message(message_id=message_id, date=123456789, chat=types.Chat(id=chat_id, type="private"), text=text)
 
 
-@pytest.fixture
-def mock_settings() -> MagicMock:
-    """Create mock settings."""
-    settings = MagicMock()
-    settings.cache_encryption_key = "test_encryption_key_at_least_32_chars_long_12345"
-    return settings
+async def test_cache_message_encryption(encryption_service: MessageService) -> None:
+    """Encryption generates and persists a salt before writing ciphertext."""
+    await encryption_service.cache_message(encrypted_message("hello"))
+    chat = await encryption_service.chat_service.get_chat(123)
+    assert chat is not None
+    assert chat.encryption_salt
+    payload = await encryption_service.cache.get_text("msg:123:456")
+    assert payload is not None
+    assert "hello" not in payload
 
 
-async def test_cache_message_encryption(
-    mock_cache_service: MagicMock,
-    mock_chat_service: MagicMock,
-    mock_settings: MagicMock,
-) -> None:
-    """Test that message is encrypted before caching."""
-    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
-
-    chat_id = 123
-    message_id = 456
-
-    # Create a real-ish message dict that satisfies pydantic
-    message_dict = {
-        "message_id": message_id,
-        "date": 123456789,
-        "chat": {"id": chat_id, "type": "private"},
-        "text": "hello",
-    }
-
-    message = MagicMock(spec=types.Message)
-    message.chat = MagicMock()
-    message.chat.id = chat_id
-    message.message_id = message_id
-    message.model_dump.return_value = message_dict
-
-    chat = MagicMock()
-    chat.encryption_salt = None
-    mock_chat_service.get_or_create_chat.return_value = chat
-
-    await service.cache_message(message)
-
-    # Verify salt was generated
-    mock_chat_service.set_encryption_salt.assert_called_once()
-    assert chat.encryption_salt is not None
-
-    # Verify encrypted data was sent to cache
-    mock_cache_service.set.assert_called_once()
-    key, payload = mock_cache_service.set.call_args[0]
-    assert key == f"msg:{chat_id}:{message_id}"
-    assert "hello" not in payload  # Should be encrypted
-
-
-async def test_get_message_decryption(
-    mock_cache_service: MagicMock,
-    mock_chat_service: MagicMock,
-    mock_settings: MagicMock,
-) -> None:
-    """Test that message is decrypted after retrieval."""
-    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
-
-    chat_id = 123
-    message_id = 456
-    original_data = {
-        "message_id": message_id,
-        "date": 123456789,
-        "chat": {"id": chat_id, "type": "private"},
-        "text": "secret",
-    }
-
-    chat = MagicMock()
-    chat.encryption_salt = "0123456789abcdef" * 2
-    mock_chat_service.get_or_create_chat.return_value = chat
-
-    message = MagicMock(spec=types.Message)
-    message.chat = MagicMock()
-    message.chat.id = chat_id
-    message.message_id = message_id
-    message.model_dump.return_value = original_data
-
-    await service.cache_message(message)
-    encrypted_payload = mock_cache_service.set.call_args[0][1]
-
-    mock_cache_service.get_text.return_value = encrypted_payload
-
-    retrieved = await service.get_message(chat_id, message_id)
-
+async def test_get_message_decryption(encryption_service: MessageService) -> None:
+    """Decrypt an actual stored ciphertext."""
+    await encryption_service.cache_message(encrypted_message("secret"))
+    retrieved = await encryption_service.get_message(123, 456)
     assert retrieved is not None
     assert retrieved.text == "secret"
 
 
-async def test_get_message_no_encryption_fails_when_enabled(
-    mock_cache_service: MagicMock,
-    mock_chat_service: MagicMock,
-    mock_settings: MagicMock,
-) -> None:
-    """Test that message retrieval fails if not encrypted when encryption is enabled."""
-    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
-
-    chat_id = 123
-    message_id = 456
-    original_data = {
-        "message_id": message_id,
-        "date": 123456789,
-        "chat": {"id": chat_id, "type": "private"},
-        "text": "plain",
-    }
-
-    chat = MagicMock()
-    chat.encryption_salt = "0123456789abcdef" * 2
-    mock_chat_service.get_or_create_chat.return_value = chat
-
-    # Store plain JSON in cache
-    mock_cache_service.get_text.return_value = json.dumps(original_data)
-
-    # Retrieval rejects plaintext instead of treating it as a missing entry.
+async def test_get_message_no_encryption_fails_when_enabled(encryption_service: MessageService) -> None:
+    """Reject plaintext stored in the real cache."""
+    await encryption_service.cache.set("msg:123:456", json.dumps(encrypted_message("plain").model_dump(mode="json")))
     with pytest.raises(ValueError, match="Cached message is unreadable"):
-        await service.get_message(chat_id, message_id)
+        await encryption_service.get_message(123, 456)
 
 
 async def test_fernet_derivation_cached_per_chat(
-    mock_cache_service: MagicMock,
-    mock_chat_service: MagicMock,
-    mock_settings: MagicMock,
+    encryption_service: MessageService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify PBKDF2 Fernet derivation is cached per chat in-memory."""
-    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
-    chat_id = 999
-    chat = MagicMock(encryption_salt="0123456789abcdef" * 2)
-    mock_chat_service.get_or_create_chat.return_value = chat
-
-    with patch("hovorunv2.application.services.message_service.get_fernet_for_chat") as mock_kdf:
-        mock_kdf.side_effect = lambda _key, _salt: MagicMock()
-
-        f1 = await service._get_fernet_for_chat(chat_id)  # noqa: SLF001
-        f2 = await service._get_fernet_for_chat(chat_id)  # noqa: SLF001
-        f3 = await service._get_fernet_for_chat(chat_id)  # noqa: SLF001
-
-        assert f1 is not None
-        assert f1 is f2
-        assert f2 is f3
-        assert mock_kdf.call_count == 1
+    """Reuse the same derived cryptographic object for a chat."""
+    calls: list[str] = []
+    monkeypatch.setattr(message_module, "get_fernet_for_chat", partial(_record_derivation, calls))
+    f1 = await encryption_service._get_fernet_for_chat(999)  # noqa: SLF001
+    f2 = await encryption_service._get_fernet_for_chat(999)  # noqa: SLF001
+    f3 = await encryption_service._get_fernet_for_chat(999)  # noqa: SLF001
+    assert f1 is f2 is f3
+    assert len(calls) == 1
 
 
 # ==============================================================================
@@ -233,77 +132,38 @@ def test_existing_passphrase_format_decrypts_synthetic_salt_fixture() -> None:
 # ==============================================================================
 
 
-async def test_cache_message_rejects_missing_encryption_key(
-    mock_cache_service: MagicMock,
-    mock_chat_service: MagicMock,
-) -> None:
-    """Verify caching fails safely when encryption key is not configured."""
-    settings = MagicMock()
-    settings.cache_encryption_key = None
-    service = MessageService(mock_cache_service, mock_chat_service, settings)
-
-    message = MagicMock(spec=types.Message)
-    message.chat = MagicMock(id=12345)
-    message.message_id = 67890
-    message.model_dump.return_value = {"text": "sensitive message"}
-
+async def test_cache_message_rejects_missing_encryption_key(encryption_service: MessageService) -> None:
+    """Missing encryption key never writes plaintext."""
+    encryption_service.settings.cache_encryption_key = None
     with pytest.raises(ValueError, match="encryption key is unavailable"):
-        await service.cache_message(message)
-
-    # Cache write must be skipped; never store plaintext
-    mock_cache_service.set.assert_not_called()
+        await encryption_service.cache_message(encrypted_message("sensitive message", 12345, 67890))
+    assert await encryption_service.cache.get_text("msg:12345:67890") is None
 
 
-async def test_get_message_rejects_missing_encryption_key(
-    mock_cache_service: MagicMock,
-    mock_chat_service: MagicMock,
-) -> None:
-    """Verify retrieval fails when encryption key is not configured."""
-    settings = MagicMock()
-    settings.cache_encryption_key = None
-    service = MessageService(mock_cache_service, mock_chat_service, settings)
-
-    mock_cache_service.get_text.return_value = "some_encrypted_or_plain_data"
-
+async def test_get_message_rejects_missing_encryption_key(encryption_service: MessageService) -> None:
+    """Missing key rejects an existing cache entry."""
+    encryption_service.settings.cache_encryption_key = None
+    await encryption_service.cache.set("msg:12345:67890", "some_encrypted_or_plain_data")
     with pytest.raises(ValueError, match="encryption key is unavailable"):
-        await service.get_message(12345, 67890)
+        await encryption_service.get_message(12345, 67890)
 
 
-async def test_get_message_rejects_corrupted_ciphertext(
-    mock_cache_service: MagicMock,
-    mock_chat_service: MagicMock,
-    mock_settings: MagicMock,
-) -> None:
-    """Verify corrupt ciphertext is rejected as unreadable."""
-    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
-    chat = MagicMock(encryption_salt="0123456789abcdef" * 2)
-    mock_chat_service.get_or_create_chat.return_value = chat
-
-    mock_cache_service.get_text.return_value = "gAAAAABcorrupt_not_valid_fernet_data_here"
-
+async def test_get_message_rejects_corrupted_ciphertext(encryption_service: MessageService) -> None:
+    """Corrupt ciphertext is unreadable."""
+    await encryption_service.cache.set("msg:123:456", "gAAAAABcorrupt_not_valid_fernet_data_here")
     with pytest.raises(ValueError, match="Cached message is unreadable"):
-        await service.get_message(123, 456)
+        await encryption_service.get_message(123, 456)
 
 
-async def test_cache_message_propagates_storage_failure(
-    mock_cache_service: MagicMock,
-    mock_chat_service: MagicMock,
-    mock_settings: MagicMock,
-) -> None:
-    """Verify the required storage operation propagates a Valkey failure."""
-    service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
-    chat = MagicMock(encryption_salt="0123456789abcdef" * 2)
-    mock_chat_service.get_or_create_chat.return_value = chat
-    mock_cache_service.set.side_effect = ConnectionError("Valkey connection refused")
-
-    message = MagicMock(spec=types.Message)
-    message.chat = MagicMock(id=123)
-    message.message_id = 456
-    message.model_dump.return_value = {"text": "hello"}
-
-    # Should not raise exception
-    with pytest.raises(ConnectionError):
-        await service.cache_message(message)
+async def test_cache_message_propagates_storage_failure(encryption_service: MessageService) -> None:
+    """An unreachable real Valkey endpoint propagates its connection failure."""
+    cache = CacheService("redis://127.0.0.1:1/1")
+    service = MessageService(cache, encryption_service.chat_service, encryption_service.settings)
+    try:
+        with pytest.raises(RedisConnectionError):
+            await service.cache_message(encrypted_message("hello"))
+    finally:
+        await cache.close()
 
 
 def test_encryption_self_check_suppresses_underlying_key_error() -> None:
@@ -312,3 +172,9 @@ def test_encryption_self_check_suppresses_underlying_key_error() -> None:
         verify_encryption_key("synthetic-\ud800")
     assert error.value.__cause__ is None
     assert error.value.__suppress_context__
+
+
+def _record_derivation(calls: list[str], key: str, salt: str) -> Fernet:
+    """Count cryptographic derivations while executing the real implementation."""
+    calls.append(salt)
+    return get_fernet_for_chat(key, salt)

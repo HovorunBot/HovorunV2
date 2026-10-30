@@ -1,13 +1,14 @@
 """Tests for Threads metrics extraction logic."""
 
-from unittest.mock import AsyncMock, MagicMock
+import aiohttp
 
 from hovorunv2.application.clients.threads import ThreadsService
+from hovorunv2.infrastructure.browser import BrowserService
 
 
 async def test_extract_footer_from_soup() -> None:
     """Test extracting footer statistics from Threads nested JSON payload."""
-    browser_service = MagicMock()
+    browser_service = BrowserService(max_tabs=1, idle_timeout=1)
 
     post_id = "DX9HWZiiE2Q"
     url = f"https://www.threads.net/@user/post/{post_id}"
@@ -39,10 +40,9 @@ async def test_extract_footer_from_soup() -> None:
     </body>
     </html>
     """
-    browser_service.get_content = AsyncMock(return_value=html_content)
-    service = ThreadsService(MagicMock(), browser_service)
-
-    payload = await service.extract_fallback(url)
+    async with aiohttp.ClientSession() as http:
+        service = ThreadsService(http, browser_service)
+        payload = service._parse_browser_post(html_content, url, "net", post_id)  # noqa: SLF001
 
     assert payload is not None
     assert "💬 77" in payload.footer_text
@@ -53,7 +53,7 @@ async def test_extract_footer_from_soup() -> None:
 async def test_extract_payload_with_metrics() -> None:
     """Test full payload extraction including metrics for Threads."""
     # Mock dependencies
-    browser_service = MagicMock()
+    browser_service = BrowserService(max_tabs=1, idle_timeout=1)
 
     post_id = "DX9HWZiiE2Q"
     url = f"https://www.threads.net/@user/post/{post_id}"
@@ -81,10 +81,9 @@ async def test_extract_payload_with_metrics() -> None:
     </html>
     """
 
-    browser_service.get_content = AsyncMock(return_value=html_content)
-    service = ThreadsService(MagicMock(), browser_service)
-
-    payload = await service.extract_fallback(url)
+    async with aiohttp.ClientSession() as http:
+        service = ThreadsService(http, browser_service)
+        payload = service._parse_browser_post(html_content, url, "net", post_id)  # noqa: SLF001
 
     assert payload is not None
     assert "💬 56" in payload.footer_text

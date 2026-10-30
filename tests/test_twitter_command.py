@@ -19,13 +19,13 @@ from tests.conftest import authorize_private_media, create_private_media_message
 
 
 @pytest.fixture
-async def twitter_command(init_container: AsyncContainer) -> RichMediaCommand:
+async def twitter_command(test_container: AsyncContainer) -> RichMediaCommand:
     """Fixture to provide the Twitter RichMediaCommand instance."""
-    return await get_media_command(init_container, CommandName.TWITTER)
+    return await get_media_command(test_container, CommandName.TWITTER)
 
 
 @pytest.mark.vcr
-async def test_handle_twitter_post(twitter_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_twitter_post(twitter_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling a real Twitter post using VCR."""
     chat_id = 456
     url = "https://x.com/elonmusk/status/2053586034743705773"
@@ -33,9 +33,9 @@ async def test_handle_twitter_post(twitter_command: RichMediaCommand, init_conta
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await twitter_command.handle(message, cast("Bot", bot))
 
@@ -48,17 +48,17 @@ async def test_handle_twitter_post(twitter_command: RichMediaCommand, init_conta
 
 
 async def test_twitter_split_video_vs_post_toggles(
-    twitter_command: RichMediaCommand, init_container: AsyncContainer
+    twitter_command: RichMediaCommand, test_container: AsyncContainer
 ) -> None:
     """Test that disabling twitter_post skips text/image tweets while keeping video tweets enabled."""
     chat_id = 789
     text_tweet_url = "https://x.com/user/status/1111111111"
     video_tweet_url = "https://x.com/user/status/2222222222"
 
-    chat_status_service = await init_container.get(ChatStatusService)
-    command_service = await init_container.get(CommandService)
+    chat_status_service = await test_container.get(ChatStatusService)
+    command_service = await test_container.get(CommandService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
     await command_service.enable_command(chat_id, CommandName.TWITTER)
     await command_service.disable_command(chat_id, CommandName.TWITTER_POST)
 

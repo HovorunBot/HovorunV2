@@ -20,12 +20,12 @@ from tests.conftest import authorize_private_media, create_private_media_message
 
 
 @pytest.fixture
-async def youtube_command(init_container: AsyncContainer) -> RichMediaCommand:
+async def youtube_command(test_container: AsyncContainer) -> RichMediaCommand:
     """Fixture to provide the YouTube RichMediaCommand instance."""
-    return await get_media_command(init_container, CommandName.YOUTUBE)
+    return await get_media_command(test_container, CommandName.YOUTUBE)
 
 
-async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test extracting and sending a YouTube Community image+text post."""
     chat_id = 456
     url = "https://www.youtube.com/post/Ugkx1234567890abcdef"
@@ -66,9 +66,9 @@ async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, 
             resp.json = AsyncMock(return_value=[[[""]], None, "en"])
         yield resp
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
@@ -88,16 +88,16 @@ async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, 
 
 
 async def test_youtube_split_video_vs_post_toggles(
-    youtube_command: RichMediaCommand, init_container: AsyncContainer
+    youtube_command: RichMediaCommand, test_container: AsyncContainer
 ) -> None:
     """Test that YouTube video vs community post toggles filter independently."""
     chat_id = 654
     video_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
-    chat_status_service = await init_container.get(ChatStatusService)
-    command_service = await init_container.get(CommandService)
+    chat_status_service = await test_container.get(ChatStatusService)
+    command_service = await test_container.get(CommandService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
     await command_service.enable_command(chat_id, CommandName.YOUTUBE)
     await command_service.disable_command(chat_id, CommandName.YOUTUBE_VIDEO)
 
@@ -132,7 +132,7 @@ async def test_youtube_split_video_vs_post_toggles(
 
 
 async def test_handle_youtube_community_post_canonicalization(
-    youtube_command: RichMediaCommand, init_container: AsyncContainer
+    youtube_command: RichMediaCommand, test_container: AsyncContainer
 ) -> None:
     """Test that channel community URLs canonicalize to post URL."""
     chat_id = 789
@@ -169,9 +169,9 @@ async def test_handle_youtube_community_post_canonicalization(
             resp.json = AsyncMock(return_value=[[[""]], None, "en"])
         yield resp
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
@@ -185,15 +185,15 @@ async def test_handle_youtube_community_post_canonicalization(
 
 
 async def test_youtube_community_post_skips_ytdlp(
-    youtube_command: RichMediaCommand, init_container: AsyncContainer
+    youtube_command: RichMediaCommand, test_container: AsyncContainer
 ) -> None:
     """Test that failed community post extraction skips yt-dlp fallback."""
     chat_id = 999
     url = "https://www.youtube.com/post/UgkxInvalidPost12345"
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     @asynccontextmanager
     async def mock_get(_req_url: str, **_kwargs: Any) -> AsyncGenerator[MagicMock]:

@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 import redis
+from aiogram import Bot
 from dishka import AsyncContainer, Scope, make_async_container, provide
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -34,7 +35,8 @@ from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.utils.browser_cache import CACHE_EXPIRY_SECONDS, TestBrowserService
 from tests.utils.postgres import DEFAULT_TEST_DATABASE_URL, postgres_database
-from tests.utils.telegram import create_mock_message, create_private_media_message
+from tests.utils.telegram import BOT_CREDENTIAL, create_mock_message, create_private_media_message
+from tests.utils.telegram.session import RecordingSession
 
 __all__ = [
     "DEFAULT_TEST_VALKEY_URL",
@@ -253,12 +255,6 @@ async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[AsyncContai
     await container.close()
 
 
-@pytest.fixture
-async def init_container(test_container: AsyncContainer) -> AsyncContainer:
-    """Alias for test_container to keep existing tests working."""
-    return test_container
-
-
 @pytest.fixture(scope="module")
 def vcr_config() -> dict[str, Any]:
     """Configure pytest-recording to record once when cassette is missing."""
@@ -300,3 +296,10 @@ async def authorize_private_media(container: AsyncContainer, telegram_id: int) -
     await users.ingest_user(telegram_id)
     trust = await container.get(TrustService)
     await trust.set_trust(str(telegram_id), is_trusted=True, actor=ActorContext.cli())
+
+
+@pytest.fixture
+async def recording_bot() -> AsyncGenerator[Bot]:
+    """Use real Telegram models with a recording external transport."""
+    async with Bot(BOT_CREDENTIAL, session=RecordingSession()) as bot:
+        yield bot

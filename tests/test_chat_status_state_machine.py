@@ -35,28 +35,28 @@ def bot_event(chat_id: int, *, present: bool, date: datetime) -> ChatMemberUpdat
     )
 
 
-async def test_state_machine_flow(init_container: AsyncContainer) -> None:
+async def test_state_machine_flow(test_container: AsyncContainer) -> None:
     """Joining, requests, departure, private approval and restrictions preserve durable state."""
     chat_id = -(secrets.randbelow(2**40) + 1)
     cooldown_key = f"periodic:unauthorized_prompt:{chat_id}"
-    settings = await init_container.get(Settings)
+    settings = await test_container.get(Settings)
     cache = CacheService(settings.valkey_url)
-    chats = await init_container.get(ChatStore)
-    users = await init_container.get(UserStore)
+    chats = await test_container.get(ChatStore)
+    users = await test_container.get(UserStore)
     await users.ingest_user(ACTOR)
-    await provision_role(init_container, ADMIN)
-    statuses = await init_container.get(ChatStatusService)
+    await provision_role(test_container, ADMIN)
+    statuses = await test_container.get(ChatStatusService)
     reminder = ChatReminderService(
         chats,
         cache,
-        await init_container.get(TaskQueuePort),
-        await init_container.get(OwnerNotifier),
+        await test_container.get(TaskQueuePort),
+        await test_container.get(OwnerNotifier),
         TelegramUnauthorizedPromptSender(chats),
     )
-    join = BotJoinHandler(statuses, reminder, await init_container.get(MembershipEventHandler))
+    join = BotJoinHandler(statuses, reminder, await test_container.get(MembershipEventHandler))
     now = datetime.now(UTC)
     try:
-        async with activation_runtime(init_container) as runtime:
+        async with activation_runtime(test_container) as runtime:
             with aioresponses() as http:
                 stub_telegram(http)
                 await join.handle_my_chat_member_update(

@@ -6,10 +6,10 @@ from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.infrastructure.config import Settings
 
 
-async def test_toggling_ignored_langs_does_not_mutate_settings(init_container: AsyncContainer) -> None:
+async def test_toggling_ignored_langs_does_not_mutate_settings(test_container: AsyncContainer) -> None:
     """Verify get_chat_settings returns a copy and does not mutate global default settings."""
-    language_service = await init_container.get(LanguageService)
-    settings = await init_container.get(Settings)
+    language_service = await test_container.get(LanguageService)
+    settings = await test_container.get(Settings)
 
     original_defaults = list(settings.translation_ignored_langs)
 
@@ -27,9 +27,9 @@ async def test_toggling_ignored_langs_does_not_mutate_settings(init_container: A
     assert settings.translation_ignored_langs == original_defaults
 
 
-async def test_update_and_get_chat_settings(init_container: AsyncContainer) -> None:
+async def test_update_and_get_chat_settings(test_container: AsyncContainer) -> None:
     """Verify updating and retrieving chat-specific language settings."""
-    language_service = await init_container.get(LanguageService)
+    language_service = await test_container.get(LanguageService)
 
     chat_id = 555123
     await language_service.update_settings(chat_id=chat_id, target_lang="es", ignored_langs=["es", "it"])

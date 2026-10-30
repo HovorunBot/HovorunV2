@@ -21,12 +21,12 @@ EXPECTED_GALLERY_COUNT: int = 2
 
 
 @pytest.fixture
-async def reddit_command(init_container: AsyncContainer) -> RichMediaCommand:
+async def reddit_command(test_container: AsyncContainer) -> RichMediaCommand:
     """Fixture to provide the Reddit RichMediaCommand instance."""
-    return await get_media_command(init_container, CommandName.REDDIT)
+    return await get_media_command(test_container, CommandName.REDDIT)
 
 
-async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling a Reddit multi-image gallery post."""
     chat_id = 456
     url = "https://www.reddit.com/r/pics/comments/1abcde/gallery_test/"
@@ -53,9 +53,9 @@ async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, init
             resp.json = AsyncMock(return_value=[[[""]], None, "en"])
         yield resp
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     message = create_private_media_message(url, chat_id=chat_id)
     bot = MagicMock(spec=Bot)
@@ -74,7 +74,7 @@ async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, init
 
 
 async def test_handle_reddit_video_post_respects_split_toggle(
-    reddit_command: RichMediaCommand, init_container: AsyncContainer
+    reddit_command: RichMediaCommand, test_container: AsyncContainer
 ) -> None:
     """Test that Reddit video post is skipped when reddit_video is disabled."""
     chat_id = 987
@@ -102,10 +102,10 @@ async def test_handle_reddit_video_post_respects_split_toggle(
             resp.json = AsyncMock(return_value=[[[""]], None, "en"])
         yield resp
 
-    chat_status_service = await init_container.get(ChatStatusService)
-    command_service = await init_container.get(CommandService)
+    chat_status_service = await test_container.get(ChatStatusService)
+    command_service = await test_container.get(CommandService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
     await command_service.enable_command(chat_id, CommandName.REDDIT)
     await command_service.disable_command(chat_id, CommandName.REDDIT_VIDEO)
 
@@ -127,7 +127,7 @@ async def test_handle_reddit_video_post_respects_split_toggle(
 
 
 @pytest.mark.vcr
-async def test_handle_reddit_post_vcr(reddit_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_reddit_post_vcr(reddit_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling a real Reddit post via vxReddit using VCR."""
     chat_id = 456
     url = "https://www.reddit.com/r/DotA2/comments/1xbq3id/please_bring_back_blood_mist_aghs_for_seeker_and/"
@@ -135,9 +135,9 @@ async def test_handle_reddit_post_vcr(reddit_command: RichMediaCommand, init_con
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await reddit_command.handle(message, cast("Bot", bot))
 

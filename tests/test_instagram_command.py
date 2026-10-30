@@ -16,14 +16,14 @@ from tests.utils.sync_http import HTTPFixture, HTTPReply
 
 
 @pytest.fixture
-async def instagram_command(init_container: AsyncContainer) -> RichMediaCommand:
+async def instagram_command(test_container: AsyncContainer) -> RichMediaCommand:
     """Fixture to provide the Instagram RichMediaCommand instance."""
-    return await get_media_command(init_container, CommandName.INSTAGRAM)
+    return await get_media_command(test_container, CommandName.INSTAGRAM)
 
 
 @pytest.mark.slow
 @pytest.mark.vcr
-async def test_handle_instagram_post(instagram_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_instagram_post(instagram_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling an Instagram post using real extraction and VCR."""
     chat_id = 789
     url = "https://www.instagram.com/p/DYPIeHDoZ-w/"
@@ -31,9 +31,9 @@ async def test_handle_instagram_post(instagram_command: RichMediaCommand, init_c
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await instagram_command.handle(message, cast("Bot", bot))
 
@@ -46,7 +46,7 @@ async def test_handle_instagram_post(instagram_command: RichMediaCommand, init_c
 
 
 @pytest.mark.vcr
-async def test_handle_instagram_reel(instagram_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_instagram_reel(instagram_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling an Instagram reel using real extraction and VCR."""
     chat_id = 789
     url = "https://www.instagram.com/reels/DVMKxZHggx7/"
@@ -54,9 +54,9 @@ async def test_handle_instagram_reel(instagram_command: RichMediaCommand, init_c
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await instagram_command.handle(message, cast("Bot", bot))
 
@@ -69,9 +69,9 @@ async def test_handle_instagram_reel(instagram_command: RichMediaCommand, init_c
 
 @pytest.mark.browser
 @pytest.mark.slow
-async def test_instagram_browser_fallback_uses_real_dom_and_media(init_container: AsyncContainer) -> None:
+async def test_instagram_browser_fallback_uses_real_dom_and_media(test_container: AsyncContainer) -> None:
     """Real browser extraction downloads loopback media without replacing an internal strategy/service."""
-    service = await init_container.get(InstagramService)
+    service = await test_container.get(InstagramService)
     with HTTPFixture({"/image.jpg": HTTPReply(b"synthetic image")}) as media:
         document = (
             '<html><head><meta property="og:title" content="Synthetic fallback">'

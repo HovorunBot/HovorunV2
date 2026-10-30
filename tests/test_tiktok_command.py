@@ -14,13 +14,13 @@ from tests.conftest import authorize_private_media, create_private_media_message
 
 
 @pytest.fixture
-async def tiktok_command(init_container: AsyncContainer) -> RichMediaCommand:
+async def tiktok_command(test_container: AsyncContainer) -> RichMediaCommand:
     """Fixture to provide the TikTok RichMediaCommand instance."""
-    return await get_media_command(init_container, CommandName.TIKTOK)
+    return await get_media_command(test_container, CommandName.TIKTOK)
 
 
 @pytest.mark.vcr
-async def test_handle_tiktok_video(tiktok_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_tiktok_video(tiktok_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling a TikTok video link using real extraction and VCR."""
     chat_id = 456
     url = "https://www.tiktok.com/@fueltothe_max/video/7397394517311212818"
@@ -28,9 +28,9 @@ async def test_handle_tiktok_video(tiktok_command: RichMediaCommand, init_contai
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await tiktok_command.handle(message, cast("Bot", bot))
 

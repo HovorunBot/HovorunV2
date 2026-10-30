@@ -1,14 +1,12 @@
 """Tests for unified access control and permission rules."""
 
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
 
 import pytest
 from aiogram import Bot
 from aiogram.enums import ChatType
 from aiogram.types import (
     Chat,
-    ChatMemberAdministrator,
-    ChatMemberMember,
     ChatMemberUpdated,
     Message,
     User,
@@ -36,32 +34,43 @@ from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import provision_role, verify_group_admins
 
 
-def create_mock_message(chat_id: int, user_id: int, chat_type: ChatType = ChatType.SUPERGROUP) -> MagicMock:
-    """Create a mock Telegram message."""
-    message = MagicMock(spec=Message)
-    message.from_user = MagicMock(spec=User)
-    message.from_user.id = user_id
-    message.from_user.is_bot = False
-    message.sender_chat = None
-    message.from_user.full_name = "Test User"
-    message.chat = MagicMock(spec=Chat)
-    message.chat.id = chat_id
-    message.chat.type = chat_type
-    message.answer = AsyncMock()
-    # Ensure isinstance(message, Message) returns True
-    message.__class__ = Message
-    return message
+def create_message(chat_id: int, user_id: int, chat_type: ChatType = ChatType.SUPERGROUP) -> Message:
+    """Build a real synthetic Telegram message."""
+    return Message(
+        message_id=1,
+        date=1,
+        chat=Chat(id=chat_id, type=chat_type),
+        from_user=User(id=user_id, is_bot=False, first_name="Test User"),
+    )
 
 
-def create_mock_event(chat_id: int, status: str) -> MagicMock:
-    """Create mock ChatMemberUpdated event."""
-    event = MagicMock(spec=ChatMemberUpdated)
-    event.chat = MagicMock(spec=Chat)
-    event.chat.id = chat_id
-    event.chat.type = "supergroup"
-    event.new_chat_member = MagicMock()
-    event.new_chat_member.status = status
-    return event
+def create_member_event(chat_id: int, status: str) -> ChatMemberUpdated:
+    """Build a real Telegram membership update."""
+    return ChatMemberUpdated.model_validate(
+        {
+            "chat": {"id": chat_id, "type": "supergroup"},
+            "from_user": {"id": 1, "is_bot": False, "first_name": "Actor"},
+            "date": 1,
+            "old_chat_member": {"status": "member", "user": {"id": 2, "is_bot": True, "first_name": "Bot"}},
+            "new_chat_member": {
+                "status": status,
+                "until_date": 0,
+                "user": {"id": 2, "is_bot": True, "first_name": "Bot"},
+            },
+        }
+    )
+
+
+class RecordedHandler:
+    """Record middleware dispatch without replacing an internal service."""
+
+    def __init__(self) -> None:
+        self.calls: list[object] = []
+
+    async def __call__(self, event: object, data: dict[str, object]) -> str:
+        """Record successful dispatch."""
+        self.calls.append(event)
+        return "handled"
 
 
 async def get_persisted_chat_and_commands(
@@ -80,7 +89,7 @@ async def get_persisted_chat_and_commands(
         return status, commands
 
 
-async def test_access_middleware_private_chat_admin(test_container: AsyncContainer) -> None:
+async def test_access_middleware_private_chat_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test that admins have access in private chats."""
     access_service = await test_container.get(AccessService)
     middleware = AccessMiddleware(
@@ -88,42 +97,42 @@ async def test_access_middleware_private_chat_admin(test_container: AsyncContain
     )
 
     admin_id = await provision_role(test_container)
-    message = create_mock_message(admin_id, admin_id, ChatType.PRIVATE)
+    message = create_message(admin_id, admin_id, ChatType.PRIVATE)
 
-    handler = AsyncMock()
+    handler = RecordedHandler()
     # Any policy
     policy = CommandPolicy()
-    data = {"handler": MagicMock(), "bot": MagicMock(), "policy": policy}
+    data = {"handler": SimpleNamespace(flags={"policy": policy}), "bot": recording_bot, "policy": policy}
     data["handler"].flags = {"policy": policy}
 
     result = await middleware(handler, message, data)
     assert result is not None
-    handler.assert_called_once()
+    assert handler.calls == [message]
 
 
-async def test_access_middleware_private_chat_non_admin(test_container: AsyncContainer) -> None:
+async def test_access_middleware_private_chat_non_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test that non-admins are blocked in private chats and receive help text."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
     middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
 
     user_id = 999
-    message = create_mock_message(user_id, user_id, ChatType.PRIVATE)
+    message = create_message(user_id, user_id, ChatType.PRIVATE).as_(recording_bot)
 
-    handler = AsyncMock()
+    handler = RecordedHandler()
     policy = CommandPolicy()
-    data = {"handler": MagicMock(), "bot": MagicMock(), "policy": policy}
+    data = {"handler": SimpleNamespace(flags={"policy": policy}), "bot": recording_bot, "policy": policy}
     data["handler"].flags = {"policy": policy}
 
     result = await middleware(handler, message, data)
     assert result is None
-    handler.assert_not_called()
-    message.answer.assert_called_once()
-    assert "Hovorun" in message.answer.call_args[0][0]
-    assert settings.project_description in message.answer.call_args[0][0]
+    assert handler.calls == []
+    assert len(recording_bot.session.calls) == 1
+    assert "Hovorun" in recording_bot.session.calls[0].text
+    assert settings.project_description in recording_bot.session.calls[0].text
 
 
-async def test_access_middleware_allowed_group(test_container: AsyncContainer) -> None:
+async def test_access_middleware_allowed_group(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test that allowed interaction in group proceeds to handler."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
@@ -131,21 +140,21 @@ async def test_access_middleware_allowed_group(test_container: AsyncContainer) -
 
     user_id = 999
     chat_id = 123
-    message = create_mock_message(chat_id, user_id, ChatType.SUPERGROUP)
+    message = create_message(chat_id, user_id, ChatType.SUPERGROUP)
 
     # Policy that allows everything
     policy = CommandPolicy(requires_approval=False, is_toggleable=False)
 
-    handler = AsyncMock()
-    data = {"handler": MagicMock(), "bot": MagicMock(), "policy": policy}
+    handler = RecordedHandler()
+    data = {"handler": SimpleNamespace(flags={"policy": policy}), "bot": recording_bot, "policy": policy}
     data["handler"].flags = {"policy": policy}
 
     result = await middleware(handler, message, data)
     assert result is not None
-    handler.assert_called_once()
+    assert handler.calls == [message]
 
 
-async def test_access_middleware_denied_group(test_container: AsyncContainer) -> None:
+async def test_access_middleware_denied_group(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test that denied interaction in group is blocked."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
@@ -153,21 +162,21 @@ async def test_access_middleware_denied_group(test_container: AsyncContainer) ->
 
     user_id = 999
     chat_id = 123
-    message = create_mock_message(chat_id, user_id, ChatType.SUPERGROUP)
+    message = create_message(chat_id, user_id, ChatType.SUPERGROUP)
 
     # Policy that requires access (not approved by default)
     policy = CommandPolicy(requires_approval=True)
 
-    handler = AsyncMock()
-    data = {"handler": MagicMock(), "bot": MagicMock(), "policy": policy}
+    handler = RecordedHandler()
+    data = {"handler": SimpleNamespace(flags={"policy": policy}), "bot": recording_bot, "policy": policy}
     data["handler"].flags = {"policy": policy}
 
     result = await middleware(handler, message, data)
     assert result is None
-    handler.assert_not_called()
+    assert handler.calls == []
 
 
-async def test_policy_bypass_for_global_admin(test_container: AsyncContainer) -> None:
+async def test_policy_bypass_for_global_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test that global admins bypass all policy restrictions."""
     access_service = await test_container.get(AccessService)
 
@@ -181,7 +190,7 @@ async def test_policy_bypass_for_global_admin(test_container: AsyncContainer) ->
     assert await access_service.is_allowed(admin_id, chat_id, policy) is True
 
 
-async def test_policy_requires_admin(test_container: AsyncContainer) -> None:
+async def test_policy_requires_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test policy with requires_admin=True."""
     access_service = await test_container.get(AccessService)
 
@@ -195,7 +204,7 @@ async def test_policy_requires_admin(test_container: AsyncContainer) -> None:
     assert await access_service.is_allowed(normal_user_id, chat_id, policy) is False
 
 
-async def test_policy_requires_access(test_container: AsyncContainer) -> None:
+async def test_policy_requires_access(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test policy with requires_approval=True."""
     access_service = await test_container.get(AccessService)
     chat_status_service = await test_container.get(ChatStatusService)
@@ -213,30 +222,42 @@ async def test_policy_requires_access(test_container: AsyncContainer) -> None:
     assert await access_service.is_allowed(user_id, non_approved_chat_id, policy) is False
 
 
-async def test_policy_requires_group_admin(test_container: AsyncContainer) -> None:
+async def test_policy_requires_group_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test policy with requires_group_admin=True."""
     access_service = await test_container.get(AccessService)
-    bot = AsyncMock(spec=Bot)
-
+    bot = recording_bot
     policy = CommandPolicy(requires_group_admin=True, requires_approval=False)
-
     chat_id = 123
     admin_user_id = 111
     member_user_id = 222
-
-    # Mock bot.get_chat_member
-    async def get_chat_member(_c_id: int, u_id: int) -> MagicMock:
-        if u_id == admin_user_id:
-            return MagicMock(spec=ChatMemberAdministrator, status="administrator")
-        return MagicMock(spec=ChatMemberMember, status="member")
-
-    bot.get_chat_member.side_effect = get_chat_member
+    bot.session.responses.extend(
+        [
+            {
+                "status": "administrator",
+                "user": {"id": admin_user_id, "is_bot": False, "first_name": "Admin"},
+                "can_be_edited": False,
+                "is_anonymous": False,
+                "can_manage_chat": True,
+                "can_delete_messages": True,
+                "can_manage_video_chats": True,
+                "can_restrict_members": True,
+                "can_promote_members": False,
+                "can_change_info": True,
+                "can_invite_users": True,
+                "can_post_stories": True,
+                "can_edit_stories": True,
+                "can_delete_stories": True,
+                "can_send_welcome_messages": True,
+            },
+            {"status": "member", "user": {"id": member_user_id, "is_bot": False, "first_name": "Member"}},
+        ]
+    )
 
     assert await access_service.is_allowed(admin_user_id, chat_id, policy, bot=bot) is True
     assert await access_service.is_allowed(member_user_id, chat_id, policy, bot=bot) is False
 
 
-async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
+async def test_policy_is_toggleable(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test policy with is_toggleable=True."""
     access_service = await test_container.get(AccessService)
     command_service = await test_container.get(CommandService)
@@ -271,7 +292,7 @@ async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
     assert await access_service.is_allowed(user_id, chat_id, policy, command_name=command_name) is False
 
 
-async def test_chat_status_service_approve(test_container: AsyncContainer) -> None:
+async def test_chat_status_service_approve(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test that chat_status_service.approve sets APPROVED and enables default commands."""
     chat_status_service = await test_container.get(ChatStatusService)
     command_service = await test_container.get(CommandService)
@@ -286,7 +307,7 @@ async def test_chat_status_service_approve(test_container: AsyncContainer) -> No
     assert CommandName.TIKTOK in allowed
 
 
-async def test_access_service_is_owner(test_container: AsyncContainer) -> None:
+async def test_access_service_is_owner(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test is_owner check."""
     access_service = await test_container.get(AccessService)
 
@@ -297,7 +318,7 @@ async def test_access_service_is_owner(test_container: AsyncContainer) -> None:
     assert await access_service.is_owner(non_owner_id) is False
 
 
-async def test_access_service_is_admin(test_container: AsyncContainer) -> None:
+async def test_access_service_is_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test is_admin check."""
     access_service = await test_container.get(AccessService)
 
@@ -310,7 +331,7 @@ async def test_access_service_is_admin(test_container: AsyncContainer) -> None:
     assert await access_service.is_admin(non_admin_id) is False
 
 
-async def test_command_service_is_capture_allowed(test_container: AsyncContainer) -> None:
+async def test_command_service_is_capture_allowed(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Test is_capture_allowed for video and post commands."""
     command_service = await test_container.get(CommandService)
     chat_id = 998877
@@ -335,7 +356,7 @@ async def test_command_service_is_capture_allowed(test_container: AsyncContainer
 # ==============================================================================
 
 
-async def test_characterize_legacy_group_status_matrix(test_container: AsyncContainer) -> None:
+async def test_characterize_legacy_group_status_matrix(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Characterize legacy permission evaluation across all group statuses in real SQLite.
 
     Legacy Matrix:
@@ -403,7 +424,9 @@ async def test_characterize_legacy_group_status_matrix(test_container: AsyncCont
     assert await access_service.is_allowed(admin_id, unrecorded_chat_id, policy_requires_approval) is True
 
 
-async def test_characterize_legacy_empty_command_set_capture(test_container: AsyncContainer) -> None:
+async def test_characterize_legacy_empty_command_set_capture(
+    test_container: AsyncContainer, recording_bot: Bot
+) -> None:
     """Characterize legacy capture and command check behavior for an empty command set.
 
     Legacy Behavior / Quirk:
@@ -459,7 +482,9 @@ async def test_characterize_legacy_empty_command_set_capture(test_container: Asy
     assert persisted_commands_after == set()
 
 
-async def test_characterize_legacy_partially_enabled_command_set(test_container: AsyncContainer) -> None:
+async def test_characterize_legacy_partially_enabled_command_set(
+    test_container: AsyncContainer, recording_bot: Bot
+) -> None:
     """Characterize parent provider checks and capture when command set is partially enabled.
 
     Legacy Behavior:
@@ -506,7 +531,9 @@ async def test_characterize_legacy_partially_enabled_command_set(test_container:
     assert await command_service.is_capture_allowed(chat_id, CommandName.YOUTUBE, is_video=True) is False
 
 
-async def test_characterize_legacy_parent_provider_bulk_and_toggle(test_container: AsyncContainer) -> None:
+async def test_characterize_legacy_parent_provider_bulk_and_toggle(
+    test_container: AsyncContainer, recording_bot: Bot
+) -> None:
     """Characterize parent provider bulk operations and toggle behavior in real SQLite."""
     session_maker = await test_container.get(async_sessionmaker)
     command_service = await test_container.get(CommandService)
@@ -537,7 +564,7 @@ async def test_characterize_legacy_parent_provider_bulk_and_toggle(test_containe
     assert persisted_after_re_toggle == {str(CommandName.INSTAGRAM_VIDEO), str(CommandName.INSTAGRAM_POST)}
 
 
-async def test_characterize_legacy_default_activation(test_container: AsyncContainer) -> None:
+async def test_characterize_legacy_default_activation(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Characterize default activation via chat_status_service.approve in real SQLite.
 
     When chat_status_service.approve is called:
@@ -579,22 +606,21 @@ async def test_characterize_legacy_default_activation(test_container: AsyncConta
 
 
 @pytest.mark.parametrize("status", [ChatStatus.APPROVED, ChatStatus.BANNED, ChatStatus.REJECTED])
-async def test_removal_and_rejoin_preserve_access_status(test_container: AsyncContainer, status: ChatStatus) -> None:
+async def test_removal_and_rejoin_preserve_access_status(
+    test_container: AsyncContainer, status: ChatStatus, recording_bot: Bot
+) -> None:
     """Physical bot removal/rejoin preserves durable status and command selections (019)."""
     session_maker = await test_container.get(async_sessionmaker)
     statuses = await test_container.get(ChatStatusService)
     handler = await test_container.get(BotJoinHandler)
-    bot = MagicMock(spec=Bot)
-    bot.send_message = AsyncMock()
-    bot.leave_chat = AsyncMock()
+    bot = recording_bot
     chat_id = 30002
     await statuses.approve(chat_id)
     await statuses.set_status(chat_id, status)
     _, initial_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
     for event_status in ("kicked", "member"):
-        await handler.handle_my_chat_member_update(create_mock_event(chat_id, event_status), bot)
+        await handler.handle_my_chat_member_update(create_member_event(chat_id, event_status), bot)
         persisted_status, commands = await get_persisted_chat_and_commands(session_maker, chat_id)
         assert persisted_status == status
         assert commands == initial_commands
-    bot.send_message.assert_not_called()
-    bot.leave_chat.assert_not_called()
+    assert bot.session.calls == []

@@ -14,13 +14,13 @@ from tests.conftest import authorize_private_media, create_private_media_message
 
 
 @pytest.fixture
-async def bluesky_command(init_container: AsyncContainer) -> RichMediaCommand:
+async def bluesky_command(test_container: AsyncContainer) -> RichMediaCommand:
     """Fixture to provide the Bluesky RichMediaCommand instance."""
-    return await get_media_command(init_container, CommandName.BLUESKY)
+    return await get_media_command(test_container, CommandName.BLUESKY)
 
 
 @pytest.mark.vcr
-async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling a Bluesky post using real extraction and VCR."""
     chat_id = 789
     url = "https://bsky.app/profile/josiahcohen.bsky.social/post/3mlmib6xdbc2a"
@@ -28,9 +28,9 @@ async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, init_conta
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await bluesky_command.handle(message, cast("Bot", bot))
 
@@ -43,7 +43,7 @@ async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, init_conta
 
 @pytest.mark.vcr
 async def test_handle_bluesky_quote_with_media(
-    bluesky_command: RichMediaCommand, init_container: AsyncContainer
+    bluesky_command: RichMediaCommand, test_container: AsyncContainer
 ) -> None:
     """Test handling a Bluesky quote post with media using real extraction and VCR."""
     chat_id = 789
@@ -52,9 +52,9 @@ async def test_handle_bluesky_quote_with_media(
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await bluesky_command.handle(message, cast("Bot", bot))
 

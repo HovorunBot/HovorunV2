@@ -1,8 +1,6 @@
 """Tests for the DebugCommand class and logging context tracking."""
 
 import logging
-from typing import cast
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import Bot
@@ -21,19 +19,20 @@ from hovorunv2.interface.telegram.middlewares import LogContextMiddleware
 
 
 @pytest.fixture
-async def debug_command(init_container: AsyncContainer) -> DebugCommand:
+async def debug_command(test_container: AsyncContainer) -> DebugCommand:
     """Fixture to provide a DebugCommand instance."""
-    return await init_container.get(DebugCommand)
+    return await test_container.get(DebugCommand)
 
 
-def create_mock_message(text: str | None, user_id: int = 123) -> MagicMock:
-    """Create a mock Telegram message."""
-    message = MagicMock(spec=Message)
-    message.text = text
-    message.from_user = MagicMock(spec=User)
-    message.from_user.id = user_id
-    message.answer = AsyncMock()
-    return message
+def create_message(text: str | None, user_id: int = 123) -> Message:
+    """Build a real synthetic Telegram message."""
+    return Message(
+        message_id=1,
+        date=1,
+        chat=Chat(id=user_id, type="private"),
+        from_user=User(id=user_id, is_bot=False, first_name="Test"),
+        text=text,
+    )
 
 
 @pytest.mark.parametrize(
@@ -49,18 +48,18 @@ def create_mock_message(text: str | None, user_id: int = 123) -> MagicMock:
 )
 async def test_is_triggered(debug_command: DebugCommand, text: str | None, expected: bool) -> None:
     """Test the is_triggered method."""
-    message = create_mock_message(text)
+    message = create_message(text)
     assert await debug_command.is_triggered(message) == expected
 
 
-async def test_handle(debug_command: DebugCommand) -> None:
+async def test_handle(debug_command: DebugCommand, recording_bot: Bot) -> None:
     """Test the handle method."""
-    message = create_mock_message("/debug test")
-    bot = MagicMock(spec=Bot)
+    message = create_message("/debug test").as_(recording_bot)
 
-    await debug_command.handle(message, cast("Bot", bot))
+    await debug_command.handle(message, recording_bot)
 
-    message.answer.assert_called_once_with("It works. Your message: /debug test.")
+    assert len(recording_bot.session.calls) == 1
+    assert recording_bot.session.calls[0].text == "It works. Your message: /debug test."
 
 
 async def test_log_context_middleware_tracks_user_and_chat_id() -> None:

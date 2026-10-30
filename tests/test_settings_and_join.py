@@ -1,7 +1,6 @@
 """Tests for the unified settings menu and on-join verification."""
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
 
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, Message, User
@@ -21,7 +20,7 @@ from hovorunv2.interface.telegram.callbacks import (
 )
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
-from tests.conftest import create_mock_message, provision_role, verify_group_admins
+from tests.conftest import provision_role, verify_group_admins
 from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.settings import bind_settings_callback
 from tests.utils.telegram import RecordedResponse
@@ -118,16 +117,16 @@ async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
         await bot.session.close()
 
 
-async def test_settings_trigger_mention_filtering(init_container: AsyncContainer) -> None:
+async def test_settings_trigger_mention_filtering(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Verify settings trigger filter matches exact name and own mention, rejects other bots."""
-    settings_cmd = await init_container.get(SettingsCommand)
-    bot = MagicMock(spec=Bot)
-    bot.me = AsyncMock(return_value=User(id=1, is_bot=True, first_name="Hovorun", username="HovorunBot"))
+    settings_cmd = await test_container.get(SettingsCommand)
+    bot = recording_bot
+    bot.session.responses.append({"id": 1, "is_bot": True, "first_name": "Hovorun", "username": "HovorunBot"})
 
-    msg_plain = create_mock_message("/settings")
-    msg_other_cmd = create_mock_message("/settingsXYZ")
-    msg_own = create_mock_message("/settings@HovorunBot")
-    msg_other = create_mock_message("/settings@OtherBot")
+    msg_plain = _settings_message("/settings")
+    msg_other_cmd = _settings_message("/settingsXYZ")
+    msg_own = _settings_message("/settings@HovorunBot")
+    msg_other = _settings_message("/settings@OtherBot")
 
     assert await settings_cmd.is_triggered(msg_plain) is True
     assert await settings_cmd.is_triggered(msg_other_cmd) is False
@@ -135,3 +134,7 @@ async def test_settings_trigger_mention_filtering(init_container: AsyncContainer
 
     assert bool(await settings_cmd.trigger(msg_own, bot)) is True
     assert bool(await settings_cmd.trigger(msg_other, bot)) is False
+
+
+def _settings_message(text: str) -> Message:
+    return Message(message_id=1, date=1, chat=Chat(id=1, type="private"), text=text)

@@ -16,14 +16,14 @@ EXPECTED_MEDIA_COUNT: int = 1
 
 
 @pytest.fixture
-async def threads_command(init_container: AsyncContainer) -> RichMediaCommand:
+async def threads_command(test_container: AsyncContainer) -> RichMediaCommand:
     """Fixture to provide the Threads RichMediaCommand instance."""
-    return await get_media_command(init_container, CommandName.THREADS)
+    return await get_media_command(test_container, CommandName.THREADS)
 
 
 @pytest.mark.slow
 @pytest.mark.vcr
-async def test_handle_threads_post(threads_command: RichMediaCommand, init_container: AsyncContainer) -> None:
+async def test_handle_threads_post(threads_command: RichMediaCommand, test_container: AsyncContainer) -> None:
     """Test handling a Threads post using real extraction and VCR."""
     chat_id = 456
     url = "https://www.threads.net/@maksymtarkivskyy/post/DYOeEaaD-vR"
@@ -31,9 +31,9 @@ async def test_handle_threads_post(threads_command: RichMediaCommand, init_conta
     bot = MagicMock(spec=Bot)
     bot.send_media_group = AsyncMock()
 
-    chat_status_service = await init_container.get(ChatStatusService)
+    chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
-    await authorize_private_media(init_container, chat_id)
+    await authorize_private_media(test_container, chat_id)
 
     await threads_command.handle(message, cast("Bot", bot))
 

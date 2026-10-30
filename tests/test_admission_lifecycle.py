@@ -442,7 +442,14 @@ async def test_native_runtime_rejects_inherited_live_pool(test_container: AsyncC
     async with runtime_cache(test_container) as (_cache, namespace):
         result = await asyncio.to_thread(
             subprocess.run,
-            [sys.executable, "-W", "error", "-m", "tests.test_admission_lifecycle", namespace.value],
+            [
+                sys.executable,
+                "-W",
+                "error",
+                "-m",
+                "tests.test_admission_lifecycle",
+                namespace.value,
+            ],
             capture_output=True,
             text=True,
             timeout=30,
