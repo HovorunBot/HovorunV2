@@ -1,13 +1,11 @@
 """Tests for LanguageService."""
 
-import pytest
 from dishka import AsyncContainer
 
 from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.infrastructure.config import Settings
 
 
-@pytest.mark.asyncio
 async def test_toggling_ignored_langs_does_not_mutate_settings(init_container: AsyncContainer) -> None:
     """Verify get_chat_settings returns a copy and does not mutate global default settings."""
     language_service = await init_container.get(LanguageService)
@@ -29,7 +27,6 @@ async def test_toggling_ignored_langs_does_not_mutate_settings(init_container: A
     assert settings.translation_ignored_langs == original_defaults
 
 
-@pytest.mark.asyncio
 async def test_update_and_get_chat_settings(init_container: AsyncContainer) -> None:
     """Verify updating and retrieving chat-specific language settings."""
     language_service = await init_container.get(LanguageService)

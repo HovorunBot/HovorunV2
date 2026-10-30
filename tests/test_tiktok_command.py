@@ -19,7 +19,6 @@ async def tiktok_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.TIKTOK)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -43,7 +42,6 @@ async def test_is_triggered(
     assert await tiktok_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
 async def test_is_triggered_by_bot(tiktok_command: RichMediaCommand) -> None:
     """Test that it's not triggered by bot messages."""
     text = "https://www.tiktok.com/@fueltothe_max/video/7397394517311212818"
@@ -51,7 +49,6 @@ async def test_is_triggered_by_bot(tiktok_command: RichMediaCommand) -> None:
     assert await tiktok_command.is_triggered(message) is False
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr
 async def test_handle_tiktok_video(tiktok_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a TikTok video link using real extraction and VCR."""

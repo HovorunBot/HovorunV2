@@ -7,6 +7,8 @@ import pytest
 
 from hovorunv2.infrastructure.browser import BrowserService
 
+pytestmark = [pytest.mark.browser]
+
 
 @pytest.fixture
 async def browser_service() -> AsyncGenerator[BrowserService]:
@@ -18,7 +20,6 @@ async def browser_service() -> AsyncGenerator[BrowserService]:
     await service.close()
 
 
-@pytest.mark.asyncio
 async def test_browser_lifecycle(browser_service: BrowserService) -> None:
     """Test that the browser starts, fetches content, and closes correctly."""
     # about:blank might be too simple, but let's try
@@ -27,7 +28,7 @@ async def test_browser_lifecycle(browser_service: BrowserService) -> None:
     assert browser_service.is_running
 
 
-@pytest.mark.asyncio
+@pytest.mark.slow
 async def test_browser_reconnect_after_manual_close(browser_service: BrowserService) -> None:
     """Test that browser restarts if closed externally."""
     # First request to start browser

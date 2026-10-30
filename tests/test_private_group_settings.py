@@ -142,6 +142,7 @@ async def mark_bot_absent(container: AsyncContainer, telegram_id: int) -> None:
     )
 
 
+@pytest.mark.slow
 async def test_untrusted_admin_private_workflow_reuses_group_settings_and_audit(test_container: AsyncContainer) -> None:
     """Private group management does not grant private feature execution or change private chat settings."""
     async with private_runtime(test_container) as (bot, command, _service):
@@ -212,6 +213,7 @@ async def test_untrusted_admin_private_workflow_reuses_group_settings_and_audit(
         assert from_user.id == SECOND
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("stage", ["selection", "mutation"])
 @pytest.mark.parametrize("current_status", ["member", "left", "unavailable"])
 async def test_demotion_rechecks_list_selection_and_mutations(

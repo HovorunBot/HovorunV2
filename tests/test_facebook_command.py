@@ -19,7 +19,6 @@ async def facebook_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.FACEBOOK)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -45,7 +44,6 @@ async def test_is_triggered(
     assert await facebook_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr
 async def test_handle_facebook_photo_post(facebook_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a Facebook photo post using real extraction and VCR."""
@@ -68,7 +66,6 @@ async def test_handle_facebook_photo_post(facebook_command: RichMediaCommand, in
     assert "facebook.com" in caption
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr
 async def test_handle_facebook_video_fallback(
     facebook_command: RichMediaCommand, init_container: AsyncContainer

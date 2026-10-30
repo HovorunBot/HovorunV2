@@ -24,7 +24,7 @@ MESSAGE ?=
 
 .PHONY: all setup run stop update deploy help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
-        test test-profile test-coverage lint format type-check lint-imports check install-hooks ai agy gemini codex claude ai-check ai-next
+        test test-fast test-profile test-coverage lint format type-check lint-imports check install-hooks ai agy gemini codex claude ai-check ai-next
 
 # Each command uses one complete environment file, never an overlay.
 ## Run setup, then start the selected Docker stack.
@@ -178,6 +178,10 @@ changelog:
 ## Run the full pytest suite against configured test infrastructure.
 test:
 	@PYTHONPATH=src uv run pytest
+
+## Run fast tests excluding slow, browser, and subprocess suites.
+test-fast:
+	@PYTHONPATH=src uv run pytest -m "not slow and not browser and not subprocess"
 
 ## Run pytest with durations aggregated by phase (setup, call, teardown).
 test-profile:

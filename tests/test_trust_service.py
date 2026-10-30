@@ -16,7 +16,6 @@ from tests.conftest import provision_role
 from tests.utils.postgres import reject_audit
 
 
-@pytest.mark.asyncio
 async def test_trust_revisions_authority_and_idempotence(test_container: AsyncContainer) -> None:
     """Trust alone cannot mutate trust; current admin roles can, with atomic revisions."""
     users = await test_container.get(UserStore)
@@ -62,7 +61,6 @@ async def test_trust_revisions_authority_and_idempotence(test_container: AsyncCo
     assert events[1].actor_id == admin_id
 
 
-@pytest.mark.asyncio
 async def test_trust_resolves_active_handles_and_rejects_deleted_users(test_container: AsyncContainer) -> None:
     """Handle reassignment cannot transfer trust; deleted or missing targets remain unavailable."""
     users = await test_container.get(UserStore)
@@ -86,7 +84,6 @@ async def test_trust_resolves_active_handles_and_rejects_deleted_users(test_cont
     assert not await trust.set_trust("880099", is_trusted=True, actor=ActorContext.cli())
 
 
-@pytest.mark.asyncio
 async def test_trust_audit_failure_rolls_back_revision(test_container: AsyncContainer) -> None:
     """A rejected audit insert rolls back both trust and its revision."""
     users = await test_container.get(UserStore)

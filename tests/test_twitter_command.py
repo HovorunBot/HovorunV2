@@ -24,7 +24,6 @@ async def twitter_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.TWITTER)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -45,7 +44,6 @@ async def test_is_triggered(
     assert await twitter_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr
 async def test_handle_twitter_post(twitter_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a real Twitter post using VCR."""
@@ -69,7 +67,6 @@ async def test_handle_twitter_post(twitter_command: RichMediaCommand, init_conta
     assert "🔁" in caption
 
 
-@pytest.mark.asyncio
 async def test_twitter_split_video_vs_post_toggles(
     twitter_command: RichMediaCommand, init_container: AsyncContainer
 ) -> None:

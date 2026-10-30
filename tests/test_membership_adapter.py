@@ -57,7 +57,6 @@ def member_payload(status: str = "member", *, is_bot: bool = False) -> dict[str,
     return result
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status", "expected"),
     [
@@ -86,7 +85,6 @@ async def test_current_member_variants(status: str, expected: MembershipStatus) 
         assert evidence.expires_at - evidence.verified_at == MEMBERSHIP_FRESHNESS
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("status", [HTTPStatus.BAD_REQUEST, HTTPStatus.FORBIDDEN, HTTPStatus.INTERNAL_SERVER_ERROR])
 async def test_api_failures_remain_unknown(status: HTTPStatus) -> None:
     """API and permission failures cannot become absence or a successful empty admin list."""
@@ -110,7 +108,6 @@ async def test_api_failures_remain_unknown(status: HTTPStatus) -> None:
         assert capabilities.can_delete_messages is None
 
 
-@pytest.mark.asyncio
 async def test_administrator_list_excludes_bots_and_profile_data() -> None:
     """Only numeric human administrator evidence crosses the application boundary."""
     async with Bot(BOT_CREDENTIAL).context() as bot:
@@ -135,7 +132,6 @@ async def test_administrator_list_excludes_bots_and_profile_data() -> None:
         assert not hasattr(administrators.members[0], "first_name")
 
 
-@pytest.mark.asyncio
 async def test_bot_capabilities_are_independent_of_presence() -> None:
     """A member bot has no admin rights; administrator rights are checked individually."""
     async with Bot(BOT_CREDENTIAL).context() as bot:
@@ -161,7 +157,6 @@ async def test_bot_capabilities_are_independent_of_presence() -> None:
         assert administrator.can_pin_messages is False
 
 
-@pytest.mark.asyncio
 async def test_network_failure_and_identity_mismatch_are_unknown() -> None:
     """Network uncertainty and mismatched response identity never prove absence or membership."""
     async with Bot(BOT_CREDENTIAL).context() as bot:
@@ -179,7 +174,6 @@ async def test_network_failure_and_identity_mismatch_are_unknown() -> None:
         assert mismatched.status == MembershipStatus.UNKNOWN
 
 
-@pytest.mark.asyncio
 async def test_membership_port_resolves_in_real_container(test_container: AsyncContainer) -> None:
     """DI supplies one shared bot without contacting Telegram during construction."""
     adapter = await test_container.get(MembershipPort)
@@ -200,7 +194,6 @@ class ResponseObserver:
         return CallbackResult(payload={"ok": True, "result": member_payload()}, response_class=RecordedResponse)
 
 
-@pytest.mark.asyncio
 async def test_evidence_timestamp_precedes_api_response() -> None:
     """An older in-flight lookup cannot overwrite a later membership event by timestamp."""
     observer = ResponseObserver()

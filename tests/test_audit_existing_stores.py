@@ -1,6 +1,5 @@
 """Integration tests verifying audited transaction coverage for existing persistence stores."""
 
-import pytest
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -14,7 +13,6 @@ from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 
 
-@pytest.mark.asyncio
 async def test_command_association_audit(test_container: AsyncContainer) -> None:
     """A command association add/remove has exactly one audit action with the same outcome."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -105,7 +103,6 @@ async def test_command_association_audit(test_container: AsyncContainer) -> None
         assert len(count) == 2
 
 
-@pytest.mark.asyncio
 async def test_salt_and_secrets_redacted_in_audit(test_container: AsyncContainer) -> None:
     """Salt and material secrets are absent from audit serialization; safe fields remain."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -169,7 +166,6 @@ async def test_salt_and_secrets_redacted_in_audit(test_container: AsyncContainer
         assert version_audit.changed_fields == {"last_notified_version": "0.3.0"}
 
 
-@pytest.mark.asyncio
 async def test_repeated_startup_fixtures_idempotent(test_container: AsyncContainer) -> None:
     """Repeated startup fixtures do not duplicate records or produce spurious mutation events."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -199,7 +195,6 @@ async def test_repeated_startup_fixtures_idempotent(test_container: AsyncContain
         assert after_commands_count == initial_commands_count
 
 
-@pytest.mark.asyncio
 async def test_chat_status_and_translation_audit(test_container: AsyncContainer) -> None:
     """Chat creation, status update, and translation settings are audited."""
     session_maker = await test_container.get(async_sessionmaker)

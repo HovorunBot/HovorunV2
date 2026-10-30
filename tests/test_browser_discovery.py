@@ -11,6 +11,8 @@ from hovorunv2.infrastructure.browser_discovery import (
     find_browser_executable,
 )
 
+pytestmark = [pytest.mark.browser]
+
 
 def executable(path: Path) -> Path:
     """Create a disposable executable without launching a browser."""

@@ -33,7 +33,6 @@ async def seed_grant_subjects(container: AsyncContainer) -> tuple[int, int, int]
         return group.id, first.id, second.id
 
 
-@pytest.mark.asyncio
 async def test_approval_idempotency_and_regrant_history(test_container: AsyncContainer) -> None:
     """Independent approval retains revoke/regrant history without user sponsorship."""
     group_id, _, _ = await seed_grant_subjects(test_container)
@@ -58,7 +57,6 @@ async def test_approval_idempotency_and_regrant_history(test_container: AsyncCon
         assert all(event.actor_origin == actor.origin for event in events)
 
 
-@pytest.mark.asyncio
 async def test_request_rejection_is_not_ban_and_approval_is_atomic(test_container: AsyncContainer) -> None:
     """Independent requests and decisions preserve original chat status and separate bases."""
     group_id, first_id, second_id = await seed_grant_subjects(test_container)
@@ -86,7 +84,6 @@ async def test_request_rejection_is_not_ban_and_approval_is_atomic(test_containe
     assert not await store.approvals(group_id)
 
 
-@pytest.mark.asyncio
 async def test_grant_queries_filter_deleted_parents_and_associations(test_container: AsyncContainer) -> None:
     """A deleted identity cannot preserve ordinary association visibility or accept mutations."""
     group_id, first_id, _ = await seed_grant_subjects(test_container)
@@ -111,7 +108,6 @@ async def test_grant_queries_filter_deleted_parents_and_associations(test_contai
         await store.approve(group_id, actor)
 
 
-@pytest.mark.asyncio
 async def test_audit_failure_rolls_back_decision_and_approval(test_container: AsyncContainer) -> None:
     """SQLite audit failure rolls back both records of the composite approve command."""
     group_id, first_id, _ = await seed_grant_subjects(test_container)

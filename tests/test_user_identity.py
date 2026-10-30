@@ -37,7 +37,6 @@ def test_user_model_has_no_invasive_personal_data_columns() -> None:
     assert expected_fields.issubset(column_names)
 
 
-@pytest.mark.asyncio
 async def test_active_identity_uniqueness_enforced_by_sqlite(test_container: AsyncContainer) -> None:
     """SQLite enforces that only one active record can exist per (platform, telegram_id)."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -57,7 +56,6 @@ async def test_active_identity_uniqueness_enforced_by_sqlite(test_container: Asy
             await session.commit()
 
 
-@pytest.mark.asyncio
 async def test_soft_deleted_and_active_generations_can_coexist(test_container: AsyncContainer) -> None:
     """Multiple soft-deleted historical records can coexist with one active generation."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -96,7 +94,6 @@ async def test_soft_deleted_and_active_generations_can_coexist(test_container: A
     assert active.generation == 2
 
 
-@pytest.mark.asyncio
 async def test_tombstone_aware_ingestion_prevents_silent_resurrection(test_container: AsyncContainer) -> None:
     """Tombstone-aware ingestion does not recreate or resurrect a deleted numeric identity."""
     user_store = await test_container.get(UserStore)
@@ -121,7 +118,6 @@ async def test_tombstone_aware_ingestion_prevents_silent_resurrection(test_conta
     assert await user_store.get_by_telegram_id(tg_id) is None
 
 
-@pytest.mark.asyncio
 async def test_audited_user_lifecycle_mutations(test_container: AsyncContainer) -> None:
     """User creation, trust modification, and soft-deletion are recorded in audit events."""
     session_maker = await test_container.get(async_sessionmaker)

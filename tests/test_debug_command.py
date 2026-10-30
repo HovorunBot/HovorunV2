@@ -36,7 +36,6 @@ def create_mock_message(text: str | None, user_id: int = 123) -> MagicMock:
     return message
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -54,7 +53,6 @@ async def test_is_triggered(debug_command: DebugCommand, text: str | None, expec
     assert await debug_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
 async def test_handle(debug_command: DebugCommand) -> None:
     """Test the handle method."""
     message = create_mock_message("/debug test")
@@ -65,7 +63,6 @@ async def test_handle(debug_command: DebugCommand) -> None:
     message.answer.assert_called_once_with("It works. Your message: /debug test.")
 
 
-@pytest.mark.asyncio
 async def test_log_context_middleware_tracks_user_and_chat_id() -> None:
     """Test that LogContextMiddleware binds user_id and chat_id to ContextVars and LogRecord."""
     middleware = LogContextMiddleware()

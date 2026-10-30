@@ -42,7 +42,6 @@ def mock_settings() -> MagicMock:
     return settings
 
 
-@pytest.mark.asyncio
 async def test_cache_message_encryption(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
@@ -85,7 +84,6 @@ async def test_cache_message_encryption(
     assert "hello" not in payload  # Should be encrypted
 
 
-@pytest.mark.asyncio
 async def test_get_message_decryption(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
@@ -124,7 +122,6 @@ async def test_get_message_decryption(
     assert retrieved.text == "secret"
 
 
-@pytest.mark.asyncio
 async def test_get_message_no_encryption_fails_when_enabled(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
@@ -154,7 +151,6 @@ async def test_get_message_no_encryption_fails_when_enabled(
         await service.get_message(chat_id, message_id)
 
 
-@pytest.mark.asyncio
 async def test_fernet_derivation_cached_per_chat(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
@@ -237,7 +233,6 @@ def test_existing_passphrase_format_decrypts_synthetic_salt_fixture() -> None:
 # ==============================================================================
 
 
-@pytest.mark.asyncio
 async def test_cache_message_rejects_missing_encryption_key(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
@@ -259,7 +254,6 @@ async def test_cache_message_rejects_missing_encryption_key(
     mock_cache_service.set.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_get_message_rejects_missing_encryption_key(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
@@ -275,7 +269,6 @@ async def test_get_message_rejects_missing_encryption_key(
         await service.get_message(12345, 67890)
 
 
-@pytest.mark.asyncio
 async def test_get_message_rejects_corrupted_ciphertext(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
@@ -292,7 +285,6 @@ async def test_get_message_rejects_corrupted_ciphertext(
         await service.get_message(123, 456)
 
 
-@pytest.mark.asyncio
 async def test_cache_message_propagates_storage_failure(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,

@@ -139,6 +139,7 @@ async def test_guessed_execution_and_stale_callbacks_recheck_current_group_suppo
         await bot.session.close()
 
 
+@pytest.mark.slow
 async def test_help_and_modules_hide_future_beta_and_guessed_toggle_writes_nothing(
     test_container: AsyncContainer,
 ) -> None:

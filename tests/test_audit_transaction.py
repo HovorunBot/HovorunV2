@@ -134,7 +134,6 @@ async def noop_op(_session: AsyncSession) -> None:
     """No-op test operation."""
 
 
-@pytest.mark.asyncio
 async def test_audited_transaction_commits_mutation_and_audit_together(test_container: AsyncContainer) -> None:
     """Verify a business mutation and audit record commit together in a single SQLite transaction."""
     unit_of_work = await test_container.get(AuditedUnitOfWork)
@@ -177,7 +176,6 @@ async def test_audited_transaction_commits_mutation_and_audit_together(test_cont
         assert event.changed_fields["encryption_salt"] == SENSITIVE_FIELD_MARKER
 
 
-@pytest.mark.asyncio
 async def test_audited_transaction_rolls_back_both_on_failure(test_container: AsyncContainer) -> None:
     """Verify business mutation and audit record roll back together if an operation fails."""
     unit_of_work = await test_container.get(AuditedUnitOfWork)
@@ -207,7 +205,6 @@ async def test_audited_transaction_rolls_back_both_on_failure(test_container: As
         assert len(events) == 0, "Audit event should have rolled back"
 
 
-@pytest.mark.asyncio
 async def test_audited_transaction_forbids_recursive_audit(test_container: AsyncContainer) -> None:
     """Verify auditing of audit entities is explicitly rejected."""
     unit_of_work = await test_container.get(AuditedUnitOfWork)
@@ -224,7 +221,6 @@ async def test_audited_transaction_forbids_recursive_audit(test_container: Async
         )
 
 
-@pytest.mark.asyncio
 async def test_dishka_provides_audited_unit_of_work(test_container: AsyncContainer) -> None:
     """Verify Dishka composition root provides AuditedUnitOfWork backed by real SQLite."""
     uow = await test_container.get(AuditedUnitOfWork)

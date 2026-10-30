@@ -436,6 +436,8 @@ def verify_inherited_runtime_rejected(namespace: RuntimeNamespace) -> None:
         assert status == 0
 
 
+@pytest.mark.subprocess
+@pytest.mark.slow
 async def test_native_runtime_rejects_inherited_live_pool(test_container: AsyncContainer) -> None:
     """A genuine fork cannot use retained parent adapters even when the parent's pool already connected."""
     async with runtime_cache(test_container) as (_cache, namespace):

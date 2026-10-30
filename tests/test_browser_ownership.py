@@ -18,6 +18,8 @@ from hovorunv2.infrastructure.browser_process import OwnedChromium
 from hovorunv2.infrastructure.native_browser import NativeBrowserService, cookies_for_url
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 
+pytestmark = [pytest.mark.browser]
+
 
 def _extract_images(tab: BrowserTab, url: str) -> RichMediaPayload:
     urls = tab.run_js("return Array.from(document.images, image => image.src)")
@@ -39,6 +41,7 @@ def _require_partial_download(payload: RichMediaPayload | None, results: list[by
     assert [item.data for item in payload.media_items] == [b"synthetic image", None]
 
 
+@pytest.mark.slow
 def test_owned_chromium_reaps_process_and_removes_profile() -> None:
     """Closing a real browser retains exact process ownership until it is reaped."""
     browser = OwnedChromium()
@@ -60,6 +63,7 @@ def test_owned_chromium_reaps_process_and_removes_profile() -> None:
     browser.close()
 
 
+@pytest.mark.slow
 def test_startup_timeout_reaps_process_and_removes_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A real launched process cannot outlive its failed attachment or retain a temporary profile."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
@@ -83,6 +87,7 @@ def _partial_download_url() -> Iterator[str]:
             yield server.url("/post")
 
 
+@pytest.mark.slow
 def test_native_browser_partial_download_preserves_positions() -> None:
     """Native browser retains successes and explicitly identifies the missing media slot."""
     with _partial_download_url() as url:
@@ -94,6 +99,7 @@ def test_native_browser_partial_download_preserves_positions() -> None:
             service.close()
 
 
+@pytest.mark.slow
 async def test_async_browser_partial_download_preserves_positions() -> None:
     """Async browser uses the same ordered result and payload attachment contract."""
     with _partial_download_url() as url:
@@ -117,6 +123,7 @@ async def _cancel_inflight_navigation(browser: BrowserService, server: HTTPFixtu
     assert "Next" in await browser.get_content(server.url("/next"))
 
 
+@pytest.mark.slow
 async def test_cancelled_navigation_finishes_before_releasing_browser() -> None:
     """Cancellation drains a real in-flight navigation, including repeated cancellation."""
     started = Event()

@@ -25,7 +25,6 @@ async def youtube_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.YOUTUBE)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -52,7 +51,6 @@ async def test_is_triggered(
     assert await youtube_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
 async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test extracting and sending a YouTube Community image+text post."""
     chat_id = 456
@@ -115,7 +113,6 @@ async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, 
     assert "❤️ 4.2K" in media[0].caption
 
 
-@pytest.mark.asyncio
 async def test_youtube_split_video_vs_post_toggles(
     youtube_command: RichMediaCommand, init_container: AsyncContainer
 ) -> None:
@@ -160,7 +157,6 @@ async def test_youtube_split_video_vs_post_toggles(
     bot.send_media_group.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_handle_youtube_community_post_canonicalization(
     youtube_command: RichMediaCommand, init_container: AsyncContainer
 ) -> None:
@@ -214,7 +210,6 @@ async def test_handle_youtube_community_post_canonicalization(
     assert "https://www.youtube.com/post/Ugkx9876543210zyx" in requested_urls
 
 
-@pytest.mark.asyncio
 async def test_youtube_community_post_skips_ytdlp(
     youtube_command: RichMediaCommand, init_container: AsyncContainer
 ) -> None:

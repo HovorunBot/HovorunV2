@@ -21,7 +21,6 @@ async def threads_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.THREADS)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -49,7 +48,7 @@ async def test_is_triggered(
     assert await threads_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.slow
 @pytest.mark.vcr
 async def test_handle_threads_post(threads_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a Threads post using real extraction and VCR."""

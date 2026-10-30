@@ -25,7 +25,6 @@ def test_user_role_model_has_no_invasive_personal_data_columns() -> None:
     assert expected_fields.issubset(column_names)
 
 
-@pytest.mark.asyncio
 async def test_owner_always_resolves_to_admin_authority(test_container: AsyncContainer) -> None:
     """Owner role always implies effective administrative authority."""
     role_service = await test_container.get(RoleService)
@@ -53,7 +52,6 @@ async def test_owner_always_resolves_to_admin_authority(test_container: AsyncCon
     assert await role_service.is_effective_admin(regular_id) is False
 
 
-@pytest.mark.asyncio
 async def test_telegram_origin_role_mutations_fail_at_service_level(test_container: AsyncContainer) -> None:
     """Telegram-origin role assignment and revocation are rejected with PermissionError."""
     role_service = await test_container.get(RoleService)
@@ -77,7 +75,6 @@ async def test_telegram_origin_role_mutations_fail_at_service_level(test_contain
     assert await role_service.set_role(target_user, Role.USER, actor=cli_actor) is True
 
 
-@pytest.mark.asyncio
 async def test_soft_deleted_user_roles_are_excluded_from_active_checks(test_container: AsyncContainer) -> None:
     """When a user is soft-deleted, their roles are no longer active for ordinary checks."""
     user_store = await test_container.get(UserStore)
@@ -100,7 +97,6 @@ async def test_soft_deleted_user_roles_are_excluded_from_active_checks(test_cont
     assert await role_service.is_effective_admin(user_id) is False
 
 
-@pytest.mark.asyncio
 async def test_role_mutations_are_audited_transactionally(test_container: AsyncContainer) -> None:
     """Role assignments and revocations produce atomic audit records."""
     role_store = await test_container.get(RoleStore)
@@ -157,7 +153,6 @@ async def test_role_mutations_are_audited_transactionally(test_container: AsyncC
         assert events[0].changed_fields == {"role": [Role.ADMIN.value, Role.USER.value], "user_id": user.id}
 
 
-@pytest.mark.asyncio
 async def test_default_user_role_on_ingestion(test_container: AsyncContainer) -> None:
     """Ingested users default to Role.USER without administrative powers."""
     user_store = await test_container.get(UserStore)
@@ -174,7 +169,6 @@ async def test_default_user_role_on_ingestion(test_container: AsyncContainer) ->
     assert await role_service.is_effective_admin(new_id) is False
 
 
-@pytest.mark.asyncio
 async def test_owner_protected_from_telegram_deletion(test_container: AsyncContainer) -> None:
     """Owner cannot be soft-deleted via Telegram-origin request."""
     user_store = await test_container.get(UserStore)
@@ -195,7 +189,6 @@ async def test_owner_protected_from_telegram_deletion(test_container: AsyncConta
     assert await user_store.soft_delete_user(owner_id, actor=cli_actor, reason="authorized decommission") is True
 
 
-@pytest.mark.asyncio
 async def test_role_provisioning_rolls_back_when_audit_insert_fails(test_container: AsyncContainer) -> None:
     """A rejected audit insert rolls back the newly provisioned user and role."""
     role_service = await test_container.get(RoleService)
@@ -213,7 +206,6 @@ async def test_role_provisioning_rolls_back_when_audit_insert_fails(test_contain
     assert await role_service.get_role(target_id) is None
 
 
-@pytest.mark.asyncio
 async def test_single_role_is_idempotent_and_cannot_reprovision_a_tombstone(test_container: AsyncContainer) -> None:
     """Repeated assignments preserve audit count and deleted identities stay deleted."""
     role_service = await test_container.get(RoleService)
@@ -234,7 +226,6 @@ async def test_single_role_is_idempotent_and_cannot_reprovision_a_tombstone(test
     assert await role_service.get_role(target_id) is None
 
 
-@pytest.mark.asyncio
 async def test_ordered_role_thresholds_keep_exact_roles_separate(test_container: AsyncContainer) -> None:
     """Owners meet the admin tier while baseline, missing and deleted users do not."""
     roles = await test_container.get(RoleService)
@@ -253,7 +244,6 @@ async def test_ordered_role_thresholds_keep_exact_roles_separate(test_container:
     assert await roles.has_at_least_role(103, Role.ADMIN) is False
 
 
-@pytest.mark.asyncio
 async def test_historical_text_roles_still_load_as_typed_members(test_container: AsyncContainer) -> None:
     """Historical assignments keep their textual storage and typed read compatibility."""
     roles = await test_container.get(RoleService)

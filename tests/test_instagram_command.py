@@ -21,7 +21,6 @@ async def instagram_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.INSTAGRAM)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -44,7 +43,7 @@ async def test_is_triggered(
     assert await instagram_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.slow
 @pytest.mark.vcr
 async def test_handle_instagram_post(instagram_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling an Instagram post using real extraction and VCR."""
@@ -68,7 +67,6 @@ async def test_handle_instagram_post(instagram_command: RichMediaCommand, init_c
     assert "instagram.com" in caption
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr
 async def test_handle_instagram_reel(instagram_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling an Instagram reel using real extraction and VCR."""
@@ -91,6 +89,8 @@ async def test_handle_instagram_reel(instagram_command: RichMediaCommand, init_c
     assert "instagram.com" in caption
 
 
+@pytest.mark.browser
+@pytest.mark.slow
 async def test_instagram_browser_fallback_uses_real_dom_and_media(init_container: AsyncContainer) -> None:
     """Real browser extraction downloads loopback media without replacing an internal strategy/service."""
     service = await init_container.get(InstagramService)

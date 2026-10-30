@@ -251,6 +251,8 @@ async def native_probe(url: str, event_id: str) -> dict[str, int]:
     return json.loads(stdout)
 
 
+@pytest.mark.subprocess
+@pytest.mark.slow
 async def test_native_processes_share_receipts_with_bot(
     test_container: AsyncContainer, postgres_database_url: str
 ) -> None:

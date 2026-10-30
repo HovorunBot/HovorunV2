@@ -123,9 +123,22 @@ max-bool-expr = 4
 "tests/*" = ["FBT", "PLR2004"]
 
 [tool.pytest.ini_options]
-addopts = "-n auto --maxprocesses=15"
+testpaths = ["tests"]
+addopts = "-n auto --maxprocesses=15 --strict-markers --strict-config -ra"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+xfail_strict = true
+filterwarnings = [
+    "error",
+]
+markers = [
+    "unit: pure unit tests requiring zero infrastructure (no DB, Valkey, network, browser)",
+    "slow: tests taking longer than 1 second to execute",
+    "browser: tests requiring headless Chromium browser instances",
+    "subprocess: tests spawning separate OS processes or genuine forks",
+    "vcr: tests using pytest-recording VCR cassette replay or recording",
+    "fresh_schema: integration tests mutating schema DDL requiring a disposable PostgreSQL schema",
+]
 
 [tool.coverage.run]
 source = ["src/hovorunv2"]

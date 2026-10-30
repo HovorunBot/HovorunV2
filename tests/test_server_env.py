@@ -5,7 +5,11 @@ import shutil
 import sys
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+pytestmark = [pytest.mark.subprocess]
 
 
 async def test_server_environment_generation_is_private_and_preserves_existing_keys(tmp_path: Path) -> None:

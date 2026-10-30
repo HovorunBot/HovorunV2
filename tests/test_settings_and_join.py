@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated, Message, User
 from dishka import AsyncContainer
@@ -28,7 +27,6 @@ from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.settings import bind_settings_callback
 
 
-@pytest.mark.asyncio
 async def test_bot_join_prompt(test_container: AsyncContainer) -> None:
     """Use real services and intercept only the external Telegram HTTP prompt."""
     handler = await test_container.get(BotJoinHandler)
@@ -61,7 +59,6 @@ async def test_bot_join_prompt(test_container: AsyncContainer) -> None:
         await bot.session.close()
 
 
-@pytest.mark.asyncio
 async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
     """Only registered split features are configurable, using current real authority."""
     command = await test_container.get(SettingsCommand)
@@ -121,7 +118,6 @@ async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
         await bot.session.close()
 
 
-@pytest.mark.asyncio
 async def test_settings_trigger_mention_filtering(init_container: AsyncContainer) -> None:
     """Verify settings trigger filter matches exact name and own mention, rejects other bots."""
     settings_cmd = await init_container.get(SettingsCommand)

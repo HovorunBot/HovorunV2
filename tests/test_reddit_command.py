@@ -26,7 +26,6 @@ async def reddit_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.REDDIT)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -51,7 +50,6 @@ async def test_is_triggered(
     assert await reddit_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
 async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a Reddit multi-image gallery post."""
     chat_id = 456
@@ -99,7 +97,6 @@ async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, init
     assert "⬆️ 1.5K" in media[0].caption
 
 
-@pytest.mark.asyncio
 async def test_handle_reddit_video_post_respects_split_toggle(
     reddit_command: RichMediaCommand, init_container: AsyncContainer
 ) -> None:
@@ -153,7 +150,6 @@ async def test_handle_reddit_video_post_respects_split_toggle(
     bot.send_media_group.assert_called_once()
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr
 async def test_handle_reddit_post_vcr(reddit_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a real Reddit post via vxReddit using VCR."""

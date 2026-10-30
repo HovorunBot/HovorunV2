@@ -29,7 +29,6 @@ async def owner_notifier(test_container: AsyncContainer) -> OwnerNotifier:
     return await test_container.get(OwnerNotifier)
 
 
-@pytest.mark.asyncio
 async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier) -> None:
     """Test feedback service properly formats and delivers feedback to all owners."""
     service = FeedbackService(owner_notifier)
@@ -59,7 +58,6 @@ async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier)
     assert "Please add Bluesky media support!" in sent_text
 
 
-@pytest.mark.asyncio
 async def test_feedback_command_validation_and_delegation() -> None:
     """Test feedback command requires message argument and delegates to service."""
     feedback_service = MagicMock(spec=FeedbackService)
@@ -100,7 +98,6 @@ async def test_feedback_command_validation_and_delegation() -> None:
     assert "Thank you!" in valid_msg.reply.call_args[0][0]
 
 
-@pytest.mark.asyncio
 async def test_reminder_service_send_prompt_cooldown(
     owner_notifier: OwnerNotifier, test_container: AsyncContainer
 ) -> None:
@@ -132,7 +129,6 @@ async def test_reminder_service_send_prompt_cooldown(
     bot.send_message.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_scheduled_job_callbacks() -> None:
     """Test the standalone worker callback functions."""
     reminder_service = MagicMock(spec=ChatReminderService)

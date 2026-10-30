@@ -29,7 +29,6 @@ def test_normalize_and_validate_handle() -> None:
     assert validate_handle("invalid!char") is False
 
 
-@pytest.mark.asyncio
 async def test_case_insensitive_uniqueness_enforced_by_database(test_container: AsyncContainer) -> None:
     """Duplicate handles differing only by case fail database uniqueness constraint."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -59,7 +58,6 @@ async def test_case_insensitive_uniqueness_enforced_by_database(test_container: 
             await session.commit()
 
 
-@pytest.mark.asyncio
 async def test_multiple_absent_usernames_work(test_container: AsyncContainer) -> None:
     """Entities without usernames have no public_handles rows and co-exist safely."""
     handle_store = await test_container.get(PublicHandleStore)
@@ -71,7 +69,6 @@ async def test_multiple_absent_usernames_work(test_container: AsyncContainer) ->
     assert res2 is None
 
 
-@pytest.mark.asyncio
 async def test_rename_and_reuse_does_not_transfer_trust_or_grants(test_container: AsyncContainer) -> None:
     """When target A relinquishes a handle and target B claims it, target B gains no grants."""
     user_store = await test_container.get(UserStore)
@@ -117,7 +114,6 @@ async def test_rename_and_reuse_does_not_transfer_trust_or_grants(test_container
     assert alice_db.is_trusted is True
 
 
-@pytest.mark.asyncio
 async def test_soft_deletion_awareness_and_audit(test_container: AsyncContainer) -> None:
     """Soft-deleted targets are excluded from handle resolution, and mutations are audited."""
     user_store = await test_container.get(UserStore)
@@ -163,7 +159,6 @@ async def test_soft_deletion_awareness_and_audit(test_container: AsyncContainer)
         assert "handle" in events[0].changed_fields
 
 
-@pytest.mark.asyncio
 async def test_stale_handle_reassignment_on_fresh_evidence(test_container: AsyncContainer) -> None:
     """When target B provides authenticated evidence for a handle held by target A, handle moves."""
     user_store = await test_container.get(UserStore)

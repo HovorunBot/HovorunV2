@@ -33,7 +33,6 @@ from hovorunv2.domain.membership import GroupMembershipStateDB
 from tests.conftest import verify_group_admins
 
 
-@pytest.mark.asyncio
 async def test_group_access_stored_explicit_and_legacy_approval_and_revocation(
     test_container: AsyncContainer,
 ) -> None:
@@ -77,7 +76,6 @@ async def test_group_access_stored_explicit_and_legacy_approval_and_revocation(
     assert legacy_decision.reason == DecisionReason.ALLOWED
 
 
-@pytest.mark.asyncio
 async def test_group_access_group_ban_precedence_and_no_admin_bypass(
     test_container: AsyncContainer,
 ) -> None:
@@ -122,7 +120,6 @@ async def test_group_access_group_ban_precedence_and_no_admin_bypass(
     assert await access.is_allowed(1001, chat.chat_id, policy) is True
 
 
-@pytest.mark.asyncio
 async def test_group_access_admin_full_ban_suspends_group_and_recovers(
     test_container: AsyncContainer,
 ) -> None:
@@ -170,7 +167,6 @@ async def test_group_access_admin_full_ban_suspends_group_and_recovers(
     assert await statuses.is_approved(chat.chat_id) is True
 
 
-@pytest.mark.asyncio
 async def test_group_access_ordinary_member_or_personal_ban_does_not_suspend(
     test_container: AsyncContainer,
 ) -> None:
@@ -214,7 +210,6 @@ async def test_group_access_ordinary_member_or_personal_ban_does_not_suspend(
     assert decision.reason == DecisionReason.ALLOWED
 
 
-@pytest.mark.asyncio
 async def test_group_access_banned_former_admin_demoted_or_departed(
     test_container: AsyncContainer,
 ) -> None:
@@ -270,7 +265,6 @@ async def test_group_access_banned_former_admin_demoted_or_departed(
     assert decision.reason == DecisionReason.ALLOWED
 
 
-@pytest.mark.asyncio
 async def test_group_access_unknown_admin_evidence_suspends_and_recovers(
     test_container: AsyncContainer,
 ) -> None:
@@ -330,7 +324,6 @@ async def test_group_access_unknown_admin_evidence_suspends_and_recovers(
     assert decision.reason == DecisionReason.ALLOWED
 
 
-@pytest.mark.asyncio
 async def test_group_access_independent_of_activator_trust_or_membership(
     test_container: AsyncContainer,
 ) -> None:

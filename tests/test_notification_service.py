@@ -19,7 +19,6 @@ async def notification_service(init_container: AsyncContainer) -> NotificationSe
     return await init_container.get(NotificationService)
 
 
-@pytest.mark.asyncio
 async def test_notify_updates_fresh_install_silent(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
@@ -50,7 +49,6 @@ async def test_notify_updates_fresh_install_silent(
         assert await system_service.get_last_notified_version() == "0.1.0"
 
 
-@pytest.mark.asyncio
 async def test_notify_updates_group_chats_only(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
@@ -86,7 +84,6 @@ async def test_notify_updates_group_chats_only(
         assert await system_service.get_last_notified_version() == "0.2.0"
 
 
-@pytest.mark.asyncio
 async def test_notify_updates_no_new_version(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:
@@ -110,7 +107,6 @@ async def test_notify_updates_no_new_version(
         bot.send_message.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_notify_updates_retry_uses_html_and_recovers(
     notification_service: NotificationService, init_container: AsyncContainer
 ) -> None:

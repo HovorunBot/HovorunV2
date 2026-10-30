@@ -57,7 +57,6 @@ async def seed_membership_subjects(container: AsyncContainer) -> tuple[int, int]
         return group.id, user.id
 
 
-@pytest.mark.asyncio
 async def test_admin_events_and_revision_reject_stale_evidence(test_container: AsyncContainer) -> None:
     """Admin leave events invalidate evidence; stale API results cannot restore membership."""
     group_id, user_id = await seed_membership_subjects(test_container)
@@ -76,7 +75,6 @@ async def test_admin_events_and_revision_reject_stale_evidence(test_container: A
         await store.save_member(group_id, member_evidence(101, MembershipStatus.MEMBER, NOW.replace(tzinfo=None)))
 
 
-@pytest.mark.asyncio
 async def test_irrelevant_members_not_retained_and_demoted_admin_history_blocks_stale_admin(
     test_container: AsyncContainer,
 ) -> None:
@@ -103,7 +101,6 @@ async def test_irrelevant_members_not_retained_and_demoted_admin_history_blocks_
         assert history[0].deleted_at is not None
 
 
-@pytest.mark.asyncio
 async def test_unknown_admin_listing_retains_candidates_and_freshness_is_bounded(
     test_container: AsyncContainer,
 ) -> None:
@@ -144,7 +141,6 @@ async def test_unknown_admin_listing_retains_candidates_and_freshness_is_bounded
     assert not await store.relevant_users(group_id)
 
 
-@pytest.mark.asyncio
 async def test_bot_presence_does_not_change_bans_or_grants_and_unknown_preserves_presence(
     test_container: AsyncContainer,
 ) -> None:
@@ -170,7 +166,6 @@ async def test_bot_presence_does_not_change_bans_or_grants_and_unknown_preserves
         assert group.status == ChatStatus.BANNED
 
 
-@pytest.mark.asyncio
 async def test_generation_binding_and_transactional_audit_failure(test_container: AsyncContainer) -> None:
     """Late evidence cannot bind replacement user generations; failed audit cannot update revision/evidence."""
     group_id, user_id = await seed_membership_subjects(test_container)
@@ -230,7 +225,6 @@ def telegram_member_update(user: User, status: str, date: datetime) -> ChatMembe
     )
 
 
-@pytest.mark.asyncio
 async def test_real_member_and_bot_events_preserve_banned_group(test_container: AsyncContainer) -> None:
     """Event handlers persist relevant changes and bot rights without leaving banned groups."""
     group_id, user_id = await seed_membership_subjects(test_container)
@@ -258,7 +252,6 @@ async def test_real_member_and_bot_events_preserve_banned_group(test_container: 
         assert group.is_bot_present is True
 
 
-@pytest.mark.asyncio
 async def test_due_groups_correlates_administrators_to_the_selected_group(test_container: AsyncContainer) -> None:
     """Missing evidence in one group never makes an unrelated fresh group due."""
     group_id, user_id = await seed_membership_subjects(test_container)

@@ -9,6 +9,8 @@ import pytest
 
 HOOK = Path(__file__).resolve().parents[1] / "scripts" / "update-changelog-after-commit.sh"
 
+pytestmark = [pytest.mark.subprocess]
+
 
 async def run_command(repo: Path, *args: str) -> tuple[int, str]:
     """Run an external command with isolated Git configuration."""

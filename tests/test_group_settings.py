@@ -49,6 +49,7 @@ async def test_group_settings_retain_controls_and_explain_permissions(
             assert not (await service.evaluate(CAPABLE.key, GROUP, actor)).allowed
 
 
+@pytest.mark.slow
 async def test_group_beta_requires_explicit_rendered_activation(test_container: AsyncContainer) -> None:
     """Opening Modules changes nothing; one eligible click creates audited group selection."""
     service = await feature_runtime(test_container)

@@ -2,12 +2,9 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from hovorunv2.application.clients.threads import ThreadsService
 
 
-@pytest.mark.asyncio
 async def test_extract_footer_from_soup() -> None:
     """Test extracting footer statistics from Threads nested JSON payload."""
     browser_service = MagicMock()
@@ -53,7 +50,6 @@ async def test_extract_footer_from_soup() -> None:
     assert "❤️ 2.9K" in payload.footer_text  # 2864 -> 2.9K
 
 
-@pytest.mark.asyncio
 async def test_extract_payload_with_metrics() -> None:
     """Test full payload extraction including metrics for Threads."""
     # Mock dependencies

@@ -16,7 +16,6 @@ from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import ChatStatus, Platform
 
 
-@pytest.mark.asyncio
 async def test_active_chat_uniqueness_enforced_by_sqlite(test_container: AsyncContainer) -> None:
     """SQLite enforces that only one active record can exist per (platform, chat_id)."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -36,7 +35,6 @@ async def test_active_chat_uniqueness_enforced_by_sqlite(test_container: AsyncCo
             await session.commit()
 
 
-@pytest.mark.asyncio
 async def test_soft_deleted_chat_and_active_coexist(test_container: AsyncContainer) -> None:
     """Soft-deleted chats and active chat generations can coexist."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -78,7 +76,6 @@ async def test_soft_deleted_chat_and_active_coexist(test_container: AsyncContain
     assert active.generation == 2
 
 
-@pytest.mark.asyncio
 async def test_soft_delete_is_audited_transactionally(test_container: AsyncContainer) -> None:
     """Soft-deleting a chat records an audit event in the same transaction."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -110,7 +107,6 @@ async def test_soft_delete_is_audited_transactionally(test_container: AsyncConta
         assert events[0].changed_fields["reason"] == "group decommissioned"
 
 
-@pytest.mark.asyncio
 async def test_foreign_key_enforcement_on_chat_associations(test_container: AsyncContainer) -> None:
     """SQLite enforces foreign keys on chat command associations."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -126,7 +122,6 @@ async def test_foreign_key_enforcement_on_chat_associations(test_container: Asyn
             await session.execute(stmt)
 
 
-@pytest.mark.asyncio
 async def test_migration_preserves_chat_data_byte_for_byte(test_container: AsyncContainer) -> None:
     """Existing chat row fields (salts, language, commands) are preserved accurately."""
     session_maker = await test_container.get(async_sessionmaker)

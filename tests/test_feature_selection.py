@@ -23,7 +23,6 @@ from tests.utils.activation import ACTOR, GROUP, seed_activation
 from tests.utils.postgres import reject_audit
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("chat_id", [-29001, 29001])
 async def test_explicit_empty_stays_disabled_after_defaults_and_fixtures(
     test_engine: AsyncEngine, chat_id: int
@@ -53,7 +52,6 @@ async def test_explicit_empty_stays_disabled_after_defaults_and_fixtures(
         )
 
 
-@pytest.mark.asyncio
 async def test_legacy_compatibility_ends_on_intentional_edit(test_engine: AsyncEngine) -> None:
     """Known migrated empty capture remains until an actual selection edit."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -77,7 +75,6 @@ async def test_legacy_compatibility_ends_on_intentional_edit(test_engine: AsyncE
         assert event.changed_fields["legacy_empty_capture"] is False
 
 
-@pytest.mark.asyncio
 async def test_selection_audit_failure_rolls_back_legacy_transition(test_engine: AsyncEngine) -> None:
     """An audit insertion failure preserves both selections and legacy compatibility."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -99,7 +96,6 @@ async def test_selection_audit_failure_rolls_back_legacy_transition(test_engine:
         assert not chat.features_configured
 
 
-@pytest.mark.asyncio
 async def test_deleted_selection_never_resurrects_target(test_engine: AsyncEngine) -> None:
     """Old settings routes cannot recreate a soft-deleted identity."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -115,7 +111,6 @@ async def test_deleted_selection_never_resurrects_target(test_engine: AsyncEngin
         assert len((await session.scalars(select(ChatDB).where(ChatDB.chat_id == -29004))).all()) == 1
 
 
-@pytest.mark.asyncio
 async def test_first_explicit_off_blocks_later_default_initialization(test_engine: AsyncEngine) -> None:
     """Selecting off on a new empty record is still a durable settings decision."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -147,7 +142,6 @@ async def test_first_explicit_off_blocks_later_default_initialization(test_engin
         )
 
 
-@pytest.mark.asyncio
 async def test_migration_keeps_explicit_off_history(test_container: AsyncContainer) -> None:
     """Historical route IDs still bind explicit settings after canonical routing changes."""
     chats = await test_container.get(ChatStore)
@@ -161,7 +155,6 @@ async def test_migration_keeps_explicit_off_history(test_container: AsyncContain
     assert not await commands.is_capture_allowed(-10029006, CommandName.TWITTER, is_video=False)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("migrate", [False, True])
 async def test_selection_intent_survives_missing_audit_history(
     test_container: AsyncContainer, *, migrate: bool
@@ -188,7 +181,6 @@ async def test_selection_intent_survives_missing_audit_history(
         assert saved.features_configured
 
 
-@pytest.mark.asyncio
 async def test_defaults_initialize_once_without_audit_history(test_engine: AsyncEngine) -> None:
     """Successful first configuration remains explicit after its audit rows are removed."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -203,7 +195,6 @@ async def test_defaults_initialize_once_without_audit_history(test_engine: Async
     assert await store.get_allowed_commands(-29008) == []
 
 
-@pytest.mark.asyncio
 async def test_first_activation_preserves_empty_selection_without_audit_history(
     test_container: AsyncContainer,
 ) -> None:
@@ -220,7 +211,6 @@ async def test_first_activation_preserves_empty_selection_without_audit_history(
     assert await commands.get_allowed_commands(GROUP) == set()
 
 
-@pytest.mark.asyncio
 async def test_default_audit_failure_rolls_back_configuration_intent(test_engine: AsyncEngine) -> None:
     """A failed first-default audit leaves a new chat untouched and retryable."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)

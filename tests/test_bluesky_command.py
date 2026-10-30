@@ -19,7 +19,6 @@ async def bluesky_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.BLUESKY)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -40,7 +39,6 @@ async def test_is_triggered(
     assert await bluesky_command.is_triggered(message) == expected
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr
 async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a Bluesky post using real extraction and VCR."""
@@ -63,7 +61,6 @@ async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, init_conta
     assert "bsky.app" in caption
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr
 async def test_handle_bluesky_quote_with_media(
     bluesky_command: RichMediaCommand, init_container: AsyncContainer

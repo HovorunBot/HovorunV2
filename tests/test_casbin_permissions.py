@@ -24,7 +24,6 @@ from hovorunv2.domain.enums import ChatStatus, Role
 from hovorunv2.infrastructure.authorization.casbin_policy import CasbinAuthorizationPolicy, load_authorization_policy
 
 
-@pytest.mark.asyncio
 async def test_policy_uses_tiers_and_denies_unknown_actions() -> None:
     """Owner inherits admin permissions without receiving unrestricted action access."""
     policy = await load_authorization_policy()
@@ -36,7 +35,6 @@ async def test_policy_uses_tiers_and_denies_unknown_actions() -> None:
         assert policy.is_allowed(PermissionFacts(role, "bot:administer", PermissionTarget("group"))) is False
 
 
-@pytest.mark.asyncio
 async def test_service_observes_role_changes_without_policy_reload(test_container: AsyncContainer) -> None:
     """One shared policy never caches user assignments or resurrects deleted authority."""
     access = await test_container.get(AccessService)
@@ -56,7 +54,6 @@ async def test_service_observes_role_changes_without_policy_reload(test_containe
     assert (await access.evaluate_permission(request)).reason == DecisionReason.ENTITY_UNAVAILABLE
 
 
-@pytest.mark.asyncio
 async def test_group_evidence_is_actor_target_generation_and_time_scoped(test_container: AsyncContainer) -> None:
     """Evidence cannot authorize another actor, selected group, generation or time window."""
     users = await test_container.get(UserStore)
@@ -87,7 +84,6 @@ async def test_group_evidence_is_actor_target_generation_and_time_scoped(test_co
     assert (await access.evaluate_permission(request)).allowed is True
 
 
-@pytest.mark.asyncio
 async def test_owner_cannot_bypass_group_blockers(test_container: AsyncContainer) -> None:
     """Bans, missing identity and stale target generations precede owner authority."""
     roles = await test_container.get(RoleService)
@@ -105,7 +101,6 @@ async def test_owner_cannot_bypass_group_blockers(test_container: AsyncContainer
     assert (await access.evaluate_permission(request)).reason == DecisionReason.ENTITY_UNAVAILABLE
 
 
-@pytest.mark.asyncio
 async def test_policy_extends_by_data_without_changing_application_port(test_container: AsyncContainer) -> None:
     """A test-only action can be added to the same adapter without a role/action switch."""
     assets = files("hovorunv2.infrastructure.authorization").joinpath("policies")
@@ -120,7 +115,6 @@ async def test_policy_extends_by_data_without_changing_application_port(test_con
     assert baseline.is_allowed(facts) is False
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("model", "policy"),
     [
@@ -140,7 +134,6 @@ async def test_invalid_policy_fails_initialization(model: str | None, policy: st
         CasbinAuthorizationPolicy(model, policy)
 
 
-@pytest.mark.asyncio
 async def test_legacy_gates_now_share_database_authority(test_container: AsyncContainer) -> None:
     """Legacy role gates use Casbin and database roles after the explicit cutover."""
     access = await test_container.get(AccessService)

@@ -38,7 +38,6 @@ def reject_network(connection: socket.socket, address: object) -> None:
     raise AssertionError(msg)
 
 
-@pytest.mark.asyncio
 async def test_numeric_owner_bootstrap_without_bot_credentials_or_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -58,7 +57,6 @@ async def test_numeric_owner_bootstrap_without_bot_credentials_or_network(
     assert DatabaseSettings(_env_file=None).database_url.startswith("postgresql+psycopg://")
 
 
-@pytest.mark.asyncio
 async def test_known_user_handles_and_wrong_targets(test_container: AsyncContainer) -> None:
     """Only active known user handles resolve; unknown/group handles cannot provision users."""
     roles = await test_container.get(RoleService)
@@ -88,7 +86,6 @@ async def test_known_user_handles_and_wrong_targets(test_container: AsyncContain
     assert await cli.execute(role_arguments("list")) == "No active owner/admin assignments."
 
 
-@pytest.mark.asyncio
 async def test_demotion_confirmation_and_audited_role_changes(test_container: AsyncContainer) -> None:
     """Every CLI change records origin, reason and actual before/after authority."""
     roles = await test_container.get(RoleService)
@@ -122,7 +119,6 @@ async def test_demotion_confirmation_and_audited_role_changes(test_container: As
         assert events[-1].changed_fields == {"role": [Role.OWNER.value, Role.USER.value], "user_id": user.id}
 
 
-@pytest.mark.asyncio
 async def test_role_listing_filters_to_active_authority(test_container: AsyncContainer) -> None:
     """Listings are ordered and omit default-role and deleted identities."""
     roles = await test_container.get(RoleService)

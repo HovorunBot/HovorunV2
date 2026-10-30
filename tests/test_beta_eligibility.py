@@ -41,7 +41,6 @@ async def beta_user(container: AsyncContainer, telegram_id: int) -> PermissionTa
     return PermissionTarget("user", user.id, user.generation, user.telegram_id)
 
 
-@pytest.mark.asyncio
 async def test_all_beta_covers_future_definitions_without_activation(test_container: AsyncContainer) -> None:
     """All-beta is dynamic; trust, role and feature selection never serve as implicit grants."""
     target = await beta_user(test_container, 880280)
@@ -73,7 +72,6 @@ async def test_all_beta_covers_future_definitions_without_activation(test_contai
         assert audits[0].changed_fields == {"feature": "*", "granted": [False, True], "generation": 1}
 
 
-@pytest.mark.asyncio
 async def test_specific_grants_group_override_and_revocation_preserve_configuration(
     test_container: AsyncContainer,
 ) -> None:
@@ -127,7 +125,6 @@ async def test_specific_grants_group_override_and_revocation_preserve_configurat
         await service.set_grant(target, FEATURE_REGISTRY.all()[0].key, granted=True, actor=ActorContext.cli())
 
 
-@pytest.mark.asyncio
 async def test_beta_mutation_rechecks_authority_and_exact_lifecycle(test_container: AsyncContainer) -> None:
     """Demotion, untrusted transport, tombstones and stale generations fail at the mutation boundary."""
     target = await beta_user(test_container, 880283)
@@ -166,7 +163,6 @@ async def test_beta_mutation_rechecks_authority_and_exact_lifecycle(test_contain
         await service.set_grant(target, BETA.key, granted=False, actor=ActorContext.cli())
 
 
-@pytest.mark.asyncio
 async def test_beta_entitlement_audit_failure_rolls_back(test_container: AsyncContainer) -> None:
     """An audit rejection cannot leave a committed grant or a revoked entitlement."""
     target = await beta_user(test_container, 880285)
@@ -238,7 +234,6 @@ def test_beta_upgrade_preserves_existing_data_and_constraints(tmp_path: Path, mo
         )
 
 
-@pytest.mark.asyncio
 async def test_beta_regrant_retains_history_and_filters_deleted_grants_and_groups(
     test_container: AsyncContainer,
 ) -> None:

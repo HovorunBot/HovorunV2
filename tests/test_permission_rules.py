@@ -80,7 +80,6 @@ async def get_persisted_chat_and_commands(
         return status, commands
 
 
-@pytest.mark.asyncio
 async def test_access_middleware_private_chat_admin(test_container: AsyncContainer) -> None:
     """Test that admins have access in private chats."""
     access_service = await test_container.get(AccessService)
@@ -102,7 +101,6 @@ async def test_access_middleware_private_chat_admin(test_container: AsyncContain
     handler.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_access_middleware_private_chat_non_admin(test_container: AsyncContainer) -> None:
     """Test that non-admins are blocked in private chats and receive help text."""
     access_service = await test_container.get(AccessService)
@@ -125,7 +123,6 @@ async def test_access_middleware_private_chat_non_admin(test_container: AsyncCon
     assert settings.project_description in message.answer.call_args[0][0]
 
 
-@pytest.mark.asyncio
 async def test_access_middleware_allowed_group(test_container: AsyncContainer) -> None:
     """Test that allowed interaction in group proceeds to handler."""
     access_service = await test_container.get(AccessService)
@@ -148,7 +145,6 @@ async def test_access_middleware_allowed_group(test_container: AsyncContainer) -
     handler.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_access_middleware_denied_group(test_container: AsyncContainer) -> None:
     """Test that denied interaction in group is blocked."""
     access_service = await test_container.get(AccessService)
@@ -171,7 +167,6 @@ async def test_access_middleware_denied_group(test_container: AsyncContainer) ->
     handler.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_policy_bypass_for_global_admin(test_container: AsyncContainer) -> None:
     """Test that global admins bypass all policy restrictions."""
     access_service = await test_container.get(AccessService)
@@ -186,7 +181,6 @@ async def test_policy_bypass_for_global_admin(test_container: AsyncContainer) ->
     assert await access_service.is_allowed(admin_id, chat_id, policy) is True
 
 
-@pytest.mark.asyncio
 async def test_policy_requires_admin(test_container: AsyncContainer) -> None:
     """Test policy with requires_admin=True."""
     access_service = await test_container.get(AccessService)
@@ -201,7 +195,6 @@ async def test_policy_requires_admin(test_container: AsyncContainer) -> None:
     assert await access_service.is_allowed(normal_user_id, chat_id, policy) is False
 
 
-@pytest.mark.asyncio
 async def test_policy_requires_access(test_container: AsyncContainer) -> None:
     """Test policy with requires_approval=True."""
     access_service = await test_container.get(AccessService)
@@ -220,7 +213,6 @@ async def test_policy_requires_access(test_container: AsyncContainer) -> None:
     assert await access_service.is_allowed(user_id, non_approved_chat_id, policy) is False
 
 
-@pytest.mark.asyncio
 async def test_policy_requires_group_admin(test_container: AsyncContainer) -> None:
     """Test policy with requires_group_admin=True."""
     access_service = await test_container.get(AccessService)
@@ -244,7 +236,6 @@ async def test_policy_requires_group_admin(test_container: AsyncContainer) -> No
     assert await access_service.is_allowed(member_user_id, chat_id, policy, bot=bot) is False
 
 
-@pytest.mark.asyncio
 async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
     """Test policy with is_toggleable=True."""
     access_service = await test_container.get(AccessService)
@@ -280,7 +271,6 @@ async def test_policy_is_toggleable(test_container: AsyncContainer) -> None:
     assert await access_service.is_allowed(user_id, chat_id, policy, command_name=command_name) is False
 
 
-@pytest.mark.asyncio
 async def test_chat_status_service_approve(test_container: AsyncContainer) -> None:
     """Test that chat_status_service.approve sets APPROVED and enables default commands."""
     chat_status_service = await test_container.get(ChatStatusService)
@@ -296,7 +286,6 @@ async def test_chat_status_service_approve(test_container: AsyncContainer) -> No
     assert CommandName.TIKTOK in allowed
 
 
-@pytest.mark.asyncio
 async def test_access_service_is_owner(test_container: AsyncContainer) -> None:
     """Test is_owner check."""
     access_service = await test_container.get(AccessService)
@@ -308,7 +297,6 @@ async def test_access_service_is_owner(test_container: AsyncContainer) -> None:
     assert await access_service.is_owner(non_owner_id) is False
 
 
-@pytest.mark.asyncio
 async def test_access_service_is_admin(test_container: AsyncContainer) -> None:
     """Test is_admin check."""
     access_service = await test_container.get(AccessService)
@@ -322,7 +310,6 @@ async def test_access_service_is_admin(test_container: AsyncContainer) -> None:
     assert await access_service.is_admin(non_admin_id) is False
 
 
-@pytest.mark.asyncio
 async def test_command_service_is_capture_allowed(test_container: AsyncContainer) -> None:
     """Test is_capture_allowed for video and post commands."""
     command_service = await test_container.get(CommandService)
@@ -348,7 +335,6 @@ async def test_command_service_is_capture_allowed(test_container: AsyncContainer
 # ==============================================================================
 
 
-@pytest.mark.asyncio
 async def test_characterize_legacy_group_status_matrix(test_container: AsyncContainer) -> None:
     """Characterize legacy permission evaluation across all group statuses in real SQLite.
 
@@ -417,7 +403,6 @@ async def test_characterize_legacy_group_status_matrix(test_container: AsyncCont
     assert await access_service.is_allowed(admin_id, unrecorded_chat_id, policy_requires_approval) is True
 
 
-@pytest.mark.asyncio
 async def test_characterize_legacy_empty_command_set_capture(test_container: AsyncContainer) -> None:
     """Characterize legacy capture and command check behavior for an empty command set.
 
@@ -474,7 +459,6 @@ async def test_characterize_legacy_empty_command_set_capture(test_container: Asy
     assert persisted_commands_after == set()
 
 
-@pytest.mark.asyncio
 async def test_characterize_legacy_partially_enabled_command_set(test_container: AsyncContainer) -> None:
     """Characterize parent provider checks and capture when command set is partially enabled.
 
@@ -522,7 +506,6 @@ async def test_characterize_legacy_partially_enabled_command_set(test_container:
     assert await command_service.is_capture_allowed(chat_id, CommandName.YOUTUBE, is_video=True) is False
 
 
-@pytest.mark.asyncio
 async def test_characterize_legacy_parent_provider_bulk_and_toggle(test_container: AsyncContainer) -> None:
     """Characterize parent provider bulk operations and toggle behavior in real SQLite."""
     session_maker = await test_container.get(async_sessionmaker)
@@ -554,7 +537,6 @@ async def test_characterize_legacy_parent_provider_bulk_and_toggle(test_containe
     assert persisted_after_re_toggle == {str(CommandName.INSTAGRAM_VIDEO), str(CommandName.INSTAGRAM_POST)}
 
 
-@pytest.mark.asyncio
 async def test_characterize_legacy_default_activation(test_container: AsyncContainer) -> None:
     """Characterize default activation via chat_status_service.approve in real SQLite.
 
@@ -596,7 +578,6 @@ async def test_characterize_legacy_default_activation(test_container: AsyncConta
     )
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("status", [ChatStatus.APPROVED, ChatStatus.BANNED, ChatStatus.REJECTED])
 async def test_removal_and_rejoin_preserve_access_status(test_container: AsyncContainer, status: ChatStatus) -> None:
     """Physical bot removal/rejoin preserves durable status and command selections (019)."""
