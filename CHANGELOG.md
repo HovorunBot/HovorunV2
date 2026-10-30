@@ -56,6 +56,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **bootstrap**: decompose application startup and teardown
 - **bootstrap**: group providers and extract worker resource accessors
 - **telegram**: separate media and feedback interface dispatch
 - **telegram**: separate access denial handling

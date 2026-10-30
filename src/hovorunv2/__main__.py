@@ -4,8 +4,8 @@ import asyncio
 import signal
 from contextlib import suppress
 
-from aiogram import Bot, Dispatcher
-from dishka import make_async_container
+from aiogram import Bot, Dispatcher, Router
+from dishka import AsyncContainer, make_async_container
 from dishka.integrations.aiogram import setup_dishka
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -41,79 +41,103 @@ def _setup_signal_handlers() -> None:
             loop.add_signal_handler(signal.SIGTSTP, current_task.cancel)
 
 
+async def _build_bot_router(container: AsyncContainer, settings: Settings) -> Router:
+    """Resolve dependencies and build main telegram router."""
+    message_service = await container.get(MessageService)
+    access_service = await container.get(AccessService)
+    commands = await container.get(list[BaseCommand])
+    bot_join_handler = await container.get(BotJoinHandler)
+    identity_middleware = await container.get(IdentityMiddleware)
+    cache = await container.get(CachePort)
+    return build_router(
+        commands=commands,
+        message_service=message_service,
+        access_service=access_service,
+        settings=settings,
+        identity_middleware=identity_middleware,
+        cache=cache,
+        bot_join_handler=bot_join_handler,
+    )
+
+
+async def _start_background_services(
+    container: AsyncContainer,
+    bot: Bot,
+) -> tuple[CleanupService, TaskQueueService]:
+    """Start cleanup loops, reminders, membership reconciliation and task queue worker."""
+    cleanup_service = await container.get(CleanupService)
+    await cleanup_service.start_cleanup_loop(bot)
+
+    task_queue_service = await container.get(TaskQueueService)
+    reminder_service = await container.get(ChatReminderService)
+    reminder_service.register_jobs()
+    membership_reconciliation = await container.get(MembershipReconciliationService)
+    membership_reconciliation.register_jobs()
+    await membership_reconciliation.run_cycle()
+    await task_queue_service.start_worker(
+        context={
+            "bot": bot,
+            "reminder_service": reminder_service,
+            "membership_reconciliation": membership_reconciliation,
+        }
+    )
+    return cleanup_service, task_queue_service
+
+
+def _configure_dispatcher(container: AsyncContainer, router: Router) -> Dispatcher:
+    """Configure aiogram dispatcher with outer middleware and DI wireup."""
+    dp = Dispatcher()
+    dp.update.outer_middleware(LogContextMiddleware())
+    dp.include_router(router)
+    setup_dishka(container=container, router=dp)
+    return dp
+
+
+async def _teardown_services(
+    task_queue_service: TaskQueueService | None,
+    cleanup_service: CleanupService | None,
+    telegram_log_handler: AsyncTelegramHandler | None,
+    container: AsyncContainer,
+) -> None:
+    """Ensure complete cleanup of started background services and DI container."""
+    if task_queue_service:
+        await task_queue_service.stop_worker()
+    if cleanup_service:
+        await cleanup_service.stop_cleanup_loop()
+    if telegram_log_handler:
+        await telegram_log_handler.shutdown()
+    await container.close()
+
+
 async def run_bot() -> None:
     """Initialize app and start polling."""
     setup_logging()
     logger.info("Starting application...")
 
-    # Initialize DI container
     container = make_async_container(InfrastructureProvider(), AppProvider())
-    bot: Bot | None = None
     cleanup_service: CleanupService | None = None
     task_queue_service: TaskQueueService | None = None
     telegram_log_handler: AsyncTelegramHandler | None = None
 
     try:
-        # Populate fixtures
         session_maker = await container.get(async_sessionmaker)
         await setup_fixtures(session_maker)
 
-        # Resolve configuration and services
         settings = await container.get(Settings)
         verify_encryption_key(settings.cache_encryption_key)
-        message_service = await container.get(MessageService)
-        access_service = await container.get(AccessService)
-        commands = await container.get(list[BaseCommand])
-        bot_join_handler = await container.get(BotJoinHandler)
         bot = await container.get(Bot)
 
-        router = build_router(
-            commands=commands,
-            message_service=message_service,
-            access_service=access_service,
-            settings=settings,
-            identity_middleware=await container.get(IdentityMiddleware),
-            cache=await container.get(CachePort),
-            bot_join_handler=bot_join_handler,
-        )
+        router = await _build_bot_router(container, settings)
+        cleanup_service, task_queue_service = await _start_background_services(container, bot)
 
-        # Start persistent cleanup loop
-        cleanup_service = await container.get(CleanupService)
-        await cleanup_service.start_cleanup_loop(bot)
-
-        # Start generic background task queue worker
-        task_queue_service = await container.get(TaskQueueService)
-        reminder_service = await container.get(ChatReminderService)
-        reminder_service.register_jobs()
-        membership_reconciliation = await container.get(MembershipReconciliationService)
-        membership_reconciliation.register_jobs()
-        await membership_reconciliation.run_cycle()
-        await task_queue_service.start_worker(
-            context={
-                "bot": bot,
-                "reminder_service": reminder_service,
-                "membership_reconciliation": membership_reconciliation,
-            }
-        )
-
-        # Start polling
-
-        # Send update notifications if any
         notification_service = await container.get(NotificationService)
         await notification_service.notify_updates(bot)
 
-        dp = Dispatcher()
-        dp.update.outer_middleware(LogContextMiddleware())
-        dp.include_router(router)
+        dp = _configure_dispatcher(container, router)
 
-        # Wire dishka with aiogram
-        setup_dishka(container=container, router=dp)
-
-        # Initialize improved logging with Telegram DM handler
         if settings.error_dm_enabled:
             telegram_log_handler = setup_telegram_logging(bot, await container.get(RoleService))
 
-        # Handle SIGTSTP (Ctrl+Z) as graceful termination alongside SIGINT/SIGTERM
         _setup_signal_handlers()
 
         logger.info("Bot started and polling...")
@@ -121,13 +145,7 @@ async def run_bot() -> None:
     except asyncio.CancelledError:
         logger.info("Bot shutdown requested via signal.")
     finally:
-        if task_queue_service:
-            await task_queue_service.stop_worker()
-        if cleanup_service:
-            await cleanup_service.stop_cleanup_loop()
-        if telegram_log_handler:
-            await telegram_log_handler.shutdown()
-        await container.close()
+        await _teardown_services(task_queue_service, cleanup_service, telegram_log_handler, container)
 
 
 def main() -> None:
