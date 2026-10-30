@@ -75,6 +75,7 @@ async def test_legacy_compatibility_ends_on_intentional_edit(test_engine: AsyncE
         assert event.changed_fields["legacy_empty_capture"] is False
 
 
+@pytest.mark.fresh_schema
 async def test_selection_audit_failure_rolls_back_legacy_transition(test_engine: AsyncEngine) -> None:
     """An audit insertion failure preserves both selections and legacy compatibility."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -211,6 +212,7 @@ async def test_first_activation_preserves_empty_selection_without_audit_history(
     assert await commands.get_allowed_commands(GROUP) == set()
 
 
+@pytest.mark.fresh_schema
 async def test_default_audit_failure_rolls_back_configuration_intent(test_engine: AsyncEngine) -> None:
     """A failed first-default audit leaves a new chat untouched and retryable."""
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)

@@ -68,7 +68,7 @@ def member_payload(status: str = "member", *, is_bot: bool = False) -> dict[str,
 )
 async def test_current_member_variants(status: str, expected: MembershipStatus) -> None:
     """Creators count as admins; absence requires an actual left response."""
-    async with Bot(BOT_CREDENTIAL).context() as bot:
+    async with Bot(BOT_CREDENTIAL) as bot:
         adapter = TelegramMembershipAdapter(bot)
         before = datetime.now(UTC)
         with aioresponses() as mocked:
@@ -88,7 +88,7 @@ async def test_current_member_variants(status: str, expected: MembershipStatus) 
 @pytest.mark.parametrize("status", [HTTPStatus.BAD_REQUEST, HTTPStatus.FORBIDDEN, HTTPStatus.INTERNAL_SERVER_ERROR])
 async def test_api_failures_remain_unknown(status: HTTPStatus) -> None:
     """API and permission failures cannot become absence or a successful empty admin list."""
-    async with Bot(BOT_CREDENTIAL).context() as bot:
+    async with Bot(BOT_CREDENTIAL) as bot:
         adapter = TelegramMembershipAdapter(bot)
         with aioresponses() as mocked:
             for method in ("getChatMember", "getChatAdministrators", "getChatMember"):
@@ -110,7 +110,7 @@ async def test_api_failures_remain_unknown(status: HTTPStatus) -> None:
 
 async def test_administrator_list_excludes_bots_and_profile_data() -> None:
     """Only numeric human administrator evidence crosses the application boundary."""
-    async with Bot(BOT_CREDENTIAL).context() as bot:
+    async with Bot(BOT_CREDENTIAL) as bot:
         adapter = TelegramMembershipAdapter(bot)
         with aioresponses() as mocked:
             mocked.post(
@@ -134,7 +134,7 @@ async def test_administrator_list_excludes_bots_and_profile_data() -> None:
 
 async def test_bot_capabilities_are_independent_of_presence() -> None:
     """A member bot has no admin rights; administrator rights are checked individually."""
-    async with Bot(BOT_CREDENTIAL).context() as bot:
+    async with Bot(BOT_CREDENTIAL) as bot:
         adapter = TelegramMembershipAdapter(bot)
         with aioresponses() as mocked:
             mocked.post(
@@ -159,7 +159,7 @@ async def test_bot_capabilities_are_independent_of_presence() -> None:
 
 async def test_network_failure_and_identity_mismatch_are_unknown() -> None:
     """Network uncertainty and mismatched response identity never prove absence or membership."""
-    async with Bot(BOT_CREDENTIAL).context() as bot:
+    async with Bot(BOT_CREDENTIAL) as bot:
         adapter = TelegramMembershipAdapter(bot)
         with aioresponses() as mocked:
             mocked.post(url=f"{API}/getChatMember", exception=ClientConnectionError("Synthetic network failure"))
@@ -197,7 +197,7 @@ class ResponseObserver:
 async def test_evidence_timestamp_precedes_api_response() -> None:
     """An older in-flight lookup cannot overwrite a later membership event by timestamp."""
     observer = ResponseObserver()
-    async with Bot(BOT_CREDENTIAL).context() as bot:
+    async with Bot(BOT_CREDENTIAL) as bot:
         adapter = TelegramMembershipAdapter(bot)
         with aioresponses() as mocked:
             mocked.post(url=f"{API}/getChatMember", response_class=RecordedResponse, callback=observer.respond)

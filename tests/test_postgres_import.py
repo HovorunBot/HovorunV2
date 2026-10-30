@@ -18,6 +18,8 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.group_grant import GroupApprovalDB
 from hovorunv2.infrastructure.config import DatabaseSettings
 
+pytestmark = pytest.mark.fresh_schema
+
 
 def make_source(path: Path, revision: str = RELEASE_021_REVISION) -> str:
     """Create synthetic legacy data; a large negative Telegram ID must survive PostgreSQL's stricter types."""

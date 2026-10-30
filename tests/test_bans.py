@@ -85,6 +85,7 @@ async def test_owner_protection_and_current_administrator(test_container: AsyncC
     assert await bans.apply(TargetKind.USER, 102, BanKind.FULL, ActorContext.cli(reason="authorized CLI"))
 
 
+@pytest.mark.fresh_schema
 async def test_ban_audit_failure_rolls_back_and_deleted_targets_are_hidden(test_container: AsyncContainer) -> None:
     """Rejected audit inserts roll back restrictions; tombstones exclude ordinary reads."""
     users = await test_container.get(UserStore)

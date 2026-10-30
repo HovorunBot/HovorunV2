@@ -166,6 +166,7 @@ async def test_bot_presence_does_not_change_bans_or_grants_and_unknown_preserves
         assert group.status == ChatStatus.BANNED
 
 
+@pytest.mark.fresh_schema
 async def test_generation_binding_and_transactional_audit_failure(test_container: AsyncContainer) -> None:
     """Late evidence cannot bind replacement user generations; failed audit cannot update revision/evidence."""
     group_id, user_id = await seed_membership_subjects(test_container)

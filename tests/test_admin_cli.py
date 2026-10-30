@@ -22,7 +22,7 @@ from hovorunv2.infrastructure.config import DatabaseSettings
 from hovorunv2.interface.cli.roles import RoleArguments, RoleCLI, build_parser
 from tests.utils.network import reject_network
 
-pytestmark = pytest.mark.usefixtures("postgres_database_url")
+pytestmark = [pytest.mark.usefixtures("postgres_database_url"), pytest.mark.fresh_schema]
 
 
 def role_arguments(*arguments: str) -> RoleArguments:

@@ -154,6 +154,7 @@ async def test_override_authority_lifecycle_removal_and_audit(test_container: As
         await store.set_override(user.target, policy, actor=ActorContext.cli())
 
 
+@pytest.mark.fresh_schema
 async def test_audit_failure_rolls_back_policy_and_unknown_units_fail(test_container: AsyncContainer) -> None:
     """A real SQLite trigger rejects audit insertion after mutation; both rows must roll back."""
     user, _group = await usage_subjects(test_container)

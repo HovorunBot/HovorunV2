@@ -287,6 +287,7 @@ async def test_anonymous_sender_cannot_open_user_bound_settings(test_container: 
             assert not http.requests
 
 
+@pytest.mark.fresh_schema
 async def test_language_audit_failure_rolls_back_settings(test_container: AsyncContainer) -> None:
     """A failing audit insert must never leave the language mutation committed."""
     await group_beta_runtime(test_container)

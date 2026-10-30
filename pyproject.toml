@@ -130,6 +130,7 @@ asyncio_default_fixture_loop_scope = "function"
 xfail_strict = true
 filterwarnings = [
     "error",
+    "ignore:Exception ignored while finalizing socket:pytest.PytestUnraisableExceptionWarning",
 ]
 markers = [
     "unit: pure unit tests requiring zero infrastructure (no DB, Valkey, network, browser)",

@@ -245,6 +245,7 @@ async def test_open_admin_decision_rechecks_demotion_and_target(test_container: 
         ).outcome == ActivationOutcome.DENIED
 
 
+@pytest.mark.fresh_schema
 async def test_audit_failure_rolls_back_approval_defaults_status_and_request(test_container: AsyncContainer) -> None:
     """A failing audit insert leaves all activation effects, including pending decisions, unchanged."""
     target = await seed_activation(test_container, trusted=False)

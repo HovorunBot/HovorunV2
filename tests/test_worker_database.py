@@ -279,6 +279,7 @@ async def test_native_processes_share_receipts_with_bot(
         )
 
 
+@pytest.mark.fresh_schema
 async def test_native_conflict_and_audit_failure_roll_back(
     test_container: AsyncContainer, postgres_database_url: str
 ) -> None:

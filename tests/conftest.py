@@ -8,12 +8,17 @@ from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 import redis
 from dishka import AsyncContainer, Scope, make_async_container, provide
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
+import hovorunv2.domain  # noqa: F401
 from hovorunv2.application.membership import AdministratorEvidence
 from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, UserStore
@@ -28,7 +33,7 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.utils.browser_cache import TestBrowserService
-from tests.utils.postgres import postgres_database
+from tests.utils.postgres import DEFAULT_TEST_DATABASE_URL, postgres_database
 from tests.utils.telegram import create_mock_message, create_private_media_message
 
 __all__ = [
@@ -38,6 +43,7 @@ __all__ = [
     "get_media_command",
     "provision_role",
     "resolve_worker_valkey_url",
+    "worker_postgres_schema",
     "worker_valkey_url",
 ]
 
@@ -143,21 +149,69 @@ def worker_valkey_url(request: pytest.FixtureRequest) -> Generator[str]:
         client.close()
 
 
-@pytest.fixture
-async def postgres_database_url(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[str]:
-    """Point every application container at one isolated empty real PostgreSQL schema."""
-    async with postgres_database() as url:
-        monkeypatch.setenv("DATABASE_URL", url)
-        yield url
+TRUNCATE_TABLES_SQL = text(
+    "TRUNCATE TABLE "
+    + ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
+    + " RESTART IDENTITY CASCADE"
+)
+
+
+@pytest.fixture(scope="session")
+def worker_postgres_schema(request: pytest.FixtureRequest) -> Generator[str]:
+    """Create one isolated real PostgreSQL schema per xdist worker for the test session."""
+    worker_id = getattr(request.config, "workerinput", {}).get("workerid", "master")
+    base_url = make_url(os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL))
+    schema = f"test_worker_{worker_id}_{uuid4().hex[:8]}"
+
+    admin_engine = create_engine(base_url.render_as_string(hide_password=False), poolclass=NullPool)
+    with admin_engine.begin() as conn:
+        conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+
+    scoped_url = base_url.update_query_dict({"options": f"-csearch_path={schema}"})
+    scoped_url_str = scoped_url.render_as_string(hide_password=False)
+
+    worker_engine = create_engine(scoped_url_str, poolclass=NullPool)
+    with worker_engine.begin() as conn:
+        Base.metadata.create_all(conn)
+    worker_engine.dispose()
+
+    yield scoped_url_str
+
+    with admin_engine.begin() as conn:
+        conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+    admin_engine.dispose()
 
 
 @pytest.fixture
-async def test_engine(postgres_database_url: str) -> AsyncGenerator[AsyncEngine]:
+async def postgres_database_url(
+    request: pytest.FixtureRequest,
+    worker_postgres_schema: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncGenerator[str]:
+    """Provide isolated PostgreSQL URL: fresh schema for @pytest.mark.fresh_schema, else worker schema."""
+    if request.node.get_closest_marker("fresh_schema"):
+        async with postgres_database() as fresh_url:
+            monkeypatch.setenv("DATABASE_URL", fresh_url)
+            yield fresh_url
+    else:
+        monkeypatch.setenv("DATABASE_URL", worker_postgres_schema)
+        yield worker_postgres_schema
+
+
+@pytest.fixture
+async def test_engine(
+    request: pytest.FixtureRequest,
+    postgres_database_url: str,
+) -> AsyncGenerator[AsyncEngine]:
     """Use PostgreSQL constraints and independent pooled connections in application tests."""
     engine = create_async_engine(postgres_database_url, hide_parameters=True)
     try:
-        async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
+        if request.node.get_closest_marker("fresh_schema"):
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+        else:
+            async with engine.begin() as connection:
+                await connection.execute(TRUNCATE_TABLES_SQL)
         yield engine
     finally:
         await engine.dispose()

@@ -84,6 +84,7 @@ async def test_trust_resolves_active_handles_and_rejects_deleted_users(test_cont
     assert not await trust.set_trust("880099", is_trusted=True, actor=ActorContext.cli())
 
 
+@pytest.mark.fresh_schema
 async def test_trust_audit_failure_rolls_back_revision(test_container: AsyncContainer) -> None:
     """A rejected audit insert rolls back both trust and its revision."""
     users = await test_container.get(UserStore)

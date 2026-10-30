@@ -150,6 +150,7 @@ async def test_fresh_generations_and_deleted_subjects_keep_current_window_usage(
     assert await store.total(subject, MEDIA_BUCKET, UsageUnit.REQUESTS, UsageWindow(), 90) == 6
 
 
+@pytest.mark.fresh_schema
 async def test_audit_failure_rolls_back_receipt_and_aggregate(test_container: AsyncContainer) -> None:
     """A SQLite audit rejection proves accounting and its replay receipt share the audit transaction."""
     await usage_subjects(test_container)

@@ -106,6 +106,7 @@ async def test_migration_rejects_target_identity_collisions(test_container: Asyn
     assert (await chats.get_chat(OLD)).chat_id == OLD
 
 
+@pytest.mark.fresh_schema
 async def test_migration_rolls_back_when_audit_fails(test_container: AsyncContainer) -> None:
     """Roll back routing and aliases if the audit insertion is rejected."""
     chats = await test_container.get(ChatStore)

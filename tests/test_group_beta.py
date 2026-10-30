@@ -370,6 +370,7 @@ async def test_exact_target_binding_and_bot_admin_demotion_are_rechecked(test_co
         )
 
 
+@pytest.mark.fresh_schema
 async def test_audit_failure_rolls_back_selection_and_enabler_enable_and_disable(
     test_container: AsyncContainer,
 ) -> None:

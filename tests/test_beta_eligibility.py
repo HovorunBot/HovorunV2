@@ -163,6 +163,7 @@ async def test_beta_mutation_rechecks_authority_and_exact_lifecycle(test_contain
         await service.set_grant(target, BETA.key, granted=False, actor=ActorContext.cli())
 
 
+@pytest.mark.fresh_schema
 async def test_beta_entitlement_audit_failure_rolls_back(test_container: AsyncContainer) -> None:
     """An audit rejection cannot leave a committed grant or a revoked entitlement."""
     target = await beta_user(test_container, 880285)

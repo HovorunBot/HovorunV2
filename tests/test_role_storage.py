@@ -189,6 +189,7 @@ async def test_owner_protected_from_telegram_deletion(test_container: AsyncConta
     assert await user_store.soft_delete_user(owner_id, actor=cli_actor, reason="authorized decommission") is True
 
 
+@pytest.mark.fresh_schema
 async def test_role_provisioning_rolls_back_when_audit_insert_fails(test_container: AsyncContainer) -> None:
     """A rejected audit insert rolls back the newly provisioned user and role."""
     role_service = await test_container.get(RoleService)

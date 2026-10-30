@@ -108,6 +108,7 @@ async def test_grant_queries_filter_deleted_parents_and_associations(test_contai
         await store.approve(group_id, actor)
 
 
+@pytest.mark.fresh_schema
 async def test_audit_failure_rolls_back_decision_and_approval(test_container: AsyncContainer) -> None:
     """SQLite audit failure rolls back both records of the composite approve command."""
     group_id, first_id, _ = await seed_grant_subjects(test_container)
