@@ -12,6 +12,7 @@ from hovorunv2.application.administration import AdminRequest, AdminTarget
 from hovorunv2.application.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
 from hovorunv2.application.ports import AppSettings, CachePort, UserStore
 from hovorunv2.application.services.settings_session_service import SETTINGS_SESSION_TTL
+from hovorunv2.domain.user import UserDB
 
 
 class AdminConfirmation(BaseModel):
@@ -73,14 +74,20 @@ class AdminSessionService:
         except KeyError, TypeError, ValueError, ValidationError, InvalidToken:
             return None
         user = await self._users.get_by_telegram_id(actor_id)
-        if (
-            user is None
-            or confirmation.actor_id != actor_id
-            or confirmation.actor_generation != user.generation
-            or confirmation.message_id != message_id
-            or confirmation.expires_at <= time.time()
-        ):
+        if not self._confirmation_matches(confirmation, user, actor_id, message_id):
             return None
         if consume and await self._cache.pop(key) != raw:
             return None
         return confirmation
+
+    def _confirmation_matches(
+        self, confirmation: AdminConfirmation, user: UserDB | None, actor_id: int, message_id: int
+    ) -> bool:
+        """Check live actor generation and window binding before consuming the token."""
+        if user is None:
+            return False
+        if confirmation.actor_id != actor_id or confirmation.actor_generation != user.generation:
+            return False
+        if confirmation.message_id != message_id:
+            return False
+        return not confirmation.expires_at <= time.time()

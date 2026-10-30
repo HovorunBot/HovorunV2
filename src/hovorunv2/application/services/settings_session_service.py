@@ -58,12 +58,11 @@ class SettingsSessionService:
         """Prepare trusted transport context, including future private selected-group menus."""
         chat = await self._chats.get_chat(target_chat_id)
         user = await self._users.get_by_telegram_id(actor_id)
-        if (
-            chat is None
-            or chat.chat_id != target_chat_id
-            or user is None
-            or (transport_chat_id < 0 and transport_chat_id != target_chat_id)
-            or (transport_chat_id > 0 and transport_chat_id != actor_id)
+        if chat is None or chat.chat_id != target_chat_id or user is None:
+            msg = "Settings require an active actor and canonical target."
+            raise ValueError(msg)
+        if (transport_chat_id < 0 and transport_chat_id != target_chat_id) or (
+            transport_chat_id > 0 and transport_chat_id != actor_id
         ):
             msg = "Settings require an active actor and canonical target."
             raise ValueError(msg)
@@ -127,14 +126,7 @@ class SettingsSessionService:
             context = SettingsContext.model_validate(raw)
         except ValidationError:
             return None
-        if (
-            context.expires_at <= time.time()
-            or operation not in context.operations
-            or context.transport_chat_id != transport_chat_id
-            or context.message_id != message_id
-            or (context.actor_id is not None and context.actor_id != actor_id)
-            or await self._cache.get(f"settings:window:{transport_chat_id}") != token
-        ):
+        if not await self._window_matches(context, token, operation, actor_id, transport_chat_id, message_id):
             return None
         user = await self._users.get_by_telegram_id(actor_id)
         if user is None or (context.actor_generation is not None and user.generation != context.actor_generation):
@@ -150,3 +142,21 @@ class SettingsSessionService:
         ):
             return None
         return context
+
+    async def _window_matches(
+        self,
+        context: SettingsContext,
+        token: str,
+        operation: str,
+        actor_id: int,
+        transport_chat_id: int,
+        message_id: int,
+    ) -> bool:
+        """Check expiry, operation and transport before reading the active window token."""
+        if context.expires_at <= time.time() or operation not in context.operations:
+            return False
+        if context.transport_chat_id != transport_chat_id or context.message_id != message_id:
+            return False
+        if context.actor_id is not None and context.actor_id != actor_id:
+            return False
+        return await self._cache.get(f"settings:window:{transport_chat_id}") == token

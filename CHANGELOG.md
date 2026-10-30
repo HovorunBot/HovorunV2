@@ -56,6 +56,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **settings**: separate session validation guards
 - **trust**: separate administration authority checks
 - **admin**: separate target resolution and dispatch
 - **access**: separate group management evidence checks
