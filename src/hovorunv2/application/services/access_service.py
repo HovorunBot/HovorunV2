@@ -102,8 +102,17 @@ class AccessService:
             member = await bot.get_chat_member(chat_id, user_id)
         except Exception:
             return False
-        else:
-            return member.status in ("administrator", "creator")
+        return member.status in ("administrator", "creator")
+
+    async def _group_policy_allows(self, chat_id: int, policy: CommandPolicy) -> bool:
+        """Apply group blockers before any actor authority bypass."""
+        decision = await self._chat_status_service.evaluate_access(chat_id)
+        if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ENTITY_UNAVAILABLE}:
+            return False
+        return not (
+            policy.requires_approval
+            and decision.reason in {DecisionReason.ADMIN_FULL_BANNED, DecisionReason.MEMBER_EVIDENCE_UNKNOWN}
+        )
 
     async def _check_non_admin_policy(
         self,
@@ -150,15 +159,8 @@ class AccessService:
             return False
 
         # Group bans always block everyone, including global admins.
-        if chat_id < 0:
-            decision = await self._chat_status_service.evaluate_access(chat_id)
-            if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ENTITY_UNAVAILABLE}:
-                return False
-            if policy.requires_approval and decision.reason in {
-                DecisionReason.ADMIN_FULL_BANNED,
-                DecisionReason.MEMBER_EVIDENCE_UNKNOWN,
-            }:
-                return False
+        if chat_id < 0 and not await self._group_policy_allows(chat_id, policy):
+            return False
 
         # Personal user bans block direct commands, but not automatic media links in groups
         if user_id is not None and await self.is_banned(user_id) and not policy.is_automatic:
