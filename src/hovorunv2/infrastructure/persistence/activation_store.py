@@ -80,23 +80,10 @@ class SQLAlchemyActivationStore(ActivationStore):
         actor = await SQLAlchemyUserRepository(session).get_by_telegram_id(request.actor_id)
         target = request.target
         chat = await SQLAlchemyChatRepository(session).get_by_id(target.telegram_id or 0)
-        context = request.administrator_actor
-        if context is not None and (
-            context.origin not in {ActorOrigin.CLI, ActorOrigin.TELEGRAM}
-            or (context.origin == ActorOrigin.TELEGRAM and context.actor_id != request.actor_id)
-        ):
-            msg = "Invalid administration actor context."
-            raise PermissionError(msg)
-        cli = request.administrator_actor is not None and request.administrator_actor.origin == ActorOrigin.CLI
-        if (
-            (actor is None and not cli)
-            or chat is None
-            or target.kind != "group"
-            or chat.chat_id != target.telegram_id
-            or chat.id != target.entity_id
-            or chat.generation != target.generation
-            or chat.chat_type not in {"group", "supergroup"}
-        ):
+        cli = self._is_cli_administrator(request)
+        if actor is None and not cli:
+            return ActivationMutation(ActivationResult(ActivationOutcome.UNAVAILABLE))
+        if chat is None or not self._matches_target(chat, request):
             return ActivationMutation(ActivationResult(ActivationOutcome.UNAVAILABLE))
         if actor is not None and await self._banned(session, TargetKind.USER, actor.telegram_id):
             return ActivationMutation(ActivationResult(ActivationOutcome.DENIED))
@@ -106,23 +93,57 @@ class SQLAlchemyActivationStore(ActivationStore):
             actor is not None
             and self._policy.is_allowed(PermissionFacts(actor.role, "bot:administer", PermissionTarget("bot")))
         )
-        if request.action == ActivationAction.ENABLE and actor is not None:
-            result = await self._enable(repository, request, chat, actor, administrator=administrator)
-        elif request.action in {ActivationAction.GRANT, ActivationAction.APPROVE, ActivationAction.REJECT}:
-            if not administrator or (not cli and request.transport_kind != "private"):
-                return ActivationMutation(ActivationResult(ActivationOutcome.DENIED))
-            result = (
-                await repository.approve(chat, actor, "administrator")
-                if request.action == ActivationAction.GRANT
-                else await repository.decide(request, chat, actor)
-            )
-        else:
-            return ActivationMutation(ActivationResult(ActivationOutcome.DENIED))
+        result = await self._dispatch(repository, request, chat, actor, cli=cli, administrator=administrator)
         if result.changes:
             result.changes.update(group_id=chat.id, generation=chat.generation)
             if actor is not None:
                 result.changes["actor_user_id"] = actor.id
         return result
+
+    def _is_cli_administrator(self, request: ActivationRequest) -> bool:
+        """Validate the supplied administration provenance and identify CLI authority."""
+        context = request.administrator_actor
+        if context is not None and (
+            context.origin not in {ActorOrigin.CLI, ActorOrigin.TELEGRAM}
+            or (context.origin == ActorOrigin.TELEGRAM and context.actor_id != request.actor_id)
+        ):
+            msg = "Invalid administration actor context."
+            raise PermissionError(msg)
+        return context is not None and context.origin == ActorOrigin.CLI
+
+    def _matches_target(self, chat: ChatDB, request: ActivationRequest) -> bool:
+        """Bind a mutation to the current group identity and generation."""
+        target = request.target
+        if target.kind != "group":
+            return False
+        if chat.chat_id != target.telegram_id or chat.id != target.entity_id:
+            return False
+        if chat.generation != target.generation:
+            return False
+        return chat.chat_type in {"group", "supergroup"}
+
+    async def _dispatch(
+        self,
+        repository: SQLAlchemyActivationRepository,
+        request: ActivationRequest,
+        chat: ChatDB,
+        actor: UserDB | None,
+        *,
+        cli: bool,
+        administrator: bool,
+    ) -> ActivationMutation:
+        """Select the authorized activation mutation for the requested action."""
+        if request.action == ActivationAction.ENABLE and actor is not None:
+            return await self._enable(repository, request, chat, actor, administrator=administrator)
+        if request.action in {ActivationAction.GRANT, ActivationAction.APPROVE, ActivationAction.REJECT}:
+            if not administrator or (not cli and request.transport_kind != "private"):
+                return ActivationMutation(ActivationResult(ActivationOutcome.DENIED))
+            return (
+                await repository.approve(chat, actor, "administrator")
+                if request.action == ActivationAction.GRANT
+                else await repository.decide(request, chat, actor)
+            )
+        return ActivationMutation(ActivationResult(ActivationOutcome.DENIED))
 
     async def execute(self, request: ActivationRequest) -> ActivationResult:
         """Validate current facts inside the same transaction as all activation effects."""
