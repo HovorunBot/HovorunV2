@@ -62,35 +62,9 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
         attempt = 0
         while True:
             try:
-                async with self._session_maker() as session:
-                    async with session.begin():
-                        result = await operation(session)
-
-                        should_audit = audit_if(result) if audit_if is not None else True
-                        if should_audit:
-                            if isinstance(changed_fields, dict):
-                                raw_changes = changed_fields
-                            elif callable(changed_fields):
-                                raw_changes = changed_fields(result)
-                            else:
-                                raw_changes = None
-                            validate_audit_changes(target_type, action, raw_changes)
-                            sanitized_changes = sanitize_audit_changes(raw_changes)
-                            audit_repo = SQLAlchemyAuditRepository(session)
-                            event = AuditEventDB(
-                                created_at=datetime.now(UTC),
-                                actor_origin=actor.origin,
-                                actor_id=actor.actor_id,
-                                target_type=target_type,
-                                target_id=str(target_id),
-                                action=action,
-                                changed_fields=sanitized_changes,
-                                reason=actor.reason,
-                                correlation_id=actor.correlation_id,
-                            )
-                            await audit_repo.add(event)
-
-                    return result
+                return await self._execute_attempt(
+                    actor, target_type, target_id, action, operation, changed_fields, audit_if
+                )
             except DBAPIError as error:
                 attempt += 1
                 if (
@@ -98,3 +72,53 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
                     or attempt >= MAX_TRANSACTION_ATTEMPTS
                 ):
                     raise
+
+    async def _execute_attempt(
+        self,
+        actor: ActorContext,
+        target_type: str,
+        target_id: str | int,
+        action: str,
+        operation: Callable[[AsyncSession], Awaitable[Any]],
+        changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None,
+        audit_if: Callable[[Any], bool] | None,
+    ) -> Any:
+        async with self._session_maker() as session:
+            async with session.begin():
+                result = await operation(session)
+                if audit_if is None or audit_if(result):
+                    await self._append_audit_event(
+                        session, actor, target_type, target_id, action, changed_fields, result
+                    )
+            return result
+
+    async def _append_audit_event(
+        self,
+        session: AsyncSession,
+        actor: ActorContext,
+        target_type: str,
+        target_id: str | int,
+        action: str,
+        changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None,
+        result: Any,
+    ) -> None:
+        if isinstance(changed_fields, dict):
+            raw_changes = changed_fields
+        elif callable(changed_fields):
+            raw_changes = changed_fields(result)
+        else:
+            raw_changes = None
+        validate_audit_changes(target_type, action, raw_changes)
+        sanitized_changes = sanitize_audit_changes(raw_changes)
+        event = AuditEventDB(
+            created_at=datetime.now(UTC),
+            actor_origin=actor.origin,
+            actor_id=actor.actor_id,
+            target_type=target_type,
+            target_id=str(target_id),
+            action=action,
+            changed_fields=sanitized_changes,
+            reason=actor.reason,
+            correlation_id=actor.correlation_id,
+        )
+        await SQLAlchemyAuditRepository(session).add(event)

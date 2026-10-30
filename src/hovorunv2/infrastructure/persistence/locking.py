@@ -42,6 +42,34 @@ def lock_mutation(session: Session, locks: MutationLocks) -> None:
     They are not a global writer lock. Existing parents additionally use PostgreSQL row locks.
     Resolve only immutable identity/parent columns before locking, then consumers load fresh facts.
     """
+    users, actors, chats, group_ids, keys = _prepare_lock_keys(session, locks)
+    schema = session.scalar(select(func.current_schema()))
+    for key, shared in sorted(keys.items()):
+        function = func.pg_advisory_xact_lock_shared if shared else func.pg_advisory_xact_lock
+        session.execute(select(function(scoped_lock_key(str(schema), key))))
+    # Users always precede chats. Resolve overlap before acquisition to avoid lock upgrades.
+    rows = session.execute(
+        select(UserDB.id, UserDB.telegram_id)
+        .where(UserDB.platform == locks.platform, UserDB.telegram_id.in_(users | actors))
+        .order_by(UserDB.id)
+    ).all()
+    for row_id, telegram_id in rows:
+        session.execute(select(UserDB.id).where(UserDB.id == row_id).with_for_update(read=telegram_id not in users))
+    # Alias lookup is repeated after the natural-key gate, including aliases created by a migration.
+    group_ids.update(session.scalars(select(GroupRouteDB.group_id).where(GroupRouteDB.telegram_id.in_(chats))))
+    row_ids = session.scalars(
+        select(ChatDB.id)
+        .where(ChatDB.platform == locks.platform, or_(ChatDB.chat_id.in_(chats), ChatDB.id.in_(group_ids)))
+        .order_by(ChatDB.id)
+    ).all()
+    for row_id in row_ids:
+        session.execute(select(ChatDB.id).where(ChatDB.id == row_id).with_for_update())
+
+
+def _prepare_lock_keys(
+    session: Session, locks: MutationLocks
+) -> tuple[set[int], set[int], set[int], set[int], dict[str, bool]]:
+    """Resolve immutable parent identifiers and advisory lock modes."""
     user_ids = set(locks.user_ids)
     shared_ids = set(locks.read_user_ids)
     group_ids = set(locks.group_ids)
@@ -66,27 +94,7 @@ def lock_mutation(session: Session, locks: MutationLocks) -> None:
         keys[f"{locks.platform}:user:{user}"] = False
     for chat in chats:
         keys[f"{locks.platform}:chat:{chat}"] = False
-    schema = session.scalar(select(func.current_schema()))
-    for key, shared in sorted(keys.items()):
-        function = func.pg_advisory_xact_lock_shared if shared else func.pg_advisory_xact_lock
-        session.execute(select(function(scoped_lock_key(str(schema), key))))
-    # Users always precede chats. Resolve overlap before acquisition to avoid lock upgrades.
-    rows = session.execute(
-        select(UserDB.id, UserDB.telegram_id)
-        .where(UserDB.platform == locks.platform, UserDB.telegram_id.in_(users | actors))
-        .order_by(UserDB.id)
-    ).all()
-    for row_id, telegram_id in rows:
-        session.execute(select(UserDB.id).where(UserDB.id == row_id).with_for_update(read=telegram_id not in users))
-    # Alias lookup is repeated after the natural-key gate, including aliases created by a migration.
-    group_ids.update(session.scalars(select(GroupRouteDB.group_id).where(GroupRouteDB.telegram_id.in_(chats))))
-    row_ids = session.scalars(
-        select(ChatDB.id)
-        .where(ChatDB.platform == locks.platform, or_(ChatDB.chat_id.in_(chats), ChatDB.id.in_(group_ids)))
-        .order_by(ChatDB.id)
-    ).all()
-    for row_id in row_ids:
-        session.execute(select(ChatDB.id).where(ChatDB.id == row_id).with_for_update())
+    return users, actors, chats, group_ids, keys
 
 
 async def lock_async_mutation(session: AsyncSession, locks: MutationLocks) -> None:
