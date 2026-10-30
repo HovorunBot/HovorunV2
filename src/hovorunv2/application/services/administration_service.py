@@ -59,14 +59,7 @@ class AdministrationService:
 
     async def resolve(self, kind: TargetKind, reference: str) -> AdminTarget:
         """Reject unknown handles, tombstones and noncanonical routes without provisioning."""
-        if reference.startswith("@"):
-            handle = await self._handles.resolve_handle(reference)
-            if handle is None or handle.target_kind != kind:
-                msg = "No active target has that known handle."
-                raise ValueError(msg)
-            telegram_id = handle.target_id
-        else:
-            telegram_id = int(reference)
+        telegram_id = await self._resolve_reference(kind, reference)
         if not -MAX_TELEGRAM_ID <= telegram_id <= MAX_TELEGRAM_ID or telegram_id == 0:
             msg = "Telegram ID must be a nonzero signed 64-bit integer."
             raise ValueError(msg)
@@ -86,6 +79,16 @@ class AdministrationService:
             msg = "No active canonical group."
             raise ValueError(msg)
         return AdminTarget(kind=kind, telegram_id=telegram_id, entity_id=chat.id, generation=chat.generation)
+
+    async def _resolve_reference(self, kind: TargetKind, reference: str) -> int:
+        """Resolve a handle to its known target without provisioning an identity."""
+        if not reference.startswith("@"):
+            return int(reference)
+        handle = await self._handles.resolve_handle(reference)
+        if handle is None or handle.target_kind != kind:
+            msg = "No active target has that known handle."
+            raise ValueError(msg)
+        return handle.target_id
 
     async def inspect(self, target: AdminTarget, actor: ActorContext, transport: str | None) -> dict[str, object]:
         """Return operational state only, excluding internal ban reasons, salts and message contents."""
@@ -117,17 +120,11 @@ class AdministrationService:
             msg = "Target kind changed."
             raise ValueError(msg)
         permission_target = PermissionTarget(target.kind.value, target.entity_id, target.generation, target.telegram_id)
-        reference = str(target.telegram_id)
         match request.action:
             case AdminAction.INSPECT | AdminAction.REQUESTS:
                 return state
             case AdminAction.TRUST | AdminAction.UNTRUST:
-                if target.kind != TargetKind.USER:
-                    msg = "Trust applies only to users."
-                    raise ValueError(msg)
-                changed = await self._trust.set_trust(
-                    reference, is_trusted=request.action == AdminAction.TRUST, actor=actor, transport_kind=transport
-                )
+                changed = await self._execute_trust(request, target, actor, transport)
             case AdminAction.BAN:
                 changed = await self._bans.apply(
                     target.kind,
@@ -150,20 +147,40 @@ class AdministrationService:
                     transport_kind=transport,
                 )
             case AdminAction.APPROVE | AdminAction.ACCEPT | AdminAction.REJECT:
-                action = {
-                    AdminAction.APPROVE: ActivationAction.GRANT,
-                    AdminAction.ACCEPT: ActivationAction.APPROVE,
-                    AdminAction.REJECT: ActivationAction.REJECT,
-                }[request.action]
-                result = await self._activation.execute(
-                    ActivationRequest(
-                        actor.actor_id or 0,
-                        permission_target,
-                        transport or "cli",
-                        action,
-                        request.request_id,
-                        administrator_actor=actor,
-                    )
-                )
-                return {"outcome": result.outcome.value, "request_id": result.request_id}
+                return await self._execute_activation(request, permission_target, actor, transport)
         return {"changed": changed}
+
+    async def _execute_trust(
+        self, request: AdminRequest, target: AdminTarget, actor: ActorContext, transport: str | None
+    ) -> bool:
+        """Apply trust only to an already verified user target."""
+        if target.kind != TargetKind.USER:
+            msg = "Trust applies only to users."
+            raise ValueError(msg)
+        return await self._trust.set_trust(
+            str(target.telegram_id),
+            is_trusted=request.action == AdminAction.TRUST,
+            actor=actor,
+            transport_kind=transport,
+        )
+
+    async def _execute_activation(
+        self, request: AdminRequest, target: PermissionTarget, actor: ActorContext, transport: str | None
+    ) -> dict[str, object]:
+        """Translate the selected administration action into an activation request."""
+        action = {
+            AdminAction.APPROVE: ActivationAction.GRANT,
+            AdminAction.ACCEPT: ActivationAction.APPROVE,
+            AdminAction.REJECT: ActivationAction.REJECT,
+        }[request.action]
+        result = await self._activation.execute(
+            ActivationRequest(
+                actor.actor_id or 0,
+                target,
+                transport or "cli",
+                action,
+                request.request_id,
+                administrator_actor=actor,
+            )
+        )
+        return {"outcome": result.outcome.value, "request_id": result.request_id}

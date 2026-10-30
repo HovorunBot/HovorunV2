@@ -55,6 +55,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **admin**: separate target resolution and dispatch
 - **access**: separate group management evidence checks
 - **access**: separate target and group decisions
 - **policy**: separate group fact queries
