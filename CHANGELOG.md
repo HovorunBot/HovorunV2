@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **clean-code**: decompose telegram delivery and semantic recovery
 - **browser**: separate lifecycle attempts and retain operation ownership
 - **translation**: separate provider failure from display policy
 - **media**: flatten semantic strategy recovery and finalization
