@@ -64,6 +64,14 @@ class WorkerDatabase:
             msg = "Worker database resources require an open context in their owning process."
             raise ValueError(msg)
 
+    def _require_open_engine(self) -> Engine:
+        """Return the active engine or raise if closed or unowned."""
+        self._require_owner()
+        if self._engine is None:
+            msg = "Worker database resources require an open context in their owning process."
+            raise ValueError(msg)
+        return self._engine
+
     @property
     def policies(self) -> WorkerPolicyStore:
         """Expose policy reads only to the owning child."""
@@ -83,8 +91,7 @@ class WorkerDatabase:
         traceback: TracebackType | None,
     ) -> None:
         """Close all pooled connections in the process that created them."""
-        self._require_owner()
-        assert self._engine is not None
-        self._engine.dispose()
+        engine = self._require_open_engine()
+        engine.dispose()
         self._engine = None
         self._owner = None

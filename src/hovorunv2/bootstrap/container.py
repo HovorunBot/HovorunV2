@@ -194,8 +194,8 @@ class InfrastructureProvider(DatabaseProvider):
     task_queue_port = alias(source=TaskQueueService, provides=TaskQueuePort)
 
 
-class AppProvider(Provider):
-    """Provider for application business logic services."""
+class SecurityAndAccessProvider(Provider):
+    """Provide security policies, roles, bans, access control and beta features."""
 
     scope = Scope.APP
 
@@ -209,81 +209,84 @@ class AppProvider(Provider):
         """Provide the code-defined registry shared by eligibility and feature evaluation."""
         return FEATURE_REGISTRY
 
-    beta_store_impl = provide(SQLAlchemyBetaEntitlementStore)
-    beta_store = alias(source=SQLAlchemyBetaEntitlementStore, provides=BetaEntitlementStore)
-    beta_service = provide(BetaEligibilityService)
-    group_beta_store_impl = provide(SQLAlchemyGroupBetaStore)
-    group_beta_store = alias(source=SQLAlchemyGroupBetaStore, provides=GroupBetaStore)
-    group_beta_service = provide(GroupBetaService)
-    feature_fact_store = provide(SQLAlchemyFeatureFactStore, provides=FeatureFactStore)
-    feature_access = provide(FeatureAccessService)
+    role_store_impl = provide(SQLAlchemyRoleStore)
+    role_store = alias(source=SQLAlchemyRoleStore, provides=RoleStore)
+    role_service = provide(RoleService)
 
-    chat_store_impl = provide(SQLAlchemyChatStore)
-    activation_store_impl = provide(SQLAlchemyActivationStore)
-    activation_store = alias(source=SQLAlchemyActivationStore, provides=ActivationStore)
-    group_activation_service = provide(GroupActivationService)
-    membership_store_impl = provide(SQLAlchemyMembershipStore)
-    membership_store = alias(source=SQLAlchemyMembershipStore, provides=MembershipStore)
-    group_grant_store_impl = provide(SQLAlchemyGroupGrantStore)
-    group_grant_store = alias(source=SQLAlchemyGroupGrantStore, provides=GroupGrantStore)
-    group_identity_store_impl = provide(SQLAlchemyGroupIdentityStore)
-    group_identity_store = alias(source=SQLAlchemyGroupIdentityStore, provides=GroupIdentityStore)
-    group_migration_store_impl = provide(SQLAlchemyGroupMigrationStore)
-    group_migration_store = alias(source=SQLAlchemyGroupMigrationStore, provides=GroupMigrationStore)
-    identity_middleware = provide(IdentityMiddleware)
-    membership_event_handler = provide(MembershipEventHandler)
-    command_store_impl = provide(SQLAlchemyCommandStore)
-    system_store_impl = provide(SQLAlchemySystemStore)
-    user_store_impl = provide(SQLAlchemyUserStore)
-    public_handle_store_impl = provide(SQLAlchemyPublicHandleStore)
     ban_store_impl = provide(SQLAlchemyBanStore)
     ban_store = alias(source=SQLAlchemyBanStore, provides=BanStore)
     ban_service = provide(BanService)
-    role_store_impl = provide(SQLAlchemyRoleStore)
-    audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
 
-    chat_store = alias(source=SQLAlchemyChatStore, provides=ChatStore)
-    command_store = alias(source=SQLAlchemyCommandStore, provides=CommandStore)
-    system_store = alias(source=SQLAlchemySystemStore, provides=SystemStore)
-    user_store = alias(source=SQLAlchemyUserStore, provides=UserStore)
-    public_handle_store = alias(source=SQLAlchemyPublicHandleStore, provides=PublicHandleStore)
-    role_store = alias(source=SQLAlchemyRoleStore, provides=RoleStore)
-    audited_transaction = alias(source=SQLAlchemyAuditedTransaction, provides=AuditedUnitOfWork)
-
-    prompt_sender_impl = provide(TelegramUnauthorizedPromptSender)
-    prompt_sender = alias(source=TelegramUnauthorizedPromptSender, provides=UnauthorizedPromptSender)
-
-    message_service = provide(MessageService)
-    membership_reconciliation = provide(MembershipReconciliationService)
-    notification_service = provide(NotificationService)
-    owner_notifier = provide(OwnerNotifier)
-    reminder_service = provide(ChatReminderService)
-    feedback_service = provide(FeedbackService)
-    command_service = provide(CommandService)
-    chat_status_service = provide(ChatStatusService)
-    access_service = provide(AccessService)
-    role_service = provide(RoleService)
     trust_service = provide(TrustService)
     permission_service = provide(PermissionService)
-    cleanup_service = provide(CleanupService)
-    language_service = provide(LanguageService)
-    translation_provider = provide(GoogleTranslationService, provides=BaseTranslationService)
-    translation_service = provide(TranslationService)
-    media_downloader = provide(MediaDownloader)
-    media_extractor = provide(MediaExtractor)
-    media_pipeline = provide(MediaPipeline)
-    tiktok_service = provide(TikTokService)
-    twitter_service = provide(TwitterService)
-    threads_service = provide(ThreadsService)
-    instagram_service = provide(InstagramService)
-    bluesky_service = provide(BlueskyService)
-    youtube_service = provide(YoutubeService)
-    reddit_service = provide(RedditService)
+    access_service = provide(AccessService)
 
-    # Utility Commands & Handlers
-    help_command = provide(HelpCommand)
-    feedback_command = provide(FeedbackCommand)
-    group_management = provide(GroupManagementService)
+    beta_store_impl = provide(SQLAlchemyBetaEntitlementStore)
+    beta_store = alias(source=SQLAlchemyBetaEntitlementStore, provides=BetaEntitlementStore)
+    beta_service = provide(BetaEligibilityService)
+
+    group_beta_store_impl = provide(SQLAlchemyGroupBetaStore)
+    group_beta_store = alias(source=SQLAlchemyGroupBetaStore, provides=GroupBetaStore)
+    group_beta_service = provide(GroupBetaService)
+
+    feature_fact_store = provide(SQLAlchemyFeatureFactStore, provides=FeatureFactStore)
+    feature_access = provide(FeatureAccessService)
+
+
+class IdentityAndMembershipProvider(Provider):
+    """Provide identity mapping, chat lifecycle, activation, and membership reconciliation."""
+
+    scope = Scope.APP
+
+    chat_store_impl = provide(SQLAlchemyChatStore)
+    chat_store = alias(source=SQLAlchemyChatStore, provides=ChatStore)
+
+    activation_store_impl = provide(SQLAlchemyActivationStore)
+    activation_store = alias(source=SQLAlchemyActivationStore, provides=ActivationStore)
+    group_activation_service = provide(GroupActivationService)
+
+    membership_store_impl = provide(SQLAlchemyMembershipStore)
+    membership_store = alias(source=SQLAlchemyMembershipStore, provides=MembershipStore)
+
+    group_grant_store_impl = provide(SQLAlchemyGroupGrantStore)
+    group_grant_store = alias(source=SQLAlchemyGroupGrantStore, provides=GroupGrantStore)
+
+    group_identity_store_impl = provide(SQLAlchemyGroupIdentityStore)
+    group_identity_store = alias(source=SQLAlchemyGroupIdentityStore, provides=GroupIdentityStore)
+
+    group_migration_store_impl = provide(SQLAlchemyGroupMigrationStore)
+    group_migration_store = alias(source=SQLAlchemyGroupMigrationStore, provides=GroupMigrationStore)
+
+    identity_middleware = provide(IdentityMiddleware)
+    membership_event_handler = provide(MembershipEventHandler)
+    membership_reconciliation = provide(MembershipReconciliationService)
+
+
+class AuditAndPersistenceProvider(Provider):
+    """Provide audited transactions, command audit, user identities and handle persistence."""
+
+    scope = Scope.APP
+
+    command_store_impl = provide(SQLAlchemyCommandStore)
+    command_store = alias(source=SQLAlchemyCommandStore, provides=CommandStore)
+
+    system_store_impl = provide(SQLAlchemySystemStore)
+    system_store = alias(source=SQLAlchemySystemStore, provides=SystemStore)
+
+    user_store_impl = provide(SQLAlchemyUserStore)
+    user_store = alias(source=SQLAlchemyUserStore, provides=UserStore)
+
+    public_handle_store_impl = provide(SQLAlchemyPublicHandleStore)
+    public_handle_store = alias(source=SQLAlchemyPublicHandleStore, provides=PublicHandleStore)
+
+    audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
+    audited_transaction = alias(source=SQLAlchemyAuditedTransaction, provides=AuditedUnitOfWork)
+
+
+class RuntimeUsageProvider(Provider):
+    """Provide atomic rate limits, execution budgets, admission, and quota ledgers."""
+
+    scope = Scope.APP
 
     @provide
     def runtime_namespace(self) -> RuntimeNamespace:
@@ -292,16 +295,21 @@ class AppProvider(Provider):
 
     clock_impl = provide(WallClock)
     clock = alias(source=WallClock, provides=Clock)
+
     admission_store_impl = provide(ValkeyAdmissionStore)
     admission_store = alias(source=ValkeyAdmissionStore, provides=AdmissionPort)
     admission_service = provide(AdmissionService)
+
     payload_store_impl = provide(ValkeyPayloadStore)
     payload_store = alias(source=ValkeyPayloadStore, provides=PayloadPort)
+
     budget_store_impl = provide(ValkeyBudgetStore)
     budget_store = alias(source=ValkeyBudgetStore, provides=BudgetPort)
     budget_service = provide(BudgetService)
+
     usage_ledger_store_impl = provide(SQLAlchemyUsageLedgerStore)
     usage_ledger_store = alias(source=SQLAlchemyUsageLedgerStore, provides=UsageLedgerStore)
+
     usage_policy_store_impl = provide(SQLAlchemyUsagePolicyStore)
     usage_policy_store = alias(source=SQLAlchemyUsagePolicyStore, provides=UsagePolicyStore)
     usage_policy_service = provide(UsagePolicyService)
@@ -311,13 +319,26 @@ class AppProvider(Provider):
         """Provide application ceilings separately from ordinary quota overrides."""
         return UsageSafetyCaps()
 
-    administration_service = provide(AdministrationService)
-    admin_sessions = provide(AdminSessionService)
-    administration_command = provide(AdministrationCommand)
-    settings_sessions = provide(SettingsSessionService)
-    settings_command = provide(SettingsCommand)
-    bot_join_handler = provide(BotJoinHandler)
-    debug_command = provide(DebugCommand)
+
+class MediaAndContentProvider(Provider):
+    """Provide media extraction, pipeline processing, downloads and provider adapters."""
+
+    scope = Scope.APP
+
+    media_downloader = provide(MediaDownloader)
+    media_extractor = provide(MediaExtractor)
+    media_pipeline = provide(MediaPipeline)
+
+    tiktok_service = provide(TikTokService)
+    twitter_service = provide(TwitterService)
+    threads_service = provide(ThreadsService)
+    instagram_service = provide(InstagramService)
+    bluesky_service = provide(BlueskyService)
+    youtube_service = provide(YoutubeService)
+    reddit_service = provide(RedditService)
+
+    translation_provider = provide(GoogleTranslationService, provides=BaseTranslationService)
+    translation_service = provide(TranslationService)
 
     @provide(scope=Scope.APP)
     def get_media_clients(
@@ -370,6 +391,37 @@ class AppProvider(Provider):
             for client in media_clients
         ]
 
+
+class InterfaceAndUtilityProvider(Provider):
+    """Provide bot handlers, utility commands, notification and administration services."""
+
+    scope = Scope.APP
+
+    prompt_sender_impl = provide(TelegramUnauthorizedPromptSender)
+    prompt_sender = alias(source=TelegramUnauthorizedPromptSender, provides=UnauthorizedPromptSender)
+
+    message_service = provide(MessageService)
+    notification_service = provide(NotificationService)
+    owner_notifier = provide(OwnerNotifier)
+    reminder_service = provide(ChatReminderService)
+    feedback_service = provide(FeedbackService)
+    command_service = provide(CommandService)
+    chat_status_service = provide(ChatStatusService)
+    cleanup_service = provide(CleanupService)
+    language_service = provide(LanguageService)
+
+    administration_service = provide(AdministrationService)
+    admin_sessions = provide(AdminSessionService)
+    administration_command = provide(AdministrationCommand)
+
+    settings_sessions = provide(SettingsSessionService)
+    settings_command = provide(SettingsCommand)
+
+    bot_join_handler = provide(BotJoinHandler)
+    debug_command = provide(DebugCommand)
+    help_command = provide(HelpCommand)
+    feedback_command = provide(FeedbackCommand)
+    group_management = provide(GroupManagementService)
     access_command = provide(AccessCommand)
 
     @provide(scope=Scope.APP)
@@ -405,3 +457,14 @@ class AppProvider(Provider):
             *rich_media_commands,
             *utility_commands,
         ]
+
+
+class AppProvider(
+    SecurityAndAccessProvider,
+    IdentityAndMembershipProvider,
+    AuditAndPersistenceProvider,
+    RuntimeUsageProvider,
+    MediaAndContentProvider,
+    InterfaceAndUtilityProvider,
+):
+    """Unified application provider composing domain, persistence and service modules."""

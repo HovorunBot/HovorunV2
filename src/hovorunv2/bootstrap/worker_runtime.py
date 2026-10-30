@@ -55,6 +55,14 @@ class WorkerRuntime:
             msg = "Worker runtime resources require an open context in their owning process."
             raise ValueError(msg)
 
+    def _require_open_client(self) -> redis.Redis:
+        """Return the active Valkey client or raise if closed or unowned."""
+        self._require_owner()
+        if self._client is None:
+            msg = "Worker runtime resources require an open context in their owning process."
+            raise ValueError(msg)
+        return self._client
+
     @property
     def admission(self) -> WorkerAdmissionClient:
         """Expose lifecycle operations to the owning child."""
@@ -80,8 +88,7 @@ class WorkerRuntime:
         traceback: TracebackType | None,
     ) -> None:
         """Close pooled connections and invalidate retained adapters."""
-        self._require_owner()
-        assert self._client is not None
-        self._client.close()
+        client = self._require_open_client()
+        client.close()
         self._client = None
         self._owner = None
