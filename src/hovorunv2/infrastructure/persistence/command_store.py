@@ -147,10 +147,7 @@ class SQLAlchemyCommandStore(CommandStore):
             chat = ChatDB(chat_id=chat_id, platform=Platform(platform), status=ChatStatus.UNAUTHORIZED)
             session.add(chat)
 
-        legacy = bool(chat.legacy_empty_capture)
-        chat.legacy_empty_capture = False
-        first_selection = not chat.features_configured
-        chat.features_configured = True
+        legacy, first_selection = self._record_explicit_selection(chat)
         chat_commands = await chat.awaitable_attrs.commands
         if command not in chat_commands:
             chat_commands.append(command)
@@ -179,10 +176,7 @@ class SQLAlchemyCommandStore(CommandStore):
             return False, False, False
         if await SQLAlchemyCommandRepository(session).get_by_name(command_name) is None:
             return False, False, False
-        legacy = chat.legacy_empty_capture
-        chat.legacy_empty_capture = False
-        first_selection = not chat.features_configured
-        chat.features_configured = True
+        legacy, first_selection = self._record_explicit_selection(chat)
 
         chat_commands = await chat.awaitable_attrs.commands
         for cmd in list(chat_commands):
@@ -191,6 +185,14 @@ class SQLAlchemyCommandStore(CommandStore):
                 return True, legacy, True
         # A first explicit off selection must prevent later default initialization.
         return legacy, legacy, legacy or first_selection
+
+    def _record_explicit_selection(self, chat: ChatDB) -> tuple[bool, bool]:
+        """End legacy capture and record whether this is the first explicit selection."""
+        legacy = bool(chat.legacy_empty_capture)
+        first_selection = not chat.features_configured
+        chat.legacy_empty_capture = False
+        chat.features_configured = True
+        return legacy, first_selection
 
     async def enable_command(
         self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None
