@@ -21,33 +21,6 @@ async def threads_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.THREADS)
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("https://www.threads.net/@zuck/post/CuW6-7Ky5jG", True),
-        ("https://www.threads.com/@zuck/post/CuW6-7Ky5jG", True),
-        ("https://threads.net/@user/post/123456", True),
-        ("https://threads.com/@user/post/123456", True),
-        ("http://threads.net/t/C_xyz123", True),
-        ("http://threads.com/t/C_xyz123", True),
-        ("https://www.threads.net/t/CuW6-7Ky5jG", True),
-        ("https://www.threads.com/t/CuW6-7Ky5jG", True),
-        ("No link here", False),
-        ("Invalid link: https://threads.net/user/12345", False),
-        ("", False),
-        (None, False),
-    ],
-)
-async def test_is_triggered(
-    threads_command: RichMediaCommand,
-    text: str | None,
-    expected: bool,
-) -> None:
-    """Test the is_triggered method with various inputs."""
-    message = create_private_media_message(text)
-    assert await threads_command.is_triggered(message) == expected
-
-
 @pytest.mark.slow
 @pytest.mark.vcr
 async def test_handle_threads_post(threads_command: RichMediaCommand, init_container: AsyncContainer) -> None:

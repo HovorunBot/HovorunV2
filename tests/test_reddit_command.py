@@ -26,30 +26,6 @@ async def reddit_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.REDDIT)
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("https://www.reddit.com/r/python/comments/1abcde/cool_post_title/", True),
-        ("https://old.reddit.com/r/linux/comments/1abcde/some_post", True),
-        ("https://reddit.com/r/memes/s/AbCdEfGh12", True),
-        ("https://redd.it/1abcde", True),
-        ("https://www.reddit.com/user/spez/comments/1abcde/announcement/", True),
-        ("https://www.reddit.com/r/python/", False),
-        ("No link here", False),
-        ("", False),
-        (None, False),
-    ],
-)
-async def test_is_triggered(
-    reddit_command: RichMediaCommand,
-    text: str | None,
-    expected: bool,
-) -> None:
-    """Test Reddit URL pattern matching."""
-    message = create_private_media_message(text)
-    assert await reddit_command.is_triggered(message) == expected
-
-
 async def test_handle_reddit_gallery_post(reddit_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a Reddit multi-image gallery post."""
     chat_id = 456

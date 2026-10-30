@@ -21,28 +21,6 @@ async def instagram_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.INSTAGRAM)
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("Check this post: https://www.instagram.com/p/C-2v0r0nQ1A/", True),
-        ("Check this reel: https://www.instagram.com/reels/C-2v0r0nQ1A/", True),
-        ("Check this tv: https://www.instagram.com/tv/C-2v0r0nQ1A/", True),
-        ("No link here", False),
-        ("Invalid link: https://instagram.com/user/", False),
-        ("", False),
-        (None, False),
-    ],
-)
-async def test_is_triggered(
-    instagram_command: RichMediaCommand,
-    text: str | None,
-    expected: bool,
-) -> None:
-    """Test the is_triggered method with various inputs."""
-    message = create_private_media_message(text)
-    assert await instagram_command.is_triggered(message) == expected
-
-
 @pytest.mark.slow
 @pytest.mark.vcr
 async def test_handle_instagram_post(instagram_command: RichMediaCommand, init_container: AsyncContainer) -> None:

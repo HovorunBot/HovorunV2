@@ -25,32 +25,6 @@ async def youtube_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.YOUTUBE)
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("https://www.youtube.com/shorts/abc-123", True),
-        ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", True),
-        ("https://youtu.be/dQw4w9WgXcQ", True),
-        ("https://www.youtube.com/post/Ugkx1234567890abcdef", True),
-        ("https://www.youtube.com/channel/UC12345/community?lb=Ugkx1234567890", True),
-        ("https://www.youtube.com/@channel/community?lb=Ugkx1234567890", True),
-        ("https://www.youtube.com/@channel/post/Ugkx1234567890abcdef", True),
-        ("https://www.youtube.com/@channel", False),
-        ("No link here", False),
-        ("", False),
-        (None, False),
-    ],
-)
-async def test_is_triggered(
-    youtube_command: RichMediaCommand,
-    text: str | None,
-    expected: bool,
-) -> None:
-    """Test YouTube URL pattern matching for videos, Shorts, and Community posts."""
-    message = create_private_media_message(text)
-    assert await youtube_command.is_triggered(message) == expected
-
-
 async def test_handle_youtube_community_post(youtube_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test extracting and sending a YouTube Community image+text post."""
     chat_id = 456

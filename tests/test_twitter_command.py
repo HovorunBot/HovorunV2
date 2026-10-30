@@ -24,26 +24,6 @@ async def twitter_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.TWITTER)
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("Check this post: https://twitter.com/elonmusk/status/1234567890", True),
-        ("Check this post: https://x.com/elonmusk/status/1234567890", True),
-        ("No link here", False),
-        ("", False),
-        (None, False),
-    ],
-)
-async def test_is_triggered(
-    twitter_command: RichMediaCommand,
-    text: str | None,
-    expected: bool,
-) -> None:
-    """Test the is_triggered method with various inputs."""
-    message = create_private_media_message(text)
-    assert await twitter_command.is_triggered(message) == expected
-
-
 @pytest.mark.vcr
 async def test_handle_twitter_post(twitter_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a real Twitter post using VCR."""

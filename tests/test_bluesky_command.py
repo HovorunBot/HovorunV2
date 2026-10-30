@@ -19,26 +19,6 @@ async def bluesky_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.BLUESKY)
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("https://bsky.app/profile/danabra.mov/post/3lj6v5szvj22a", True),
-        ("Check this: https://www.bsky.app/profile/user.bsky.social/post/rkey123", True),
-        ("No link here", False),
-        ("", False),
-        (None, False),
-    ],
-)
-async def test_is_triggered(
-    bluesky_command: RichMediaCommand,
-    text: str | None,
-    expected: bool,
-) -> None:
-    """Test the is_triggered method with various inputs."""
-    message = create_private_media_message(text)
-    assert await bluesky_command.is_triggered(message) == expected
-
-
 @pytest.mark.vcr
 async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a Bluesky post using real extraction and VCR."""

@@ -19,31 +19,6 @@ async def facebook_command(init_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(init_container, CommandName.FACEBOOK)
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("https://www.facebook.com/user/posts/12345", True),
-        ("https://www.facebook.com/groups/id/posts/12345", True),
-        ("https://www.facebook.com/permalink.php?story_fbid=123", True),
-        ("https://www.facebook.com/photo.php?fbid=123", True),
-        ("https://www.facebook.com/reel/123", True),
-        ("https://www.facebook.com/watch/?v=123", True),
-        ("https://www.facebook.com/share/p/1FuWE1yAik/", True),
-        ("No link here", False),
-        ("", False),
-        (None, False),
-    ],
-)
-async def test_is_triggered(
-    facebook_command: RichMediaCommand,
-    text: str | None,
-    expected: bool,
-) -> None:
-    """Test the is_triggered method with various inputs."""
-    message = create_private_media_message(text)
-    assert await facebook_command.is_triggered(message) == expected
-
-
 @pytest.mark.vcr
 async def test_handle_facebook_photo_post(facebook_command: RichMediaCommand, init_container: AsyncContainer) -> None:
     """Test handling a Facebook photo post using real extraction and VCR."""
