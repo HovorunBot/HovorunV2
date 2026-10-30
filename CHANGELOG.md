@@ -55,6 +55,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **tests**: type recorded response registration
 - **identity**: separate public handle synchronization
 - **identity**: separate group migration operations
 - **usage**: simplify policy persistence

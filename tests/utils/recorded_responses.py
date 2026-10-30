@@ -6,7 +6,9 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any
 
+from aiohttp import ClientResponse
 from aioresponses import CallbackResult, aioresponses
+from multidict import CIMultiDict
 from yarl import URL
 
 from tests.test_membership_adapter import RecordedResponse
@@ -30,9 +32,37 @@ async def _recorded_callback(callback: Callable[..., Any], *args: Any, **kwargs:
 class RecordedResponses(aioresponses):
     """Configure response construction per request; the parent ignores a context-level response_class."""
 
-    def add(self, url: str | re.Pattern[str] | URL, method: str = "GET", **kwargs: Any) -> None:
+    def add(
+        self,
+        url: str | re.Pattern[str] | URL,
+        method: str = "GET",
+        status: int = 200,
+        body: str | bytes = "",
+        exception: Exception | None = None,
+        content_type: str = "application/json",
+        payload: dict[Any, Any] | None = None,
+        headers: CIMultiDict | dict[Any, Any] | None = None,
+        response_class: type[ClientResponse] | None = RecordedResponse,
+        repeat: bool | int = False,
+        timeout: bool = False,
+        reason: str | None = None,
+        callback: Callable[..., Any] | None = None,
+    ) -> None:
         """Provide real aiohttp response objects while replacing external HTTP only."""
-        kwargs.setdefault("response_class", RecordedResponse)
-        if callback := kwargs.get("callback"):
-            kwargs["callback"] = partial(_recorded_callback, callback)
-        super().add(url, method=method, **kwargs)
+        if callback:
+            callback = partial(_recorded_callback, callback)
+        super().add(
+            url,
+            method,
+            status,
+            body,
+            exception,
+            content_type,
+            payload,
+            headers,
+            response_class,
+            repeat,
+            timeout,
+            reason,
+            callback,
+        )
