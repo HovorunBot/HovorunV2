@@ -192,7 +192,9 @@ class SQLAlchemyMembershipRepository:
         row = await self._record(group_id, user_id)
         group = await self._session.get(ChatDB, group_id)
         user = await self._session.get(UserDB, user_id)
-        if row is None or group is None or group.deleted_at is not None or user is None or user.deleted_at is not None:
+        if row is None or group is None or group.deleted_at is not None:
+            return None
+        if user is None or user.deleted_at is not None:
             return None
         return MembershipEvidence(
             group.chat_id,
@@ -214,6 +216,18 @@ class SQLAlchemyMembershipRepository:
             user, _ = await user_repo.ingest(evidence.user_telegram_id, str(group.platform))
         if user is None or (expected_user_id is not None and user.id != expected_user_id):
             return False
+        if not await self._is_new_member_evidence(group, user, evidence):
+            return False
+        row = await self._record(group.id, user.id)
+        if row is None and evidence.status != MembershipStatus.ADMIN:
+            return False
+        if row is not None and evidence.verified_at <= evidence_time(row.verified_at):
+            return False
+        self._apply_member_evidence(group, user, row, evidence)
+        return True
+
+    async def _is_new_member_evidence(self, group: ChatDB, user: UserDB, evidence: MembershipEvidence) -> bool:
+        """Reject facts older than any prior record or the current user generation."""
         latest = await self._session.scalar(
             select(MemberEvidenceDB)
             .where(
@@ -225,13 +239,12 @@ class SQLAlchemyMembershipRepository:
         )
         if latest is not None and evidence.verified_at <= evidence_time(latest.verified_at):
             return False
-        if user.generation > 1 and evidence.verified_at < evidence_time(user.created_at):
-            return False
-        row = await self._record(group.id, user.id)
-        if row is None and evidence.status != MembershipStatus.ADMIN:
-            return False
-        if row is not None and evidence.verified_at <= evidence_time(row.verified_at):
-            return False
+        return not (user.generation > 1 and evidence.verified_at < evidence_time(user.created_at))
+
+    def _apply_member_evidence(
+        self, group: ChatDB, user: UserDB, row: MemberEvidenceDB | None, evidence: MembershipEvidence
+    ) -> None:
+        """Apply a validated member fact and tombstone nonadministrators."""
         if row is None:
             row = MemberEvidenceDB(
                 group_id=group.id,
@@ -249,7 +262,6 @@ class SQLAlchemyMembershipRepository:
             row.needs_verification = False
             if not row.admin_candidate:
                 row.deleted_at = evidence.verified_at
-        return True
 
     async def save_member(
         self,
@@ -307,14 +319,37 @@ class SQLAlchemyMembershipRepository:
         group = await self._group(group_id, evidence.group_telegram_id)
         if group is None:
             return MembershipMutation(changed=False)
+        self._validate_admin_snapshot(group, evidence)
+        state = await self._state(group_id)
+        if state.admins_verified_at is not None and evidence.verified_at <= evidence_time(state.admins_verified_at):
+            return MembershipMutation(changed=False)
+        current_ids = await self._replace_admin_candidates(group_id, evidence)
+        if evidence.known:
+            for member in evidence.members:
+                await self._save_member(group, member)
+        state.admins_known = evidence.known
+        state.admins_verified_at, state.admins_expires_at = evidence.verified_at, evidence.expires_at
+        state.policy_revision += 1
+        return MembershipMutation(
+            changed=True,
+            changes={
+                "group_id": group_id,
+                "admins_known": evidence.known,
+                "admin_count": len(current_ids),
+                "policy_revision": state.policy_revision,
+            },
+        )
+
+    def _validate_admin_snapshot(self, group: ChatDB, evidence: AdministratorEvidence) -> None:
+        """Ensure each snapshot member belongs to this group and is an administrator."""
         for member in evidence.members:
             validate_evidence_time(member.verified_at, member.expires_at)
             if member.group_telegram_id != group.chat_id or member.status != MembershipStatus.ADMIN:
                 msg = "Administrator snapshot contains mismatched or nonadministrator evidence"
                 raise ValueError(msg)
-        state = await self._state(group_id)
-        if state.admins_verified_at is not None and evidence.verified_at <= evidence_time(state.admins_verified_at):
-            return MembershipMutation(changed=False)
+
+    async def _replace_admin_candidates(self, group_id: int, evidence: AdministratorEvidence) -> set[int]:
+        """Invalidate absent or uncertain candidates without overwriting newer facts."""
         prior = list(
             (
                 await self._session.scalars(
@@ -338,18 +373,4 @@ class SQLAlchemyMembershipRepository:
                 row.needs_verification = True
                 if evidence.known:
                     row.admin_candidate = False
-        if evidence.known:
-            for member in evidence.members:
-                await self._save_member(group, member)
-        state.admins_known = evidence.known
-        state.admins_verified_at, state.admins_expires_at = evidence.verified_at, evidence.expires_at
-        state.policy_revision += 1
-        return MembershipMutation(
-            changed=True,
-            changes={
-                "group_id": group_id,
-                "admins_known": evidence.known,
-                "admin_count": len(current_ids),
-                "policy_revision": state.policy_revision,
-            },
-        )
+        return current_ids
