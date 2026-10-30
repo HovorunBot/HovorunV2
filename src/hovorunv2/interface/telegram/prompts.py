@@ -42,12 +42,18 @@ class TelegramUnauthorizedPromptSender:
     def __init__(self, chats: ChatStore) -> None:
         self._chats = chats
 
-    async def send(self, bot: Bot, chat_id: int) -> bool:
-        """Send prompt to chat. Returns True if sent, False if forbidden or on error."""
-        chat = await self._chats.get_chat(chat_id)
-        if chat is None or chat.chat_type not in {"group", "supergroup"}:
-            return False
-        text, builder = build_unauthorized_prompt(chat_id, chat.id, chat.generation)
+    def _is_eligible_group(self, chat_type: str | None) -> bool:
+        """Check if chat type supports group unauthorized prompts."""
+        return chat_type in {"group", "supergroup"}
+
+    async def _dispatch_prompt(
+        self,
+        bot: Bot,
+        chat_id: int,
+        text: str,
+        builder: InlineKeyboardBuilder,
+    ) -> bool:
+        """Dispatch prompt message catching expected transport errors."""
         try:
             await bot.send_message(
                 chat_id=chat_id,
@@ -61,5 +67,12 @@ class TelegramUnauthorizedPromptSender:
         except Exception:
             logger.exception("Failed to send unauthorized prompt to chat %d", chat_id)
             return False
-        else:
-            return True
+        return True
+
+    async def send(self, bot: Bot, chat_id: int) -> bool:
+        """Send prompt to chat. Returns True if sent, False if forbidden or on error."""
+        chat = await self._chats.get_chat(chat_id)
+        if chat is None or not self._is_eligible_group(chat.chat_type):
+            return False
+        text, builder = build_unauthorized_prompt(chat_id, chat.id, chat.generation)
+        return await self._dispatch_prompt(bot, chat_id, text, builder)

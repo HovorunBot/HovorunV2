@@ -47,19 +47,39 @@ class FeedbackCommand(BaseCommand):
         cmd_part = parts[0].lstrip("/").split("@")[0].lower()
         return cmd_part == CommandName.FEEDBACK
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
-        """Process user feedback via FeedbackService."""
+    def _extract_feedback_content(self, message: Message) -> str:
+        """Extract feedback body from command message."""
         text = (message.text or "").strip()
         parts = text.split(maxsplit=1)
-        feedback_content = parts[1].strip() if len(parts) > 1 else ""
+        return parts[1].strip() if len(parts) > 1 else ""
 
-        if not feedback_content:
+    async def _send_instruction(self, message: Message) -> None:
+        """Reply with feedback command usage guidance."""
+        await message.reply(
+            "💬 <b>How to send feedback:</b>\n\n"
+            "Please provide your message after <code>/feedback</code>:\n"
+            "<code>/feedback Your suggestion, bug report, or question here</code>",
+            parse_mode="HTML",
+        )
+
+    async def _send_delivery_status(self, message: Message, *, delivered: bool) -> None:
+        """Reply with feedback delivery outcome."""
+        if delivered:
             await message.reply(
-                "💬 <b>How to send feedback:</b>\n\n"
-                "Please provide your message after <code>/feedback</code>:\n"
-                "<code>/feedback Your suggestion, bug report, or question here</code>",
+                "✅ <b>Thank you!</b> Your feedback has been sent directly to the development team.",
                 parse_mode="HTML",
             )
+            return
+        await message.reply(
+            "⚠️ <b>Notice:</b> Developers are currently unreachable. Please try again later or reach out via GitHub.",
+            parse_mode="HTML",
+        )
+
+    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+        """Process user feedback via FeedbackService."""
+        feedback_content = self._extract_feedback_content(message)
+        if not feedback_content:
+            await self._send_instruction(message)
             return
 
         user = message.from_user
@@ -68,28 +88,15 @@ class FeedbackCommand(BaseCommand):
         username = user.username if user else None
         chat = message.chat
         chat_title = chat.title or "Private"
-        chat_id = chat.id
-        chat_type = chat.type
 
         delivered = await self._feedback_service.submit_feedback(
             bot,
             user_id=user_id,
             user_name=user_name,
             username=username,
-            chat_id=chat_id,
+            chat_id=chat.id,
             chat_title=chat_title,
-            chat_type=chat_type,
+            chat_type=chat.type,
             message_text=feedback_content,
         )
-
-        if delivered:
-            await message.reply(
-                "✅ <b>Thank you!</b> Your feedback has been sent directly to the development team.",
-                parse_mode="HTML",
-            )
-        else:
-            await message.reply(
-                "⚠️ <b>Notice:</b> Developers are currently unreachable. "
-                "Please try again later or reach out via GitHub.",
-                parse_mode="HTML",
-            )
+        await self._send_delivery_status(message, delivered=delivered)

@@ -130,22 +130,34 @@ class RichMediaCommand(BaseCommand):
             return
 
         logger.info("Processing %d link(s) for %s from user %s", len(matches), self.name, message.from_user.id)
-
+        direct = message.text.startswith("/")
         for match in matches:
-            try:
-                direct = message.text.startswith("/")
-                payload = await self._pipeline.process(
-                    self._primary_client,
-                    match.group(0),
-                    message.chat.id,
-                    actor_id=message.from_user.id if not message.sender_chat else None,
-                    trigger=TriggerKind.DIRECT if direct else TriggerKind.AUTOMATIC,
-                )
-                if not payload:
-                    continue
+            await self._process_match(match, message, bot, direct=direct)
 
-                await self._delivery.deliver(bot, message, payload, self.platform_name)
-            except MediaExtractionError:
-                logger.warning("Extraction strategies failed for %s", self.name)
-            except Exception:
-                logger.exception("Failed to process %s link", self.name)
+    async def _process_match(
+        self,
+        match: re.Match[str],
+        message: Message,
+        bot: Bot,
+        *,
+        direct: bool,
+    ) -> None:
+        """Process and deliver a single matched media link."""
+        try:
+            actor_id = message.from_user.id if not message.sender_chat and message.from_user else None
+            trigger = TriggerKind.DIRECT if direct else TriggerKind.AUTOMATIC
+            payload = await self._pipeline.process(
+                self._primary_client,
+                match.group(0),
+                message.chat.id,
+                actor_id=actor_id,
+                trigger=trigger,
+            )
+            if not payload:
+                return
+
+            await self._delivery.deliver(bot, message, payload, self.platform_name)
+        except MediaExtractionError:
+            logger.warning("Extraction strategies failed for %s", self.name)
+        except Exception:
+            logger.exception("Failed to process %s link", self.name)

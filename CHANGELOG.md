@@ -56,6 +56,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **telegram**: separate media and feedback interface dispatch
 - **telegram**: separate access denial handling
 - **settings**: separate language picker rendering
 - **admin**: separate private transport guards
