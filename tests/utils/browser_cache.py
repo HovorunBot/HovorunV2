@@ -10,7 +10,7 @@ from typing import Any
 from hovorunv2.infrastructure.browser import BrowserService
 
 CACHE_DIR = Path("tests/browser_cache")
-CACHE_EXPIRY_SECONDS = 7 * 24 * 60 * 60
+CACHE_EXPIRY_SECONDS = 30 * 24 * 60 * 60
 
 
 class TestBrowserService(BrowserService):
