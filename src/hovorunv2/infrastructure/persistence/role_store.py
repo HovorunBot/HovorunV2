@@ -87,7 +87,7 @@ class SQLAlchemyRoleStore(RoleStore):
             target_id=f"{telegram_id}:{role.name.lower()}",
             action="set_role",
             operation=op,
-            changed_fields=lambda res: res[1] if res else None,
-            audit_if=lambda res: res is not None and res[0] is True,
+            changed_fields=lambda res: res[1],
+            audit_if=lambda res: res[0],
         )
         return result[0]

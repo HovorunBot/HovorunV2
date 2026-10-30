@@ -97,17 +97,7 @@ class SQLAlchemyBanStore(BanStore):
         if entity is None:
             msg = "Ban target must be an active known identity."
             raise ValueError(msg)
-        if actor.origin == ActorOrigin.TELEGRAM:
-            operator = await self._target(session, TargetKind.USER, actor.actor_id or 0)
-            if not isinstance(operator, UserDB) or operator.role < Role.ADMIN:
-                msg = "Ban administration requires current bot administrator authority."
-                raise PermissionError(msg)
-            if isinstance(entity, UserDB) and entity.role >= Role.ADMIN:
-                msg = f"Protected {entity.role.name.title()} restrictions can only be changed through CLI."
-                raise PermissionError(msg)
-        elif actor.origin != ActorOrigin.CLI:
-            msg = "Ban administration requires CLI or Telegram administrator origin."
-            raise PermissionError(msg)
+        await self._validate_authority(session, actor, entity)
         ban = await session.scalar(
             select(BanDB).where(
                 BanDB.target_kind == target,
@@ -118,6 +108,27 @@ class SQLAlchemyBanStore(BanStore):
                 BanDB.deleted_at.is_(None),
             )
         )
+        changed = self._apply_ban_change(
+            session, ban, target, telegram_id, kind, active=active, actor=actor, public_explanation=public_explanation
+        )
+        if not changed:
+            return False
+        await session.flush()
+        return True
+
+    def _apply_ban_change(
+        self,
+        session: AsyncSession,
+        ban: BanDB | None,
+        target: TargetKind,
+        telegram_id: int,
+        kind: BanKind,
+        *,
+        active: bool,
+        actor: ActorContext,
+        public_explanation: str | None,
+    ) -> bool:
+        """Apply or revoke the active restriction; report an idempotent no-op."""
         if active:
             if ban is not None:
                 return False
@@ -130,13 +141,26 @@ class SQLAlchemyBanStore(BanStore):
                     public_explanation=public_explanation,
                 )
             )
-        else:
-            if ban is None:
-                return False
-            ban.revoked_at = datetime.now(UTC)
-            ban.revision += 1
-        await session.flush()
+            return True
+        if ban is None:
+            return False
+        ban.revoked_at = datetime.now(UTC)
+        ban.revision += 1
         return True
+
+    async def _validate_authority(self, session: AsyncSession, actor: ActorContext, entity: UserDB | ChatDB) -> None:
+        """Check current operator and protected target authority inside the locked transaction."""
+        if actor.origin == ActorOrigin.TELEGRAM:
+            operator = await self._target(session, TargetKind.USER, actor.actor_id or 0)
+            if not isinstance(operator, UserDB) or operator.role < Role.ADMIN:
+                msg = "Ban administration requires current bot administrator authority."
+                raise PermissionError(msg)
+            if isinstance(entity, UserDB) and entity.role >= Role.ADMIN:
+                msg = f"Protected {entity.role.name.title()} restrictions can only be changed through CLI."
+                raise PermissionError(msg)
+        elif actor.origin != ActorOrigin.CLI:
+            msg = "Ban administration requires CLI or Telegram administrator origin."
+            raise PermissionError(msg)
 
     async def set_ban(
         self,
