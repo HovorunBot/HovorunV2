@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from saq import CronJob, Worker
@@ -36,8 +37,11 @@ class TaskQueueService:
         """Get or initialize SAQ RedisQueue."""
         if self._queue is None:
             self._queue = RedisQueue.from_url(self._settings.valkey_url, name="hovorun_tasks")
-        assert self._queue is not None
         return self._queue
+
+    async def _worker_startup(self, ctx: dict[str, Any], *, worker_context: dict[str, Any]) -> None:
+        """Install the supplied context when the worker starts."""
+        ctx.update(worker_context)
 
     def register_function(self, fn: Callable[..., Any]) -> None:
         """Register a callable function for worker execution."""
@@ -66,14 +70,11 @@ class TaskQueueService:
         queue = self.get_queue()
         worker_context = context or {}
 
-        async def worker_startup(ctx: dict[str, Any]) -> None:
-            ctx.update(worker_context)
-
         self._worker = Worker(
             queue=queue,
             functions=self._registered_functions,
             cron_jobs=self._cron_jobs,
-            startup=worker_startup,
+            startup=partial(self._worker_startup, worker_context=worker_context),
             concurrency=concurrency,
         )
         self._worker_task = asyncio.create_task(self._worker.start())

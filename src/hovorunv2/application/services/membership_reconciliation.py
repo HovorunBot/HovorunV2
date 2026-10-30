@@ -24,7 +24,7 @@ async def membership_reconciliation_job(ctx: dict[str, Any]) -> None:
 class MembershipReconciliationService:
     """Coordinate refresh by group without any ordinary-message API calls.
 
-    The per-process lock coalesces startup, cron and explicit refreshes. SQLite
+    The per-process lock coalesces startup, cron and explicit refreshes. Stored
     evidence timestamps remain authoritative across processes; no permission
     result is cached here. A failed API check stores UNKNOWN and retains grants.
     """

@@ -25,6 +25,7 @@ class CleanupService:
     IDLE_CHECK_INTERVAL: int = 3600
     # Minimum sleep interval to prevent busy loops
     MIN_CHECK_INTERVAL: int = 5
+    ERROR_RETRY_INTERVAL: int = 60
 
     def __init__(self, cache_service: CachePort) -> None:
         """Initialize service with cache dependency."""
@@ -104,40 +105,37 @@ class CleanupService:
         while True:
             try:
                 now = datetime.now(UTC).timestamp()
-
-                # 1. Process all currently expired messages
-                expired_members = await self._cache.zrangebyscore(self.CLEANUP_INDEX, 0, now)
-
-                for member in expired_members:
-                    chat_id, message_id = self._parse_member(member)
-                    try:
-                        await bot.delete_message(chat_id=chat_id, message_id=message_id)
-                        logger.info("Successfully removed expired message %d in chat %d", message_id, chat_id)
-                    except Exception as e:
-                        logger.warning("Could not delete message %d in chat %d (%s)", message_id, chat_id, type(e))
-
-                if expired_members:
-                    await self._cache.zrem(self.CLEANUP_INDEX, *expired_members)
-
-                # 2. Determine how long to sleep
-                next_expiry_list = await self._cache.zrange(self.CLEANUP_INDEX, 0, 0, withscores=True)
-
-                if next_expiry_list:
-                    _, next_expiry = next_expiry_list[0]
-                    sleep_time = next_expiry - now
-                    sleep_time = max(self.MIN_CHECK_INTERVAL, sleep_time)
-                else:
-                    sleep_time = self.IDLE_CHECK_INTERVAL
-
-                # 3. Wait for the calculated time OR a new registration trigger
-                try:
-                    await asyncio.wait_for(self._trigger.wait(), timeout=sleep_time)
-                    self._trigger.clear()
-                except TimeoutError:
-                    pass
-
+                await self._process_expired(bot, now)
+                await self._wait_for_next_check(now)
             except asyncio.CancelledError:
                 break
             except Exception:
                 logger.exception("Error in Valkey cleanup loop")
-                await asyncio.sleep(60)
+                await asyncio.sleep(self.ERROR_RETRY_INTERVAL)
+
+    async def _process_expired(self, bot: Bot, now: float) -> None:
+        """Attempt each due deletion and remove the processed batch from the index."""
+        expired_members = await self._cache.zrangebyscore(self.CLEANUP_INDEX, 0, now)
+        for member in expired_members:
+            chat_id, message_id = self._parse_member(member)
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=message_id)
+                logger.info("Successfully removed expired message %d in chat %d", message_id, chat_id)
+            except Exception as error:
+                logger.warning("Could not delete message %d in chat %d (%s)", message_id, chat_id, type(error))
+        if expired_members:
+            await self._cache.zrem(self.CLEANUP_INDEX, *expired_members)
+
+    async def _wait_for_next_check(self, now: float) -> None:
+        """Wait for the next deadline or a registration that changes the schedule."""
+        next_expiry_list = await self._cache.zrange(self.CLEANUP_INDEX, 0, 0, withscores=True)
+        if next_expiry_list:
+            _, next_expiry = next_expiry_list[0]
+            sleep_time = max(self.MIN_CHECK_INTERVAL, next_expiry - now)
+        else:
+            sleep_time = self.IDLE_CHECK_INTERVAL
+        try:
+            await asyncio.wait_for(self._trigger.wait(), timeout=sleep_time)
+            self._trigger.clear()
+        except TimeoutError:
+            pass
