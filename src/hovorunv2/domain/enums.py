@@ -115,13 +115,3 @@ TOGGLEABLE_COMMANDS: Final[tuple[CommandName, ...]] = (
     *MEDIA_PROVIDER_COMMANDS,
     *(sub_cmd for sub_cmds in PROVIDER_SPLIT_COMMANDS.values() for sub_cmd in sub_cmds),
 )
-
-
-def get_provider_splits(provider: CommandName) -> tuple[CommandName, CommandName] | None:
-    """Get (video, post) split sub-commands for a provider."""
-    return PROVIDER_SPLIT_COMMANDS.get(provider)
-
-
-def get_split_parent(sub_cmd: CommandName) -> CommandName | None:
-    """Get parent provider command for a split sub-command."""
-    return SPLIT_TO_PROVIDER_COMMAND.get(sub_cmd)

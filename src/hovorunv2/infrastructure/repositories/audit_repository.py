@@ -26,9 +26,3 @@ class SQLAlchemyAuditRepository:
         )
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
-
-    async def get_all(self, limit: int = 100) -> list[AuditEventDB]:
-        """Fetch recent audit events ordered by ID descending."""
-        stmt = select(AuditEventDB).order_by(AuditEventDB.id.desc()).limit(limit)
-        res = await self.session.execute(stmt)
-        return list(res.scalars().all())

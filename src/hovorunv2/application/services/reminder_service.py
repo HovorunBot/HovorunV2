@@ -83,10 +83,6 @@ class ChatReminderService:
             logger.info("Sent unauthorized guidance prompt to chat %d", chat_id)
         return sent
 
-    async def enqueue_unauthorized_reminder(self, chat_id: int) -> None:
-        """Enqueue unauthorized reminder job to task queue."""
-        await self._task_queue.enqueue("scheduled_unauthorized_reminder_job", chat_id=chat_id)
-
     async def run_maintenance_cycle(self, bot: Bot) -> None:
         """Execute full maintenance cycle across chats."""
         logger.info("Starting maintenance cycle")

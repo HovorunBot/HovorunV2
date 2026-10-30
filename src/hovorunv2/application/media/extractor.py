@@ -170,9 +170,3 @@ class MediaExtractor:
 
     def _extract_info(self, url: str, cookies: dict[str, str] | None = None) -> object:
         return extract_info(url, cookies)
-
-    def _process_info(self, info: object, url: str) -> RichMediaPayload:
-        return process_extraction_info(info, url)
-
-    def _extract_media_items(self, info: object) -> list[MediaItem]:
-        return _media_items(_mapping(info))

@@ -15,7 +15,6 @@ from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.services.access_service import CommandPolicy
-from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 
@@ -81,18 +80,6 @@ class RichMediaCommand(BaseCommand):
     def name(self) -> str:
         """Command name derived from provider client."""
         return str(self._primary_client.name)
-
-    @property
-    def video_command_name(self) -> str:
-        """Sub-command name for video capture configuration."""
-        cmd_enum = CommandName(self.name)
-        return str(PROVIDER_SPLIT_COMMANDS[cmd_enum][0])
-
-    @property
-    def post_command_name(self) -> str:
-        """Sub-command name for image/text post capture configuration."""
-        cmd_enum = CommandName(self.name)
-        return str(PROVIDER_SPLIT_COMMANDS[cmd_enum][1])
 
     @property
     def pattern(self) -> re.Pattern[str]:

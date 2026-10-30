@@ -1,7 +1,7 @@
 """Application service for unified access control and permissions."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from hovorunv2.application.ban_ports import BanStore
@@ -83,13 +83,6 @@ class AccessService:
             return False
         user = await self._user_store.get_by_telegram_id(user_id)
         return user is not None and user.is_trusted and user.deleted_at is None
-
-    async def is_group_admin_any(self, user_id: int | None, now: datetime | None = None) -> bool:
-        """Discover management eligibility; this never authorizes a selected group mutation."""
-        if user_id is None:
-            return False
-        current_time = now if now is not None else datetime.now(UTC)
-        return await self._membership_store.is_admin_any(user_id, current_time)
 
     async def is_group_admin(
         self,
