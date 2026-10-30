@@ -26,7 +26,7 @@ from hovorunv2.infrastructure.logger import (
 )
 from tests.conftest import provision_role
 from tests.test_membership_adapter import API, BOT_CREDENTIAL
-from tests.utils.http import RecordedResponses
+from tests.utils.recorded_responses import RecordedResponses
 
 SENTINEL = "synthetic-private-payload-022e"
 PRIVATE_URL = f"https://example.invalid/media?credential={SENTINEL}"

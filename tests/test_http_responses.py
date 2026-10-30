@@ -6,7 +6,7 @@ import aiohttp
 import pytest
 from aioresponses import CallbackResult
 
-from tests.utils.http import RecordedResponses
+from tests.utils.recorded_responses import RecordedResponses
 
 
 def callback_response(url: object, **kwargs: object) -> CallbackResult:

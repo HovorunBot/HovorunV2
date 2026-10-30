@@ -15,7 +15,7 @@ from hovorunv2.application.services.reminder_service import (
     scheduled_unauthorized_reminder_job,
 )
 from hovorunv2.domain.enums import CommandName, Role
-from hovorunv2.infrastructure.queue import TaskQueueService
+from hovorunv2.infrastructure.task_queue import TaskQueueService
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
 from tests.conftest import provision_role

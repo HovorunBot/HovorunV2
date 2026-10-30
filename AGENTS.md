@@ -27,6 +27,7 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Postg
 
 - **Typing:** Strict hints required (`uv run ty check src`). Rely on Python 3.15+ deferred evaluation (PEP 649); NEVER use stringified forward refs, `# ty:ignore`, or `Any` casts to silence errors (`Any` allowed only on test mock factories).
 - **Linter:** Strict Ruff (`ALL` ruleset, `uv run ruff check .`).
+- **Module Names:** Never name Python modules or packages after standard-library modules, including nested modules; Ruff A005 enforces this with strict checking.
 - **Naming & Methods:** Follow PEP 8 `snake_case` (`UpperCamelCase` allowed for `Enum` members). NEVER use `@staticmethod`, even when `self` is unused.
 - **Nested Functions & Visibility:** Avoid nested/inner functions. Nested functions must be used exclusively when it is the sole and cleanest way (e.g., inline multi-line callback for filter functions). If logic represents a real operation or can be useful beyond a single inline expression, declare it as a private/protected method (`_method_name`) on the class or module level and pass via `functools.partial`.
 - **Constants & Enums:** No magic numbers (extract to constants/enums; `# noqa: PLR2004` only if structural). Reference bot commands via `CommandName` and chat lifecycle states via `ChatStatus` (`StrEnum`s in `application/data/constants.py`), and HTTP statuses via `http.HTTPStatus`.

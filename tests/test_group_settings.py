@@ -19,7 +19,7 @@ from tests.test_group_beta import BETA, BOT_ADMIN, FUTURE, GROUP, MEMBER, REGIST
 from tests.test_membership_adapter import BOT_CREDENTIAL
 from tests.test_settings_sessions import button, query_for, settings_http, settings_message
 from tests.utils.activation import sent_fields
-from tests.utils.http import RecordedResponses
+from tests.utils.recorded_responses import RecordedResponses
 
 
 @pytest.mark.parametrize("actor", [SECOND, BOT_ADMIN])

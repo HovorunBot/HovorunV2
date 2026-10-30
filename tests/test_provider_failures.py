@@ -18,7 +18,7 @@ from hovorunv2.application.ports import BrowserPort, CommandStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from tests.conftest import authorize_private_media
-from tests.utils.http import RecordedResponses
+from tests.utils.recorded_responses import RecordedResponses
 
 
 @pytest.mark.parametrize(

@@ -36,7 +36,7 @@ from tests.utils.activation import (
     sent_fields,
     stub_telegram,
 )
-from tests.utils.http import RecordedResponses
+from tests.utils.recorded_responses import RecordedResponses
 
 
 @pytest.mark.parametrize(

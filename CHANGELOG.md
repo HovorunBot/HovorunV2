@@ -35,6 +35,7 @@ encryption configuration before starting against the new database.
 
 ### Fix
 
+- **tests**: prevent standard library module shadowing
 - **settings**: bind callbacks to verified target context
 - **features**: enforce eligibility across discovery and execution
 - **audit**: validate entity and action fields atomically

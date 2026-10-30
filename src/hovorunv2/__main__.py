@@ -22,7 +22,7 @@ from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.infrastructure.logger import AsyncTelegramHandler, get_logger, setup_logging, setup_telegram_logging
-from hovorunv2.infrastructure.queue import TaskQueueService
+from hovorunv2.infrastructure.task_queue import TaskQueueService
 from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler

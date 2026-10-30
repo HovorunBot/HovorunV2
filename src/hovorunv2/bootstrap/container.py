@@ -109,7 +109,7 @@ from hovorunv2.infrastructure.persistence.group_migration_store import SQLAlchem
 from hovorunv2.infrastructure.persistence.membership_store import SQLAlchemyMembershipStore
 from hovorunv2.infrastructure.persistence.usage_ledger_store import SQLAlchemyUsageLedgerStore
 from hovorunv2.infrastructure.persistence.usage_policy_store import SQLAlchemyUsagePolicyStore
-from hovorunv2.infrastructure.queue import TaskQueueService
+from hovorunv2.infrastructure.task_queue import TaskQueueService
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand

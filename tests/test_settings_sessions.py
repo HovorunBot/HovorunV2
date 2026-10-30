@@ -26,8 +26,8 @@ from tests.conftest import provision_role
 from tests.test_group_beta import FIRST, GROUP, SECOND, group_beta_runtime
 from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
 from tests.utils.activation import sent_fields
-from tests.utils.http import RecordedResponses
 from tests.utils.postgres import reject_audit
+from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.settings import bind_settings_callback
 
 DENIED = "Settings unavailable. Reopen /settings."

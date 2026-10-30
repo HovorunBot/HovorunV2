@@ -32,8 +32,8 @@ from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActi
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
 from tests.conftest import provision_role, verify_group_admins
 from tests.utils.activation import ACTOR, ADMIN, GROUP, activation_runtime, seed_activation, stub_telegram
-from tests.utils.http import RecordedResponses
 from tests.utils.postgres import reject_audit
+from tests.utils.recorded_responses import RecordedResponses
 
 
 async def test_trusted_activation_is_durable_idempotent_and_audited(test_container: AsyncContainer) -> None:

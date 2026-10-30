@@ -45,7 +45,7 @@ from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.test_group_beta import BETA, FIRST, FUTURE, GROUP, MEMBER, REGISTRY, group_beta_runtime
 from tests.test_membership_adapter import BOT_CREDENTIAL
 from tests.utils.activation import sent_fields, stub_telegram
-from tests.utils.http import RecordedResponses
+from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.settings import bind_settings_callback
 
 CAPABLE = FeatureDefinition(

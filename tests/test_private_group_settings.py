@@ -50,7 +50,7 @@ from tests.test_group_beta import BETA, GROUP, MEMBER, SECOND
 from tests.test_membership_adapter import API, BOT_CREDENTIAL, RecordedResponse
 from tests.test_settings_sessions import DENIED, button, query_for, settings_message
 from tests.utils.activation import sent_fields
-from tests.utils.http import RecordedResponses
+from tests.utils.recorded_responses import RecordedResponses
 
 OTHER = GROUP - 1
 

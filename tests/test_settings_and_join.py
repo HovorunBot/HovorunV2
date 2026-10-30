@@ -24,7 +24,7 @@ from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from tests.conftest import create_mock_message, provision_role, verify_group_admins
 from tests.test_membership_adapter import RecordedResponse
-from tests.utils.http import RecordedResponses
+from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.settings import bind_settings_callback
 
 
