@@ -49,17 +49,23 @@ def get_current_version() -> str:
     except PackageNotFoundError:
         pass
 
-    pyproject_path = Path(__file__).resolve().parents[3] / "pyproject.toml"
-    if pyproject_path.exists():
-        try:
-            for line in pyproject_path.read_text(encoding="utf-8").splitlines():
-                clean_line = line.strip()
-                if clean_line.startswith("version = "):
-                    return clean_line.split("=")[1].strip().strip('"').strip("'").lstrip("v")
-        except Exception as exc:
-            logger.debug("Failed to read pyproject.toml: %s", exc)
+    project_version = _version_from_pyproject()
+    return project_version if project_version is not None else DEFAULT_VERSION
 
-    return DEFAULT_VERSION
+
+def _version_from_pyproject() -> str | None:
+    """Read the fallback project version when package metadata is unavailable."""
+    pyproject_path = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    if not pyproject_path.exists():
+        return None
+    try:
+        for line in pyproject_path.read_text(encoding="utf-8").splitlines():
+            clean_line = line.strip()
+            if clean_line.startswith("version = "):
+                return clean_line.split("=")[1].strip().strip('"').strip("'").lstrip("v")
+    except Exception as exc:
+        logger.debug("Failed to read pyproject.toml: %s", exc)
+    return None
 
 
 def _find_file_in_project(filename: str) -> Path | None:
@@ -111,21 +117,27 @@ def extract_release_notes(changelog_content: str, last_version: str, current_ver
     matching_notes: list[str] = []
 
     for section in sections:
-        clean_section = section.strip()
-        if not clean_section:
-            continue
-        first_line = clean_section.splitlines()[0]
-        match = VERSION_HEADER_PATTERN.search(first_line)
-        if not match:
-            continue
-        ver_tuple = parse_version(match.group(1))
-        if clean_last < ver_tuple <= clean_curr:
-            body_lines = clean_section.splitlines()[1:]
-            cleaned_body = "\n".join(body_lines).strip()
-            if cleaned_body:
-                matching_notes.append(cleaned_body)
+        notes = _release_section_notes(section, clean_last, clean_curr)
+        if notes is not None:
+            matching_notes.append(notes)
 
     return "\n\n".join(matching_notes) if matching_notes else None
+
+
+def _release_section_notes(section: str, last: tuple[int, ...], current: tuple[int, ...]) -> str | None:
+    """Return a nonempty section body only when its version falls in the requested range."""
+    clean_section = section.strip()
+    if not clean_section:
+        return None
+    first_line = clean_section.splitlines()[0]
+    match = VERSION_HEADER_PATTERN.search(first_line)
+    if not match:
+        return None
+    version = parse_version(match.group(1))
+    if not last < version <= current:
+        return None
+    cleaned_body = "\n".join(clean_section.splitlines()[1:]).strip()
+    return cleaned_body or None
 
 
 def extract_fallback_notes(technical_content: str, last_version: str, current_version: str) -> str | None:

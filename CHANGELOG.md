@@ -56,6 +56,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **release**: separate notification and changelog processing
 - **cleanup**: separate expired message processing
 - **activation**: separate administrator evidence lookup
 - **commands**: share provider split resolution

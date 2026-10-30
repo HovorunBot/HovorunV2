@@ -8,6 +8,7 @@ from aiogram.exceptions import TelegramRetryAfter
 
 from hovorunv2.application.changelog import get_changelog_updates, get_current_version, parse_version
 from hovorunv2.application.ports import AppSettings, ChatStore, SystemStore
+from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus
 
 logger = logging.getLogger(__name__)
@@ -57,34 +58,40 @@ class NotificationService:
             await self._system_service.set_last_notified_version(current_version)
             return
 
+        message = self._release_message(current_version, updates_text)
+        await self._broadcast_updates(bot, group_chats, message)
+        await self._system_service.set_last_notified_version(current_version)
+        logger.info("Update notification broadcast complete.")
+
+    def _release_message(self, current_version: str, updates_text: str) -> str:
+        """Render the selected release notes and link."""
         tag_name = f"v{current_version.lstrip('v')}"
         tag_url = f"{self._settings.github_url.rstrip('/')}/releases/tag/{tag_name}"
-        message = (
+        return (
             f"🚀 <b>Hovorun Updated to {tag_name}</b>\n\n"
             f"{updates_text}\n\n"
             f'📖 <a href="{tag_url}">Read full release notes on GitHub</a>'
         )
 
+    async def _broadcast_updates(self, bot: Bot, group_chats: list[ChatDB], message: str) -> None:
+        """Send to each eligible group, preserving order and rate-limit recovery."""
         logger.info("Broadcasting update notification to %d group chat(s)...", len(group_chats))
-
         for chat in group_chats:
-            try:
-                await self._send_notification(bot, chat.chat_id, message)
-                # Respect rate limits (Telegram approx 30 msg/sec overall)
-                await asyncio.sleep(0.05)
-            except TelegramRetryAfter as e:
-                logger.warning("Rate limit hit, sleeping for %d seconds", e.retry_after)
-                await asyncio.sleep(e.retry_after)
-                # Retry once
-                try:
-                    await self._send_notification(bot, chat.chat_id, message)
-                except Exception:
-                    logger.exception("Failed to retry update notification to group chat %d", chat.chat_id)
-            except Exception:
-                logger.exception("Failed to send update notification to group chat %d", chat.chat_id)
+            await self._send_group_update(bot, chat.chat_id, message)
 
-        await self._system_service.set_last_notified_version(current_version)
-        logger.info("Update notification broadcast complete.")
+    async def _send_group_update(self, bot: Bot, chat_id: int, message: str) -> None:
+        try:
+            await self._send_notification(bot, chat_id, message)
+            await asyncio.sleep(0.05)
+        except TelegramRetryAfter as error:
+            logger.warning("Rate limit hit, sleeping for %d seconds", error.retry_after)
+            await asyncio.sleep(error.retry_after)
+            try:
+                await self._send_notification(bot, chat_id, message)
+            except Exception:
+                logger.exception("Failed to retry update notification to group chat %d", chat_id)
+        except Exception:
+            logger.exception("Failed to send update notification to group chat %d", chat_id)
 
     async def _send_notification(self, bot: Bot, chat_id: int, text: str) -> None:
         """Send formatted HTML update message with link preview disabled."""
