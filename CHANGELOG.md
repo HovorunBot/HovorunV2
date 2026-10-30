@@ -56,6 +56,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **activation**: separate administrator evidence lookup
 - **commands**: share provider split resolution
 - **settings**: separate session validation guards
 - **trust**: separate administration authority checks

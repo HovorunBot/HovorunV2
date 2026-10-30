@@ -9,6 +9,7 @@ from hovorunv2.application.activation import (
 from hovorunv2.application.membership import MembershipPort, MembershipStatus
 from hovorunv2.application.permissions import GroupAdminEvidence, PermissionFacts, PermissionTarget
 from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
+from hovorunv2.domain.user import UserDB
 
 
 class GroupActivationService:
@@ -37,26 +38,32 @@ class GroupActivationService:
 
     async def enable(self, actor_id: int, target: PermissionTarget, transport_kind: str) -> ActivationResult:
         """Trusted users need no Telegram admin rights; untrusted requesters need fresh evidence."""
-        user = await self._users.get_by_telegram_id(actor_id)
-        evidence = None
-        if (
-            user is not None
-            and not user.is_trusted
-            and not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
-            and target.telegram_id is not None
-            and target.entity_id is not None
-            and transport_kind in {"group", "supergroup"}
-        ):
-            member = await self._membership.verify_member(target.telegram_id, actor_id)
-            if (
-                member.status == MembershipStatus.ADMIN
-                and member.user_telegram_id == actor_id
-                and member.group_telegram_id == target.telegram_id
-            ):
-                evidence = GroupAdminEvidence(
-                    actor_id, target.entity_id, target.generation, member.verified_at, member.expires_at
-                )
+        evidence = await self._group_admin_evidence(actor_id, target, transport_kind)
         return await self._store.execute(ActivationRequest(actor_id, target, transport_kind, group_admin=evidence))
+
+    async def _group_admin_evidence(
+        self, actor_id: int, target: PermissionTarget, transport_kind: str
+    ) -> GroupAdminEvidence | None:
+        """Verify current Telegram administrator evidence only when activation requires it."""
+        user = await self._users.get_by_telegram_id(actor_id)
+        if not self._requires_group_admin(user):
+            return None
+        if target.telegram_id is None or target.entity_id is None:
+            return None
+        if transport_kind not in {"group", "supergroup"}:
+            return None
+        member = await self._membership.verify_member(target.telegram_id, actor_id)
+        if member.status != MembershipStatus.ADMIN:
+            return None
+        if member.user_telegram_id != actor_id or member.group_telegram_id != target.telegram_id:
+            return None
+        return GroupAdminEvidence(actor_id, target.entity_id, target.generation, member.verified_at, member.expires_at)
+
+    def _requires_group_admin(self, user: UserDB | None) -> bool:
+        """Only known untrusted actors without bot administration require Telegram evidence."""
+        if user is None or user.is_trusted:
+            return False
+        return not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
 
     async def decide(
         self, actor_id: int, target: PermissionTarget, request_id: int, action: ActivationAction, transport_kind: str
