@@ -55,6 +55,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **policy**: separate group fact queries
 - **http**: retire optional native wrappers
 - **activation**: separate authorization and dispatch
 - **commands**: share explicit selection mutation

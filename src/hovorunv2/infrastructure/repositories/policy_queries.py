@@ -52,6 +52,15 @@ def fresh_admins(group_id: int, now: datetime) -> Exists:
     )
 
 
+def current_member(group_id: int, user_id: int) -> Select[MemberEvidenceDB]:
+    """Read undeleted evidence for the exact group and user generations."""
+    return select(MemberEvidenceDB).where(
+        MemberEvidenceDB.group_id == group_id,
+        MemberEvidenceDB.user_id == user_id,
+        MemberEvidenceDB.deleted_at.is_(None),
+    )
+
+
 def group_support(selection: GroupBetaFeatureDB, now: datetime) -> Select[int]:
     """Find actual current support without truncating candidates or copying eligibility."""
     eligible = exists().where(

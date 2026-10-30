@@ -20,13 +20,14 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.domain.group_beta import GroupBetaFeatureDB
 from hovorunv2.domain.group_grant import GroupApprovalDB
-from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
+from hovorunv2.domain.membership import GroupMembershipStateDB
 from hovorunv2.domain.usage import UsageOverrideDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.policy_queries import (
     active_chat,
     active_user,
     banned_admin_queries,
+    current_member,
     fresh_admins,
     group_support,
 )
@@ -114,13 +115,7 @@ class PolicyFactReader:
         if user is None or self.banned(TargetKind.USER, actor_id):
             return False
         target = PermissionTarget("group", chat.id, chat.generation, chat.chat_id)
-        member = self.session.scalar(
-            select(MemberEvidenceDB).where(
-                MemberEvidenceDB.group_id == chat.id,
-                MemberEvidenceDB.user_id == user.id,
-                MemberEvidenceDB.deleted_at.is_(None),
-            )
-        )
+        member = self.session.scalar(current_member(chat.id, user.id))
         evidence = None
         if (
             self.session.scalar(select(fresh_admins(chat.id, now)))
@@ -217,16 +212,32 @@ class PolicyFactReader:
                 selected=self._selected(definition, chat_id),
                 capable=not definition.required_bot_capabilities,
             )
+        return self._group_feature_facts(
+            definition, chat_id, actor_id, actor, restricted=restricted, configure=configure, now=now
+        )
+
+    def _group_feature_facts(
+        self,
+        definition: FeatureDefinition,
+        chat_id: int,
+        actor_id: int | None,
+        actor: UserDB | None,
+        *,
+        restricted: bool,
+        configure: bool,
+        now: datetime,
+    ) -> FeatureFacts:
+        """Read group selection, support, access and capability facts in order."""
         chat = self.session.scalar(active_chat(chat_id))
         if chat is None:
-            return FeatureFacts(scope)
+            return FeatureFacts(FeatureScope.GROUP)
         supported, eligible = True, True
         selected = self._selected(definition, chat_id)
         if definition.channel == FeatureChannel.BETA:
             selected, supported = self._group_beta(chat, definition, chat_id, now)
             eligible = supported or (configure and actor is not None and self._eligible(actor, definition))
         return FeatureFacts(
-            scope,
+            FeatureScope.GROUP,
             target_active=True,
             actor_active=actor is not None,
             actor_restricted=restricted,
