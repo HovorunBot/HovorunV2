@@ -29,18 +29,23 @@ class TrustService:
         Actor origin and transport are trusted interface facts, never callback data.
         UserDB.trust_revision advances only on a change, in the audit transaction.
         """
-        if actor.origin != ActorOrigin.CLI:
-            user = await self._users.get_by_telegram_id(actor.actor_id) if actor.actor_id is not None else None
-            if (
-                actor.origin != ActorOrigin.TELEGRAM
-                or transport_kind != "private"
-                or user is None
-                or not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
-            ):
-                msg = "Trust administration requires CLI or a bot administrator in private transport."
-                raise PermissionError(msg)
+        await self._authorize(actor, transport_kind)
         user_id = await self._resolve_user(target)
         return await self._users.set_trust(user_id, is_trusted=is_trusted, actor=actor)
+
+    async def _authorize(self, actor: ActorContext, transport_kind: str | None) -> None:
+        """Require current bot administration when the actor is not the CLI."""
+        if actor.origin == ActorOrigin.CLI:
+            return
+        user = await self._users.get_by_telegram_id(actor.actor_id) if actor.actor_id is not None else None
+        if (
+            actor.origin != ActorOrigin.TELEGRAM
+            or transport_kind != "private"
+            or user is None
+            or not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
+        ):
+            msg = "Trust administration requires CLI or a bot administrator in private transport."
+            raise PermissionError(msg)
 
     async def _resolve_user(self, target: str) -> int:
         if target.startswith("@"):
