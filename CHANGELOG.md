@@ -35,6 +35,7 @@ encryption configuration before starting against the new database.
 
 ### Fix
 
+- **tests**: isolate worker valkey databases away from db 0
 - **cache**: distinguish missing messages from storage failures
 - **tests**: prevent standard library module shadowing
 - **settings**: bind callbacks to verified target context

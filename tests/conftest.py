@@ -2,6 +2,7 @@
 
 import os
 import time
+import urllib.parse
 from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -69,28 +70,48 @@ def create_mock_message(text: str | None, *, is_bot: bool = False, chat_id: int 
     return message
 
 
+DEFAULT_TEST_VALKEY_URL: str = "redis://localhost:6379/1"
+
+
+def resolve_worker_valkey_url(worker_id: str, base_url: str | None = None) -> str:
+    """Resolve an isolated Valkey database URL for an xdist worker or serial run.
+
+    Databases 1-15 are reserved for testing. Database 0 is strictly forbidden to protect
+    developer and application state.
+    """
+    raw_base = base_url if base_url is not None else os.environ.get("TEST_VALKEY_URL", DEFAULT_TEST_VALKEY_URL)
+    parsed = urllib.parse.urlparse(raw_base)
+    db_str = parsed.path.lstrip("/")
+    base_db = int(db_str) if db_str.isdigit() else 1
+
+    worker_offset = int(worker_id[2:]) if worker_id.startswith("gw") else 0
+    target_db = base_db + worker_offset
+
+    if target_db < 1 or target_db > 15:
+        msg = f"Valkey test database index {target_db} out of allowed test range (1-15). DB 0 is strictly forbidden."
+        raise ValueError(msg)
+
+    new_path = f"/{target_db}"
+    return urllib.parse.urlunparse(parsed._replace(path=new_path))
+
+
 @pytest.fixture(autouse=True, scope="session")
-def configure_worker_valkey(request: pytest.FixtureRequest) -> Generator[None]:
-    """Isolate real Valkey storage per parallel test worker."""
+def worker_valkey_url(request: pytest.FixtureRequest) -> Generator[str]:
+    """Isolate real Valkey storage per parallel test worker away from DB 0."""
     worker_id = getattr(request.config, "workerinput", {}).get("workerid", "master")
-    if worker_id.startswith("gw"):
-        db_num = int(worker_id[2:]) % 16
-        valkey_url = f"redis://localhost:6379/{db_num}"
-        os.environ["VALKEY_URL"] = valkey_url
-        client = redis.from_url(valkey_url)
-        try:
-            client.flushdb()
-        finally:
-            client.close()
-    yield
-    if worker_id.startswith("gw"):
-        valkey_url = os.environ.get("VALKEY_URL")
-        if valkey_url:
-            client = redis.from_url(valkey_url)
-            try:
-                client.flushdb()
-            finally:
-                client.close()
+    valkey_url = resolve_worker_valkey_url(worker_id)
+    os.environ["VALKEY_URL"] = valkey_url
+    client = redis.from_url(valkey_url)
+    try:
+        client.flushdb()
+    finally:
+        client.close()
+    yield valkey_url
+    client = redis.from_url(valkey_url)
+    try:
+        client.flushdb()
+    finally:
+        client.close()
 
 
 @pytest.fixture

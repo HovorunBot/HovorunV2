@@ -33,7 +33,8 @@ async def forbidden_handler(_event: object, _data: object) -> None:
 async def test_restrictions_survive_rejoin_and_maintenance(test_container: AsyncContainer, status: ChatStatus) -> None:
     """Real join and maintenance paths preserve restrictions and never call leaveChat."""
     group = -(secrets.randbelow(2**40) + 1)
-    cache = CacheService("redis://localhost:6379/15")
+    settings = await test_container.get(Settings)
+    cache = CacheService(settings.valkey_url)
     chats = await test_container.get(ChatStore)
     statuses = await test_container.get(ChatStatusService)
     await statuses.set_status(group, status)
@@ -70,8 +71,9 @@ async def test_group_ban_denies_admin_with_cooldown_safe_explanation(test_contai
     group = -(secrets.randbelow(2**40) + 1)
     await provision_role(test_container, ACTOR)
     await (await test_container.get(ChatStatusService)).set_status(group, ChatStatus.BANNED)
-    cache = CacheService("redis://localhost:6379/15")
-    middleware = AccessMiddleware(await test_container.get(AccessService), cache, await test_container.get(Settings))
+    settings = await test_container.get(Settings)
+    cache = CacheService(settings.valkey_url)
+    middleware = AccessMiddleware(await test_container.get(AccessService), cache, settings)
     key = f"access:denial:{group}:group_banned"
     try:
         async with activation_runtime(test_container) as runtime:

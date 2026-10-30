@@ -14,6 +14,7 @@ from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.cache import CacheService
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
@@ -38,7 +39,8 @@ async def test_state_machine_flow(init_container: AsyncContainer) -> None:
     """Joining, requests, departure, private approval and restrictions preserve durable state."""
     chat_id = -(secrets.randbelow(2**40) + 1)
     cooldown_key = f"periodic:unauthorized_prompt:{chat_id}"
-    cache = CacheService("redis://localhost:6379/15")
+    settings = await init_container.get(Settings)
+    cache = CacheService(settings.valkey_url)
     chats = await init_container.get(ChatStore)
     users = await init_container.get(UserStore)
     await users.ingest_user(ACTOR)

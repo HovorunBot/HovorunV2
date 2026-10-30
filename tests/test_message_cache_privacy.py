@@ -31,9 +31,9 @@ async def private_cache_service(
     test_container: AsyncContainer,
 ) -> AsyncGenerator[tuple[MessageService, CacheService, int]]:
     """Use unique synthetic keys in local Valkey without flushing any shared database."""
-    cache = CacheService("redis://localhost:6379/15")
-    chats = await test_container.get(ChatStore)
     settings = Settings(_env_file=None, bot_token=BOT_CREDENTIAL, cache_encryption_key="synthetic-cache-passphrase")
+    cache = CacheService(settings.valkey_url)
+    chats = await test_container.get(ChatStore)
     service = MessageService(cache, chats, settings)
     chat_id = secrets.randbelow(2**40) + 1
     try:
