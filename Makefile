@@ -24,7 +24,7 @@ MESSAGE ?=
 
 .PHONY: all setup run stop update deploy help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
-        test lint format type-check lint-imports check install-hooks ai agy gemini codex claude ai-check ai-next
+        test test-profile test-coverage lint format type-check lint-imports check install-hooks ai agy gemini codex claude ai-check ai-next
 
 # Each command uses one complete environment file, never an overlay.
 ## Run setup, then start the selected Docker stack.
@@ -178,6 +178,14 @@ changelog:
 ## Run the full pytest suite against configured test infrastructure.
 test:
 	@PYTHONPATH=src uv run pytest
+
+## Run pytest with durations aggregated by phase (setup, call, teardown).
+test-profile:
+	@PYTHONPATH=src uv run pytest --durations=0 --durations-min=0 -q 2>&1 | awk '$$2=="setup"||$$2=="call"||$$2=="teardown" {sub("s","",$$1); t[$$2]+=$$1; n[$$2]++; if ($$2=="setup" && $$1>0.15) slow++} END {for (k in t) printf "%s total=%.1fs n=%d\n", k, t[k], n[k]; print "setups>0.15s:", slow}'
+
+## Run full test suite with branch coverage and per-test execution contexts.
+test-coverage:
+	@PYTHONPATH=src uv run pytest --cov=src/hovorunv2 --cov-branch --cov-context=test --cov-report=term-missing:skip-covered
 
 ## Check Ruff lint rules and Python formatting without editing files.
 lint:

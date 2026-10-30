@@ -74,6 +74,7 @@ dev = [
     "ruff",
     "ty",
     "pytest-xdist>=3.8.0",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.ruff]
@@ -125,6 +126,18 @@ max-bool-expr = 4
 addopts = "-n auto --maxprocesses=15"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["src/hovorunv2"]
+branch = true
+omit = [
+    "alembic/*",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
 
 [tool.commitizen]
 name = "cz_conventional_commits"
