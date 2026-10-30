@@ -4,11 +4,12 @@ from dataclasses import dataclass
 from typing import Final
 
 from hovorunv2.application.ban_ports import BanStore
-from hovorunv2.application.membership import MembershipPort, MembershipStatus
+from hovorunv2.application.membership import MembershipEvidence, MembershipPort, MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.permissions import GroupAdminEvidence, PermissionRequest, PermissionTarget
 from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.services.permission_service import PermissionService
+from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import TargetKind
 
 GROUPS_PER_PAGE: Final = 8
@@ -56,18 +57,38 @@ class GroupManagementService:
             TargetKind.USER, actor_id
         )
 
+    def _matches_target(self, group: ChatDB, target: PermissionTarget) -> bool:
+        """Match a resolved group to its selected identity and lifecycle."""
+        return (
+            group.id == target.entity_id
+            and group.generation == target.generation
+            and group.chat_id == target.telegram_id
+        )
+
+    async def _evidence_still_current(
+        self, actor_id: int, user_id: int, telegram_id: int, target: PermissionTarget, evidence: MembershipEvidence
+    ) -> bool:
+        """Recheck identities, presence and bans after Telegram membership I/O."""
+        current_group = await self._chats.get_chat(telegram_id)
+        current_user = await self._users.get_by_telegram_id(actor_id)
+        if current_group is None or not self._matches_target(current_group, target):
+            return False
+        if not current_group.is_bot_present:
+            return False
+        if current_user is None or current_user.id != user_id:
+            return False
+        if not await self._actor_available(actor_id):
+            return False
+        if evidence.status != MembershipStatus.ADMIN:
+            return False
+        return evidence.group_telegram_id == target.telegram_id and evidence.user_telegram_id == actor_id
+
     async def can_manage(self, actor_id: int, target: PermissionTarget) -> bool:
         """Verify current actor, exact target/generation and live Telegram authority on each action."""
         if target.kind != "group" or target.telegram_id is None or not await self._actor_available(actor_id):
             return False
         group = await self._chats.get_chat(target.telegram_id)
-        if (
-            group is None
-            or group.id != target.entity_id
-            or group.generation != target.generation
-            or group.chat_id != target.telegram_id
-            or group.chat_id >= 0
-        ):
+        if group is None or not self._matches_target(group, target) or group.chat_id >= 0:
             return False
         # Resource suspension does not remove current bot administrators' private inspection authority.
         if await self._permissions.has_authority(actor_id, "bot:administer"):
@@ -77,21 +98,7 @@ class GroupManagementService:
             return False
         evidence = await self._telegram.verify_member(group.chat_id, actor_id)
         await self._memberships.save_member(group.id, evidence, expected_user_id=user.id)
-        current_group = await self._chats.get_chat(target.telegram_id)
-        current_user = await self._users.get_by_telegram_id(actor_id)
-        if (
-            current_group is None
-            or current_group.id != target.entity_id
-            or current_group.generation != target.generation
-            or current_group.chat_id != target.telegram_id
-            or not current_group.is_bot_present
-            or current_user is None
-            or current_user.id != user.id
-            or not await self._actor_available(actor_id)
-            or evidence.status != MembershipStatus.ADMIN
-            or evidence.group_telegram_id != target.telegram_id
-            or evidence.user_telegram_id != actor_id
-        ):
+        if not await self._evidence_still_current(actor_id, user.id, group.chat_id, target, evidence):
             return False
         verified = GroupAdminEvidence(actor_id, group.id, group.generation, evidence.verified_at, evidence.expires_at)
         return bool(

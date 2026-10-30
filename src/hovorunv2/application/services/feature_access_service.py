@@ -16,6 +16,7 @@ from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
+from hovorunv2.domain.membership import GroupMembershipStateDB
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,14 @@ class FeatureAccessService:
         self._group_beta = group_beta
         self._facts = facts
 
+    def _admins_fresh(self, state: GroupMembershipStateDB | None, now: datetime) -> bool:
+        """Require a complete, currently valid administrator snapshot."""
+        if state is None or not state.admins_known:
+            return False
+        if state.admins_verified_at is None or state.admins_expires_at is None:
+            return False
+        return evidence_time(state.admins_verified_at) <= now < evidence_time(state.admins_expires_at)
+
     async def _manager(
         self, actor_id: int | None, target: PermissionTarget, now: datetime, *, inspection: bool = False
     ) -> bool:
@@ -64,16 +73,7 @@ class FeatureAccessService:
         member = await self._memberships.get_member(target.entity_id or 0, user.id)
         evidence = None
         if (
-            (
-                inspection
-                or (
-                    state is not None
-                    and state.admins_known
-                    and state.admins_verified_at is not None
-                    and state.admins_expires_at is not None
-                    and evidence_time(state.admins_verified_at) <= now < evidence_time(state.admins_expires_at)
-                )
-            )
+            (inspection or self._admins_fresh(state, now))
             and member is not None
             and member.status == MembershipStatus.ADMIN
         ):
