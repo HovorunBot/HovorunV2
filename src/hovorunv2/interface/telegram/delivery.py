@@ -7,12 +7,13 @@ from enum import StrEnum
 
 import aiohttp
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest, TelegramEntityTooLarge
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramEntityTooLarge
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, MediaUnion, Message
 
-from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media import rendering
 from hovorunv2.application.media.downloader import MediaDownloader
+from hovorunv2.application.media.errors import MediaFailure
 
 logger = logging.getLogger(__name__)
 
@@ -104,15 +105,7 @@ class TelegramMediaDelivery:
         self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str
     ) -> None:
         """Send media items using pre-downloaded byte buffers."""
-        final_group: list[MediaUnion] = []
-        for i, item_meta in enumerate(payload.media_items):
-            if item_meta.data is None:
-                continue
-            ext = "mp4" if item_meta.is_video else "jpg"
-            file = BufferedInputFile(item_meta.data, filename=f"browser_{i}.{ext}")
-            final_group.append(
-                self._build_input_media(file, is_video=item_meta.is_video, caption=caption if not final_group else None)
-            )
+        final_group = self._predownloaded_group(payload, caption)
 
         if not final_group:
             return
@@ -125,18 +118,30 @@ class TelegramMediaDelivery:
             )
         except TelegramEntityTooLarge:
             logger.warning("Pre-downloaded media too large for Telegram upload")
-            await message.answer(
-                text=f"{caption}\n\n{self.ERROR_TEXTS[DeliveryError.TOO_LARGE]}",
-                parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            await self._answer_delivery_error(message, caption, DeliveryError.TOO_LARGE)
+        except TelegramBadRequest:
+            logger.warning("Telegram rejected pre-downloaded media")
+            await self._answer_delivery_error(message, caption, DeliveryError.UPLOAD)
+
+    def _predownloaded_group(self, payload: RichMediaPayload, caption: str) -> list[MediaUnion]:
+        final_group: list[MediaUnion] = []
+        for i, item_meta in enumerate(payload.media_items):
+            if item_meta.data is None:
+                continue
+            ext = "mp4" if item_meta.is_video else "jpg"
+            file = BufferedInputFile(item_meta.data, filename=f"browser_{i}.{ext}")
+            final_group.append(
+                self._build_input_media(file, is_video=item_meta.is_video, caption=caption if not final_group else None)
             )
-        except Exception:
-            logger.exception("Failed to upload pre-downloaded media")
-            await message.answer(
-                text=f"{caption}\n\n{self.ERROR_TEXTS[DeliveryError.UPLOAD]}",
-                parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
+
+        return final_group
+
+    async def _answer_delivery_error(self, message: Message, caption: str, error_type: DeliveryError) -> None:
+        await message.answer(
+            text=f"{caption}\n\n{self.ERROR_TEXTS[error_type]}",
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
 
     async def _try_url_delivery(self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str) -> bool:
         """Attempt delivery using optimistic URL approach."""
@@ -150,16 +155,12 @@ class TelegramMediaDelivery:
             )
         except TelegramEntityTooLarge:
             logger.warning("Media too large even for URL delivery")
-            await message.answer(
-                text=f"{caption}\n\n{self.ERROR_TEXTS[DeliveryError.TOO_LARGE]}",
-                parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
+            await self._answer_delivery_error(message, caption, DeliveryError.TOO_LARGE)
             return True
         except TelegramBadRequest as e:
             err_msg = str(e).upper()
             if not any(item in err_msg for item in ("WEBPAGE_CURL_FAILED", "FAILED TO GET")):
-                logger.exception("Unexpected Telegram API error during optimistic URL fetch")
+                logger.warning("Telegram rejected URL media without a fetch recovery")
                 raise
         else:
             return True
@@ -179,14 +180,7 @@ class TelegramMediaDelivery:
             session=self._session,
         )
 
-        final_group: list[MediaUnion] = [
-            self._build_input_media(
-                file, is_video=payload.media_items[i].is_video, caption=caption if idx == 0 else None
-            )
-            for idx, (i, file) in enumerate(
-                (i, f) for i, f in enumerate(downloaded_files) if isinstance(f, BufferedInputFile)
-            )
-        ]
+        final_group = self._downloaded_group(payload.media_items, downloaded_files, caption)
 
         if not final_group:
             await self._edit_placeholder_error(
@@ -198,24 +192,39 @@ class TelegramMediaDelivery:
             await bot.send_media_group(
                 chat_id=message.chat.id, media=final_group, reply_to_message_id=message.message_id
             )
-            with suppress(TelegramBadRequest):
-                await placeholder_msg.delete()
         except TelegramEntityTooLarge:
             logger.warning("Media too large for Telegram upload")
             await self._edit_placeholder_error(
                 bot, message.chat.id, placeholder_msg.message_id, caption, DeliveryError.TOO_LARGE
             )
-        except Exception:
-            logger.exception("Failed to upload media from RAM")
+        except TelegramBadRequest:
+            logger.warning("Telegram rejected uploaded media")
             await self._edit_placeholder_error(
                 bot, message.chat.id, placeholder_msg.message_id, caption, DeliveryError.UPLOAD
             )
+
+        else:
+            # Deleting a progress message is best effort after media acceptance, never a reason to resend it.
+            with suppress(TelegramAPIError):
+                await placeholder_msg.delete()
+
+    def _downloaded_group(
+        self, items: list[MediaItem], downloaded: list[BufferedInputFile | MediaFailure], caption: str
+    ) -> list[MediaUnion]:
+        group: list[MediaUnion] = []
+        for item, content in zip(items, downloaded, strict=True):
+            if not isinstance(content, BufferedInputFile):
+                continue
+            group.append(
+                self._build_input_media(content, is_video=item.is_video, caption=caption if not group else None)
+            )
+        return group
 
     async def _edit_placeholder_error(
         self, bot: Bot, chat_id: int, message_id: int, caption: str, error_type: DeliveryError
     ) -> None:
         """Update placeholder message with specific error text."""
-        text = f"{caption}\n\n{self.ERROR_TEXTS.get(error_type, self.ERROR_TEXTS[DeliveryError.UPLOAD])}"
+        text = f"{caption}\n\n{self.ERROR_TEXTS[error_type]}"
         with suppress(TelegramBadRequest):
             await bot.edit_message_text(
                 chat_id=chat_id,

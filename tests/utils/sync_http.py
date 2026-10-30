@@ -49,8 +49,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         """Do not write synthetic URL or request data into server logs."""
 
     def _respond(self) -> None:
-        length = int(self.headers.get("Content-Length", "0"))
-        request = CapturedRequest(self.command, self.path, dict(self.headers.items()), self.rfile.read(length))
+        request = CapturedRequest(self.command, self.path, dict(self.headers.items()), self._read_body())
         response = self._fixture.response(request)
         if response.started is not None:
             response.started.set()
@@ -69,6 +68,26 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(response.body)
         self._fixture.complete(request)
+
+    def _read_body(self) -> bytes:
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            return self._read_chunked_body()
+        return self.rfile.read(int(self.headers.get("Content-Length", "0")))
+
+    def _read_chunked_body(self) -> bytes:
+        """Consume real aiohttp multipart streams before acknowledging a synthetic upload."""
+        chunks = []
+        while True:
+            size = int(self.rfile.readline().split(b";", 1)[0], 16)
+            if size == 0:
+                break
+            chunks.append(self.rfile.read(size))
+            if self.rfile.read(2) != b"\r\n":
+                msg = "Invalid synthetic chunk delimiter."
+                raise ValueError(msg)
+        while self.rfile.readline() not in (b"\r\n", b""):
+            pass
+        return b"".join(chunks)
 
     def do_GET(self) -> None:
         """Serve a synthetic GET endpoint."""

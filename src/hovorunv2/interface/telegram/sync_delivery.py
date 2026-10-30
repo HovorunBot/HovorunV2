@@ -70,39 +70,86 @@ class NativeTelegramAPI:
             response = self._http.request_json("POST", self._base + operation.value, data=data, files=files)
         except HTTPTransportError:
             raise TelegramDeliveryUncertainError from None
-        if not isinstance(response, dict) or type(response.get("ok")) is not bool:
+        return _api_result(response)
+
+
+def _api_result(response: object) -> object:
+    if not isinstance(response, dict) or type(response.get("ok")) is not bool:
+        raise TelegramDeliveryUncertainError
+    if response["ok"] is True:
+        if "result" not in response:
             raise TelegramDeliveryUncertainError
-        if response["ok"] is True:
-            if "result" not in response:
-                raise TelegramDeliveryUncertainError
-            return response["result"]
-        code, description = response.get("error_code"), response.get("description")
-        if not isinstance(code, int) or not isinstance(description, str):
-            raise TelegramDeliveryUncertainError
-        reason = TelegramRejection.OTHER
-        upper = description.upper()
-        if code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE or any(
-            text in upper for text in ("FILE IS TOO BIG", "REQUEST ENTITY TOO LARGE")
-        ):
-            reason = TelegramRejection.TOO_LARGE
-        elif code == HTTPStatus.BAD_REQUEST and any(text in upper for text in ("WEBPAGE_CURL_FAILED", "FAILED TO GET")):
-            reason = TelegramRejection.FETCH
-        raise TelegramRejectedError(reason)
+        return response["result"]
+    code, description = response.get("error_code"), response.get("description")
+    if type(code) is not int or not isinstance(description, str):
+        raise TelegramDeliveryUncertainError
+    raise TelegramRejectedError(_rejection_reason(code, description))
+
+
+def _rejection_reason(code: int, description: str) -> TelegramRejection:
+    upper = description.upper()
+    if code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE or any(
+        text in upper for text in ("FILE IS TOO BIG", "REQUEST ENTITY TOO LARGE")
+    ):
+        return TelegramRejection.TOO_LARGE
+    if code == HTTPStatus.BAD_REQUEST and any(text in upper for text in ("WEBPAGE_CURL_FAILED", "FAILED TO GET")):
+        return TelegramRejection.FETCH
+    return TelegramRejection.OTHER
 
 
 def _message_ids(result: object) -> tuple[int, ...]:
     values = result if isinstance(result, list) else [result]
     ids = []
     for value in values:
-        if not isinstance(value, dict):
-            raise TelegramDeliveryUncertainError
-        message_id = value.get("message_id")
-        if type(message_id) is not int or message_id <= 0:
-            raise TelegramDeliveryUncertainError
-        ids.append(message_id)
+        try:
+            ids.append(_require_message_id(value))
+        except TelegramDeliveryUncertainError:
+            raise TelegramDeliveryUncertainError(tuple(ids)) from None
     if not ids:
         raise TelegramDeliveryUncertainError
     return tuple(ids)
+
+
+def _require_message_id(value: object) -> int:
+    if not isinstance(value, dict):
+        raise TelegramDeliveryUncertainError
+    message_id = value.get("message_id")
+    if type(message_id) is not int or message_id <= 0:
+        raise TelegramDeliveryUncertainError
+    return message_id
+
+
+def _media_group(items: list[MediaItem], start: int, caption: str) -> tuple[list[dict[str, str]], HTTPFiles]:
+    files: dict[str, tuple[str, bytes, str]] = {}
+    media: list[dict[str, str]] = []
+    for index, item in enumerate(items):
+        source = item.url
+        if item.data is not None:
+            name = f"media{index}"
+            extension, mime = ("mp4", "video/mp4") if item.is_video else ("jpg", "image/jpeg")
+            files[name] = (f"media_{start + index}.{extension}", item.data, mime)
+            source = "attach://" + name
+        value = {"type": "video" if item.is_video else "photo", "media": source}
+        if start == 0 and index == 0:
+            value.update({"caption": caption, "parse_mode": "HTML"})
+        media.append(value)
+    return media, files
+
+
+def _group_request(chat_id: int, message_id: int, media: list[dict[str, str]]) -> tuple[TelegramMethod, HTTPForm]:
+    fields: dict[str, str | int | float | bool] = {
+        "chat_id": chat_id,
+        "reply_parameters": json.dumps({"message_id": message_id}),
+    }
+    if len(media) != 1:
+        fields["media"] = json.dumps(media)
+        return TelegramMethod.SEND_MEDIA_GROUP, fields
+    entry = media[0]
+    fields[entry["type"]] = entry["media"]
+    if "caption" in entry:
+        fields.update({"caption": entry["caption"], "parse_mode": "HTML"})
+    method = TelegramMethod.SEND_VIDEO if entry["type"] == "video" else TelegramMethod.SEND_PHOTO
+    return method, fields
 
 
 class NativeTelegramDelivery:
@@ -129,45 +176,38 @@ class NativeTelegramDelivery:
         receipts = []
         for start in range(0, len(items), MAX_MEDIA_GROUP):
             group = items[start : start + MAX_MEDIA_GROUP]
-            files: dict[str, tuple[str, bytes, str]] = {}
-            media: list[dict[str, str]] = []
-            for index, item in enumerate(group):
-                source = item.url
-                if item.data is not None:
-                    name = f"media{index}"
-                    extension, mime = ("mp4", "video/mp4") if item.is_video else ("jpg", "image/jpeg")
-                    files[name] = (f"media_{start + index}.{extension}", item.data, mime)
-                    source = "attach://" + name
-                value = {"type": "video" if item.is_video else "photo", "media": source}
-                if start == 0 and index == 0:
-                    value.update({"caption": caption, "parse_mode": "HTML"})
-                media.append(value)
-            fields: dict[str, str | int | float | bool] = {
-                "chat_id": chat_id,
-                "reply_parameters": json.dumps({"message_id": message_id}),
-            }
-            if len(group) == 1:
-                entry = media[0]
-                fields[entry["type"]] = entry["media"]
-                if "caption" in entry:
-                    fields.update({"caption": entry["caption"], "parse_mode": "HTML"})
-                method = TelegramMethod.SEND_VIDEO if group[0].is_video else TelegramMethod.SEND_PHOTO
-            else:
-                fields["media"] = json.dumps(media)
-                method = TelegramMethod.SEND_MEDIA_GROUP
             try:
-                result = self._api.call(method, fields, files or None)
+                receipts.extend(self._send_group(chat_id, message_id, group, start, caption))
             except TelegramRejectedError:
                 if receipts:
                     raise TelegramDeliveryUncertainError(tuple(receipts)) from None
                 raise
-            except TelegramDeliveryUncertainError:
-                raise TelegramDeliveryUncertainError(tuple(receipts)) from None
-            receipts.extend(_message_ids(result))
+            except TelegramDeliveryUncertainError as error:
+                raise TelegramDeliveryUncertainError((*receipts, *error.receipts)) from None
         return tuple(receipts)
+
+    def _send_group(
+        self, chat_id: int, message_id: int, items: list[MediaItem], start: int, caption: str
+    ) -> tuple[int, ...]:
+        media, files = _media_group(items, start, caption)
+        method, fields = _group_request(chat_id, message_id, media)
+        receipts = _message_ids(self._api.call(method, fields, files or None))
+        if len(receipts) != len(items):
+            raise TelegramDeliveryUncertainError(receipts)
+        return receipts
 
     def _fallback(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
         placeholder = self._text(chat_id, caption + "\n\n⏳ <i>Downloading media...</i>")[0]
+        try:
+            return self._upload_fallback(chat_id, message_id, payload, caption, placeholder)
+        except TelegramDeliveryUncertainError as error:
+            raise TelegramDeliveryUncertainError((placeholder, *error.receipts)) from None
+        except TelegramRejectedError:
+            raise TelegramDeliveryUncertainError((placeholder,)) from None
+
+    def _upload_fallback(
+        self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str, placeholder: int
+    ) -> tuple[int, ...]:
         contents = self._downloader.download_batch(payload.media_items)
         items = [
             MediaItem(item.url, item.is_video, data)
@@ -193,7 +233,10 @@ class NativeTelegramDelivery:
         self, chat_id: int, message_id: int, payload: RichMediaPayload, platform_name: str, sender_label: str | None
     ) -> tuple[int, ...]:
         """Return minimal message receipts; uncertain acceptance always stops the delivery sequence."""
-        if chat_id == 0 or message_id <= 0:
+        if chat_id == 0:
+            msg = "Delivery requires canonical chat and source message identities."
+            raise ValueError(msg)
+        if message_id <= 0:
             msg = "Delivery requires canonical chat and source message identities."
             raise ValueError(msg)
         total_text = build_caption(payload, sender_label, platform_name)
@@ -202,12 +245,20 @@ class NativeTelegramDelivery:
         plan = plan_caption(payload, sender_label, platform_name, total_text)
         preceding = self._text(chat_id, plan.separate_text) if plan.separate_text is not None else ()
         try:
-            return preceding + self._send_items(chat_id, message_id, payload.media_items, plan.caption)
+            return preceding + self._deliver_media(chat_id, message_id, payload, plan.caption)
+        except TelegramDeliveryUncertainError as error:
+            raise TelegramDeliveryUncertainError((*preceding, *error.receipts)) from None
+        except TelegramRejectedError:
+            if preceding:
+                raise TelegramDeliveryUncertainError(preceding) from None
+            raise
+
+    def _deliver_media(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
+        try:
+            return self._send_items(chat_id, message_id, payload.media_items, caption)
         except TelegramRejectedError as exc:
             if exc.reason == TelegramRejection.FETCH:
-                return preceding + self._fallback(chat_id, message_id, payload, plan.caption)
+                return self._fallback(chat_id, message_id, payload, caption)
             if exc.reason == TelegramRejection.TOO_LARGE:
-                return preceding + self._text(
-                    chat_id, plan.caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>"
-                )
+                return self._text(chat_id, caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>")
             raise
