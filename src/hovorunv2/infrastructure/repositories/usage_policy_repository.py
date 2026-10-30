@@ -13,6 +13,8 @@ from hovorunv2.domain.usage import UsageOverrideDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.repositories.policy_queries import exact_target
 
+_POLICY_FIELDS = ("limit", "burst", "concurrency", "pending")
+
 
 @dataclass(frozen=True, slots=True)
 class UsagePolicyMutation:
@@ -68,40 +70,20 @@ class SQLAlchemyUsagePolicyRepository:
         if await self.target(target) is None:
             msg = "Usage override requires the exact active target generation."
             raise ValueError(msg)
-        row = next(
-            (
-                row
-                for row in await self.rows(target)
-                if row.bucket == policy.bucket
-                and row.unit == policy.unit
-                and row.window_seconds == policy.window.seconds
-            ),
-            None,
-        )
-        fields = ("limit", "burst", "concurrency", "pending")
-        before = {name: getattr(row, name) if row is not None else None for name in fields}
+        row = await self._find_policy(target, policy)
+        before = {name: getattr(row, name) if row is not None else None for name in _POLICY_FIELDS}
         if remove:
             if row is None:
                 return UsagePolicyMutation(changed=False)
             row.deleted_at = datetime.now(UTC)
             row.revision += 1
         elif row is None:
-            row = UsageOverrideDB(
-                user_id=target.entity_id if target.kind == "user" else None,
-                group_id=target.entity_id if target.kind == "group" else None,
-                bucket=policy.bucket,
-                unit=policy.unit.value,
-                window_seconds=policy.window.seconds,
-                limit=policy.limit,
-                burst=policy.burst,
-                concurrency=policy.concurrency,
-                pending=policy.pending,
-            )
+            row = self._new_override(target, policy)
             self._session.add(row)
         else:
-            if all(getattr(row, name) == getattr(policy, name) for name in fields):
+            if all(getattr(row, name) == getattr(policy, name) for name in _POLICY_FIELDS):
                 return UsagePolicyMutation(changed=False)
-            for name in fields:
+            for name in _POLICY_FIELDS:
                 setattr(row, name, getattr(policy, name))
             row.revision += 1
         await self._session.flush()
@@ -112,5 +94,32 @@ class SQLAlchemyUsagePolicyRepository:
             "revision": row.revision,
             "removed": remove,
         }
-        changes.update({name: [before[name], None if remove else getattr(policy, name)] for name in fields})
+        changes.update({name: [before[name], None if remove else getattr(policy, name)] for name in _POLICY_FIELDS})
         return UsagePolicyMutation(changed=True, changes=changes)
+
+    async def _find_policy(self, target: PermissionTarget, policy: UsagePolicy) -> UsageOverrideDB | None:
+        """Find the active override for the policy's complete dimension identity."""
+        return next(
+            (
+                row
+                for row in await self.rows(target)
+                if row.bucket == policy.bucket
+                and row.unit == policy.unit
+                and row.window_seconds == policy.window.seconds
+            ),
+            None,
+        )
+
+    def _new_override(self, target: PermissionTarget, policy: UsagePolicy) -> UsageOverrideDB:
+        """Build an override bound to its exact subject and policy dimensions."""
+        return UsageOverrideDB(
+            user_id=target.entity_id if target.kind == "user" else None,
+            group_id=target.entity_id if target.kind == "group" else None,
+            bucket=policy.bucket,
+            unit=policy.unit.value,
+            window_seconds=policy.window.seconds,
+            limit=policy.limit,
+            burst=policy.burst,
+            concurrency=policy.concurrency,
+            pending=policy.pending,
+        )

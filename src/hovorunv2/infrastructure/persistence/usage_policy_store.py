@@ -61,14 +61,12 @@ class SQLAlchemyUsagePolicyStore(UsagePolicyStore):
             )
             .limit(1)
         )
-        if (
-            actor.origin != ActorOrigin.TELEGRAM
-            or transport_kind != "private"
-            or user is None
-            or banned is not None
-            or not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
-        ):
-            msg = "Usage administration requires CLI or a current unrestricted bot administrator privately."
+        msg = "Usage administration requires CLI or a current unrestricted bot administrator privately."
+        if actor.origin != ActorOrigin.TELEGRAM or transport_kind != "private":
+            raise PermissionError(msg)
+        if user is None or banned is not None:
+            raise PermissionError(msg)
+        if not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot"))):
             raise PermissionError(msg)
 
     def _validate_policy(self, policy: UsagePolicy) -> None:
