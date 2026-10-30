@@ -4,7 +4,7 @@ import html
 import logging
 import re
 import urllib.parse
-from typing import ClassVar
+from typing import ClassVar, Self
 
 import aiohttp
 from bs4 import BeautifulSoup, Tag
@@ -13,6 +13,7 @@ from hovorunv2.application.clients.base import BaseMediaClient, OGConfig, Provid
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.errors import BrowserError, MediaExtractionError
 from hovorunv2.application.ports import BrowserPort
+from hovorunv2.application.worker_io import SyncBrowserPort
 from hovorunv2.domain.enums import CommandName
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,36 @@ class ThreadsService(BaseMediaClient):
     def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
         """Initialize with required services."""
         super().__init__(config=THREADS_CONFIG, http=http, browser=browser)
+
+    @property
+    def has_browser_fallback(self) -> bool:
+        """Threads requires headless browser continuation when non-browser tiers miss."""
+        return True
+
+    @classmethod
+    def sync(cls) -> Self:
+        """Create a client instance for synchronous worker extraction."""
+        return cls.for_worker(THREADS_CONFIG)
+
+    def _extract_browser_sync(self, url: str, browser: SyncBrowserPort) -> RichMediaPayload | None:
+        """Extract Threads post via headless browser synchronously in the browser stage."""
+        match = self._config.pattern.search(url)
+        if not match:
+            return None
+
+        tld = match.group("tld")
+        post_id = match.group("post_id")
+
+        try:
+            html_content = browser.get_content(url, wait_selector="article")
+        except BrowserError:
+            msg = "Provider browser extraction failed."
+            raise MediaExtractionError(msg) from None
+
+        if not html_content:
+            return None
+
+        return self._parse_browser_post(html_content, url, tld, post_id)
 
     async def extract_fallback(
         self,

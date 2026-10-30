@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import re
-from typing import ClassVar
+from typing import ClassVar, Self
 
 import aiohttp
 import instaloader
@@ -13,6 +13,7 @@ from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.ports import AppSettings, BrowserPort
 from hovorunv2.application.text import clean_caption_text
+from hovorunv2.application.worker_io import SyncHTTPPort
 from hovorunv2.domain.enums import CommandName
 
 logger = logging.getLogger(__name__)
@@ -119,17 +120,32 @@ class InstagramService(BaseMediaClient):
     ) -> None:
         """Initialize with required services."""
         super().__init__(config=INSTAGRAM_CONFIG, http=http, browser=browser)
+        self._settings: AppSettings | None = settings
+        self._context = PrivateInstaloaderContext(quiet=True, user_agent=self.DEFAULT_HEADERS["User-Agent"])
+        self._session_initialized = False
+
+    @classmethod
+    def sync(cls, settings: AppSettings | None = None) -> Self:
+        """Create a client instance for synchronous worker extraction."""
+        instance = cls.for_worker(INSTAGRAM_CONFIG)
+        instance.init_instagram_worker(settings)
+        return instance
+
+    def init_instagram_worker(self, settings: AppSettings | None) -> None:
+        """Initialize worker state on this Instagram client."""
         self._settings = settings
         self._context = PrivateInstaloaderContext(quiet=True, user_agent=self.DEFAULT_HEADERS["User-Agent"])
         self._session_initialized = False
 
     def get_ytdlp_cookies(self) -> dict[str, str] | None:
         """Provide sessionid cookie to yt-dlp when configured."""
-        return {"sessionid": self._settings.instagram_sessionid} if self._settings.instagram_sessionid else None
+        if self._settings and self._settings.instagram_sessionid:
+            return {"sessionid": self._settings.instagram_sessionid}
+        return None
 
     def get_browser_cookies(self) -> list[dict[str, object]]:
         """Provide sessionid cookie to headless browser fallback when configured."""
-        if not self._settings.instagram_sessionid:
+        if not self._settings or not self._settings.instagram_sessionid:
             return []
         return [
             {
@@ -139,6 +155,46 @@ class InstagramService(BaseMediaClient):
                 "path": "/",
             }
         ]
+
+    def _ensure_session_sync(self, sessionid: str | None) -> None:
+        """Ensure instaloader session is initialized with cookie synchronously."""
+        if self._session_initialized or not sessionid:
+            return
+
+        try:
+            self._context._session.cookies.set(  # noqa: SLF001
+                "sessionid",
+                sessionid,
+                domain=".instagram.com",
+            )
+            self._session_initialized = True
+        except ValueError, TypeError:
+            msg = "Provider browser session is unavailable."
+            raise MediaExtractionError(msg) from None
+
+    def _extract_non_browser_fallback_sync(self, url: str, http: SyncHTTPPort) -> RichMediaPayload | None:
+        """Run synchronous instaloader extraction directly in the media stage without an event loop."""
+        if match := self._config.pattern.search(url):
+            return self._extract_via_instaloader_sync(url, match)
+        return None
+
+    def _extract_via_instaloader_sync(
+        self,
+        url: str,
+        match: re.Match[str],
+    ) -> RichMediaPayload:
+        """Fetch Instagram data using instaloader synchronously."""
+        shortcode = match.group("id")
+        if self._settings and self._settings.instagram_sessionid:
+            self._ensure_session_sync(self._settings.instagram_sessionid)
+
+        try:
+            post = instaloader.Post.from_shortcode(self._context, shortcode)
+        except instaloader.exceptions.InstaloaderException, OSError, ValueError:
+            msg = "Provider backend extraction failed."
+            raise MediaExtractionError(msg) from None
+
+        return self._build_instaloader_payload(post, url)
 
     async def _ensure_session(self, sessionid: str | None) -> None:
         """Ensure instaloader session is initialized with cookie if provided."""
@@ -174,7 +230,7 @@ class InstagramService(BaseMediaClient):
     ) -> RichMediaPayload:
         """Fetch Instagram data using instaloader and construct raw RichMediaPayload."""
         shortcode = match.group("id")
-        if self._settings.instagram_sessionid:
+        if self._settings and self._settings.instagram_sessionid:
             await self._ensure_session(self._settings.instagram_sessionid)
 
         try:

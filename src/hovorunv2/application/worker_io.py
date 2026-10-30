@@ -1,8 +1,12 @@
 """Narrow synchronous HTTP contracts for native worker transports and providers."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from enum import StrEnum
 from typing import Protocol
+
+from hovorunv2.application.browser import BrowserTab
+from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.media.errors import MediaFailure
 
 HTTPHeaders = Mapping[str, str]
 HTTPQuery = Mapping[str, str | int | float | bool]
@@ -57,4 +61,22 @@ class SyncHTTPPort(Protocol):
         files: HTTPFiles | None = None,
     ) -> object:
         """Return a JSON response including explicit remote rejection; uncertain I/O raises HTTPTransportError."""
+        ...
+
+
+class SyncBrowserPort(Protocol):
+    """Protocol for synchronous worker headless browser automation."""
+
+    def get_content(self, url: str, wait_selector: str | None = None) -> str:
+        """Return rendered HTML; navigation or browser failures raise BrowserError."""
+        ...
+
+    def extract_and_download(
+        self,
+        url: str,
+        extractor_fn: Callable[[BrowserTab, str], RichMediaPayload | None],
+        wait_selector: str | None = None,
+        cookies: list[dict[str, object]] | None = None,
+    ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
+        """Run extraction and download in one synchronous browser session."""
         ...

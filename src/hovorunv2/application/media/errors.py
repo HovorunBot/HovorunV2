@@ -25,3 +25,7 @@ class MediaDownloadError(OSError):
 
 class BrowserError(Exception):
     """Allowlisted browser lifecycle failure without private page contents."""
+
+
+class BrowserContinuationRequired(Exception):  # noqa: N818
+    """The media stage finished non-browser tiers without media; browser stage continuation is required."""

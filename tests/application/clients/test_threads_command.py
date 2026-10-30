@@ -7,10 +7,16 @@ import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
+from hovorunv2.application.clients.threads import ThreadsService
+from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
+from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
+from tests.utils.sync_browser import FakeSyncBrowser
+from tests.utils.sync_http import FakeSyncHTTP
 
 EXPECTED_MEDIA_COUNT: int = 1
 
@@ -43,3 +49,87 @@ async def test_handle_threads_post(threads_command: RichMediaCommand, test_conta
     assert "Mock User" in kwargs["media"][0].caption
     assert "threads.net" in kwargs["media"][0].caption
     assert len(kwargs["media"]) >= EXPECTED_MEDIA_COUNT
+
+
+@pytest.mark.unit
+def test_threads_sync_media_stage_requires_browser_continuation() -> None:
+    """Test that Threads in media stage raises BrowserContinuationRequired when yt-dlp misses."""
+    service = ThreadsService.sync()
+    url = "https://www.threads.net/@user/post/DYOeEaaD-vR"
+    http = FakeSyncHTTP()
+
+    class FailingExtractor(NativeMediaExtractor):
+        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+            msg = "yt-dlp miss"
+            raise MediaExtractionError(msg)
+
+    with pytest.raises(BrowserContinuationRequired):
+        service.extract_media_sync(url, http, FailingExtractor())
+
+
+@pytest.mark.unit
+def test_threads_sync_browser_stage_extraction() -> None:
+    """Test Threads post extraction in browser stage via SyncBrowserPort."""
+    service = ThreadsService.sync()
+    url = "https://www.threads.net/@sync_author/post/DYOeEaaD-vR"
+    http = FakeSyncHTTP()
+
+    html_content = """
+    <html>
+    <head>
+        <meta property="og:title" content="Sync Author (@sync_author) on Threads"/>
+        <meta property="og:description" content="Threads browser post text content"/>
+    </head>
+    <body>
+        <article>
+            <div dir="auto">Threads browser post text content</div>
+            <img src="https://scontent.cdninstagram.com/media_img1.jpg"/>
+        </article>
+        <script type="application/json">
+        {
+            "code": "DYOeEaaD-vR",
+            "like_count": 850,
+            "direct_reply_count": 30,
+            "repost_count": 12
+        }
+        </script>
+    </body>
+    </html>
+    """
+    browser = FakeSyncBrowser(html_responses={url: html_content})
+
+    payload = service.extract_browser_media_sync(url, http, browser)
+    assert payload is not None
+    assert payload.author_handle == "sync_author"
+    assert "Threads browser post text content" in payload.content
+    assert len(payload.media_items) == 1
+    assert payload.media_items[0].url == "https://scontent.cdninstagram.com/media_img1.jpg"
+    assert "❤️ 850" in payload.footer_text
+    assert "💬 30" in payload.footer_text
+
+
+@pytest.mark.unit
+def test_threads_sync_browser_stage_fallback_to_og() -> None:
+    """Test that browser stage falls back to OpenGraph metadata when browser extraction yields no media."""
+    service = ThreadsService.sync()
+    url = "https://www.threads.net/@sync_author/post/DYOeEaaD-vR"
+
+    # Browser returns empty article without media
+    empty_html = "<html><body><article></article></body></html>"
+    browser = FakeSyncBrowser(html_responses={url: empty_html})
+
+    og_html = """
+    <!DOCTYPE html><html><head>
+    <meta property="og:title" content="OG Author on Threads"/>
+    <meta property="og:description" content="OpenGraph Content description"/>
+    <meta property="og:image" content="https://threads.net/og_image.jpg"/>
+    </head><body></body></html>
+    """
+    http = FakeSyncHTTP(text_responses={url: og_html})
+
+    payload = service.extract_browser_media_sync(url, http, browser)
+    assert payload is not None
+    assert payload.author_name == "OG Author"
+    assert payload.content == "OpenGraph Content description"
+    assert len(payload.media_items) == 1
+    assert payload.media_items[0].url == "https://threads.net/og_image.jpg"

@@ -20,11 +20,19 @@ from hovorunv2.application.clients.config import (
 )
 from hovorunv2.application.clients.parsing import MediaParser
 from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.media.errors import BrowserError, MediaExtractionError
+from hovorunv2.application.media.errors import (
+    BrowserContinuationRequired,
+    BrowserError,
+    MediaExtractionError,
+)
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.ports import BrowserPort
 from hovorunv2.application.text import extract_og_metadata
-from hovorunv2.application.worker_io import HTTPTransportError, SyncHTTPPort
+from hovorunv2.application.worker_io import (
+    HTTPTransportError,
+    SyncBrowserPort,
+    SyncHTTPPort,
+)
 from hovorunv2.domain.enums import CommandName
 
 __all__ = ["FACEBOOK_CONFIG", "BaseMediaClient", "BrowserFallbackConfig", "OGConfig", "ProviderConfig"]
@@ -99,6 +107,11 @@ class BaseMediaClient(MediaParser):
     def platform_label(self) -> str:
         """Human-readable platform label."""
         return self._config.label
+
+    @property
+    def has_browser_fallback(self) -> bool:
+        """Whether this provider requires headless browser continuation."""
+        return bool(self._config.browser_config)
 
     async def extract(self, url: str) -> RichMediaPayload | None:
         """Execute direct API extraction."""
@@ -244,7 +257,7 @@ class BaseMediaClient(MediaParser):
         http: SyncHTTPPort,
         extractor: NativeMediaExtractor,
     ) -> RichMediaPayload:
-        """Execute multi-tier extraction synchronously: Tier 1 -> Tier 2 -> Tier 4."""
+        """Execute multi-tier extraction synchronously in the media stage."""
         cleaned_url = url.rstrip(".,")
 
         try:
@@ -264,6 +277,16 @@ class BaseMediaClient(MediaParser):
                 logger.info("Generic extraction strategy failed for provider %s", self.name)
 
         try:
+            payload = self._extract_non_browser_fallback_sync(cleaned_url, http)
+            if payload is not None:
+                return payload
+        except MediaExtractionError:
+            logger.info("Non-browser fallback strategy failed for provider %s", self.name)
+
+        if self.has_browser_fallback:
+            raise BrowserContinuationRequired
+
+        try:
             payload = self.extract_metadata_sync(cleaned_url, http)
             if payload is not None:
                 return payload
@@ -272,6 +295,59 @@ class BaseMediaClient(MediaParser):
 
         msg = "Media extraction strategies are exhausted."
         raise MediaExtractionError(msg)
+
+    def _extract_non_browser_fallback_sync(self, url: str, http: SyncHTTPPort) -> RichMediaPayload | None:
+        """Override in subclasses for non-browser synchronous fallbacks (e.g. instaloader)."""
+        return None
+
+    def extract_browser_media_sync(
+        self,
+        url: str,
+        http: SyncHTTPPort,
+        browser: SyncBrowserPort,
+    ) -> RichMediaPayload:
+        """Execute browser-stage extraction: Tier 3 (browser) -> Tier 4 (OpenGraph)."""
+        cleaned_url = url.rstrip(".,")
+        try:
+            payload = self._extract_browser_sync(cleaned_url, browser)
+            if payload is not None:
+                return payload
+        except MediaExtractionError:
+            logger.info("Browser extraction strategy failed for provider %s", self.name)
+
+        try:
+            payload = self.extract_metadata_sync(cleaned_url, http)
+            if payload is not None:
+                return payload
+        except MediaExtractionError:
+            logger.info("Metadata extraction strategy failed for provider %s", self.name)
+
+        msg = "Media extraction strategies are exhausted."
+        raise MediaExtractionError(msg)
+
+    def _extract_browser_sync(self, url: str, browser: SyncBrowserPort) -> RichMediaPayload | None:
+        """Perform config-driven headless browser extraction synchronously."""
+        b_cfg = self._config.browser_config
+        if not b_cfg:
+            return None
+
+        try:
+            payload, media_bytes = browser.extract_and_download(
+                url,
+                extractor_fn=partial(self._extract_from_browser_tab, b_cfg=b_cfg),
+                wait_selector=b_cfg.wait_selector,
+                cookies=self.get_browser_cookies(),
+            )
+            if not payload:
+                return None
+            for item, content in zip(payload.media_items, media_bytes, strict=False):
+                if isinstance(content, bytes):
+                    item.data = content
+        except BrowserError, MediaExtractionError:
+            msg = "Provider browser extraction failed."
+            raise MediaExtractionError(msg) from None
+        else:
+            return self._require_usable_payload(payload)
 
     # Compatibility aliases
     extract_payload = extract
