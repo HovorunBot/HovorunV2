@@ -12,6 +12,15 @@ from threading import Event, Lock, Thread
 from types import TracebackType
 from typing import Self
 
+from hovorunv2.application.worker_io import (
+    HTTPFailure,
+    HTTPFiles,
+    HTTPForm,
+    HTTPHeaders,
+    HTTPQuery,
+    HTTPTransportError,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class HTTPReply:
@@ -144,3 +153,92 @@ class HTTPFixture:
         """Record that a delayed response has finished sending before a caller releases its resource."""
         with self._lock:
             self.completed.append(request)
+
+
+class FakeSyncHTTP:
+    """Synchronous HTTP adapter for unit tests simulating external endpoints."""
+
+    def __init__(
+        self,
+        *,
+        json_responses: Mapping[str, object] | None = None,
+        text_responses: Mapping[str, str] | None = None,
+        redirects: Mapping[str, str] | None = None,
+        byte_responses: Mapping[str, bytes] | None = None,
+    ) -> None:
+        self.json_responses: dict[str, object] = dict(json_responses or {})
+        self.text_responses: dict[str, str] = dict(text_responses or {})
+        self.redirects: dict[str, str] = dict(redirects or {})
+        self.byte_responses: dict[str, bytes] = dict(byte_responses or {})
+        self.requests: list[dict[str, object]] = []
+
+    def read_json(
+        self,
+        url: str,
+        params: HTTPQuery | None = None,
+        headers: HTTPHeaders | None = None,
+    ) -> object:
+        """Return configured JSON response or raise HTTPTransportError."""
+        self.requests.append({"method": "GET", "url": url, "params": params, "headers": headers})
+        for pattern, response in self.json_responses.items():
+            if pattern in url or (params and any(pattern in str(v) for v in params.values())):
+                if isinstance(response, Exception):
+                    raise response
+                return response
+        raise HTTPTransportError(HTTPFailure.UNAVAILABLE)
+
+    def read_text(
+        self,
+        url: str,
+        params: HTTPQuery | None = None,
+        headers: HTTPHeaders | None = None,
+    ) -> str:
+        """Return configured text response or raise HTTPTransportError."""
+        self.requests.append({"method": "GET", "url": url, "params": params, "headers": headers})
+        for pattern, response in self.text_responses.items():
+            if pattern in url or (params and any(pattern in str(v) for v in params.values())):
+                if isinstance(response, Exception):
+                    raise response
+                return response
+        raise HTTPTransportError(HTTPFailure.UNAVAILABLE)
+
+    def resolve(self, url: str, headers: HTTPHeaders | None = None) -> str:
+        """Return configured redirect target or echo url."""
+        self.requests.append({"method": "RESOLVE", "url": url, "headers": headers})
+        for pattern, target in self.redirects.items():
+            if pattern in url:
+                return target
+        return url
+
+    def download_bytes(
+        self,
+        url: str,
+        headers: HTTPHeaders | None = None,
+        *,
+        cookies: Mapping[str, str] | None = None,
+    ) -> bytes:
+        """Return configured byte response or raise HTTPTransportError."""
+        self.requests.append({"method": "DOWNLOAD", "url": url, "headers": headers, "cookies": cookies})
+        for pattern, response in self.byte_responses.items():
+            if pattern in url:
+                if isinstance(response, Exception):
+                    raise response
+                return response
+        raise HTTPTransportError(HTTPFailure.UNAVAILABLE)
+
+    def request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        data: HTTPForm | None = None,
+        files: HTTPFiles | None = None,
+    ) -> object:
+        """Return configured JSON response for mutating request."""
+        self.requests.append({"method": method, "url": url, "data": data, "files": files})
+        for pattern, response in self.json_responses.items():
+            if pattern in url:
+                if isinstance(response, Exception):
+                    raise response
+                return response
+        raise HTTPTransportError(HTTPFailure.UNAVAILABLE)

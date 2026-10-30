@@ -11,14 +11,17 @@ from hovorunv2.application.clients.bluesky import BlueskyService
 from hovorunv2.application.clients.config import ProviderConfig
 from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
+from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.features import TriggerKind
 from hovorunv2.application.media.errors import MediaExtractionError
+from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.ports import BrowserPort, CommandStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from tests.conftest import authorize_private_media
 from tests.utils.recorded_responses import RecordedResponses
+from tests.utils.sync_http import FakeSyncHTTP
 
 
 @pytest.mark.parametrize(
@@ -118,3 +121,49 @@ async def test_selected_video_provider_requires_media_in_its_success_response(te
         http.get(re.compile(r"https://www\.tikwm\.com/api/.*"), payload={"code": 0, "data": {"title": "synthetic"}})
         with pytest.raises(MediaExtractionError, match="video metadata"):
             await service.extract("https://www.tiktok.com/@synthetic/video/123")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("service", "url", "endpoint"),
+    [
+        (TwitterService.sync(), "https://x.com/synthetic/status/123", "api.vxtwitter.com"),
+        (TikTokService.sync(), "https://www.tiktok.com/@synthetic/video/123", "www.tikwm.com/api/"),
+        (BlueskyService.sync(), "https://bsky.app/profile/synthetic.test/post/abc", "public.api.bsky.app"),
+    ],
+)
+@pytest.mark.parametrize("payload", [None, [], {"unexpected": "synthetic"}])
+def test_sync_unusable_api_data_raises_media_extraction_error(
+    service: BaseMediaClient,
+    url: str,
+    endpoint: str,
+    payload: object,
+) -> None:
+    """Synchronous worker extraction rejects unusable/malformed API payloads as semantic failures."""
+    http = FakeSyncHTTP(json_responses={endpoint: payload})
+    with pytest.raises(MediaExtractionError):
+        service.extract_sync(url, http)
+
+
+@pytest.mark.unit
+def test_sync_transport_error_raises_media_extraction_error() -> None:
+    """HTTP transport failure maps to MediaExtractionError in synchronous worker extraction."""
+    service = TwitterService.sync()
+    http = FakeSyncHTTP()
+    with pytest.raises(MediaExtractionError, match="request failed"):
+        service.extract_sync("https://x.com/user/status/123", http)
+
+
+@pytest.mark.unit
+def test_sync_extract_media_exhausted_strategies_raises() -> None:
+    """When all synchronous extraction tiers fail, MediaExtractionError is raised."""
+    service = TwitterService.sync()
+    http = FakeSyncHTTP()
+
+    class FailingExtractor(NativeMediaExtractor):
+        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+            msg = "generic failure"
+            raise MediaExtractionError(msg)
+
+    with pytest.raises(MediaExtractionError, match="strategies are exhausted"):
+        service.extract_media_sync("https://x.com/user/status/123", http, FailingExtractor())

@@ -1,7 +1,7 @@
 """Application service for Bluesky media extraction."""
 
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 import aiohttp
 
@@ -9,6 +9,7 @@ from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.ports import BrowserPort
+from hovorunv2.application.worker_io import SyncHTTPPort
 from hovorunv2.domain.enums import CommandName
 
 BLUESKY_CONFIG = ProviderConfig(
@@ -27,6 +28,11 @@ class BlueskyService(BaseMediaClient):
         """Initialize with HTTP session and browser adapter."""
         super().__init__(config=BLUESKY_CONFIG, http=http, browser=browser)
 
+    @classmethod
+    def sync(cls) -> Self:
+        """Create a client instance for synchronous worker extraction."""
+        return cls.for_worker(BLUESKY_CONFIG)
+
     async def _extract_raw_payload(self, url: str, match: re.Match[str]) -> RichMediaPayload | None:
         """Fetch Bluesky thread data and construct raw RichMediaPayload."""
         handle = match.group("handle")
@@ -35,6 +41,30 @@ class BlueskyService(BaseMediaClient):
 
         did = handle if handle.startswith("did:") else await self._resolve_did(handle)
         thread_data = await self._fetch_thread(did, match.group("rkey"))
+        return self._parse_thread_data(thread_data, url)
+
+    def _extract_raw_payload_sync(
+        self,
+        url: str,
+        match: re.Match[str],
+        http: SyncHTTPPort,
+    ) -> RichMediaPayload | None:
+        """Fetch Bluesky thread data synchronously and construct raw RichMediaPayload."""
+        handle = match.group("handle")
+        if not handle:
+            return None
+
+        did = handle if handle.startswith("did:") else self._resolve_did_sync(handle, http)
+        at_uri = f"at://{did}/app.bsky.feed.post/{match.group('rkey')}"
+        thread_data = self._fetch_json_sync(
+            http,
+            f"{self.API_BASE_URL}/app.bsky.feed.getPostThread",
+            params={"uri": at_uri, "depth": 0},
+        )
+        return self._parse_thread_data(thread_data, url)
+
+    def _parse_thread_data(self, thread_data: object, url: str) -> RichMediaPayload:
+        """Parse raw Bluesky thread JSON into RichMediaPayload."""
         if not isinstance(thread_data, dict) or "thread" not in thread_data:
             msg = "Provider returned unusable extraction metadata."
             raise MediaExtractionError(msg)
@@ -73,6 +103,16 @@ class BlueskyService(BaseMediaClient):
     async def _resolve_did(self, handle: str) -> str:
         """Resolve Bluesky handle to DID."""
         profile = await self._fetch_json(f"{self.API_BASE_URL}/app.bsky.actor.getProfile", params={"actor": handle})
+        return self._parse_did(profile)
+
+    def _resolve_did_sync(self, handle: str, http: SyncHTTPPort) -> str:
+        """Resolve Bluesky handle to DID synchronously."""
+        profile = self._fetch_json_sync(
+            http, f"{self.API_BASE_URL}/app.bsky.actor.getProfile", params={"actor": handle}
+        )
+        return self._parse_did(profile)
+
+    def _parse_did(self, profile: object) -> str:
         did = profile.get("did") if isinstance(profile, dict) else None
         if not isinstance(did, str) or not did:
             msg = "Provider actor identity is unavailable."

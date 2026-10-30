@@ -1,7 +1,7 @@
 """Application service for TikTok media extraction."""
 
 import re
-from typing import ClassVar
+from typing import ClassVar, Self
 
 import aiohttp
 
@@ -9,6 +9,7 @@ from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.ports import BrowserPort
+from hovorunv2.application.worker_io import SyncHTTPPort
 from hovorunv2.domain.enums import CommandName
 
 TIKTOK_CONFIG = ProviderConfig(
@@ -31,6 +32,11 @@ class TikTokService(BaseMediaClient):
         """Initialize with HTTP session and browser adapter."""
         super().__init__(config=TIKTOK_CONFIG, http=http, browser=browser)
 
+    @classmethod
+    def sync(cls) -> Self:
+        """Create a client instance for synchronous worker extraction."""
+        return cls.for_worker(TIKTOK_CONFIG)
+
     async def _extract_raw_payload(
         self,
         url: str,
@@ -38,6 +44,20 @@ class TikTokService(BaseMediaClient):
     ) -> RichMediaPayload:
         """Fetch TikTok data and construct raw RichMediaPayload."""
         data = await self._fetch_json(self.API_URL, params={"url": url})
+        return self._parse_tiktok_data(data, url)
+
+    def _extract_raw_payload_sync(
+        self,
+        url: str,
+        match: re.Match[str],
+        http: SyncHTTPPort,
+    ) -> RichMediaPayload:
+        """Fetch TikTok data synchronously and construct raw RichMediaPayload."""
+        data = self._fetch_json_sync(http, self.API_URL, params={"url": url})
+        return self._parse_tiktok_data(data, url)
+
+    def _parse_tiktok_data(self, data: object, url: str) -> RichMediaPayload:
+        """Parse raw tikwm JSON into RichMediaPayload."""
         if not isinstance(data, dict) or data.get("code") != self.SUCCESS_CODE:
             msg = "Provider returned unusable extraction metadata."
             raise MediaExtractionError(msg)

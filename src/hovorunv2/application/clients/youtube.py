@@ -3,13 +3,14 @@
 import json
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Self
 
 import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, OGConfig, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import BrowserPort
+from hovorunv2.application.worker_io import SyncHTTPPort
 from hovorunv2.domain.enums import CommandName
 
 _YOUTUBE_OG_CONFIG = OGConfig(
@@ -53,15 +54,39 @@ class YoutubeService(BaseMediaClient):
         """Initialize with HTTP session and browser adapter."""
         super().__init__(config=YOUTUBE_CONFIG, http=http, browser=browser)
 
+    @classmethod
+    def sync(cls) -> Self:
+        """Create a client instance for synchronous worker extraction."""
+        return cls.for_worker(YOUTUBE_CONFIG)
+
     async def _extract_raw_payload(
         self,
         url: str,
         match: re.Match[str],
     ) -> RichMediaPayload | None:
         """Extract YouTube Community post from ytInitialData or fall back to OG config."""
-        post_id = match.groupdict().get("post_id") or match.groupdict().get("community_id")
-        fetch_url = f"https://www.youtube.com/post/{post_id}" if post_id else url
+        fetch_url = self._post_fetch_url(match, url)
         html_content = await self._fetch_html(fetch_url)
+        return self._parse_youtube_post_html(html_content, fetch_url)
+
+    def _extract_raw_payload_sync(
+        self,
+        url: str,
+        match: re.Match[str],
+        http: SyncHTTPPort,
+    ) -> RichMediaPayload | None:
+        """Extract YouTube Community post synchronously from ytInitialData or fall back to OG config."""
+        fetch_url = self._post_fetch_url(match, url)
+        html_content = self._fetch_html_sync(http, fetch_url)
+        return self._parse_youtube_post_html(html_content, fetch_url)
+
+    def _post_fetch_url(self, match: re.Match[str], url: str) -> str:
+        """Determine canonical post fetch URL from match groups."""
+        post_id = match.groupdict().get("post_id") or match.groupdict().get("community_id")
+        return f"https://www.youtube.com/post/{post_id}" if post_id else url
+
+    def _parse_youtube_post_html(self, html_content: str, fetch_url: str) -> RichMediaPayload | None:
+        """Parse YouTube community post from page HTML or OG tags."""
         if not html_content:
             return None
 

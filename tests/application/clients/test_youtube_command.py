@@ -12,11 +12,15 @@ import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
+from hovorunv2.application.clients.youtube import YoutubeService
+from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
+from tests.utils.sync_http import FakeSyncHTTP
 
 
 @pytest.fixture
@@ -216,3 +220,73 @@ async def test_youtube_community_post_skips_ytdlp(
 
     mock_extract_info.assert_not_called()
     bot.send_media_group.assert_not_called()
+
+
+@pytest.mark.unit
+def test_youtube_sync_community_post_extraction() -> None:
+    """Test synchronous worker extraction for YouTube Community post."""
+    service = YoutubeService.sync()
+    post_url = "https://www.youtube.com/post/Ugkx1234567890abcdef"
+    yt_initial_data = {
+        "contents": {
+            "backstagePostThreadRenderer": {
+                "post": {
+                    "backstagePostRenderer": {
+                        "authorText": {"runs": [{"text": "Tech Creator"}]},
+                        "authorEndpoint": {"commandMetadata": {"webCommandMetadata": {"url": "/@TechCreator"}}},
+                        "contentText": {"runs": [{"text": "Sync worker update!"}]},
+                        "voteCount": {"simpleText": "1.2K"},
+                        "backstageAttachment": {
+                            "backstageImageRenderer": {
+                                "image": {
+                                    "thumbnails": [
+                                        {"url": "https://yt3.ggpht.com/sync_img.jpg"},
+                                    ]
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+    html_body = f"<html><script>var ytInitialData = {json.dumps(yt_initial_data)};</script></html>"
+    http = FakeSyncHTTP(text_responses={post_url: html_body})
+
+    payload = service.extract_sync(post_url, http)
+    assert payload is not None
+    assert payload.author_name == "Tech Creator"
+    assert payload.author_handle == "TechCreator"
+    assert payload.content == "Sync worker update!"
+    assert len(payload.media_items) == 1
+    assert payload.media_items[0].url == "https://yt3.ggpht.com/sync_img.jpg"
+    assert "❤️ 1.2K" in payload.footer_text
+
+
+@pytest.mark.unit
+def test_youtube_sync_video_url_skips_direct_and_uses_extractor() -> None:
+    """Test that YouTube video URLs skip direct HTML extraction and delegate to NativeMediaExtractor."""
+    service = YoutubeService.sync()
+    video_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    http = FakeSyncHTTP()
+
+    expected_payload = RichMediaPayload(
+        author_name="Rick Astley",
+        author_handle="RickAstleyVEVO",
+        author_url="https://youtube.com/@RickAstleyVEVO",
+        content="Never Gonna Give You Up",
+        footer_text="👁️ 1B",
+        original_url=video_url,
+        media_items=[MediaItem(url="https://googlevideo.com/videoplayback", is_video=True)],
+    )
+
+    class DummyExtractor(NativeMediaExtractor):
+        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+            return expected_payload
+
+    # Direct extraction returns None for standard video URLs
+    assert service.extract_sync(video_url, http) is None
+
+    # Multi-tier extraction delegates to generic extractor
+    payload = service.extract_media_sync(video_url, http, DummyExtractor())
+    assert payload == expected_payload

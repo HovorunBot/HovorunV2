@@ -1,7 +1,7 @@
 """Application service for Twitter/X media extraction."""
 
 import re
-from typing import Any
+from typing import Any, Self
 
 import aiohttp
 
@@ -9,6 +9,7 @@ from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.ports import BrowserPort
+from hovorunv2.application.worker_io import SyncHTTPPort
 from hovorunv2.domain.enums import CommandName
 
 TWITTER_CONFIG = ProviderConfig(
@@ -26,9 +27,28 @@ class TwitterService(BaseMediaClient):
         """Initialize with HTTP session and browser adapter."""
         super().__init__(config=TWITTER_CONFIG, http=http, browser=browser)
 
+    @classmethod
+    def sync(cls) -> Self:
+        """Create a client instance for synchronous worker extraction."""
+        return cls.for_worker(TWITTER_CONFIG)
+
     async def _extract_raw_payload(self, url: str, match: re.Match[str]) -> RichMediaPayload:
         """Fetch tweet data from vxtwitter API and return raw RichMediaPayload."""
         tweet_data = await self._fetch_json(f"https://api.vxtwitter.com/i/status/{match.group('post_id')}")
+        return self._parse_tweet_data(tweet_data, url)
+
+    def _extract_raw_payload_sync(
+        self,
+        url: str,
+        match: re.Match[str],
+        http: SyncHTTPPort,
+    ) -> RichMediaPayload:
+        """Fetch tweet data synchronously from vxtwitter API and return raw RichMediaPayload."""
+        tweet_data = self._fetch_json_sync(http, f"https://api.vxtwitter.com/i/status/{match.group('post_id')}")
+        return self._parse_tweet_data(tweet_data, url)
+
+    def _parse_tweet_data(self, tweet_data: object, url: str) -> RichMediaPayload:
+        """Parse raw vxtwitter JSON into RichMediaPayload."""
         if not isinstance(tweet_data, dict) or "text" not in tweet_data:
             msg = "Provider returned unusable extraction metadata."
             raise MediaExtractionError(msg)

@@ -2,7 +2,7 @@
 
 import html
 import re
-from typing import ClassVar
+from typing import ClassVar, Self
 
 import aiohttp
 from bs4 import BeautifulSoup, Tag
@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup, Tag
 from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import BrowserPort
+from hovorunv2.application.worker_io import SyncHTTPPort
 from hovorunv2.domain.enums import CommandName
 
 REDDIT_CONFIG = ProviderConfig(
@@ -38,6 +39,11 @@ class RedditService(BaseMediaClient):
         """Initialize with HTTP session and browser adapter."""
         super().__init__(config=REDDIT_CONFIG, http=http, browser=browser)
 
+    @classmethod
+    def sync(cls) -> Self:
+        """Create a client instance for synchronous worker extraction."""
+        return cls.for_worker(REDDIT_CONFIG)
+
     async def _extract_raw_payload(
         self,
         url: str,
@@ -46,6 +52,20 @@ class RedditService(BaseMediaClient):
         """Fetch Reddit post metadata from vxReddit and construct raw RichMediaPayload."""
         vx_url = self._metadata_url(url)
         html_content = await self._fetch_html(vx_url)
+        if not html_content:
+            return None
+
+        return self._parse_vxreddit_html(html_content, url)
+
+    def _extract_raw_payload_sync(
+        self,
+        url: str,
+        match: re.Match[str],
+        http: SyncHTTPPort,
+    ) -> RichMediaPayload | None:
+        """Fetch Reddit post metadata synchronously from vxReddit and construct raw RichMediaPayload."""
+        vx_url = self._metadata_url(url)
+        html_content = self._fetch_html_sync(http, vx_url)
         if not html_content:
             return None
 

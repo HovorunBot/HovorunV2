@@ -67,7 +67,7 @@ class ThreadsService(BaseMediaClient):
         post_id = match.group("post_id")
 
         try:
-            html_content = await self._browser.get_content(url, wait_selector="article")
+            html_content = await self._require_browser().get_content(url, wait_selector="article")
         except BrowserError:
             msg = "Provider browser extraction failed."
             raise MediaExtractionError(msg) from None
