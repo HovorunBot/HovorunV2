@@ -123,34 +123,44 @@ class SQLAlchemyGroupBetaRepository:
         selection.selected = enabled
         changes: dict[str, object] = {"feature": feature, "generation": group.generation, "selected": [prior, enabled]}
         changed = prior != enabled
-        if enabled and enabler is not None:
-            support = await self._session.scalar(
-                select(GroupBetaEnablerDB).where(
-                    GroupBetaEnablerDB.selection_id == selection.id,
-                    GroupBetaEnablerDB.user_id == enabler.id,
-                    GroupBetaEnablerDB.revoked_at.is_(None),
-                    GroupBetaEnablerDB.deleted_at.is_(None),
-                )
-            )
-            if support is None:
-                self._session.add(GroupBetaEnablerDB(selection_id=selection.id, user_id=enabler.id, created_at=now))
-                changes.update(enabler_user_id=enabler.id, enabler_added=True)
-                changed = True
+        if enabled and enabler is not None and await self._add_enabler(selection, enabler, now):
+            changes.update(enabler_user_id=enabler.id, enabler_added=True)
+            changed = True
         if not enabled:
-            supports = list(
-                (
-                    await self._session.scalars(
-                        select(GroupBetaEnablerDB).where(
-                            GroupBetaEnablerDB.selection_id == selection.id,
-                            GroupBetaEnablerDB.revoked_at.is_(None),
-                            GroupBetaEnablerDB.deleted_at.is_(None),
-                        )
-                    )
-                ).all()
-            )
-            for support in supports:
-                support.revoked_at = now
-            if supports:
-                changes["enablers_revoked"] = len(supports)
+            revoked = await self._revoke_enablers(selection, now)
+            if revoked:
+                changes["enablers_revoked"] = revoked
                 changed = True
         return GroupBetaMutation(changed, changes if changed else {})
+
+    async def _add_enabler(self, selection: GroupBetaFeatureDB, enabler: UserDB, now: datetime) -> bool:
+        """Add a supporting administrator only when their active intent is absent."""
+        support = await self._session.scalar(
+            select(GroupBetaEnablerDB).where(
+                GroupBetaEnablerDB.selection_id == selection.id,
+                GroupBetaEnablerDB.user_id == enabler.id,
+                GroupBetaEnablerDB.revoked_at.is_(None),
+                GroupBetaEnablerDB.deleted_at.is_(None),
+            )
+        )
+        if support is not None:
+            return False
+        self._session.add(GroupBetaEnablerDB(selection_id=selection.id, user_id=enabler.id, created_at=now))
+        return True
+
+    async def _revoke_enablers(self, selection: GroupBetaFeatureDB, now: datetime) -> int:
+        """Revoke all active supporting intent after an explicit off decision."""
+        supports = list(
+            (
+                await self._session.scalars(
+                    select(GroupBetaEnablerDB).where(
+                        GroupBetaEnablerDB.selection_id == selection.id,
+                        GroupBetaEnablerDB.revoked_at.is_(None),
+                        GroupBetaEnablerDB.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        for support in supports:
+            support.revoked_at = now
+        return len(supports)

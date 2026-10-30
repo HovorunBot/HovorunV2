@@ -55,6 +55,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **beta**: separate enabler reconciliation
 - **access**: separate ban authority and mutation
 - **membership**: separate snapshot reconciliation
 - **tests**: type recorded response registration
