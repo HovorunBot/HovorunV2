@@ -54,6 +54,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **identity**: separate public handle synchronization
 - **identity**: separate group migration operations
 - **usage**: simplify policy persistence
 - **usage**: simplify ledger transactions

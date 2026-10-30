@@ -55,13 +55,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
                     if await chat_repo.get_by_id(row.target_id, str(platform)) is None:
                         return None
 
-            return ResolvedTarget(
-                target_kind=row.target_kind,
-                target_id=row.target_id,
-                handle_normalized=row.handle_normalized,
-                handle_display=row.handle_display,
-                platform=row.platform,
-            )
+            return self._resolved_target(row)
 
     async def get_handle_by_target(
         self, target_kind: TargetKind, target_id: int, platform: Platform = Platform.TELEGRAM
@@ -72,13 +66,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
             row = await repo.get_by_target(target_kind, target_id, platform)
             if not row:
                 return None
-            return ResolvedTarget(
-                target_kind=row.target_kind,
-                target_id=row.target_id,
-                handle_normalized=row.handle_normalized,
-                handle_display=row.handle_display,
-                platform=row.platform,
-            )
+            return self._resolved_target(row)
 
     async def _execute_sync_handle(
         self,
@@ -107,44 +95,52 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         existing_target_handle = await repo.get_by_target(target_kind, target_id, platform)
 
         if not norm or not display:
-            if existing_target_handle:
-                old_norm = existing_target_handle.handle_normalized
-                await repo.delete(existing_target_handle)
-                return None, {"handle": [old_norm, None], "status": "removed"}
-            return None, None
+            return await self._remove_target_handle(repo, existing_target_handle)
 
-        # Check if another target holds this handle (stale mapping)
+        await self._release_competing_handle(session, repo, norm, target_kind, target_id, platform)
+        return self._update_target_handle(repo, existing_target_handle, target_kind, target_id, norm, display, platform)
+
+    async def _remove_target_handle(
+        self, repo: SQLAlchemyPublicHandleRepository, existing: PublicHandleDB | None
+    ) -> tuple[None, dict[str, Any] | None]:
+        if existing is None:
+            return None, None
+        old_norm = existing.handle_normalized
+        await repo.delete(existing)
+        return None, {"handle": [old_norm, None], "status": "removed"}
+
+    async def _release_competing_handle(
+        self,
+        session: AsyncSession,
+        repo: SQLAlchemyPublicHandleRepository,
+        norm: str,
+        target_kind: TargetKind,
+        target_id: int,
+        platform: Platform,
+    ) -> None:
         competing = await repo.get_by_handle(norm, platform)
         if competing and (competing.target_kind != target_kind or competing.target_id != target_id):
             await repo.delete(competing)
             await session.flush()
 
-        if existing_target_handle:
-            old_norm = existing_target_handle.handle_normalized
-            old_display = existing_target_handle.handle_display
+    def _update_target_handle(
+        self,
+        repo: SQLAlchemyPublicHandleRepository,
+        existing: PublicHandleDB | None,
+        target_kind: TargetKind,
+        target_id: int,
+        norm: str,
+        display: str,
+        platform: Platform,
+    ) -> tuple[ResolvedTarget, dict[str, Any] | None]:
+        if existing:
+            old_norm = existing.handle_normalized
+            old_display = existing.handle_display
             if old_norm == norm and old_display == display:
-                return (
-                    ResolvedTarget(
-                        target_kind=target_kind,
-                        target_id=target_id,
-                        handle_normalized=norm,
-                        handle_display=display,
-                        platform=platform,
-                    ),
-                    None,
-                )
-            existing_target_handle.handle_normalized = norm
-            existing_target_handle.handle_display = display
-            return (
-                ResolvedTarget(
-                    target_kind=target_kind,
-                    target_id=target_id,
-                    handle_normalized=norm,
-                    handle_display=display,
-                    platform=platform,
-                ),
-                {"handle": [old_norm, norm], "display": [old_display, display]},
-            )
+                return self._resolved_target(existing), None
+            existing.handle_normalized = norm
+            existing.handle_display = display
+            return self._resolved_target(existing), {"handle": [old_norm, norm], "display": [old_display, display]}
 
         new_handle = PublicHandleDB(
             handle_normalized=norm,
@@ -154,15 +150,15 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
             platform=platform,
         )
         repo.add(new_handle)
-        return (
-            ResolvedTarget(
-                target_kind=target_kind,
-                target_id=target_id,
-                handle_normalized=norm,
-                handle_display=display,
-                platform=platform,
-            ),
-            {"handle": [None, norm], "display": [None, display]},
+        return self._resolved_target(new_handle), {"handle": [None, norm], "display": [None, display]}
+
+    def _resolved_target(self, row: PublicHandleDB) -> ResolvedTarget:
+        return ResolvedTarget(
+            target_kind=row.target_kind,
+            target_id=row.target_id,
+            handle_normalized=row.handle_normalized,
+            handle_display=row.handle_display,
+            platform=row.platform,
         )
 
     async def sync_handle(
