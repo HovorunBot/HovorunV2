@@ -21,3 +21,9 @@ description: Use when executing an approved block from an ai-schemes initiative.
 5. **Run verification checks:** Run relevant checks and record actual results. Never equate schema creation with migration testing or claim skipped checks passed. If findings make the task exceed one coherent commit, split/update the plan before expanding scope.
 6. **Write report:** Write a report using the initiative's template: behavior changed, files/contracts, migration, exact checks/results, limitations, resolved decisions, and proposed commit title. Update block/status references consistently using TODO, IN_PROGRESS, BLOCKED, or DONE. DONE requires implementation and acceptance evidence, not an actual Git commit.
 7. **Preserve boundaries:** Keep all planning/status/review artifacts inside `ai-schemes/`. Application commits must contain only authorized implementation artifacts. Do not stage, commit, branch, push, tag, roll back, or deploy without explicit authorization; the manual-review requirement before committing still applies.
+
+## Closure and future standards
+
+Follow docs/initiative-closure.md. Discover active initiatives only; do not load or search ai-schemes/archive/ unless explicit historical context is needed. CLOSED initiatives are immutable implementation history; follow-up work uses a new linked initiative.
+
+Before closure, verify DONE reports and acceptance evidence, map lasting rules to tracked owners in ADOPTION.md, and record limitations and location changes in CLOSURE.md. Promote reusable rules to tracked instructions, documentation, helpers or checks before archiving. Review semantic rules as well as mechanical checks. Preserve all files and repair live relative links; never overwrite an archive destination. Closure grants no Git or deployment authorization.

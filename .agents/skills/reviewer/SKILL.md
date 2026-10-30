@@ -19,3 +19,9 @@ description: Use when independently validating an implementation against require
 3. **Record findings:** Record findings under `reports/` with severity, concrete file/behavior evidence, affected acceptance criteria, and required remediation. Record review verdict separately from implementation status; an implementation report is not review approval.
 4. **Route remediation:** Route focused corrections back to the same block or create linked follow-up blocks when scope genuinely grows. Update dependencies, coverage, and status when findings block downstream work. Never silently rewrite agreed business rules to approve an implementation.
 5. **Close findings:** Close findings only after checking the correction and its evidence. Review approval does not authorize committing or deploying, and local schemes/reports must never enter Git history.
+
+## Closure and future standards
+
+Follow docs/initiative-closure.md. Discover active initiatives only; do not load or search ai-schemes/archive/ unless explicit historical context is needed. CLOSED initiatives are immutable implementation history; follow-up work uses a new linked initiative.
+
+Before closure, verify DONE reports and acceptance evidence, map lasting rules to tracked owners in ADOPTION.md, and record limitations and location changes in CLOSURE.md. Promote reusable rules to tracked instructions, documentation, helpers or checks before archiving. Review semantic rules as well as mechanical checks. Preserve all files and repair live relative links; never overwrite an archive destination. Closure grants no Git or deployment authorization.

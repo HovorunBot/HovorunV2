@@ -282,7 +282,7 @@ ai-check:
 	@if [ -n "$(SCHEME)" ]; then \
 		uv run python scripts/ai_scheme.py validate "$(SCHEME)"; \
 	elif [ -d ai-schemes ]; then \
-		schemes=$$(find ai-schemes -mindepth 1 -maxdepth 1 -type d); \
+		schemes=$$(find ai-schemes -mindepth 1 -maxdepth 1 -type d ! -name archive ! -name reports); \
 		if [ -n "$$schemes" ]; then \
 			uv run python scripts/ai_scheme.py validate $$schemes; \
 		else \

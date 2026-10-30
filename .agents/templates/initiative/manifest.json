@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "lifecycle": "ACTIVE",
   "initiative": "initiative-name",
   "specification": "SPECIFICATION.md",
   "blocks": [

@@ -19,3 +19,7 @@ Status: Planning only. Planning artifacts do not authorize application changes, 
 | [manifest.json](manifest.json) | Machine-readable block manifest (schema v1) |
 | [blocks/](blocks/) | Granular, commit-sized implementation blocks |
 | [reports/](reports/) | Implementation and review verification reports |
+
+## Closure
+
+After verified completion, follow docs/initiative-closure.md. Fill ADOPTION.md and CLOSURE.md, promote lasting standards to tracked owners, validate CLOSED lifecycle, and move the full initiative into ai-schemes/archive/. Keep accepted limitations visible. Do not load archived plans as default context for new work.

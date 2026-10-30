@@ -43,3 +43,9 @@ Keep links relative and dependencies explicit. Explicit user instructions take p
 4. **Order dependencies safely:** Keep dependencies acyclic and migrations/cutovers safely ordered. Separate additive foundations from live behavior changes. Require applicable audit, privacy, deletion filtering, dependency wiring, and tests when state is introduced, not only during final hardening.
 5. **Synchronize plan state:** Maintain contracts, decisions, coverage, status, and manifest together. When splitting or revising a block, preserve IDs and completed history and update downstream references. A written specification never counts as implemented functionality.
 6. **Handoff:** Hand off an unambiguous next block and required context. Planning work alone does not authorize application-code changes. Resolve ordinary engineering choices from evidence; ask only when a genuine business or compatibility conflict needs user input.
+
+## Closure and future standards
+
+Follow docs/initiative-closure.md. Discover active initiatives only; do not load or search ai-schemes/archive/ unless explicit historical context is needed. CLOSED initiatives are immutable implementation history; follow-up work uses a new linked initiative.
+
+Before closure, verify DONE reports and acceptance evidence, map lasting rules to tracked owners in ADOPTION.md, and record limitations and location changes in CLOSURE.md. Promote reusable rules to tracked instructions, documentation, helpers or checks before archiving. Review semantic rules as well as mechanical checks. Preserve all files and repair live relative links; never overwrite an archive destination. Closure grants no Git or deployment authorization.

@@ -95,3 +95,11 @@ Before planning, implementing, or reviewing an `ai-schemes/` initiative, load th
 - **Reviewer:** `.agents/skills/reviewer/SKILL.md` (independently validate implementation diff against requirements and contracts, record findings under `reports/`, verify acceptance criteria).
 
 If the assistant environment has no automated skill loader, open the matching `SKILL.md` file directly.
+
+## 9. Initiative Closure and Durable Standards
+
+Follow [initiative closure](docs/initiative-closure.md) after verified implementation. Closure requires all blocks DONE, acceptance evidence, an adoption map linking lasting contracts to tracked owners, and a closure record. Preserve accepted limitations and create linked follow-ups for new work. Set initiative lifecycle CLOSED and move the complete local plan to ai-schemes/archive/ after checking the destination and repairing live relative links. Do not overwrite archive contents.
+
+Discover active initiatives only. Do not load or search ai-schemes/archive/ by default; explicit historical review is allowed when relevant. Archived plans are evidence, not current implementation instructions. Missing local plans never imply completed work. Closure does not authorize Git operations or deployment.
+
+Tests must follow the application architecture layers; root-level test modules are rejected. Keep shared helpers in tests/utils/ and never import other test modules. Use real aiogram models and the recording session for new Telegram transport tests. Reuse worker-isolated PostgreSQL/Valkey fixtures; mark DDL tests fresh_schema and pure tests unit. Never delete security/privacy regression assertions solely because coverage overlaps. Preserve shared cache expiry and strict marker/warning configuration. Semantic clean-code rules above and these testing contracts apply to every future initiative, independently of archived plans.

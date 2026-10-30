@@ -54,6 +54,7 @@ class Initiative:
     schema_version: int | None
     specification_file: Path | None
     blocks: list[Block]
+    lifecycle: str = "ACTIVE"
 
 
 def parse_specification_requirements(spec_path: Path) -> list[str]:
@@ -183,6 +184,11 @@ def load_initiative(path: Path) -> Initiative:
             spec_file = (resolved_path / spec_name).resolve() if spec_name else None
             raw_blocks = data.get("blocks", [])
 
+        lifecycle = data.get("lifecycle", "ACTIVE") if isinstance(data, dict) else "ACTIVE"
+        if not isinstance(lifecycle, str) or lifecycle not in {"ACTIVE", "CLOSED"}:
+            msg = f"{manifest_file}: Unknown initiative lifecycle {lifecycle!r}"
+            raise SchemeValidationError(msg)
+
         blocks = [parse_block_entry(raw, resolved_path) for raw in raw_blocks if isinstance(raw, dict)]
 
         return Initiative(
@@ -191,6 +197,7 @@ def load_initiative(path: Path) -> Initiative:
             schema_version=schema_version,
             specification_file=spec_file,
             blocks=blocks,
+            lifecycle=lifecycle,
         )
 
     blocks = parse_legacy_blocks_from_status(resolved_path, status_file)
@@ -316,7 +323,7 @@ def validate_initiative(initiative: Initiative) -> list[str]:
         return id_errors
 
     if initiative.is_legacy:
-        return []
+        return validate_closure(initiative)
 
     errors: list[str] = []
     status_file = initiative.path / "STATUS.md"
@@ -331,6 +338,25 @@ def validate_initiative(initiative: Initiative) -> list[str]:
         errors.append(f"{initiative.path}: Dependency cycle detected: {' -> '.join(cycle)}")
 
     errors.extend(validate_specification_coverage(initiative))
+    errors.extend(validate_closure(initiative))
+    return errors
+
+
+def validate_closure(initiative: Initiative) -> list[str]:
+    """Require completion evidence and durable adoption before marking work closed."""
+    if initiative.lifecycle != "CLOSED":
+        return []
+    errors = []
+    if not initiative.blocks or any(block.status != "DONE" for block in initiative.blocks):
+        errors.append(f"{initiative.path}: CLOSED initiative requires all blocks DONE")
+    for name in ("CLOSURE.md", "ADOPTION.md"):
+        path = initiative.path / name
+        if not path.is_file() or not path.read_text(encoding="utf-8").strip():
+            errors.append(f"{path}: CLOSED initiative requires a nonempty closure record")
+    for block in initiative.blocks:
+        report = initiative.path / "reports" / f"{block.id}.md"
+        if not report.is_file():
+            errors.append(f"{report}: CLOSED initiative requires an implementation report")
     return errors
 
 
@@ -368,6 +394,10 @@ def command_next(args: Namespace) -> int:
     except SchemeValidationError as err:
         sys.stderr.write(f"{err}\n")
         return ExitCode.ERROR
+
+    if initiative.lifecycle == "CLOSED" or initiative.path.parent.name == "archive":
+        sys.stdout.write(f"CLOSED: {initiative.path}; create a linked follow-up initiative.\n")
+        return ExitCode.NO_ELIGIBLE_BLOCK
 
     status_by_id = {b.id: b.status for b in initiative.blocks}
 
@@ -407,6 +437,10 @@ def command_prompt(args: Namespace) -> int:
         initiative = load_initiative(path)
     except SchemeValidationError as err:
         sys.stderr.write(f"{err}\n")
+        return ExitCode.ERROR
+
+    if (initiative.lifecycle == "CLOSED" or initiative.path.parent.name == "archive") and args.role != "review":
+        sys.stderr.write("Closed initiatives allow explicit historical review only; create a linked follow-up.\n")
         return ExitCode.ERROR
 
     block_id: str = args.block_id

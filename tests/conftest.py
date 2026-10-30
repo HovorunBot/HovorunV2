@@ -53,6 +53,11 @@ __all__ = [
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Verify that test modules never import from other test modules."""
     _check_no_cross_test_imports()
+    root = Path(__file__).resolve().parent
+    misplaced = sorted(path.name for path in root.glob("test_*.py"))
+    if misplaced:
+        msg = f"Place test modules in architecture layer directories, not tests/: {misplaced}"
+        raise pytest.UsageError(msg)
 
 
 def _node_violation(file_name: str, node: ast.AST) -> str | None:
