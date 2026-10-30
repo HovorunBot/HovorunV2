@@ -88,7 +88,7 @@ class MessageCacheMiddleware(BaseMiddleware):
 class AccessMiddleware(BaseMiddleware):
     """Unified middleware to handle all access control via CommandPolicy."""
 
-    def __init__(self, access_service: AccessService, cache: CachePort, settings: AppSettings | None = None) -> None:
+    def __init__(self, access_service: AccessService, cache: CachePort, settings: AppSettings) -> None:
         """Initialize middleware with dependencies."""
         super().__init__()
         self._access_service = access_service
@@ -166,20 +166,24 @@ class AccessMiddleware(BaseMiddleware):
 
         logger.info("Access denied for %s in chat %d by user %s", command_name or "callback", chat_id, user_id)
         if isinstance(event, Message) and chat_id < 0:
-            decision = await self._access_service.evaluate_group_access(chat_id)
-            if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
-                key = f"access:denial:{chat_id}:{decision.reason}"
-                if not await self._cache.get(key):
-                    await self._cache.set(key, 1, expire=DENIAL_COOLDOWN_SECONDS)
-                    try:
-                        await event.answer(
-                            "🚫 Bot processing is unavailable in this group. Contact a bot administrator privately."
-                        )
-                    except TelegramAPIError:
-                        logger.warning("Could not deliver access guidance in group %d", chat_id)
+            await self._send_group_denial(event, chat_id)
         if isinstance(event, CallbackQuery):
             await event.answer("🚫 You don't have permission to do this.", show_alert=True)
         return None
+
+    async def _send_group_denial(self, event: Message, chat_id: int) -> None:
+        """Send cooldown-limited guidance only for group or administrator bans."""
+        decision = await self._access_service.evaluate_group_access(chat_id)
+        if decision.reason not in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
+            return
+        key = f"access:denial:{chat_id}:{decision.reason}"
+        if await self._cache.get(key):
+            return
+        await self._cache.set(key, 1, expire=DENIAL_COOLDOWN_SECONDS)
+        try:
+            await event.answer("🚫 Bot processing is unavailable in this group. Contact a bot administrator privately.")
+        except TelegramAPIError:
+            logger.warning("Could not deliver access guidance in group %d", chat_id)
 
     async def __call__(
         self,
@@ -275,10 +279,7 @@ class AccessMiddleware(BaseMiddleware):
     async def _deny_private_chat(self, event: TelegramObject) -> None:
         """Send landing page or access denied alert to non-admin private chat users."""
         if isinstance(event, Message):
-            if self._settings:
-                help_cmd = HelpCommand(self._settings, self._access_service)
-                await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
-            else:
-                await event.answer("🚫 Access denied.")
+            help_cmd = HelpCommand(self._settings, self._access_service)
+            await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
         elif isinstance(event, CallbackQuery):
             await event.answer("🚫 Access denied.", show_alert=True)

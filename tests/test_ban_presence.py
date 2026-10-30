@@ -14,6 +14,7 @@ from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.cache import CacheService
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
@@ -70,7 +71,7 @@ async def test_group_ban_denies_admin_with_cooldown_safe_explanation(test_contai
     await provision_role(test_container, ACTOR)
     await (await test_container.get(ChatStatusService)).set_status(group, ChatStatus.BANNED)
     cache = CacheService("redis://localhost:6379/15")
-    middleware = AccessMiddleware(await test_container.get(AccessService), cache)
+    middleware = AccessMiddleware(await test_container.get(AccessService), cache, await test_container.get(Settings))
     key = f"access:denial:{group}:group_banned"
     try:
         async with activation_runtime(test_container) as runtime:

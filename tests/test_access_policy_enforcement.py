@@ -12,6 +12,7 @@ from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import ChatStatus, CommandName, Role
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import create_mock_message, get_media_command, provision_role
 from tests.utils.activation import activation_runtime, group_message, stub_telegram
@@ -112,7 +113,9 @@ async def test_access_middleware_enforcement(init_container: AsyncContainer) -> 
 
     # 1. Setup services and middleware
     access_service = await init_container.get(AccessService)
-    middleware = AccessMiddleware(access_service, await init_container.get(CachePort))
+    middleware = AccessMiddleware(
+        access_service, await init_container.get(CachePort), await init_container.get(Settings)
+    )
     youtube_cmd = await get_media_command(init_container, CommandName.YOUTUBE)
     chat_status_service = await init_container.get(ChatStatusService)
 

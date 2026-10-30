@@ -16,7 +16,7 @@ from hovorunv2.application.group_grants import GroupGrantStore
 from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.permissions import DecisionReason
-from hovorunv2.application.ports import CachePort, ChatStore, RoleStore, UserStore
+from hovorunv2.application.ports import AppSettings, CachePort, ChatStore, RoleStore, UserStore
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.command_service import CommandService
@@ -25,6 +25,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ActorOrigin, CommandName, Role, TargetKind
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import verify_group_admins
 from tests.test_membership_adapter import RecordedResponse
@@ -49,11 +50,16 @@ class RoutedActions:
 
 
 async def route_action(
-    access: AccessService, cache: CachePort, chat_id: int, policy: CommandPolicy, actions: RoutedActions
+    access: AccessService,
+    cache: CachePort,
+    chat_id: int,
+    policy: CommandPolicy,
+    actions: RoutedActions,
+    settings: AppSettings,
 ) -> object:
     """Dispatch a real Telegram update through handler flags and access middleware."""
     router = Router()
-    router.message.middleware(AccessMiddleware(access, cache))
+    router.message.middleware(AccessMiddleware(access, cache, settings))
     router.message.register(actions.handle, Command(CommandName.HELP), flags={"policy": policy})
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
@@ -117,16 +123,16 @@ async def test_group_suspension_preserves_private_administrator_access(
     await bans.apply(blocker, subject, BanKind.FULL, actor)
     audit_before = await audit_count(sessions)
     actions = RoutedActions()
-    cache = await test_container.get(CachePort)
+    cache, settings = await test_container.get(CachePort), await test_container.get(Settings)
     feature = CommandPolicy(is_toggleable=False, is_automatic=is_automatic)
 
     assert not await access.is_allowed(ALICE_ID, GROUP_ID, feature)
-    assert await route_action(access, cache, GROUP_ID, feature, actions) is None
+    assert await route_action(access, cache, GROUP_ID, feature, actions, settings) is None
     assert actions.chats == []
-    assert await route_action(access, cache, ALICE_ID, feature, actions) == "allowed"
+    assert await route_action(access, cache, ALICE_ID, feature, actions, settings) == "allowed"
     administration = CommandPolicy(requires_admin=True, requires_approval=False, is_toggleable=False)
-    assert await route_action(access, cache, ALICE_ID, administration, actions) == "allowed"
-    assert await route_action(access, cache, GROUP_ID, administration, actions) is None
+    assert await route_action(access, cache, ALICE_ID, administration, actions, settings) == "allowed"
+    assert await route_action(access, cache, GROUP_ID, administration, actions, settings) is None
 
     alice = await users.get_by_telegram_id(ALICE_ID)
     unchanged_group = await chats.get_chat(GROUP_ID)
@@ -160,7 +166,7 @@ async def test_group_suspension_preserves_private_administrator_access(
             assert await access.is_allowed(ALICE_ID, GROUP_ID, feature) is (status != MembershipStatus.ADMIN)
 
     await bans.revoke(blocker, subject, BanKind.FULL, actor)
-    assert await route_action(access, cache, GROUP_ID, feature, actions) == "allowed"
+    assert await route_action(access, cache, GROUP_ID, feature, actions, settings) == "allowed"
 
 
 @pytest.mark.parametrize("role", [Role.ADMIN, Role.OWNER])

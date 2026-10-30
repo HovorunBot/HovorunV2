@@ -84,7 +84,9 @@ async def get_persisted_chat_and_commands(
 async def test_access_middleware_private_chat_admin(test_container: AsyncContainer) -> None:
     """Test that admins have access in private chats."""
     access_service = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access_service, await test_container.get(CachePort))
+    middleware = AccessMiddleware(
+        access_service, await test_container.get(CachePort), await test_container.get(Settings)
+    )
 
     admin_id = await provision_role(test_container)
     message = create_mock_message(admin_id, admin_id, ChatType.PRIVATE)
@@ -120,6 +122,7 @@ async def test_access_middleware_private_chat_non_admin(test_container: AsyncCon
     handler.assert_not_called()
     message.answer.assert_called_once()
     assert "Hovorun" in message.answer.call_args[0][0]
+    assert settings.project_description in message.answer.call_args[0][0]
 
 
 @pytest.mark.asyncio

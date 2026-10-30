@@ -17,6 +17,7 @@ from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import verify_group_admins
@@ -71,7 +72,7 @@ async def test_private_settings_require_selected_target(
     before = await commands.get_allowed_commands(target.chat_id)
     mutation = SettingsMutation(commands)
     access = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access, await test_container.get(CachePort))
+    middleware = AccessMiddleware(access, await test_container.get(CachePort), await test_container.get(Settings))
     message = Message(
         message_id=1,
         date=now,
@@ -128,7 +129,7 @@ async def test_in_group_settings_keep_target_membership_check(test_container: As
             statuses = await test_container.get(ChatStatusService)
             await statuses.approve(-330001)
             assert (
-                await AccessMiddleware(access, await test_container.get(CachePort))(
+                await AccessMiddleware(access, await test_container.get(CachePort), await test_container.get(Settings))(
                     mutation, message, {"bot": bot, "policy": SettingsCommand.POLICY}
                 )
                 == "changed"

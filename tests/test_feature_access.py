@@ -38,6 +38,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.beta import ALL_BETA
 from hovorunv2.domain.enums import CommandName, TargetKind
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
@@ -118,7 +119,7 @@ async def test_guessed_execution_and_stale_callbacks_recheck_current_group_suppo
     """The same middleware denies guessed actions and admits a supported selected group feature."""
     service = await feature_runtime(test_container)
     access = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access, await test_container.get(CachePort))
+    middleware = AccessMiddleware(access, await test_container.get(CachePort), await test_container.get(Settings))
     bot = Bot(BOT_CREDENTIAL)
     event = message().as_(bot)
     if callback:
@@ -225,7 +226,7 @@ async def test_private_beta_needs_access_grant_and_explicit_selection(test_conta
     assert (await service.evaluate(key, FIRST, FIRST)).allowed
     assert not (await service.evaluate(key, FIRST, MEMBER)).allowed
     access = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access, await test_container.get(CachePort))
+    middleware = AccessMiddleware(access, await test_container.get(CachePort), await test_container.get(Settings))
     private_message = Message(
         message_id=2,
         date=datetime.now(UTC),
