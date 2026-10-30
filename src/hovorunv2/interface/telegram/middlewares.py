@@ -78,7 +78,10 @@ class MessageCacheMiddleware(BaseMiddleware):
     ) -> Any:
         """Cache minimal content only after filters and access checks succeed."""
         if isinstance(event, Message):
-            await self._message_service.cache_message(event)
+            try:
+                await self._message_service.cache_message(event)
+            except Exception:
+                logger.warning("Message caching failed")
         return await handler(event, data)
 
 

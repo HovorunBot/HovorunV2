@@ -20,7 +20,7 @@ def mock_cache_service() -> MagicMock:
     """Create a mock cache service."""
     service = MagicMock()
     service.set = AsyncMock()
-    service.get = AsyncMock()
+    service.get_text = AsyncMock()
     return service
 
 
@@ -116,7 +116,7 @@ async def test_get_message_decryption(
     await service.cache_message(message)
     encrypted_payload = mock_cache_service.set.call_args[0][1]
 
-    mock_cache_service.get.return_value = encrypted_payload
+    mock_cache_service.get_text.return_value = encrypted_payload
 
     retrieved = await service.get_message(chat_id, message_id)
 
@@ -147,12 +147,11 @@ async def test_get_message_no_encryption_fails_when_enabled(
     mock_chat_service.get_or_create_chat.return_value = chat
 
     # Store plain JSON in cache
-    mock_cache_service.get.return_value = json.dumps(original_data)
+    mock_cache_service.get_text.return_value = json.dumps(original_data)
 
-    # Retrieval should fail because it expects encrypted data
-    retrieved = await service.get_message(chat_id, message_id)
-
-    assert retrieved is None
+    # Retrieval rejects plaintext instead of treating it as a missing entry.
+    with pytest.raises(ValueError, match="Cached message is unreadable"):
+        await service.get_message(chat_id, message_id)
 
 
 @pytest.mark.asyncio
@@ -239,11 +238,11 @@ def test_existing_passphrase_format_decrypts_synthetic_salt_fixture() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cache_message_skips_when_encryption_key_unavailable(
+async def test_cache_message_rejects_missing_encryption_key(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
 ) -> None:
-    """Verify caching is skipped entirely when encryption key is not configured."""
+    """Verify caching fails safely when encryption key is not configured."""
     settings = MagicMock()
     settings.cache_encryption_key = None
     service = MessageService(mock_cache_service, mock_chat_service, settings)
@@ -253,52 +252,53 @@ async def test_cache_message_skips_when_encryption_key_unavailable(
     message.message_id = 67890
     message.model_dump.return_value = {"text": "sensitive message"}
 
-    await service.cache_message(message)
+    with pytest.raises(ValueError, match="encryption key is unavailable"):
+        await service.cache_message(message)
 
     # Cache write must be skipped; never store plaintext
     mock_cache_service.set.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_get_message_returns_none_when_encryption_key_unavailable(
+async def test_get_message_rejects_missing_encryption_key(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
 ) -> None:
-    """Verify retrieval returns None when encryption key is not configured."""
+    """Verify retrieval fails when encryption key is not configured."""
     settings = MagicMock()
     settings.cache_encryption_key = None
     service = MessageService(mock_cache_service, mock_chat_service, settings)
 
-    mock_cache_service.get.return_value = "some_encrypted_or_plain_data"
+    mock_cache_service.get_text.return_value = "some_encrypted_or_plain_data"
 
-    retrieved = await service.get_message(12345, 67890)
-    assert retrieved is None
+    with pytest.raises(ValueError, match="encryption key is unavailable"):
+        await service.get_message(12345, 67890)
 
 
 @pytest.mark.asyncio
-async def test_get_message_returns_none_for_corrupted_ciphertext(
+async def test_get_message_rejects_corrupted_ciphertext(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """Verify corrupt ciphertext is treated as unreadable and returns None without crash."""
+    """Verify corrupt ciphertext is rejected as unreadable."""
     service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
     chat = MagicMock(encryption_salt="0123456789abcdef" * 2)
     mock_chat_service.get_or_create_chat.return_value = chat
 
-    mock_cache_service.get.return_value = "gAAAAABcorrupt_not_valid_fernet_data_here"
+    mock_cache_service.get_text.return_value = "gAAAAABcorrupt_not_valid_fernet_data_here"
 
-    retrieved = await service.get_message(123, 456)
-    assert retrieved is None
+    with pytest.raises(ValueError, match="Cached message is unreadable"):
+        await service.get_message(123, 456)
 
 
 @pytest.mark.asyncio
-async def test_cache_message_failure_does_not_crash(
+async def test_cache_message_propagates_storage_failure(
     mock_cache_service: MagicMock,
     mock_chat_service: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """Verify cache write errors (e.g. Valkey failure) are safely caught and logged without crashing."""
+    """Verify the required storage operation propagates a Valkey failure."""
     service = MessageService(mock_cache_service, mock_chat_service, mock_settings)
     chat = MagicMock(encryption_salt="0123456789abcdef" * 2)
     mock_chat_service.get_or_create_chat.return_value = chat
@@ -310,7 +310,8 @@ async def test_cache_message_failure_does_not_crash(
     message.model_dump.return_value = {"text": "hello"}
 
     # Should not raise exception
-    await service.cache_message(message)
+    with pytest.raises(ConnectionError):
+        await service.cache_message(message)
 
 
 def test_encryption_self_check_suppresses_underlying_key_error() -> None:

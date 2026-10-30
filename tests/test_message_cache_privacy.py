@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 from aiogram import Bot, Dispatcher
-from aiogram.types import Chat, Message, Update, User
+from aiogram.types import Chat, Message, TelegramObject, Update, User
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
@@ -22,6 +22,7 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.identity import IdentityMiddleware
+from hovorunv2.interface.telegram.middlewares import MessageCacheMiddleware
 from tests.test_membership_adapter import BOT_CREDENTIAL, RecordedResponse
 
 
@@ -164,3 +165,37 @@ async def test_router_caches_only_authorized_messages(
             await trust.set_trust(str(chat_id), is_trusted=True, actor=ActorContext.cli())
             await dispatcher.feed_update(bot, Update(update_id=2, message=message))
             assert await cache.get(f"msg:{chat_id}:1") is not None
+
+
+@pytest.mark.parametrize(
+    ("stored", "error"),
+    [(b"{invalid", ValueError), (b"null", TypeError), (b'"invalid-ciphertext"', ValueError)],
+)
+async def test_cache_miss_and_corruption_are_distinct(
+    private_cache_service: tuple[MessageService, CacheService, int], stored: bytes, error: type[Exception]
+) -> None:
+    """Missing entries are optional; malformed or unreadable entries fail safely."""
+    service, cache, chat_id = private_cache_service
+    key = f"msg:{chat_id}:1"
+    assert await service.get_message(chat_id, 1) is None
+    await cache.client.set(key, stored)
+    with pytest.raises(error):
+        await service.get_message(chat_id, 1)
+
+
+async def _accepted_handler(_event: TelegramObject, _data: dict[str, object]) -> str:
+    return "accepted"
+
+
+async def test_cache_middleware_continues_after_required_storage_failure(
+    private_cache_service: tuple[MessageService, CacheService, int], caplog: pytest.LogCaptureFixture
+) -> None:
+    """The interface recovers from cache failure without logging message contents."""
+    service, cache, chat_id = private_cache_service
+    settings = Settings(_env_file=None, bot_token=BOT_CREDENTIAL, cache_encryption_key=None)
+    unavailable = MessageService(cache, service.chat_service, settings)
+    message = synthetic_message(chat_id)
+    result = await MessageCacheMiddleware(unavailable)(_accepted_handler, message, {})
+    assert result == "accepted"
+    assert message.text not in caplog.text
+    assert await cache.get(f"msg:{chat_id}:1") is None

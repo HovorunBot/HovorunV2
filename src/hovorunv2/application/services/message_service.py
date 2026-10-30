@@ -6,7 +6,8 @@ import logging
 import secrets
 
 from aiogram import types
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
+from pydantic import ValidationError
 
 from hovorunv2.application.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
 from hovorunv2.application.ports import AppSettings, CachePort, ChatStore
@@ -37,72 +38,52 @@ class MessageService:
         key = self._generate_key(chat_id, message_id)
         logger.debug("Caching message %d from user %s in chat %d", message_id, user_id, chat_id)
 
-        try:
-            fernet = await self._get_fernet_for_chat(chat_id)
-            if not fernet:
-                logger.error("Skipping message %d caching for chat %d: encryption key unavailable", message_id, chat_id)
-                return
-
-            data_dict = minimal_message_data(message)
-            json_data = json.dumps(data_dict)
-            payload = encrypt_payload(json_data, fernet)
-
-            await self.cache.set(key, payload, expire=self.ttl)
-        except Exception:
-            logger.exception("Failed to cache message %d for chat %d", message_id, chat_id)
+        fernet = await self._get_fernet_for_chat(chat_id)
+        await self._store_encrypted_message(key, message, fernet)
 
     async def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
-        """Retrieve and decrypt a cached message by chat ID and message ID."""
+        """Return an absent cache entry as None; propagate storage and decoding failures."""
         key = self._generate_key(chat_id, message_id)
-        data = await self.cache.get(key)
-        if not data:
+        data = await self.cache.get_text(key)
+        if data is None:
             return None
-
+        fernet = await self._get_fernet_for_chat(chat_id)
         try:
-            fernet = await self._get_fernet_for_chat(chat_id)
-            if not fernet:
-                logger.error(
-                    "Cannot retrieve message %d for chat %d: encryption key unavailable",
-                    message_id,
-                    chat_id,
-                )
-                return None
+            return self._decode_cached_message(data, fernet)
+        except InvalidToken, UnicodeError, ValidationError, ValueError:
+            msg = "Cached message is unreadable."
+            raise ValueError(msg) from None
 
-            decrypted_data = decrypt_payload(data, fernet)
-            legacy = types.Message.model_validate_json(decrypted_data)
-            return types.Message.model_validate(minimal_message_data(legacy))
-        except Exception:
-            logger.warning("Failed to decrypt or deserialize message %d for chat %d", message_id, chat_id)
-            return None
+    async def _store_encrypted_message(self, key: str, message: types.Message, fernet: Fernet) -> None:
+        """Serialize the minimal message and store only its encrypted payload."""
+        json_data = json.dumps(minimal_message_data(message))
+        payload = encrypt_payload(json_data, fernet)
+        await self.cache.set(key, payload, expire=self.ttl)
 
-    async def _get_fernet_for_chat(self, chat_id: int) -> Fernet | None:
-        """Derive a unique Fernet key for a chat using PBKDF2 and DB salt."""
-        if not self.settings.cache_encryption_key:
-            return None
+    def _decode_cached_message(self, data: str, fernet: Fernet) -> types.Message:
+        """Decrypt and minimize current or historical cached message representations."""
+        decrypted_data = decrypt_payload(data, fernet)
+        legacy = types.Message.model_validate_json(decrypted_data)
+        return types.Message.model_validate(minimal_message_data(legacy))
 
+    async def _get_fernet_for_chat(self, chat_id: int) -> Fernet:
+        """Require a configured key and derive a Fernet key using the chat's salt."""
+        encryption_key = self.settings.cache_encryption_key
+        if not encryption_key:
+            msg = "Message cache encryption key is unavailable."
+            raise ValueError(msg)
         if (cached_fernet := self._fernet_cache.get(chat_id)) is not None:
             return cached_fernet
-
-        try:
-            chat = await self.chat_service.get_or_create_chat(chat_id)
-            if not chat.encryption_salt:
-                # Generate new salt for this chat
-                salt_hex = secrets.token_hex(16)
-                await self.chat_service.set_encryption_salt(chat_id, salt_hex)
-                chat.encryption_salt = salt_hex
-                logger.info("Generated new encryption salt for chat %d", chat_id)
-
-            salt = chat.encryption_salt
-            if not salt:
-                return None
-
-            fernet = await asyncio.to_thread(get_fernet_for_chat, self.settings.cache_encryption_key, salt)
-            self._fernet_cache[chat_id] = fernet
-        except Exception:
-            logger.exception("Failed to derive encryption key for chat %d", chat_id)
-            return None
-        else:
-            return fernet
+        chat = await self.chat_service.get_or_create_chat(chat_id)
+        salt = chat.encryption_salt
+        if not salt:
+            salt = secrets.token_hex(16)
+            await self.chat_service.set_encryption_salt(chat_id, salt)
+            chat.encryption_salt = salt
+            logger.info("Generated new encryption salt for chat %d", chat_id)
+        fernet = await asyncio.to_thread(get_fernet_for_chat, encryption_key, salt)
+        self._fernet_cache[chat_id] = fernet
+        return fernet
 
     def _generate_key(self, chat_id: int, message_id: int) -> str:
         """Generate a cache key for a specific message."""

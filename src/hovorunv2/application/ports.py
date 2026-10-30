@@ -27,6 +27,10 @@ class CachePort(Protocol):
         """Return decoded data or default for a missing or malformed JSON value."""
         ...
 
+    async def get_text(self, key: str) -> str | None:
+        """Return a cached JSON string, or None only when absent; reject malformed values."""
+        ...
+
     async def set(self, key: str, value: Any, expire: int | None = None) -> None:
         """Store a value in the cache with optional TTL."""
         ...

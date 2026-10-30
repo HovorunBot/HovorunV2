@@ -53,6 +53,21 @@ class CacheService:
         else:
             return value
 
+    async def get_text(self, key: str) -> str | None:
+        """Read a JSON string, distinguishing absence from malformed stored data."""
+        raw = await self._cache.get(key)
+        if raw is None:
+            return None
+        try:
+            value = json.loads(raw)
+        except ValueError, UnicodeDecodeError:
+            msg = "Cached value is not valid JSON text."
+            raise ValueError(msg) from None
+        if not isinstance(value, str):
+            msg = "Cached value is not a JSON string."
+            raise TypeError(msg)
+        return value
+
     async def pop(self, key: str) -> Any:
         """Consume a cached value atomically, including concurrent UI requests."""
         raw = await self._cache.getdel(key)
