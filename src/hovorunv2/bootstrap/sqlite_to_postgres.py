@@ -141,64 +141,102 @@ def _table_names(connection: Connection) -> set[str]:
     return set(inspect(connection).get_table_names())
 
 
+async def _validate_target_schema(target: AsyncConnection) -> None:
+    """Verify target schema is locked and empty prior to import."""
+    schema = await target.scalar(select(func.current_schema()))
+    await target.execute(select(func.pg_advisory_xact_lock(scoped_lock_key(str(schema), IMPORT_LOCK_SCOPE))))
+    if await target.run_sync(_table_names):
+        msg = "PostgreSQL target schema must be empty; import is a one-time operation."
+        raise ValueError(msg)
+
+
+def _validate_schemas_match(metadata: MetaData, source_schema: MetaData) -> None:
+    """Verify tables and columns match between SQLite source and PostgreSQL release 0.2.1."""
+    source_names = set(source_schema.tables)
+    if source_names != set(metadata.tables):
+        msg = "SQLite source and PostgreSQL release 0.2.1 table sets disagree."
+        raise ValueError(msg)
+    if any(
+        set(table.columns.keys()) != set(source_schema.tables[name].columns.keys())
+        for name, table in metadata.tables.items()
+    ):
+        msg = "SQLite source and PostgreSQL release 0.2.1 columns disagree."
+        raise ValueError(msg)
+
+
+async def _clear_target_tables(target: AsyncConnection, metadata: MetaData) -> None:
+    """Clear target tables seeded by initial migrations in reverse foreign key order."""
+    for table in reversed(metadata.sorted_tables):
+        if table.name != "alembic_version":
+            await target.execute(table.delete())
+
+
+async def _transfer_table_data(
+    source: AsyncConnection,
+    target: AsyncConnection,
+    table: Table,
+) -> int:
+    """Transfer table rows in partitions and verify data digest."""
+    async with source.stream(select(table).order_by(*table.primary_key.columns)) as result:
+        async for rows in result.mappings().partitions(IMPORT_BATCH_SIZE):
+            await target.execute(table.insert(), [_normalize(row, table) for row in rows])
+    source_digest = await _digest(source, table)
+    if source_digest != await _digest(target, table):
+        msg = f"Transfer verification failed for table {table.name}."
+        raise ValueError(msg)
+    return source_digest[0]
+
+
+async def _record_import_audit(target: AsyncConnection, counts: dict[str, int]) -> None:
+    """Record an audit event for the completed SQLite snapshot import."""
+    changes: dict[str, object] = {"tables_imported": len(counts), "rows_imported": sum(counts.values())}
+    validate_audit_changes("database", "import_sqlite", changes)
+    await target.execute(
+        insert(AuditEventDB).values(
+            created_at=datetime.now(UTC),
+            actor_origin=ActorOrigin.MIGRATION,
+            target_type="database",
+            target_id="sqlite-0.2.1",
+            action="import_sqlite",
+            changed_fields=changes,
+        )
+    )
+
+
+async def _execute_import_pipeline(
+    source: AsyncConnection,
+    target: AsyncConnection,
+) -> dict[str, int]:
+    """Orchestrate schema validation, table transfer, sequence reset and upgrade."""
+    await _validate_target_schema(target)
+    await target.run_sync(partial(_upgrade, revision=RELEASE_021_REVISION))
+    metadata = await target.run_sync(_reflect)
+    source_schema = await source.run_sync(_reflect)
+    _validate_schemas_match(metadata, source_schema)
+
+    await _clear_target_tables(target, metadata)
+    counts: dict[str, int] = {}
+    for table in metadata.sorted_tables:
+        if table.name == "alembic_version":
+            continue
+        counts[table.name] = await _transfer_table_data(source, target, table)
+
+    await _reset_sequences(target, metadata)
+    await target.run_sync(partial(_upgrade, revision="head"))
+    await _record_import_audit(target, counts)
+    return counts
+
+
 async def import_snapshot(snapshot: Path, database_url: str) -> dict[str, int]:
     """Create 0.2.1 schema, import and verify every row, then upgrade PostgreSQL in one transaction."""
     source_engine = create_async_engine("sqlite+aiosqlite:///" + str(snapshot), poolclass=NullPool)
     target_engine = create_async_engine(database_url, poolclass=NullPool, hide_parameters=True)
-    counts: dict[str, int] = {}
     try:
         async with source_engine.connect() as source, target_engine.begin() as target:
-            schema = await target.scalar(select(func.current_schema()))
-            await target.execute(select(func.pg_advisory_xact_lock(scoped_lock_key(str(schema), IMPORT_LOCK_SCOPE))))
-            if await target.run_sync(_table_names):
-                msg = "PostgreSQL target schema must be empty; import is a one-time operation."
-                raise ValueError(msg)
-            await target.run_sync(partial(_upgrade, revision=RELEASE_021_REVISION))
-            metadata = await target.run_sync(_reflect)
-            source_schema = await source.run_sync(_reflect)
-            source_names = set(source_schema.tables)
-            if source_names != set(metadata.tables):
-                msg = "SQLite source and PostgreSQL release 0.2.1 table sets disagree."
-                raise ValueError(msg)
-            if any(
-                set(table.columns.keys()) != set(source_schema.tables[name].columns.keys())
-                for name, table in metadata.tables.items()
-            ):
-                msg = "SQLite source and PostgreSQL release 0.2.1 columns disagree."
-                raise ValueError(msg)
-            # Only the just-created target is cleared: release migrations seed command definitions.
-            for table in reversed(metadata.sorted_tables):
-                if table.name != "alembic_version":
-                    await target.execute(table.delete())
-            for table in metadata.sorted_tables:
-                if table.name == "alembic_version":
-                    continue
-                async with source.stream(select(table).order_by(*table.primary_key.columns)) as result:
-                    async for rows in result.mappings().partitions(IMPORT_BATCH_SIZE):
-                        await target.execute(table.insert(), [_normalize(row, table) for row in rows])
-                source_digest = await _digest(source, table)
-                if source_digest != await _digest(target, table):
-                    msg = f"Transfer verification failed for table {table.name}."
-                    raise ValueError(msg)
-                counts[table.name] = source_digest[0]
-            await _reset_sequences(target, metadata)
-            await target.run_sync(partial(_upgrade, revision="head"))
-            changes: dict[str, object] = {"tables_imported": len(counts), "rows_imported": sum(counts.values())}
-            validate_audit_changes("database", "import_sqlite", changes)
-            await target.execute(
-                insert(AuditEventDB).values(
-                    created_at=datetime.now(UTC),
-                    actor_origin=ActorOrigin.MIGRATION,
-                    target_type="database",
-                    target_id="sqlite-0.2.1",
-                    action="import_sqlite",
-                    changed_fields=changes,
-                )
-            )
+            return await _execute_import_pipeline(source, target)
     finally:
         await source_engine.dispose()
         await target_engine.dispose()
-    return counts
 
 
 def _temporary_dump_directory() -> TemporaryDirectory[str]:

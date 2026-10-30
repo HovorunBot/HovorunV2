@@ -3,7 +3,7 @@
 import asyncio
 import sys
 
-from dishka import Scope, alias, make_async_container, provide
+from dishka import AsyncContainer, Scope, alias, make_async_container, provide
 from sqlalchemy.exc import SQLAlchemyError
 
 from hovorunv2.application.activation import ActivationStore
@@ -93,39 +93,49 @@ class AdminProvider(DatabaseProvider):
         return await load_authorization_policy()
 
 
+async def _execute_access_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
+    """Validate and execute access administration request."""
+    request = AdminRequest.model_validate(
+        {
+            "action": arguments.action,
+            "kind": arguments.kind,
+            "target": arguments.target,
+            "reason": arguments.reason,
+            "public_explanation": arguments.public_explanation,
+            "ban_kind": arguments.ban_kind,
+            "feature": arguments.feature,
+            "request_id": arguments.request_id,
+        }
+    )
+    return await (await container.get(AccessCLI)).execute(request)
+
+
+async def _execute_trust_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
+    """Validate target user and update trust state."""
+    if arguments.target is None:
+        msg = "A target user is required."
+        raise ValueError(msg)
+    trust = await container.get(TrustService)
+    is_trusted = arguments.operation == "grant"
+    found = await trust.set_trust(
+        arguments.target,
+        is_trusted=is_trusted,
+        actor=ActorContext.cli(reason=arguments.reason),
+    )
+    if not found:
+        msg = "No active user exists; trust administration cannot create or recover identities."
+        raise ValueError(msg)
+    return f"{arguments.target}\ttrusted={str(is_trusted).lower()}"
+
+
 async def run_admin(arguments: RoleArguments) -> str:
     """Execute once and close all owned resources without polling or starting workers."""
     container = make_async_container(AdminProvider())
     try:
         if arguments.topic == "access":
-            request = AdminRequest.model_validate(
-                {
-                    "action": arguments.action,
-                    "kind": arguments.kind,
-                    "target": arguments.target,
-                    "reason": arguments.reason,
-                    "public_explanation": arguments.public_explanation,
-                    "ban_kind": arguments.ban_kind,
-                    "feature": arguments.feature,
-                    "request_id": arguments.request_id,
-                }
-            )
-            return await (await container.get(AccessCLI)).execute(request)
+            return await _execute_access_admin(container, arguments)
         if arguments.topic == "trust":
-            if arguments.target is None:
-                msg = "A target user is required."
-                raise ValueError(msg)
-            trust = await container.get(TrustService)
-            is_trusted = arguments.operation == "grant"
-            found = await trust.set_trust(
-                arguments.target,
-                is_trusted=is_trusted,
-                actor=ActorContext.cli(reason=arguments.reason),
-            )
-            if not found:
-                msg = "No active user exists; trust administration cannot create or recover identities."
-                raise ValueError(msg)
-            return f"{arguments.target}\ttrusted={str(is_trusted).lower()}"
+            return await _execute_trust_admin(container, arguments)
         cli = await container.get(RoleCLI)
         return await cli.execute(arguments)
     finally:
