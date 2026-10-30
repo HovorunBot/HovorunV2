@@ -58,6 +58,12 @@ class SQLAlchemyGroupMigrationStore:
         if group.chat_id != old_id:
             msg = "Migration source routing is stale."
             raise ValueError(msg)
+        await self._validate_target(session, new_id)
+        await self._move_route(session, group, old_id, new_id)
+        await session.flush()
+        return True, group.id
+
+    async def _validate_target(self, session: AsyncSession, new_id: int) -> None:
         conflict = await session.scalar(select(ChatDB.id).where(ChatDB.chat_id == new_id))
         route = await session.get(GroupRouteDB, new_id)
         if conflict is not None or route is not None:
@@ -72,6 +78,8 @@ class SQLAlchemyGroupMigrationStore:
         if handle is not None:
             msg = "Migration target has a conflicting public handle mapping."
             raise ValueError(msg)
+
+    async def _move_route(self, session: AsyncSession, group: ChatDB, old_id: int, new_id: int) -> None:
         session.add(GroupRouteDB(telegram_id=old_id, group_id=group.id))
         group.chat_id = new_id
         group.chat_type = "supergroup"
@@ -100,5 +108,3 @@ class SQLAlchemyGroupMigrationStore:
             state.admins_expires_at = None
             state.bot_expires_at = None
             state.policy_revision += 1
-        await session.flush()
-        return True, group.id
