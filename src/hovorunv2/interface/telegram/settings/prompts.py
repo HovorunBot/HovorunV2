@@ -9,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.ports import ChatStore, SyncUnauthorizedPromptPort, WorkerTelegramPort
 from hovorunv2.infrastructure.logger import get_logger
-from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
+from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
 
 logger = get_logger(__name__)
 

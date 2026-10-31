@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, Message, User
 
-from hovorunv2.interface.telegram.callbacks import SettingsCallback, SettingsMenu
+from hovorunv2.interface.telegram.settings.callbacks import SettingsCallback, SettingsMenu
 from tests.utils.activation import sent_fields
 from tests.utils.runtimes.beta import FIRST, GROUP
 from tests.utils.telegram.transport import API, RecordedResponse, RecordedResponses

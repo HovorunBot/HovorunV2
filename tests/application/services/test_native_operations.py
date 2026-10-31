@@ -36,8 +36,8 @@ from hovorunv2.infrastructure.queues.feature_queue import (
     set_operations_runner,
     sweep_expired_cleanups_task,
 )
-from hovorunv2.interface.telegram.prompts import SyncTelegramUnauthorizedPromptSender
-from hovorunv2.interface.telegram.sync_delivery import NativeTelegramAPI
+from hovorunv2.interface.telegram.settings.prompts import SyncTelegramUnauthorizedPromptSender
+from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramAPI
 from tests.conftest import provision_role
 from tests.utils.runtime import ManualClock
 

@@ -29,7 +29,7 @@ from hovorunv2.domain.enums import (
     CommandName,
 )
 from hovorunv2.infrastructure.logger import get_logger
-from hovorunv2.interface.telegram.callbacks import SettingsAction, SettingsCallback, SettingsMenu
+from hovorunv2.interface.telegram.settings.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 
 from .base import BaseCommand
 

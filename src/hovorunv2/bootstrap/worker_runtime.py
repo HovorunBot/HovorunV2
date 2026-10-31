@@ -39,8 +39,8 @@ from hovorunv2.infrastructure.queues.feature_queue import (
 from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
-from hovorunv2.interface.telegram.prompts import SyncTelegramUnauthorizedPromptSender
-from hovorunv2.interface.telegram.sync_delivery import NativeTelegramAPI, NativeTelegramDelivery
+from hovorunv2.interface.telegram.settings.prompts import SyncTelegramUnauthorizedPromptSender
+from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramAPI, NativeTelegramDelivery
 
 RUNTIME_SOCKET_SECONDS = 2
 DEFAULT_SAFETY = UsageSafetyCaps()

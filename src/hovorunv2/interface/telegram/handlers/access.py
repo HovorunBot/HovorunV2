@@ -15,7 +15,7 @@ from hovorunv2.application.groups.activation import ActivationAction, Activation
 from hovorunv2.application.groups.activation_service import GroupActivationService
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
+from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
 
 from .base import BaseCommand
 

@@ -21,8 +21,8 @@ from hovorunv2.infrastructure.logger import AsyncTelegramHandler, get_logger, se
 from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
-from hovorunv2.interface.telegram.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.middlewares import LogContextMiddleware
+from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 
 logger = get_logger(__name__)
 

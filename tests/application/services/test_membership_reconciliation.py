@@ -16,7 +16,7 @@ from hovorunv2.application.identity.membership_reconciliation import GROUP_BATCH
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter
+from hovorunv2.interface.telegram.transport.membership import TelegramMembershipAdapter
 from tests.utils.telegram import API, BOT_CREDENTIAL, GROUP_ID, USER_ID, RecordedResponse, member_payload
 
 

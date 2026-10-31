@@ -13,13 +13,13 @@ from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.ports import ChatStore
 from hovorunv2.domain.audit import AuditEventDB
 from hovorunv2.domain.enums import ChatStatus, CommandName
-from hovorunv2.interface.telegram.callbacks import (
+from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
+from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from hovorunv2.interface.telegram.settings.callbacks import (
     SettingsAction,
     SettingsCallback,
     SettingsMenu,
 )
-from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
-from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from tests.conftest import provision_role, verify_group_admins
 from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.settings import bind_settings_callback

@@ -42,10 +42,10 @@ from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.beta import ALL_BETA
 from hovorunv2.domain.enums import CommandName, TargetKind
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.interface.telegram.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
+from hovorunv2.interface.telegram.settings.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 from tests.utils.activation import sent_fields, stub_telegram
 from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.runtimes.beta import BETA, FIRST, FUTURE, GROUP, MEMBER, REGISTRY, group_beta_runtime

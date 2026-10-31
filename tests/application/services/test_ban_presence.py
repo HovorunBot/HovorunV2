@@ -18,7 +18,7 @@ from hovorunv2.infrastructure.runtime.cache import CacheService
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
-from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
+from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
 from tests.conftest import provision_role
 from tests.utils.activation import ACTOR, activation_runtime, group_message, sent_fields, stub_telegram
 from tests.utils.telegram import bot_event

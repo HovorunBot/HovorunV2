@@ -15,10 +15,10 @@ from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.cache import CacheService
-from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
-from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
+from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
+from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
 from tests.conftest import provision_role
 from tests.utils.activation import ACTOR, ADMIN, BOT_ID, activation_runtime, group_message, sent_fields, stub_telegram
 

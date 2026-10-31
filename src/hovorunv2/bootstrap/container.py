@@ -106,9 +106,9 @@ from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
-from hovorunv2.interface.telegram.identity import IdentityMiddleware
-from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter
-from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
+from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
+from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
+from hovorunv2.interface.telegram.transport.membership import TelegramMembershipAdapter
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 

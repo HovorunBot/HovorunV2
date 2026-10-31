@@ -21,8 +21,8 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.cache import CacheService
 from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
-from hovorunv2.interface.telegram.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.middlewares import MessageCacheMiddleware
+from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 from tests.utils.telegram import BOT_CREDENTIAL, RecordedResponse
 
 

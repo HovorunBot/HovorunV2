@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import ChatStatus, TargetKind
-from hovorunv2.interface.telegram.identity import IdentityMiddleware
+from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 
 
 async def test_observation_updates_public_metadata_without_moving_authority(test_container: AsyncContainer) -> None:

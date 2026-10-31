@@ -26,7 +26,7 @@ from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.domain.group_grant import RequestStatus
 from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.handle import PublicHandleDB
-from hovorunv2.interface.telegram.identity import IdentityMiddleware
+from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 from tests.conftest import provision_role
 from tests.utils.activation import ACTOR
 from tests.utils.postgres import reject_audit

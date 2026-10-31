@@ -17,8 +17,8 @@ from hovorunv2.application.settings.admin_session_service import AdminSessionSer
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.access_arguments import parse_access
-from hovorunv2.interface.telegram.callbacks import AdminCallback
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
+from hovorunv2.interface.telegram.settings.callbacks import AdminCallback
 
 ADMIN_HELP = (
     "Use /admin ACTION user|group ID|@known_username [options].\n"

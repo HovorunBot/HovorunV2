@@ -16,8 +16,8 @@ from aiogram.types import Message
 from hovorunv2.application.media.downloader import MediaDownloader, NativeMediaDownloader
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
-from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
-from hovorunv2.interface.telegram.sync_delivery import (
+from hovorunv2.interface.telegram.transport.delivery import TelegramMediaDelivery
+from hovorunv2.interface.telegram.transport.sync_delivery import (
     NativeTelegramAPI,
     NativeTelegramDelivery,
     TelegramDeliveryUncertainError,

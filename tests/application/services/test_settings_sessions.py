@@ -20,8 +20,8 @@ from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.interface.telegram.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from hovorunv2.interface.telegram.settings.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 from tests.conftest import provision_role
 from tests.utils.activation import sent_fields
 from tests.utils.postgres import reject_audit

@@ -7,12 +7,12 @@ from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.ports import AppSettings, CachePort
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
-from hovorunv2.interface.telegram.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.middlewares import (
     AccessMiddleware,
     LogContextMiddleware,
     MessageCacheMiddleware,
 )
+from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 
 
 def _register_middlewares(

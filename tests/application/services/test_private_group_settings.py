@@ -40,10 +40,10 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import CommandName, TargetKind
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.bot import build_router
-from hovorunv2.interface.telegram.callbacks import SettingsMenu
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
-from hovorunv2.interface.telegram.identity import IdentityMiddleware
-from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter
+from hovorunv2.interface.telegram.settings.callbacks import SettingsMenu
+from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
+from hovorunv2.interface.telegram.transport.membership import TelegramMembershipAdapter
 from tests.conftest import get_media_command, provision_role
 from tests.utils.activation import sent_fields
 from tests.utils.recorded_responses import RecordedResponses

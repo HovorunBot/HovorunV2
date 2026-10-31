@@ -8,7 +8,7 @@ from hovorunv2.application.identity.identity import GroupIdentityStore
 from hovorunv2.application.identity.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.interface.telegram.membership import MEMBERSHIP_FRESHNESS, membership_status
+from hovorunv2.interface.telegram.transport.membership import MEMBERSHIP_FRESHNESS, membership_status
 
 
 class MembershipEventHandler:

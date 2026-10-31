@@ -20,9 +20,9 @@ from hovorunv2.domain.enums import CommandName, Role
 from hovorunv2.domain.group_grant import GroupAccessRequestDB, GroupApprovalDB, RequestStatus
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.bot import build_router
-from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
-from hovorunv2.interface.telegram.identity import IdentityMiddleware
-from hovorunv2.interface.telegram.prompts import TelegramUnauthorizedPromptSender
+from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
+from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
+from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 from tests.conftest import provision_role
 from tests.utils.activation import (
     ACTOR,
