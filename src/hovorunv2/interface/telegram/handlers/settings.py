@@ -29,7 +29,8 @@ from hovorunv2.application.settings.settings_session_service import (
     SettingsTarget,
 )
 from hovorunv2.application.translation.language_service import LanguageService
-from hovorunv2.application.usage.usage_view import UsageSummary, UsageViewService
+from hovorunv2.application.usage.policies import UsageSafetyCaps
+from hovorunv2.application.usage.usage_view import FeatureUsage, UsageSummary, UsageViewService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
     CommandName,
@@ -50,6 +51,158 @@ NOTIFICATION_LABELS: Final[dict[NotificationCategory, str]] = {
     NotificationCategory.FEATURE_STATUS: "🛠 Feature status",
     NotificationCategory.ANNOUNCEMENT: "📣 Announcements",
 }
+
+PROGRESS_SEGMENTS: Final = 10
+PROGRESS_FILLED: Final = "█"
+PROGRESS_EMPTY: Final = "░"
+MINUTE: Final = 60
+HOUR: Final = 60 * MINUTE
+DAY: Final = 24 * HOUR
+KILOBYTE: Final = 1024
+MEGABYTE: Final = 1024 * KILOBYTE
+LOW_QUOTA_DENOMINATOR: Final = 5
+
+
+def _format_window(seconds: int) -> str:
+    """Return a compact fixed-window label such as "minute" or "5 minutes".
+
+    Args:
+        seconds: Window duration in whole seconds.
+
+    Returns:
+        The human-readable window label.
+    """
+    if seconds % DAY == 0:
+        return _format_count(seconds // DAY, "day")
+    if seconds % HOUR == 0:
+        return _format_count(seconds // HOUR, "hour")
+    if seconds % MINUTE == 0:
+        return _format_count(seconds // MINUTE, "minute")
+    return _format_count(seconds, "second")
+
+
+def _format_count(count: int, singular: str) -> str:
+    """Return the bare unit for one item or the counted plural otherwise.
+
+    Args:
+        count: Number of units.
+        singular: Singular unit label.
+
+    Returns:
+        The singular label when the count is one, otherwise the counted plural.
+    """
+    return singular if count == 1 else f"{count} {singular}s"
+
+
+def _format_duration(seconds: int) -> str:
+    """Return a counted duration label such as "2 minutes" or "1 hour".
+
+    Args:
+        seconds: Duration in whole seconds.
+
+    Returns:
+        The human-readable duration label.
+    """
+    if seconds % HOUR == 0:
+        hours = seconds // HOUR
+        return f"{hours} hour" if hours == 1 else f"{hours} hours"
+    if seconds % MINUTE == 0:
+        minutes = seconds // MINUTE
+        return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+    return f"{seconds} second" if seconds == 1 else f"{seconds} seconds"
+
+
+def _format_bytes(value: int) -> str:
+    """Return a compact byte size such as "64 KB" or "32 MB".
+
+    Args:
+        value: Byte count to format.
+
+    Returns:
+        The human-readable byte size.
+    """
+    if value % MEGABYTE == 0:
+        return f"{value // MEGABYTE} MB"
+    if value % KILOBYTE == 0:
+        return f"{value // KILOBYTE} KB"
+    return f"{value} B"
+
+
+def _progress_bar(consumed: int, limit: int) -> str:
+    """Render a fixed-width filled proportion of consumed quota.
+
+    Args:
+        consumed: Current-window usage total.
+        limit: Effective window allowance.
+
+    Returns:
+        A block-character progress bar capped at the full width.
+    """
+    ratio = min(1.0, consumed / limit)
+    filled = round(ratio * PROGRESS_SEGMENTS)
+    return PROGRESS_FILLED * filled + PROGRESS_EMPTY * (PROGRESS_SEGMENTS - filled)
+
+
+def _quota_state(remaining: int, limit: int) -> str:
+    """Return the status emoji for a feature's remaining allowance.
+
+    Args:
+        remaining: Effective remaining allowance.
+        limit: Effective window allowance.
+
+    Returns:
+        An emoji marking healthy, low or exhausted quota.
+    """
+    if remaining <= 0:
+        return "⛔"
+    if remaining * LOW_QUOTA_DENOMINATOR <= limit:
+        return "⚠️"
+    return "🟢"
+
+
+def _render_feature_usage(feature: FeatureUsage, *, unlimited: bool) -> tuple[str, ...]:
+    """Render one feature's quota as a heading plus a progress line.
+
+    Args:
+        feature: Feature usage totals to render.
+        unlimited: Whether the subject bypasses personal quota.
+
+    Returns:
+        HTML-formatted lines for the feature.
+    """
+    unit = feature.unit.value
+    window = _format_window(feature.window_seconds)
+    if unlimited:
+        return (
+            f"♾ <b>{feature.display_name}</b>",
+            f"{feature.consumed} {unit} used · per {window} · personal quota unlimited",
+        )
+    state = _quota_state(feature.remaining, feature.limit)
+    bar = _progress_bar(feature.consumed, feature.limit)
+    return (
+        f"{state} <b>{feature.display_name}</b>",
+        f"{bar} {feature.consumed}/{feature.limit} {unit} · {feature.remaining} left · per {window}",
+    )
+
+
+def _render_safety_caps(safety: UsageSafetyCaps) -> tuple[str, ...]:
+    """Render independent application safety ceilings as a compact list.
+
+    Args:
+        safety: Application safety caps to render.
+
+    Returns:
+        HTML-formatted safety cap lines.
+    """
+    return (
+        "🛡 <b>Safety caps</b>",
+        f"🔀 concurrency {safety.global_concurrency}",
+        f"⏳ pending {safety.global_pending}",
+        f"📦 payload {_format_bytes(safety.payload_bytes)}",
+        f"🗂 total payload {_format_bytes(safety.total_payload_bytes)}",
+        f"⏱ deadline {_format_duration(safety.deadline_seconds)}",
+        f"⚙ execution {_format_duration(safety.execution_seconds)}",
+    )
 
 
 class SettingsCommand(BaseCommand):
@@ -403,29 +556,16 @@ class SettingsCommand(BaseCommand):
             HTML-formatted usage report.
         """
         lines = [f"<b>{title}</b>", ""]
-        if not summary.features:
+        if summary.features:
+            for feature in summary.features:
+                lines.extend(_render_feature_usage(feature, unlimited=summary.unlimited_personal_quota))
+                lines.append("")
+        else:
             lines.append("No feature usage is currently configured.")
-        for feature in summary.features:
-            unit = feature.unit.value
-            if summary.unlimited_personal_quota:
-                lines.append(
-                    f"{feature.display_name}: {feature.consumed} {unit} per {feature.window_seconds}s "
-                    "(personal quota unlimited)"
-                )
-            else:
-                lines.append(
-                    f"{feature.display_name}: {feature.consumed}/{feature.limit} {unit} per "
-                    f"{feature.window_seconds}s ({feature.remaining} left)"
-                )
-        safety = summary.safety
-        lines.append("")
-        lines.append(
-            f"Safety caps: concurrency {safety.global_concurrency}, pending {safety.global_pending}, "
-            f"payload {safety.payload_bytes} bytes, deadline {safety.deadline_seconds}s, "
-            f"execution {safety.execution_seconds}s."
-        )
+            lines.append("")
+        lines.extend(_render_safety_caps(summary.safety))
         if summary.unlimited_personal_quota:
-            lines.append("Bot administrators bypass ordinary personal quota; safety caps still apply.")
+            lines.extend(("", "Bot administrators bypass ordinary personal quota; safety caps still apply."))
         return "\n".join(lines)
 
     async def _show_notifications(self, query: CallbackQuery, context: SettingsContext, scope: str | None) -> None:
