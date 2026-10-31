@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 import hovorunv2.domain  # noqa: F401
 from hovorunv2.application.membership import AdministratorEvidence
@@ -172,7 +173,7 @@ def worker_postgres_schema(request: pytest.FixtureRequest) -> Generator[str]:
 
     admin_engine = create_engine(base_url.render_as_string(hide_password=False), poolclass=NullPool)
     with admin_engine.begin() as conn:
-        conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        conn.execute(CreateSchema(schema))
 
     scoped_url = base_url.update_query_dict({"options": f"-csearch_path={schema}"})
     scoped_url_str = scoped_url.render_as_string(hide_password=False)
@@ -185,7 +186,7 @@ def worker_postgres_schema(request: pytest.FixtureRequest) -> Generator[str]:
     yield scoped_url_str
 
     with admin_engine.begin() as conn:
-        conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        conn.execute(DropSchema(schema, cascade=True, if_exists=True))
     admin_engine.dispose()
 
 

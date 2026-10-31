@@ -1,18 +1,21 @@
 """Tests for public username resolution, case-insensitive uniqueness, and grant preservation."""
 
-import sqlite3
-from pathlib import Path
-
 import pytest
 from dishka import AsyncContainer
-from sqlalchemy import select
+from sqlalchemy import inspect, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from hovorunv2.application.ports import PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import Platform, TargetKind
 from hovorunv2.domain.handle import PublicHandleDB, normalize_handle, validate_handle
+
+
+def _public_handle_indexes(connection: Connection) -> dict[str, dict[str, object]]:
+    """Reflect the public-handle indexes inside a synchronous run_sync callback."""
+    return {index["name"]: index for index in inspect(connection).get_indexes("public_handles")}
 
 
 def test_normalize_and_validate_handle() -> None:
@@ -207,38 +210,45 @@ def test_public_handle_model_has_no_invasive_personal_data_columns() -> None:
     assert expected_fields.issubset(column_names)
 
 
-def test_public_handles_migration_schema(tmp_path: Path) -> None:
-    """Verify SQLite table creation and uniqueness constraint on public_handles."""
-    db_file = tmp_path / "test_handles_migration.db"
-    conn = sqlite3.connect(str(db_file))
-    cur = conn.cursor()
+async def test_public_handles_schema_has_expected_unique_indexes(test_engine: AsyncEngine) -> None:
+    """Verify the PostgreSQL target schema owns both public-handle uniqueness indexes."""
+    async with test_engine.connect() as connection:
+        indexes = await connection.run_sync(_public_handle_indexes)
 
-    cur.execute(
-        """
-        CREATE TABLE public_handles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            handle_normalized VARCHAR(64) NOT NULL,
-            handle_display VARCHAR(64) NOT NULL,
-            target_kind VARCHAR(32) NOT NULL,
-            target_id BIGINT NOT NULL,
-            platform VARCHAR(32) DEFAULT 'telegram' NOT NULL,
-            created_at DATETIME NOT NULL,
-            updated_at DATETIME NOT NULL
+    expected = {
+        "uq_public_handles_handle": ("platform", "handle_normalized"),
+        "uq_public_handles_target": ("platform", "target_kind", "target_id"),
+    }
+    for name, columns in expected.items():
+        assert indexes[name]["unique"] is True
+        assert tuple(indexes[name]["column_names"]) == columns
+
+
+async def test_public_handles_target_uniqueness_enforced_by_postgresql(test_container: AsyncContainer) -> None:
+    """PostgreSQL rejects a second handle for the same target identity."""
+    session_maker = await test_container.get(async_sessionmaker)
+
+    async with session_maker() as session:
+        session.add(
+            PublicHandleDB(
+                handle_normalized="firsthandle",
+                handle_display="FirstHandle",
+                target_kind=TargetKind.USER,
+                target_id=12345,
+                platform=Platform.TELEGRAM,
+            )
         )
-        """
-    )
-    cur.execute("CREATE UNIQUE INDEX uq_public_handles_handle ON public_handles (platform, handle_normalized)")
-    cur.execute("CREATE UNIQUE INDEX uq_public_handles_target ON public_handles (platform, target_kind, target_id)")
+        await session.commit()
 
-    insert_sql = (
-        "INSERT INTO public_handles "
-        "(handle_normalized, handle_display, target_kind, target_id, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, '2026-01-01', '2026-01-01')"
-    )
-    cur.execute(insert_sql, ("coolbot", "CoolBot", "user", 12345))
-    conn.commit()
-
-    with pytest.raises(sqlite3.IntegrityError):
-        cur.execute(insert_sql, ("coolbot", "COOLBOT", "group", 54321))
-
-    conn.close()
+    async with session_maker() as session:
+        session.add(
+            PublicHandleDB(
+                handle_normalized="secondhandle",
+                handle_display="SecondHandle",
+                target_kind=TargetKind.USER,
+                target_id=12345,
+                platform=Platform.TELEGRAM,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.commit()

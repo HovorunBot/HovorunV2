@@ -37,8 +37,8 @@ def test_user_model_has_no_invasive_personal_data_columns() -> None:
     assert expected_fields.issubset(column_names)
 
 
-async def test_active_identity_uniqueness_enforced_by_sqlite(test_container: AsyncContainer) -> None:
-    """SQLite enforces that only one active record can exist per (platform, telegram_id)."""
+async def test_active_identity_uniqueness_enforced_by_postgresql(test_container: AsyncContainer) -> None:
+    """PostgreSQL enforces that only one active record can exist per (platform, telegram_id)."""
     session_maker = await test_container.get(async_sessionmaker)
     user_id = 990001
 

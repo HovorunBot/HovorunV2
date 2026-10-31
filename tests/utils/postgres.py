@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://hovorun:hovorun@localhost:5432/hovorun"
 
@@ -21,12 +22,12 @@ async def postgres_database() -> AsyncIterator[str]:
     admin = create_async_engine(url, poolclass=NullPool)
     try:
         async with admin.begin() as connection:
-            await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+            await connection.execute(CreateSchema(schema))
         scoped = url.update_query_dict({"options": "-csearch_path=" + schema})
         yield scoped.render_as_string(hide_password=False)
     finally:
         async with admin.begin() as connection:
-            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            await connection.execute(DropSchema(schema, cascade=True, if_exists=True))
         await admin.dispose()
 
 

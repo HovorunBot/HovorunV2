@@ -1,8 +1,5 @@
 """Tests for extended group/chat identity, lifecycle uniqueness, and migration safety."""
 
-import sqlite3
-from pathlib import Path
-
 import pytest
 from dishka import AsyncContainer
 from sqlalchemy import select
@@ -16,8 +13,8 @@ from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import ChatStatus, Platform
 
 
-async def test_active_chat_uniqueness_enforced_by_sqlite(test_container: AsyncContainer) -> None:
-    """SQLite enforces that only one active record can exist per (platform, chat_id)."""
+async def test_active_chat_uniqueness_enforced_by_postgresql(test_container: AsyncContainer) -> None:
+    """PostgreSQL enforces that only one active record can exist per (platform, chat_id)."""
     session_maker = await test_container.get(async_sessionmaker)
     chat_id = -1001234567890
 
@@ -108,7 +105,7 @@ async def test_soft_delete_is_audited_transactionally(test_container: AsyncConta
 
 
 async def test_foreign_key_enforcement_on_chat_associations(test_container: AsyncContainer) -> None:
-    """SQLite enforces foreign keys on chat command associations."""
+    """PostgreSQL enforces foreign keys on chat command associations."""
     session_maker = await test_container.get(async_sessionmaker)
 
     # Attempting to associate an invalid chat_id (that doesn't exist in chats) fails with IntegrityError
@@ -157,26 +154,3 @@ async def test_migration_preserves_chat_data_byte_for_byte(test_container: Async
         assert row.chat_type == "supergroup"
         assert row.is_bot_present is True
         assert row.deleted_at is None
-
-
-def test_migration_preflight_duplicate_detection(tmp_path: Path) -> None:
-    """Preflight check in migration e4f5a6b7c8d9 raises RuntimeError if duplicate chats exist."""
-    db_file = tmp_path / "test_dup_migration.db"
-    conn = sqlite3.connect(str(db_file))
-    cur = conn.cursor()
-
-    # Create dummy legacy chats table with duplicates
-    cur.execute("CREATE TABLE chats (id INTEGER PRIMARY KEY, chat_id INTEGER, platform TEXT, status TEXT)")
-    cur.execute("INSERT INTO chats VALUES (1, -100111, 'telegram', 'approved')")
-    cur.execute("INSERT INTO chats VALUES (2, -100111, 'telegram', 'unauthorized')")
-    conn.commit()
-
-    # Preflight check logic
-    duplicates = cur.execute(
-        "SELECT platform, chat_id, COUNT(*) as cnt FROM chats GROUP BY platform, chat_id HAVING COUNT(*) > 1"
-    ).fetchall()
-    conn.close()
-
-    assert len(duplicates) == 1
-    assert duplicates[0][1] == -100111
-    assert duplicates[0][2] == 2

@@ -35,8 +35,10 @@ async def runtime_cache(container: AsyncContainer) -> AsyncIterator[tuple[CacheS
         await client.ping()
         yield cache, namespace
     finally:
-        keys = [key async for key in client.scan_iter(match="*" + namespace.value + "*")]
-        if keys:
-            await client.delete(*keys)
-        await client.aclose()
-        await cache.close()
+        try:
+            keys = [key async for key in client.scan_iter(match="*" + namespace.value + "*")]
+            if keys:
+                await client.delete(*keys)
+        finally:
+            await client.aclose()
+            await cache.close()
