@@ -13,7 +13,14 @@ class DatabaseProvider(Provider):
 
     @provide(scope=Scope.APP)
     async def get_engine(self, config: DatabaseSettings) -> AsyncIterable[AsyncEngine]:
-        """Own a PostgreSQL pool local to this process and event loop."""
+        """Own a PostgreSQL pool local to this process and event loop.
+
+        Args:
+            config: Database connection settings.
+
+        Yields:
+            Async engine bound to the configured database URL.
+        """
         engine = create_async_engine(config.database_url, pool_pre_ping=True, hide_parameters=True)
 
         try:

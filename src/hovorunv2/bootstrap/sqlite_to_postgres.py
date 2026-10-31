@@ -56,7 +56,15 @@ def _current_heads(connection: Connection) -> tuple[str, ...]:
 
 
 async def snapshot_source(source: Path, snapshot: Path) -> None:
-    """Make a consistent SQLite backup through a read-only connection; never upgrade the original."""
+    """Make a consistent SQLite backup through a read-only connection without upgrading the original.
+
+    Args:
+        source: Path to the existing SQLite database.
+        snapshot: Destination path for the private backup copy.
+
+    Raises:
+        ValueError: If the source is missing, fails integrity validation, or has an unsupported revision.
+    """
     if not await asyncio.to_thread(source.is_file):
         msg = "SQLite source must be an existing database file."
         raise ValueError(msg)
@@ -228,7 +236,15 @@ async def _execute_import_pipeline(
 
 
 async def import_snapshot(snapshot: Path, database_url: str) -> dict[str, int]:
-    """Create 0.2.1 schema, import and verify every row, then upgrade PostgreSQL in one transaction."""
+    """Create the 0.2.1 schema, import and verify every row, then upgrade PostgreSQL in one transaction.
+
+    Args:
+        snapshot: Path to the private SQLite backup.
+        database_url: Target PostgreSQL connection string.
+
+    Returns:
+        Mapping of imported table names to row counts.
+    """
     source_engine = create_async_engine("sqlite+aiosqlite:///" + str(snapshot), poolclass=NullPool)
     target_engine = create_async_engine(database_url, poolclass=NullPool, hide_parameters=True)
     try:
@@ -245,7 +261,15 @@ def _temporary_dump_directory() -> TemporaryDirectory[str]:
 
 
 async def transfer(source: Path, settings: DatabaseSettings) -> dict[str, int]:
-    """Keep the temporary dump private and remove it after success or failure; retain the original source."""
+    """Keep the temporary dump private and remove it after success or failure while retaining the source.
+
+    Args:
+        source: Path to the existing SQLite database.
+        settings: Target database configuration.
+
+    Returns:
+        Mapping of imported table names to row counts.
+    """
     temporary = await asyncio.to_thread(_temporary_dump_directory)
     try:
         snapshot = Path(temporary.name) / "release-0.2.1.sqlite3"

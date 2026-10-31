@@ -20,7 +20,15 @@ OPERATIONS_QUEUE_NAME = "operations"
 
 
 def build_worker_application(settings: BrokerSettings, namespace: RuntimeNamespace) -> Celery:
-    """Build the shared native worker/Beat application without opening worker resources."""
+    """Build the shared native worker and Beat application without opening worker resources.
+
+    Args:
+        settings: Broker connection settings.
+        namespace: Runtime namespace prefix isolating queue names and broker keys.
+
+    Returns:
+        Configured Celery application with feature tasks registered.
+    """
     media_queue = namespace.value + MEDIA_QUEUE_NAME
     browser_queue = namespace.value + BROWSER_QUEUE_NAME
     operations_queue = namespace.value + OPERATIONS_QUEUE_NAME
