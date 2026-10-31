@@ -12,6 +12,7 @@ from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.application.identity.recovery import (
     GroupRecoveryPreview,
+    RecoveryOption,
     RecoveryPreviewService,
     UserRecoveryPreview,
 )
@@ -24,6 +25,7 @@ RECOVERY_HELP = "Use /recover user|group ID privately to inspect a deleted ident
 RECOVERY_UNAVAILABLE = "Recovery inspection unavailable. Use /recover privately."
 SECONDS_PER_HOUR = 3600
 RECOVERY_ARGUMENTS = 3
+RECOVERY_EXECUTION_ARGUMENTS = 5
 
 
 class RecoveryCommand(BaseCommand):
@@ -61,12 +63,35 @@ class RecoveryCommand(BaseCommand):
                 await message.answer(RECOVERY_HELP)
                 return
             target = int(words[2])
+            if len(words) >= RECOVERY_EXECUTION_ARGUMENTS and words[3] in {"restore", "fresh"}:
+                await self._execute(message, actor, words[1], target, RecoveryOption(words[3]), int(words[4]))
+                return
             if words[1] == "user":
                 await message.answer(self._user_text(await self._recovery.preview_user(target, actor=actor)))
             else:
                 await message.answer(self._group_text(await self._recovery.preview_group(target, actor=actor)))
         except PermissionError, ValueError:
             await message.answer(RECOVERY_UNAVAILABLE)
+
+    async def _execute(
+        self,
+        message: Message,
+        actor: ActorContext,
+        target_kind: str,
+        target: int,
+        option: RecoveryOption,
+        revision: int,
+    ) -> None:
+        result = (
+            await self._recovery.execute_user(target, option, revision, actor=actor)
+            if target_kind == "user"
+            else await self._recovery.execute_group(target, option, revision, actor=actor)
+        )
+        action = "Restored" if option == RecoveryOption.RESTORE else "Created fresh"
+        ban = "yes" if result.banned else "no"
+        await message.answer(
+            f"{action} {target_kind} {result.telegram_id} (generation {result.generation}).\nActive ban: {ban}"
+        )
 
     def _user_text(self, preview: UserRecoveryPreview) -> str:
         warning = "\nProtected role: restoration requires CLI authority." if preview.role_restore_requires_cli else ""

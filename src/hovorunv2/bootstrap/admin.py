@@ -25,6 +25,8 @@ from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.lifecycle import IdentityLifecycleService
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.identity.recovery import RecoveryOption, RecoveryPreviewService, RecoveryStore
+from hovorunv2.application.usage.budgets import Clock, WallClock
 from hovorunv2.application.usage.policies import UsagePolicyStore, UsageSafetyCaps
 from hovorunv2.application.usage.usage_administration import UsageAdministrationService
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
@@ -43,6 +45,7 @@ from hovorunv2.infrastructure.persistence.stores.beta_store import SQLAlchemyBet
 from hovorunv2.infrastructure.persistence.stores.chat_store import SQLAlchemyChatStore
 from hovorunv2.infrastructure.persistence.stores.feature_emergency_store import SQLAlchemyFeatureEmergencyStore
 from hovorunv2.infrastructure.persistence.stores.group_grant_store import SQLAlchemyGroupGrantStore
+from hovorunv2.infrastructure.persistence.stores.recovery_store import SQLAlchemyRecoveryStore
 from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAlchemyUsagePolicyStore
 from hovorunv2.infrastructure.persistence.stores.user_store import SQLAlchemyUserStore
 from hovorunv2.interface.cli.access import AccessCLI
@@ -67,6 +70,11 @@ class AdminProvider(DatabaseProvider):
     handles = alias(source=SQLAlchemyPublicHandleStore, provides=PublicHandleStore)
     role_service = provide(RoleService)
     lifecycle_service = provide(IdentityLifecycleService)
+    clock_impl = provide(WallClock)
+    clock = alias(source=WallClock, provides=Clock)
+    recovery_store_impl = provide(SQLAlchemyRecoveryStore)
+    recovery_store = alias(source=SQLAlchemyRecoveryStore, provides=RecoveryStore)
+    recovery_service = provide(RecoveryPreviewService)
     role_cli = provide(RoleCLI)
     user_store_impl = provide(SQLAlchemyUserStore)
     user_store = alias(source=SQLAlchemyUserStore, provides=UserStore)
@@ -166,6 +174,17 @@ async def _execute_lifecycle_admin(container: AsyncContainer, arguments: RoleArg
         return await service.delete_user(arguments.target, reason=arguments.reason, actor=actor)
     if arguments.operation == "delete-group":
         return await service.delete_group(arguments.target, reason=arguments.reason, actor=actor)
+    if arguments.operation in {"restore-user", "fresh-user", "restore-group", "fresh-group"}:
+        if arguments.revision is None:
+            msg = "Recovery requires --revision from the preview."
+            raise ValueError(msg)
+        recovery = await container.get(RecoveryPreviewService)
+        option = RecoveryOption.RESTORE if arguments.operation.startswith("restore") else RecoveryOption.FRESH
+        if arguments.operation.endswith("user"):
+            result = await recovery.execute_user(int(arguments.target), option, arguments.revision, actor=actor)
+        else:
+            result = await recovery.execute_group(int(arguments.target), option, arguments.revision, actor=actor)
+        return f"{result.telegram_id}\t{result.option.value}\tgeneration={result.generation}\tbanned={result.banned}"
     msg = "Unknown lifecycle operation."
     raise ValueError(msg)
 

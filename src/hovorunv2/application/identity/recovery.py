@@ -5,13 +5,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
+from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import ActorOrigin, ChatStatus, Role
+from hovorunv2.domain.enums import ActorOrigin, ChatStatus, Role, TargetKind
 from hovorunv2.domain.user import UserDB
 
 RECOMMENDATION_THRESHOLD_SECONDS = 24 * 60 * 60
@@ -22,6 +23,16 @@ class RecoveryOption(StrEnum):
 
     RESTORE = "restore"
     FRESH = "fresh"
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryExecution:
+    """Applied recovery choice with the resulting generation and ban fact."""
+
+    telegram_id: int
+    option: RecoveryOption
+    generation: int
+    banned: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +85,22 @@ class RecoveryStore(Protocol):
         """List command selections including soft-deleted history."""
         ...
 
+    async def restore_user(self, telegram_id: int, revision: int, actor: ActorContext) -> int:
+        """Reactivate the tombstone as a new generation."""
+        ...
+
+    async def fresh_user(self, telegram_id: int, actor: ActorContext) -> int:
+        """Create a fresh USER generation."""
+        ...
+
+    async def restore_group(self, telegram_id: int, revision: int, actor: ActorContext) -> int:
+        """Reactivate the group tombstone."""
+        ...
+
+    async def fresh_group(self, telegram_id: int, actor: ActorContext) -> int:
+        """Create a fresh unapproved group generation."""
+        ...
+
 
 class RecoveryPreviewService:
     """Build an authorized, revision-bound fact sheet without changing state."""
@@ -84,12 +111,14 @@ class RecoveryPreviewService:
         chats: ChatStore,
         store: RecoveryStore,
         permissions: PermissionService,
+        bans: BanStore,
         clock: Clock,
     ) -> None:
         self._users = users
         self._chats = chats
         self._store = store
         self._permissions = permissions
+        self._bans = bans
         self._clock = clock
 
     async def preview_user(self, telegram_id: int, *, actor: ActorContext) -> UserRecoveryPreview:
@@ -145,6 +174,59 @@ class RecoveryPreviewService:
             recommended=self._recommend(age),
             options=(RecoveryOption.RESTORE, RecoveryOption.FRESH),
         )
+
+    async def execute_user(
+        self,
+        telegram_id: int,
+        option: RecoveryOption,
+        revision: int,
+        *,
+        actor: ActorContext,
+    ) -> RecoveryExecution:
+        """Apply the explicit restore or fresh choice after revalidating revision and role."""
+        await self._require_admin(actor)
+        found = self._latest_deleted_user(await self._users.get_historical_by_telegram_id(telegram_id))
+        if found is None:
+            msg = "No deleted user identity exists at that ID."
+            raise ValueError(msg)
+        tombstone, _deleted_at = found
+        if tombstone.generation != revision:
+            msg = "Deleted user revision changed; preview again."
+            raise ValueError(msg)
+        if option == RecoveryOption.RESTORE:
+            if tombstone.role >= Role.ADMIN and actor.origin != ActorOrigin.CLI:
+                msg = "Role restoration requires CLI authority."
+                raise PermissionError(msg)
+            generation = await self._store.restore_user(telegram_id, revision, actor)
+        else:
+            generation = await self._store.fresh_user(telegram_id, actor)
+        banned = bool(await self._bans.list_active(TargetKind.USER, telegram_id))
+        return RecoveryExecution(telegram_id, option, generation, banned)
+
+    async def execute_group(
+        self,
+        telegram_id: int,
+        option: RecoveryOption,
+        revision: int,
+        *,
+        actor: ActorContext,
+    ) -> RecoveryExecution:
+        """Apply the explicit group choice after revalidating the deletion revision."""
+        await self._require_admin(actor)
+        found = self._latest_deleted_chat(await self._chats.get_historical_by_chat_id(telegram_id))
+        if found is None:
+            msg = "No deleted group identity exists at that ID."
+            raise ValueError(msg)
+        tombstone, _deleted_at = found
+        if tombstone.generation != revision:
+            msg = "Deleted group revision changed; preview again."
+            raise ValueError(msg)
+        if option == RecoveryOption.RESTORE:
+            generation = await self._store.restore_group(telegram_id, revision, actor)
+        else:
+            generation = await self._store.fresh_group(telegram_id, actor)
+        banned = bool(await self._bans.list_active(TargetKind.GROUP, telegram_id))
+        return RecoveryExecution(telegram_id, option, generation, banned)
 
     async def _require_admin(self, actor: ActorContext) -> None:
         if actor.origin == ActorOrigin.CLI:

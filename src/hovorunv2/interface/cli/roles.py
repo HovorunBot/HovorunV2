@@ -30,6 +30,7 @@ class RoleArguments(argparse.Namespace):
     topic: str
     operation: str
     target: str | None
+    revision: int | None
     role: str | None
     yes: bool
     reason: str | None
@@ -77,6 +78,17 @@ def build_parser() -> argparse.ArgumentParser:
     delete_group.add_argument("target")
     delete_group.add_argument("--reason", required=True)
     delete_group.add_argument("--yes", action="store_true", help="Confirm soft-deletion.")
+    for name, help_text in (
+        ("restore-user", "Restore a deleted user tombstone as a new generation."),
+        ("fresh-user", "Create a fresh user generation from a tombstone."),
+        ("restore-group", "Restore a deleted group tombstone as a new generation."),
+        ("fresh-group", "Create a fresh group generation from a tombstone."),
+    ):
+        command = lifecycle_operations.add_parser(name, help=help_text)
+        command.add_argument("target")
+        command.add_argument("--revision", type=int, required=True)
+        command.add_argument("--reason", required=True)
+        command.add_argument("--yes", action="store_true", help="Confirm recovery.")
 
     feature = topics.add_parser("feature", help="Disable or re-enable a feature capability.")
     feature.set_defaults(role=None, yes=False)
