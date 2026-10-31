@@ -1,5 +1,6 @@
 """Audited boolean trust administration, independent of authority roles."""
 
+from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
 from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
@@ -12,10 +13,13 @@ MAX_USER_ID = (1 << 63) - 1
 class TrustService:
     """Resolve active users and restrict trust changes to CLI or private bot administration."""
 
-    def __init__(self, users: UserStore, handles: PublicHandleStore, policy: AuthorizationPolicy) -> None:
+    def __init__(
+        self, users: UserStore, handles: PublicHandleStore, policy: AuthorizationPolicy, bans: BanStore
+    ) -> None:
         self._users = users
         self._handles = handles
         self._policy = policy
+        self._bans = bans
 
     async def set_trust(
         self,
@@ -55,14 +59,13 @@ class TrustService:
         """
         if actor.origin == ActorOrigin.CLI:
             return
-        user = await self._users.get_by_telegram_id(actor.actor_id) if actor.actor_id is not None else None
-        if (
-            actor.origin != ActorOrigin.TELEGRAM
-            or transport_kind != "private"
-            or user is None
-            or not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
-        ):
-            msg = "Trust administration requires CLI or a bot administrator in private transport."
+        msg = "Trust administration requires CLI or a bot administrator in private transport."
+        if actor.origin != ActorOrigin.TELEGRAM or transport_kind != "private" or actor.actor_id is None:
+            raise PermissionError(msg)
+        user = await self._users.get_by_telegram_id(actor.actor_id)
+        if user is None or await self._bans.list_active(TargetKind.USER, actor.actor_id):
+            raise PermissionError(msg)
+        if not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot"))):
             raise PermissionError(msg)
 
     async def _resolve_user(self, target: str) -> int:

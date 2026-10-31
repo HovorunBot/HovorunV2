@@ -51,12 +51,37 @@ async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier,
     assert "Please add Bluesky media support!" in sent_text
 
 
+async def test_feedback_cooldown_blocks_repeat_sender(
+    owner_notifier: OwnerNotifier,
+    recording_bot: Bot,
+    test_container: AsyncContainer,
+) -> None:
+    """A second feedback from the same sender is replying without notifying owners."""
+    command = FeedbackCommand(FeedbackService(owner_notifier), await test_container.get(CachePort))
+    message = Message.model_validate(
+        {
+            "message_id": 10,
+            "date": 1,
+            "chat": {"id": 777001, "type": "private"},
+            "from_user": {"id": 777001, "first_name": "Repeat", "is_bot": False},
+            "text": "/feedback first",
+        }
+    ).as_(recording_bot)
+    await command.handle(message, recording_bot)
+    first_calls = len(recording_bot.session.calls)
+    repeat = message.model_copy(update={"message_id": 11, "text": "/feedback second"})
+    await command.handle(repeat, recording_bot)
+    assert "wait" in recording_bot.session.calls[-1].text.lower()
+    assert len(recording_bot.session.calls) == first_calls + 1
+
+
 async def test_feedback_command_validation_and_delegation(
     owner_notifier: OwnerNotifier,
     recording_bot: Bot,
+    test_container: AsyncContainer,
 ) -> None:
     """Validate input and deliver through the real feedback service to durable owners."""
-    command = FeedbackCommand(FeedbackService(owner_notifier))
+    command = FeedbackCommand(FeedbackService(owner_notifier), await test_container.get(CachePort))
     assert command.name == CommandName.FEEDBACK
     assert not command.policy.requires_approval
     empty_msg = Message.model_validate(

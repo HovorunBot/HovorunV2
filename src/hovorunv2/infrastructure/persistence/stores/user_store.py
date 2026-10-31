@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from functools import partial
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
@@ -10,7 +11,8 @@ from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.domain.enums import ActorOrigin, Role
+from hovorunv2.domain.ban import BanDB
+from hovorunv2.domain.enums import ActorOrigin, Role, TargetKind
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
@@ -125,8 +127,23 @@ class SQLAlchemyUserStore(UserStore):
         repo = SQLAlchemyUserRepository(session)
         if actor.origin == ActorOrigin.TELEGRAM:
             operator = await repo.get_by_telegram_id(actor.actor_id or 0, platform)
-            if operator is None or not self._policy.is_allowed(
-                PermissionFacts(operator.role, "bot:administer", PermissionTarget("bot"))
+            banned = await session.scalar(
+                select(BanDB.id)
+                .where(
+                    BanDB.target_kind == TargetKind.USER,
+                    BanDB.telegram_id == actor.actor_id,
+                    BanDB.platform == "telegram",
+                    BanDB.deleted_at.is_(None),
+                    BanDB.revoked_at.is_(None),
+                )
+                .limit(1)
+            )
+            if (
+                operator is None
+                or banned is not None
+                or not self._policy.is_allowed(
+                    PermissionFacts(operator.role, "bot:administer", PermissionTarget("bot"))
+                )
             ):
                 msg = "Trust administration requires current bot administrator authority."
                 raise PermissionError(msg)

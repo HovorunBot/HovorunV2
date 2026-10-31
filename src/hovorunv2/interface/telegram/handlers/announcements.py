@@ -100,6 +100,7 @@ class AnnounceCommand(BaseCommand):
             audience=AnnouncementAudience(args.audience),
             target_ids=tuple(args.target or ()),
             body=args.body,
+            transport_kind=message.chat.type,
         )
         await message.answer(self._draft_text(draft))
 
@@ -117,6 +118,7 @@ class AnnounceCommand(BaseCommand):
             audience=AnnouncementAudience(args.audience or draft.audience.value),
             target_ids=tuple(args.target or ()),
             body=args.body,
+            transport_kind=message.chat.type,
         )
         await message.answer(self._draft_text(updated))
 
@@ -147,7 +149,11 @@ class AnnounceCommand(BaseCommand):
         parser.add_argument("--reason")
         args = parser.parse_args(rest[1:])
         confirmation = await self._announcements.confirm(
-            int(rest[0]), actor=actor, urgent=args.urgent, reason=args.reason
+            int(rest[0]),
+            actor=actor,
+            urgent=args.urgent,
+            reason=args.reason,
+            transport_kind=message.chat.type,
         )
         warning = (
             "\nURGENT: category opt-outs will be bypassed. Dispatch with --confirm-urgent."
@@ -169,7 +175,11 @@ class AnnounceCommand(BaseCommand):
         parser.add_argument("--confirm-urgent", action="store_true")
         args = parser.parse_args(rest[2:])
         status = await self._announcements.dispatch(
-            int(rest[0]), rest[1], actor=actor, urgent_bypass=args.confirm_urgent
+            int(rest[0]),
+            rest[1],
+            actor=actor,
+            urgent_bypass=args.confirm_urgent,
+            transport_kind=message.chat.type,
         )
         await message.answer(self._status_text(status))
 
@@ -177,7 +187,7 @@ class AnnounceCommand(BaseCommand):
         if not rest or not rest[0].isdigit():
             await message.answer(ANNOUNCE_HELP)
             return
-        status = await self._announcements.cancel(int(rest[0]), actor=actor)
+        status = await self._announcements.cancel(int(rest[0]), actor=actor, transport_kind=message.chat.type)
         await message.answer(self._status_text(status))
 
     async def _status(self, message: Message, rest: list[str]) -> None:

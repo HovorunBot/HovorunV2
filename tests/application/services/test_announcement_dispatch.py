@@ -64,6 +64,7 @@ async def _user(container: AsyncContainer, telegram_id: int) -> PermissionTarget
 
 async def _draft(container: AsyncContainer) -> tuple[AnnouncementService, int]:
     await _user(container, AUTHOR)
+    await provision_role(container, AUTHOR, Role.ADMIN)
     await _user(container, USER)
     service = await container.get(AnnouncementService)
     draft = await service.create(
@@ -196,8 +197,7 @@ async def test_urgent_requires_reason_and_current_bot_admin(test_container: Asyn
     with pytest.raises(ValueError, match="reason"):
         await service.confirm(draft_id, actor=ActorContext.telegram(AUTHOR), urgent=True)
     with pytest.raises(PermissionError):
-        await service.confirm(draft_id, actor=ActorContext.telegram(AUTHOR), urgent=True, reason="provider outage")
-    await provision_role(test_container, AUTHOR, Role.ADMIN)
+        await service.confirm(draft_id, actor=ActorContext.telegram(USER), urgent=True, reason="provider outage")
     confirmation = await service.confirm(
         draft_id, actor=ActorContext.telegram(AUTHOR), urgent=True, reason="provider outage"
     )

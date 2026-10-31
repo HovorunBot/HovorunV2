@@ -170,11 +170,25 @@ class SQLAlchemyBanStore(BanStore):
         """Check current operator and protected target authority inside the locked transaction."""
         if actor.origin == ActorOrigin.TELEGRAM:
             operator = await self._target(session, TargetKind.USER, actor.actor_id or 0)
+            operator_banned = await session.scalar(
+                select(BanDB.id)
+                .where(
+                    BanDB.target_kind == TargetKind.USER,
+                    BanDB.telegram_id == actor.actor_id,
+                    BanDB.platform == "telegram",
+                    BanDB.deleted_at.is_(None),
+                    BanDB.revoked_at.is_(None),
+                )
+                .limit(1)
+            )
             if not isinstance(operator, UserDB) or operator.role < Role.ADMIN:
                 msg = "Ban administration requires current bot administrator authority."
                 raise PermissionError(msg)
             if isinstance(entity, UserDB) and entity.role >= Role.ADMIN:
                 msg = f"Protected {entity.role.name.title()} restrictions can only be changed through CLI."
+                raise PermissionError(msg)
+            if operator_banned is not None:
+                msg = "Ban administration requires current bot administrator authority."
                 raise PermissionError(msg)
         elif actor.origin != ActorOrigin.CLI:
             msg = "Ban administration requires CLI or Telegram administrator origin."

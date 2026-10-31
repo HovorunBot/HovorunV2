@@ -87,6 +87,7 @@ class AnnouncementStore(Protocol):
         targets: tuple[PermissionTarget, ...],
         body: str,
         preview: AnnouncementPreview,
+        transport_kind: str = "private",
     ) -> AnnouncementDraft:
         """Insert one draft and audit safe metadata only."""
         ...
@@ -101,6 +102,7 @@ class AnnouncementStore(Protocol):
         targets: tuple[PermissionTarget, ...],
         body: str | None,
         preview: AnnouncementPreview,
+        transport_kind: str = "private",
     ) -> AnnouncementDraft:
         """Apply one authoring revision, replace targets, and audit the body-change marker."""
         ...
@@ -145,17 +147,25 @@ class AnnouncementStore(Protocol):
         expires_at: float,
         urgent: bool = False,
         urgent_reason: str | None = None,
+        transport_kind: str = "private",
     ) -> AnnouncementConfirmation:
         """Create one single-use confirmation row."""
         ...
 
     async def consume(
-        self, draft_id: int, token: str, *, actor_user_id: int, urgent_bypass: bool = False
+        self,
+        draft_id: int,
+        token: str,
+        *,
+        actor: ActorContext,
+        actor_user_id: int,
+        urgent_bypass: bool = False,
+        transport_kind: str = "private",
     ) -> AnnouncementConfirmation:
         """Atomically consume a fresh pending confirmation or raise a semantic error."""
         ...
 
-    async def cancel(self, draft_id: int, *, actor: ActorContext) -> bool:
+    async def cancel(self, draft_id: int, *, actor: ActorContext, transport_kind: str = "private") -> bool:
         """Cancel a pending confirmation; dispatched confirmations are cancelled at the ledger."""
         ...
 
@@ -193,6 +203,7 @@ class AnnouncementService:
         audience: AnnouncementAudience,
         target_ids: tuple[int, ...],
         body: str,
+        transport_kind: str = "private",
     ) -> AnnouncementDraft:
         """Resolve selected identities, count eligible recipients and persist revision one."""
         self._validate_body(body)
@@ -207,6 +218,7 @@ class AnnouncementService:
             targets=targets,
             body=body,
             preview=AnnouncementPreview(1, *counts),
+            transport_kind=transport_kind,
         )
 
     async def update(
@@ -218,6 +230,7 @@ class AnnouncementService:
         audience: AnnouncementAudience,
         target_ids: tuple[int, ...],
         body: str | None,
+        transport_kind: str = "private",
     ) -> AnnouncementDraft:
         """Apply a new immutable revision and recompute the preview from the same filters."""
         draft = await self._required(draft_id)
@@ -233,6 +246,7 @@ class AnnouncementService:
             targets=targets,
             body=body,
             preview=AnnouncementPreview(draft.revision + 1, *counts),
+            transport_kind=transport_kind,
         )
 
     async def preview(self, draft_id: int) -> AnnouncementPreview:
@@ -254,6 +268,7 @@ class AnnouncementService:
         actor: ActorContext,
         urgent: bool = False,
         reason: str | None = None,
+        transport_kind: str = "private",
     ) -> AnnouncementConfirmation:
         """Bind the current revision and concrete audience snapshot to one actor."""
         if urgent:
@@ -273,16 +288,28 @@ class AnnouncementService:
             expires_at=self._clock.now() + CONFIRMATION_TTL_SECONDS,
             urgent=urgent,
             urgent_reason=reason.strip() if reason is not None and reason.strip() else None,
+            transport_kind=transport_kind,
         )
 
     async def dispatch(
-        self, draft_id: int, token: str, *, actor: ActorContext, urgent_bypass: bool = False
+        self,
+        draft_id: int,
+        token: str,
+        *,
+        actor: ActorContext,
+        urgent_bypass: bool = False,
+        transport_kind: str = "private",
     ) -> AnnouncementStatus:
         """Consume a confirmation and queue the announcement through the delivery worker."""
         draft = await self._required(draft_id)
         actor_user_id = await self._author_user_id(actor)
         confirmation = await self._store.consume(
-            draft_id, token, actor_user_id=actor_user_id, urgent_bypass=urgent_bypass
+            draft_id,
+            token,
+            actor=actor,
+            actor_user_id=actor_user_id,
+            urgent_bypass=urgent_bypass,
+            transport_kind=transport_kind,
         )
         event_key = self._event_key(draft.id, confirmation.revision)
         sealed = await self._bodies.seal(
@@ -314,11 +341,13 @@ class AnnouncementService:
             )
         return await self.status(draft.id)
 
-    async def cancel(self, draft_id: int, *, actor: ActorContext) -> AnnouncementStatus:
+    async def cancel(
+        self, draft_id: int, *, actor: ActorContext, transport_kind: str = "private"
+    ) -> AnnouncementStatus:
         """Cancel pending authorization or dismiss only this announcement's queued receipts."""
         draft = await self._required(draft_id)
         current = await self._store.confirmation(draft_id)
-        changed = await self._store.cancel(draft_id, actor=actor)
+        changed = await self._store.cancel(draft_id, actor=actor, transport_kind=transport_kind)
         if current is not None and current.status == "dispatched":
             await self._ledger.cancel(self._event_key(draft.id, current.revision), actor=actor)
         _ = changed

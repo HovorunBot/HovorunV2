@@ -14,6 +14,8 @@ from hovorunv2.application.operations.notification_preferences import (
 )
 from hovorunv2.domain.announcement import AnnouncementAudience, AnnouncementDraftDB
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
+from hovorunv2.domain.enums import Role
+from tests.conftest import provision_role
 
 AUTHOR = 600001
 USER = 600002
@@ -23,6 +25,8 @@ OTHER = 600003
 async def _user(container: AsyncContainer, telegram_id: int) -> PermissionTarget:
     users = await container.get(UserStore)
     await users.ingest_user(telegram_id)
+    if telegram_id == AUTHOR:
+        await provision_role(container, AUTHOR, Role.ADMIN)
     user = await users.get_by_telegram_id(telegram_id)
     assert user is not None
     return PermissionTarget("user", user.id, user.generation, telegram_id)
@@ -96,6 +100,20 @@ async def test_update_replaces_selected_targets_and_increments_revision(
     preview = await service.preview(draft.id)
     assert preview.revision == 2
     assert user.entity_id is not None
+
+
+async def test_non_admin_author_is_rejected(test_container: AsyncContainer) -> None:
+    """Announcement authoring requires current private bot administration."""
+    await _user(test_container, USER)
+    service = await test_container.get(AnnouncementService)
+    with pytest.raises(PermissionError):
+        await service.create(
+            author=ActorContext.telegram(USER),
+            category=NotificationCategory.ANNOUNCEMENT,
+            audience=AnnouncementAudience.ALL,
+            target_ids=(),
+            body="body",
+        )
 
 
 async def test_unknown_selected_target_is_rejected(test_container: AsyncContainer) -> None:

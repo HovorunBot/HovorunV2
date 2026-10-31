@@ -5,6 +5,7 @@ from typing import NewType
 from dishka import Provider, Scope, alias, provide
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.beta_prompts import BetaPromptStore
 from hovorunv2.application.features.emergency import FeatureEmergencyStore
@@ -68,13 +69,14 @@ class AuditAndPersistenceProvider(Provider):
         session_maker: async_sessionmaker,
         audited_uow: AuditedUnitOfWork,
         settings: Settings,
+        policy: AuthorizationPolicy,
     ) -> SQLAlchemyAnnouncementStore:
         """Compose the encrypted draft store with the configured Fernet key."""
         key = settings.cache_encryption_key
         if key is None:
             msg = "Announcement drafts require a configured encryption key."
             raise ValueError(msg)
-        return SQLAlchemyAnnouncementStore(session_maker, audited_uow, key)
+        return SQLAlchemyAnnouncementStore(session_maker, audited_uow, key, policy)
 
     announcement_store = alias(source=SQLAlchemyAnnouncementStore, provides=AnnouncementStore)
 

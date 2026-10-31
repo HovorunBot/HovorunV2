@@ -25,6 +25,7 @@ from hovorunv2.application.identity.membership import MembershipEvidence, Member
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.chat import ChatDB
@@ -60,10 +61,11 @@ async def route_action(
     policy: CommandPolicy,
     actions: RoutedActions,
     settings: AppSettings,
+    reminders: ChatReminderService,
 ) -> object:
     """Dispatch a real Telegram update through handler flags and access middleware."""
     router = Router()
-    router.message.middleware(AccessMiddleware(access, cache, settings))
+    router.message.middleware(AccessMiddleware(access, cache, settings, reminders))
     router.message.register(actions.handle, Command(CommandName.HELP), flags={"policy": policy})
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
@@ -131,12 +133,32 @@ async def test_group_suspension_preserves_private_administrator_access(
     feature = CommandPolicy(is_toggleable=False, is_automatic=is_automatic)
 
     assert not await access.is_allowed(ALICE_ID, GROUP_ID, feature)
-    assert await route_action(access, cache, GROUP_ID, feature, actions, settings) is None
+    assert (
+        await route_action(
+            access, cache, GROUP_ID, feature, actions, settings, await test_container.get(ChatReminderService)
+        )
+        is None
+    )
     assert actions.chats == []
-    assert await route_action(access, cache, ALICE_ID, feature, actions, settings) == "allowed"
+    assert (
+        await route_action(
+            access, cache, ALICE_ID, feature, actions, settings, await test_container.get(ChatReminderService)
+        )
+        == "allowed"
+    )
     administration = CommandPolicy(requires_admin=True, requires_approval=False, is_toggleable=False)
-    assert await route_action(access, cache, ALICE_ID, administration, actions, settings) == "allowed"
-    assert await route_action(access, cache, GROUP_ID, administration, actions, settings) is None
+    assert (
+        await route_action(
+            access, cache, ALICE_ID, administration, actions, settings, await test_container.get(ChatReminderService)
+        )
+        == "allowed"
+    )
+    assert (
+        await route_action(
+            access, cache, GROUP_ID, administration, actions, settings, await test_container.get(ChatReminderService)
+        )
+        is None
+    )
 
     alice = await users.get_by_telegram_id(ALICE_ID)
     unchanged_group = await chats.get_chat(GROUP_ID)
@@ -170,7 +192,12 @@ async def test_group_suspension_preserves_private_administrator_access(
             assert await access.is_allowed(ALICE_ID, GROUP_ID, feature) is (status != MembershipStatus.ADMIN)
 
     await bans.revoke(blocker, subject, BanKind.FULL, actor)
-    assert await route_action(access, cache, GROUP_ID, feature, actions, settings) == "allowed"
+    assert (
+        await route_action(
+            access, cache, GROUP_ID, feature, actions, settings, await test_container.get(ChatReminderService)
+        )
+        == "allowed"
+    )
 
 
 @pytest.mark.parametrize("role", [Role.ADMIN, Role.OWNER])

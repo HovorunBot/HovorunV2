@@ -10,8 +10,9 @@ from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.beta import BetaEligibilityFacts, BetaEntitlementStore
 from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.beta import ALL_BETA
-from hovorunv2.domain.enums import ActorOrigin
+from hovorunv2.domain.enums import ActorOrigin, TargetKind
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.beta_repository import SQLAlchemyBetaEntitlementRepository
@@ -49,13 +50,23 @@ class SQLAlchemyBetaEntitlementStore(BetaEntitlementStore):
                 UserDB.telegram_id == actor.actor_id, UserDB.platform == "telegram", UserDB.deleted_at.is_(None)
             )
         )
-        if (
-            actor.origin != ActorOrigin.TELEGRAM
-            or transport_kind != "private"
-            or user is None
-            or not self._policy.is_allowed(PermissionFacts(user.role, "bot:administer", PermissionTarget("bot")))
+        msg = "Beta administration requires CLI or current bot administrator in private transport."
+        if actor.origin != ActorOrigin.TELEGRAM or transport_kind != "private" or user is None:
+            raise PermissionError(msg)
+        banned = await session.scalar(
+            select(BanDB.id)
+            .where(
+                BanDB.target_kind == TargetKind.USER,
+                BanDB.telegram_id == actor.actor_id,
+                BanDB.platform == "telegram",
+                BanDB.deleted_at.is_(None),
+                BanDB.revoked_at.is_(None),
+            )
+            .limit(1)
+        )
+        if banned is not None or not self._policy.is_allowed(
+            PermissionFacts(user.role, "bot:administer", PermissionTarget("bot"))
         ):
-            msg = "Beta administration requires CLI or current bot administrator in private transport."
             raise PermissionError(msg)
 
     async def _mutate(

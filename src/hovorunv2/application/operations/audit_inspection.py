@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.audit_schema import audit_field_names
-from hovorunv2.domain.enums import ActorOrigin
+from hovorunv2.domain.enums import ActorOrigin, TargetKind
 
 DEFAULT_AUDIT_PAGE = 20
 MAX_AUDIT_PAGE = 50
@@ -73,9 +74,10 @@ class AuditQueryStore(Protocol):
 class AuditInspectionService:
     """Expose read-only history to current bot administrators and the CLI only."""
 
-    def __init__(self, store: AuditQueryStore, permissions: PermissionService) -> None:
+    def __init__(self, store: AuditQueryStore, permissions: PermissionService, bans: BanStore) -> None:
         self._store = store
         self._permissions = permissions
+        self._bans = bans
 
     async def query(
         self,
@@ -107,7 +109,11 @@ class AuditInspectionService:
     async def _require_admin(self, actor: ActorContext) -> None:
         if actor.origin == ActorOrigin.CLI:
             return
-        if actor.actor_id is None or not await self._permissions.has_authority(actor.actor_id, "bot:administer"):
+        if (
+            actor.actor_id is None
+            or not await self._permissions.has_authority(actor.actor_id, "bot:administer")
+            or bool(await self._bans.list_active(TargetKind.USER, actor.actor_id))
+        ):
             msg = "Audit inspection requires a current bot administrator."
             raise PermissionError(msg)
 

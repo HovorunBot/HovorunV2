@@ -178,7 +178,7 @@ class SettingsSessionService:
             The validated settings context, or None when invalid or mismatched.
         """
         key = f"settings:session:{token}"
-        raw = await self._cache.pop(key) if consume else await self._cache.get(key)
+        raw = await self._cache.get(key)
         try:
             context = SettingsContext.model_validate(raw)
         except ValidationError:
@@ -188,17 +188,23 @@ class SettingsSessionService:
         user = await self._users.get_by_telegram_id(actor_id)
         if user is None or (context.actor_generation is not None and user.generation != context.actor_generation):
             return None
-        if context.target is None:
-            return context if context.actor_id == actor_id == transport_chat_id and transport_chat_id > 0 else None
-        chat = await self._chats.get_chat(context.target_chat_id)
-        if (
-            chat is None
-            or chat.id != context.target.entity_id
-            or chat.generation != context.target.generation
-            or chat.chat_id != context.target_chat_id
-        ):
+        if not await self._target_matches(context, actor_id, transport_chat_id):
+            return None
+        if consume and await self._cache.pop(key) != raw:
             return None
         return context
+
+    async def _target_matches(self, context: SettingsContext, actor_id: int, transport_chat_id: int) -> bool:
+        """Return whether the bound private or group target is still current."""
+        if context.target is None:
+            return context.actor_id == actor_id == transport_chat_id and transport_chat_id > 0
+        chat = await self._chats.get_chat(context.target_chat_id)
+        return bool(
+            chat is not None
+            and chat.id == context.target.entity_id
+            and chat.generation == context.target.generation
+            and chat.chat_id == context.target_chat_id
+        )
 
     async def _window_matches(
         self,

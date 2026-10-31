@@ -231,7 +231,11 @@ class RecoveryPreviewService:
     async def _require_admin(self, actor: ActorContext) -> None:
         if actor.origin == ActorOrigin.CLI:
             return
-        if actor.actor_id is None or not await self._permissions.has_authority(actor.actor_id, "bot:administer"):
+        if (
+            actor.actor_id is None
+            or not await self._permissions.has_authority(actor.actor_id, "bot:administer")
+            or bool(await self._bans.list_active(TargetKind.USER, actor.actor_id))
+        ):
             msg = "Recovery inspection requires a current bot administrator."
             raise PermissionError(msg)
 

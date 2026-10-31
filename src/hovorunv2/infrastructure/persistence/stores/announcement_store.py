@@ -7,6 +7,7 @@ from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.messaging.crypto import get_fernet_for_chat
 from hovorunv2.application.operations.announcements import (
@@ -28,15 +29,26 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.domain.notification import NotificationPreferenceDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.admin_authorization import require_private_administrator
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
+
+_ANNOUNCEMENT_AUTH = "Announcement administration requires a current private bot administrator."
 
 
 class SQLAlchemyAnnouncementStore(AnnouncementStore):
     """Keep the authored body encrypted and count recipients through the owning filters."""
 
-    def __init__(self, session_maker: async_sessionmaker, audited_uow: AuditedUnitOfWork, encryption_key: str) -> None:
+    def __init__(
+        self,
+        session_maker: async_sessionmaker,
+        audited_uow: AuditedUnitOfWork,
+        encryption_key: str,
+        policy: AuthorizationPolicy,
+    ) -> None:
         self._session_maker = session_maker
         self._audited_uow = audited_uow
         self._encryption_key = encryption_key
+        self._policy = policy
 
     async def create(
         self,
@@ -48,12 +60,17 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         targets: tuple[PermissionTarget, ...],
         body: str,
         preview: AnnouncementPreview,
+        transport_kind: str = "private",
     ) -> AnnouncementDraft:
         """Insert ciphertext and safe metadata; audit never receives the body."""
         salt = secrets.token_hex(16)
         ciphertext = get_fernet_for_chat(self._encryption_key, salt).encrypt(body.encode()).decode()
 
         async def operation(session: AsyncSession) -> tuple[AnnouncementDraftDB, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(keys=("announcement:create",)))
+            await require_private_administrator(
+                session, author, transport_kind, self._policy, message=_ANNOUNCEMENT_AUTH
+            )
             draft = AnnouncementDraftDB(
                 author_user_id=author_user_id,
                 category=category.value,
@@ -91,6 +108,7 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         targets: tuple[PermissionTarget, ...],
         body: str | None,
         preview: AnnouncementPreview,
+        transport_kind: str = "private",
     ) -> AnnouncementDraft:
         """Apply one revision, replacing targets and the encrypted body only when supplied."""
         salt = secrets.token_hex(16) if body is not None else None
@@ -101,6 +119,10 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         )
 
         async def operation(session: AsyncSession) -> tuple[AnnouncementDraftDB, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(keys=(f"announcement:{draft_id}",)))
+            await require_private_administrator(
+                session, author, transport_kind, self._policy, message=_ANNOUNCEMENT_AUTH
+            )
             draft = await session.get(AnnouncementDraftDB, draft_id)
             if draft is None:
                 msg = "Announcement draft does not exist."
@@ -298,6 +320,7 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         expires_at: float,
         urgent: bool = False,
         urgent_reason: str | None = None,
+        transport_kind: str = "private",
     ) -> AnnouncementConfirmation:
         """Create one single-use confirmation row bound to actor, revision and snapshot."""
         token = secrets.token_urlsafe(24)
@@ -312,6 +335,10 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         ]
 
         async def operation(session: AsyncSession) -> tuple[AnnouncementConfirmationDB, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(keys=(f"announcement:{draft.id}",)))
+            await require_private_administrator(
+                session, actor, transport_kind, self._policy, message=_ANNOUNCEMENT_AUTH
+            )
             row = AnnouncementConfirmationDB(
                 draft_id=draft.id,
                 actor_user_id=actor_user_id,
@@ -348,17 +375,30 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         return self._to_confirmation(result[0])
 
     async def consume(
-        self, draft_id: int, token: str, *, actor_user_id: int, urgent_bypass: bool = False
+        self,
+        draft_id: int,
+        token: str,
+        *,
+        actor: ActorContext,
+        actor_user_id: int,
+        urgent_bypass: bool = False,
+        transport_kind: str = "private",
     ) -> AnnouncementConfirmation:
         """Atomically consume a fresh, same-actor, current-revision confirmation."""
 
         async def operation(session: AsyncSession) -> tuple[AnnouncementConfirmationDB, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(keys=(f"announcement:{draft_id}",)))
+            await require_private_administrator(
+                session, actor, transport_kind, self._policy, message=_ANNOUNCEMENT_AUTH
+            )
             row = await session.scalar(
-                select(AnnouncementConfirmationDB).where(
+                select(AnnouncementConfirmationDB)
+                .where(
                     AnnouncementConfirmationDB.draft_id == draft_id,
                     AnnouncementConfirmationDB.token == token,
                     AnnouncementConfirmationDB.deleted_at.is_(None),
                 )
+                .with_for_update()
             )
             if row is None:
                 msg = "Confirmation is invalid."
@@ -389,7 +429,7 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
             }
 
         result: tuple[AnnouncementConfirmationDB, dict[str, object]] = await self._audited_uow.execute(
-            actor=ActorContext.system("announcement dispatch"),
+            actor=actor,
             target_type="announcement_confirmation",
             target_id=str(draft_id),
             action="dispatch",
@@ -399,10 +439,14 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         )
         return self._to_confirmation(result[0])
 
-    async def cancel(self, draft_id: int, *, actor: ActorContext) -> bool:
+    async def cancel(self, draft_id: int, *, actor: ActorContext, transport_kind: str = "private") -> bool:
         """Cancel only pending confirmations for this draft."""
 
         async def operation(session: AsyncSession) -> tuple[int, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(keys=(f"announcement:{draft_id}",)))
+            await require_private_administrator(
+                session, actor, transport_kind, self._policy, message=_ANNOUNCEMENT_AUTH
+            )
             rows = (
                 await session.scalars(
                     select(AnnouncementConfirmationDB).where(

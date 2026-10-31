@@ -8,11 +8,13 @@ from aiogram.types import Message
 
 from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.messaging.feedback_service import FeedbackService
+from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 
 logger = get_logger(__name__)
+FEEDBACK_COOLDOWN_SECONDS = 60
 
 
 class FeedbackCommand(BaseCommand):
@@ -23,9 +25,10 @@ class FeedbackCommand(BaseCommand):
 
     POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
-    def __init__(self, feedback_service: FeedbackService) -> None:
-        """Initialize command with its application service."""
+    def __init__(self, feedback_service: FeedbackService, cache: CachePort) -> None:
+        """Initialize command with its application service and cooldown cache."""
         self._feedback_service = feedback_service
+        self._cache = cache
 
     @property
     def name(self) -> str:
@@ -112,8 +115,16 @@ class FeedbackCommand(BaseCommand):
             return
 
         user = message.from_user
-        user_name = user.full_name if user else "Anonymous"
-        user_id = user.id if user else 0
+        if user is None or user.id <= 0:
+            await message.answer("Feedback is unavailable for this sender.")
+            return
+        cooldown_key = f"feedback:cooldown:{user.id}"
+        if await self._cache.get(cooldown_key):
+            await message.answer("Please wait a moment before sending more feedback.")
+            return
+        await self._cache.set(cooldown_key, 1, expire=FEEDBACK_COOLDOWN_SECONDS)
+        user_name = user.full_name
+        user_id = user.id
         username = user.username if user else None
         chat = message.chat
         chat_title = chat.title or "Private"

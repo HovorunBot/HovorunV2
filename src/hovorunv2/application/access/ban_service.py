@@ -22,13 +22,10 @@ class BanService:
         """
         if actor.origin == ActorOrigin.CLI:
             return
-        if (
-            actor.origin != ActorOrigin.TELEGRAM
-            or transport_kind != "private"
-            or actor.actor_id is None
-            or not await self._permissions.has_authority(actor.actor_id, "bot:administer")
-        ):
-            msg = "Ban administration requires CLI or a bot administrator in private transport."
+        msg = "Ban administration requires CLI or a bot administrator in private transport."
+        if actor.origin != ActorOrigin.TELEGRAM or transport_kind != "private" or actor.actor_id is None:
+            raise PermissionError(msg)
+        if not await self._permissions.has_authority(actor.actor_id, "bot:administer"):
             raise PermissionError(msg)
 
     async def list_active(self, target: TargetKind, telegram_id: int) -> list[BanDB]:

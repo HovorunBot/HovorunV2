@@ -1,5 +1,6 @@
 """Debug command module."""
 
+import html
 from typing import Any, ClassVar
 
 from aiogram import Bot
@@ -65,4 +66,4 @@ class DebugCommand(BaseCommand):
             raise ValueError(msg)
 
         logger.info("Executing debug command for user %s", message.from_user.id if message.from_user else "unknown")
-        await message.answer(f"It works. Your message: {message.text}.")
+        await message.answer(f"It works. Your message: {html.escape(message.text or '')}.")
