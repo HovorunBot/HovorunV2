@@ -77,7 +77,9 @@ async def test_nontext_dedupe_pointer_fails_closed_without_mutation(test_contain
         assert await asyncio.gather(*(cache.client.dump(key) for key in keys.watched)) == before
 
 
-@pytest.mark.parametrize("corrupt_key", ["totals", "subject", "ingress", "handoff", "pending", "payload", "dedupe"])
+@pytest.mark.parametrize(
+    "corrupt_key", ["totals", "subject", "ingress", "handoff", "pending", "payload", "dedupe", "rotation", "lane"]
+)
 async def test_wrong_key_types_never_partially_release_admission(
     test_container: AsyncContainer, corrupt_key: str
 ) -> None:

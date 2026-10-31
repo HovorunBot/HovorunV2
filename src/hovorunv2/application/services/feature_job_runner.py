@@ -3,9 +3,14 @@
 import logging
 import secrets
 from collections.abc import Mapping, Sequence
-from contextlib import suppress
 
-from hovorunv2.application.admission import AdmissionConflictError, JobStage, SyncAdmissionPort, TicketState
+from hovorunv2.application.admission import (
+    AdmissionConflictError,
+    JobStage,
+    SettlementIntent,
+    SyncAdmissionPort,
+    TicketState,
+)
 from hovorunv2.application.budgets import (
     BudgetRequest,
     Clock,
@@ -42,6 +47,7 @@ from hovorunv2.application.media.finalization import append_translation
 from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.native_translation import NativeTranslationService
+from hovorunv2.application.services.worker_lifecycle_service import WorkerLifecycleService
 from hovorunv2.application.usage import UsageUnit
 from hovorunv2.application.usage_ledger import AccountingSubject, SyncLedgerPort, UsageCharge, UsageEvent
 from hovorunv2.application.worker_io import (
@@ -53,11 +59,9 @@ from hovorunv2.application.worker_io import (
     TelegramDeliveryUncertainError,
     TelegramRejectedError,
 )
-from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
     PROVIDER_SPLIT_COMMANDS,
     SPLIT_TO_PROVIDER_COMMAND,
-    ActorOrigin,
     CommandName,
     TargetKind,
 )
@@ -95,10 +99,10 @@ class FeatureJobRunner:
         extractor: NativeMediaExtractor,
         clock: Clock,
         settings: AppSettings,
+        publisher: SyncQueuePublisherPort,
         *,
         registry: FeatureRegistry = FEATURE_REGISTRY,
         browser: SyncBrowserPort | None = None,
-        publisher: SyncQueuePublisherPort | None = None,
         clients: Sequence[BaseMediaClient] | Mapping[CommandName, BaseMediaClient] | None = None,
     ) -> None:
         self._admission = admission
@@ -116,6 +120,7 @@ class FeatureJobRunner:
         self._browser = browser
         self._publisher = publisher
         self._clients = self._init_clients(clients, settings)
+        self._lifecycle = WorkerLifecycleService(admission, budgets, ledger, clock)
 
     def _init_clients(
         self,
@@ -137,10 +142,7 @@ class FeatureJobRunner:
             envelope, token = claim_result
             return self._execute_claimed(envelope, stage, token)
         except Exception:
-            logger.exception("Feature job execution failed")
-            job_id = str(envelope_data.get("job_id", ""))
-            if job_id:
-                self._settle_zero(job_id, self._clock.now())
+            logger.warning("Feature job execution deferred")
             return JobOutcome.FAILED.value
 
     def _parse_and_claim(self, envelope_data: dict[str, object], stage: JobStage) -> tuple[JobEnvelope, str] | None:
@@ -162,7 +164,7 @@ class FeatureJobRunner:
         try:
             self._admission.finish(job_id, JobOutcome.EXPIRED)
         except Exception:
-            logger.exception("Failed to finish expired unclaimed ticket %s", job_id)
+            logger.warning("Expired ticket reconciliation deferred")
 
     def _resolve_unclaimed(self, envelope_data: dict[str, object]) -> str:
         job_id = envelope_data.get("job_id")
@@ -187,12 +189,16 @@ class FeatureJobRunner:
             now = self._clock.now()
             reservation = self._reserve_execution_budget(envelope, now)
             if not reservation.allowed:
-                return self._handle_denied_reservation(envelope.job_id, token, reservation)
+                return self._handle_denied_reservation(envelope, token, reservation)
+            ticket = self._admission.mark_reserved(envelope.job_id, token)
+            if ticket is None:
+                return JobOutcome.FAILED.value
+            if ticket.state == TicketState.CANCELLING:
+                self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
+                return JobOutcome.CANCELLED.value
             return self._extract_and_deliver(envelope, loaded, stage, token, now)
         except Exception:
-            logger.exception("Feature job execution failed inside claimed execution")
-            self._settle_zero(envelope.job_id, self._clock.now())
-            self._finish_ticket_safe(envelope.job_id, token, JobOutcome.FAILED)
+            logger.warning("Claimed execution reconciliation deferred")
             return JobOutcome.FAILED.value
 
     def _load_payload(self, envelope: JobEnvelope, token: str) -> LoadedPayload | None:
@@ -227,9 +233,27 @@ class FeatureJobRunner:
         )
         return self._budgets.reserve(request, now, totals)
 
-    def _handle_denied_reservation(self, job_id: str, token: str, reservation: ReservationDecision) -> str:
-        outcome = JobOutcome.EXPIRED if reservation.state == ReservationState.EXPIRED else JobOutcome.FAILED
-        self._finish_ticket_safe(job_id, token, outcome)
+    def _handle_denied_reservation(self, envelope: JobEnvelope, token: str, reservation: ReservationDecision) -> str:
+        if reservation.state == ReservationState.WAITING:
+            retry = reservation.next_eligible_at
+            if retry is None:
+                msg = "Quota waiting requires an eligibility time."
+                raise ValueError(msg)
+            if retry < envelope.deadline:
+                deferred = self._admission.defer(envelope.job_id, token, retry)
+                if deferred is None:
+                    self._finish_ticket_safe(envelope.job_id, token, JobOutcome.CANCELLED)
+                    return JobOutcome.CANCELLED.value
+                return ReservationState.WAITING.value
+        if reservation.state == ReservationState.UNAVAILABLE:
+            # A lost reserve acknowledgement can hide a live reservation; do not refund it.
+            return JobOutcome.FAILED.value
+        outcome = (
+            JobOutcome.EXPIRED
+            if reservation.state in {ReservationState.EXPIRED, ReservationState.WAITING}
+            else JobOutcome.FAILED
+        )
+        self._finish_ticket_safe(envelope.job_id, token, outcome)
         return outcome.value
 
     def _extract_and_deliver(
@@ -246,8 +270,7 @@ class FeatureJobRunner:
         except BrowserContinuationRequired:
             return JobOutcome.COMPLETE.value
         except MediaExtractionError, BrowserError, HTTPTransportError:
-            self._settle_zero(envelope.job_id, now)
-            self._finish_ticket_safe(envelope.job_id, token, JobOutcome.FAILED)
+            self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
             return JobOutcome.FAILED.value
         return self._finish_extraction(envelope, raw_payload, client, loaded.sender_label, token, now)
 
@@ -262,8 +285,7 @@ class FeatureJobRunner:
     ) -> str:
         split_def = self._check_post_extraction_gates(envelope, raw_payload, client)
         if split_def is None:
-            self._settle_zero(envelope.job_id, now)
-            self._finish_ticket_safe(envelope.job_id, token, JobOutcome.COMPLETE)
+            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
             return JobOutcome.COMPLETE.value
         return self._deliver_and_account(envelope, raw_payload, client, sender_label, split_def, token, now)
 
@@ -277,8 +299,11 @@ class FeatureJobRunner:
         token: str,
         now: float,
     ) -> str:
+        self._translate_payload(raw_payload, envelope.target.telegram_id)
+        if self._admission.begin_delivery(envelope.job_id, token, self._clock.now()) is None:
+            self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
+            return JobOutcome.CANCELLED.value
         try:
-            self._translate_payload(raw_payload, envelope.target.telegram_id)
             self._delivery.deliver(
                 envelope.target.telegram_id,
                 envelope.message_id,
@@ -286,12 +311,12 @@ class FeatureJobRunner:
                 client.platform_label,
                 sender_label,
             )
-        except TelegramRejectedError, TelegramDeliveryUncertainError:
-            self._settle_zero(envelope.job_id, now)
-            self._finish_ticket_safe(envelope.job_id, token, JobOutcome.FAILED)
+        except TelegramDeliveryUncertainError:
+            return TicketState.DELIVERY_UNCERTAIN.value
+        except TelegramRejectedError:
+            self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
             return JobOutcome.FAILED.value
-        self._settle_and_account(envelope, split_def, now)
-        self._finish_ticket_safe(envelope.job_id, token, JobOutcome.COMPLETE)
+        self._lifecycle.complete(envelope.job_id, token, self._settlement_intent(envelope, split_def, now))
         return JobOutcome.COMPLETE.value
 
     def _extract_stage(
@@ -325,9 +350,11 @@ class FeatureJobRunner:
         return raw_payload, client
 
     def _handoff_to_browser(self, envelope: JobEnvelope, token: str) -> None:
-        self._admission.handoff_stage(envelope.job_id, token, JobStage.BROWSER)
-        if self._publisher is not None:
-            self._publisher.publish_stage(envelope, JobStage.BROWSER)
+        ready = self._admission.handoff_stage(envelope.job_id, token, JobStage.BROWSER)
+        if ready is None:
+            self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
+            return
+        self._publisher.publish_stage(envelope, JobStage.BROWSER)
 
     def _check_post_extraction_gates(
         self, envelope: JobEnvelope, raw_payload: RichMediaPayload, client: BaseMediaClient
@@ -361,8 +388,7 @@ class FeatureJobRunner:
             quote_translated = self._translation.translate_if_needed(payload.quoted_payload.content, chat_id)
             payload.quoted_payload.content = append_translation(payload.quoted_payload.content, quote_translated)
 
-    def _settle_and_account(self, envelope: JobEnvelope, split_def: FeatureDefinition, now: float) -> None:
-        self._budgets.finish(envelope.job_id, (UnitAmount(UsageUnit.REQUESTS, 1),), now)
+    def _settlement_intent(self, envelope: JobEnvelope, split_def: FeatureDefinition, now: float) -> SettlementIntent:
         group_id = envelope.target.telegram_id if envelope.target.kind == TargetKind.GROUP else None
         split_usage = self._policies.resolve(split_def.key, envelope.trigger, envelope.actor_id, group_id=group_id)
         charges = tuple(UsageCharge(policy.bucket, 1, policy.unit, policy.window) for policy in split_usage.policies)
@@ -372,19 +398,23 @@ class FeatureJobRunner:
             occurred_at=int(now),
             charges=charges,
         )
-        actor = ActorContext(
-            origin=ActorOrigin.SYSTEM,
-            actor_id=envelope.actor_id or envelope.charged_telegram_id,
-            reason="Feature execution complete",
-        )
-        self._ledger.apply_batch((event,), actor=actor)
+        return SettlementIntent(outcome=JobOutcome.COMPLETE, actual=(UnitAmount(UsageUnit.REQUESTS, 1),), event=event)
 
-    def _settle_zero(self, job_id: str, now: float) -> None:
-        with suppress(Exception):
-            self._budgets.finish(job_id, (UnitAmount(UsageUnit.REQUESTS, 0),), now)
+    def _complete_zero(self, job_id: str, token: str, outcome: JobOutcome) -> None:
+        self._lifecycle.complete(
+            job_id, token, SettlementIntent(outcome=outcome, actual=(UnitAmount(UsageUnit.REQUESTS, 0),))
+        )
+
+    def recover(self) -> int:
+        """Run one bounded fair waiting and settlement recovery sweep in the owning child."""
+        return self._lifecycle.recover(self._publisher)
 
     def _finish_ticket_safe(self, job_id: str, token: str, outcome: JobOutcome) -> None:
         try:
+            ticket = self._admission.get(job_id)
+            if ticket is not None and ticket.budget_reserved:
+                self._complete_zero(job_id, token, outcome)
+                return
             self._admission.finish(job_id, outcome, token=token)
         except AdmissionConflictError:
             logger.warning("Admission conflict finishing ticket %s", job_id)

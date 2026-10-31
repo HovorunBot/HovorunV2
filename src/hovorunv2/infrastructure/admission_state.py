@@ -9,14 +9,18 @@ from typing import Final, Self
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from hovorunv2.application.admission import (
+    RECOVERY_RETRY_SECONDS,
     AdmissionConflictError,
     AdmissionTicket,
     AdmissionUnavailableError,
     JobStage,
+    NoticeKind,
+    SettlementIntent,
     TicketState,
 )
-from hovorunv2.application.budgets import TECHNICAL_ID
+from hovorunv2.application.budgets import TECHNICAL_ID, UnitAmount
 from hovorunv2.application.feature_jobs import EnqueueState, JobEnvelope, JobOutcome
+from hovorunv2.application.usage import UsageUnit
 from hovorunv2.domain.enums import TargetKind
 
 _ACTIVE_CAPACITY_ERROR: Final = "Active admission capacity metadata is unavailable."
@@ -48,6 +52,8 @@ class AdmissionKeys:
     payload: str
     handoff: str
     pending: str
+    rotation: str
+    lane: str
 
     @property
     def watched(self) -> tuple[str, ...]:
@@ -61,6 +67,8 @@ class AdmissionKeys:
             self.payload,
             self.handoff,
             self.pending,
+            self.rotation,
+            self.lane,
         )
 
 
@@ -82,6 +90,8 @@ def admission_keys(namespace: str, envelope: JobEnvelope) -> AdmissionKeys:
         namespace + "payload:" + envelope.payload_ref,
         prefix + "handoff",
         prefix + "pending",
+        prefix + "rotation",
+        prefix + "lane:" + owner + ":" + envelope.feature,
     )
 
 
@@ -98,12 +108,19 @@ class AdmissionRecord(BaseModel):
     token: str
     published: int = Field(ge=0, le=1, strict=True)
     publication_registered: int = Field(default=0, ge=0, le=1, strict=True)
+    retry_at: float = Field(default=0, ge=0)
     not_before: float = Field(ge=0)
     subject_key: str
     ingress_key: str
     payload_key: str
     dedupe_key: str
     outcome: JobOutcome | None = None
+    settlement: SettlementIntent | None = None
+    budget_reserved: bool = False
+    delayed_notice_requested: bool = False
+    terminal_notice_requested: bool = False
+    delayed_notice_claimed: bool = False
+    terminal_notice_claimed: bool = False
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> Self:
@@ -112,6 +129,7 @@ class AdmissionRecord(BaseModel):
         self._validate_schedule(job)
         self._validate_execution_owner()
         self._validate_terminal_outcome()
+        self._validate_settlement(job)
         return self
 
     def _validate_schedule(self, job: JobEnvelope) -> None:
@@ -120,12 +138,17 @@ class AdmissionRecord(BaseModel):
             raise ValueError(msg)
 
     def _validate_execution_owner(self) -> None:
-        if self.state in {TicketState.RUNNING, TicketState.CANCELLING}:
+        if self.state in {
+            TicketState.RUNNING,
+            TicketState.CANCELLING,
+            TicketState.SETTLING,
+            TicketState.DELIVERY_UNCERTAIN,
+        }:
             if TECHNICAL_ID.fullmatch(self.token) is None or self.attempt == 0:
                 msg = "Active admission requires an execution owner and attempt."
                 raise ValueError(msg)
             return
-        if self.state in {TicketState.ACCEPTED, TicketState.ENQUEUED} and self.token:
+        if self.state in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.WAITING} and self.token:
             msg = "Queued admission cannot retain an execution owner."
             raise ValueError(msg)
 
@@ -133,6 +156,21 @@ class AdmissionRecord(BaseModel):
         if (self.state == TicketState.TERMINAL) != (self.outcome is not None):
             msg = "Admission terminal state requires exactly one safe outcome."
             raise ValueError(msg)
+
+    def _validate_settlement(self, job: JobEnvelope) -> None:
+        if self.state == TicketState.SETTLING and self.settlement is None:
+            msg = "Settling admission requires stopped-execution facts."
+            raise ValueError(msg)
+        intent = self.settlement
+        if intent is None:
+            return
+        if self.state not in {TicketState.SETTLING, TicketState.TERMINAL}:
+            msg = "Settlement facts require stopped execution."
+            raise ValueError(msg)
+        if self.budget_reserved != bool(intent.actual):
+            msg = "Settlement amounts disagree with reservation ownership."
+            raise ValueError(msg)
+        _validate_receipt_binding(intent, job)
 
     @property
     def job(self) -> JobEnvelope:
@@ -143,7 +181,18 @@ class AdmissionRecord(BaseModel):
     def ticket(self) -> AdmissionTicket:
         """Expose only the application's typed operational ticket."""
         return AdmissionTicket(
-            self.job, self.state, self.byte_size, self.stage, self.token or None, self.attempt, self.outcome
+            self.job,
+            self.state,
+            self.byte_size,
+            self.stage,
+            self.token or None,
+            self.attempt,
+            self.outcome,
+            self.not_before,
+            self.settlement,
+            self.budget_reserved,
+            self.delayed_notice_requested,
+            self.terminal_notice_requested,
         )
 
     def encode(self) -> str:
@@ -234,6 +283,7 @@ class AdmissionCapacity:
     byte_size: int
     subject: int
     ingress: int
+    lane_pending: int = 0
 
     def require_active(self, record: AdmissionRecord, dedupe: object, score: object, handoff_score: object) -> None:
         """Do not release or execute a ticket whose supporting metadata disappeared."""
@@ -282,6 +332,12 @@ class AdmissionOperation(StrEnum):
     FINISH = "finish"
     REGISTER = "register"
     PUBLISHED = "published"
+    NOTICE = "notice"
+    REPUBLISH = "republish"
+    RESERVED = "reserved"
+    DEFER = "defer"
+    DELIVERY = "delivery"
+    PREPARE = "prepare"
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,8 +350,10 @@ class AdmissionTransition:
     token: str = ""
     outcome: JobOutcome | None = None
     now: float = 0
+    notice: NoticeKind | None = None
     expected_envelope: JobEnvelope | None = None
     not_before: float = 0
+    settlement: SettlementIntent | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,9 +385,18 @@ def _finish(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionC
         raise TypeError(msg)
     if record.state == TicketState.TERMINAL:
         return _replay_finish(record, request)
+    if record.state == TicketState.DELIVERY_UNCERTAIN:
+        return AdmissionChange(None)
+    if record.budget_reserved and record.state != TicketState.SETTLING:
+        return AdmissionChange(None)
+    if record.settlement is not None and record.settlement.outcome != request.outcome:
+        msg = "Completion conflicts with prepared settlement."
+        raise AdmissionConflictError(msg)
     if not _completion_owner_matches(record, request.token):
         return AdmissionChange(None)
-    terminal = record.model_copy(update={"state": TicketState.TERMINAL, "outcome": request.outcome})
+    terminal = record.model_copy(
+        update={"state": TicketState.TERMINAL, "outcome": request.outcome, "terminal_notice_requested": True}
+    )
     return AdmissionChange(terminal, write=True, release=True, handoff=False, success=True)
 
 
@@ -343,25 +410,40 @@ def _replay_finish(record: AdmissionRecord, request: AdmissionTransition) -> Adm
 
 
 def _completion_owner_matches(record: AdmissionRecord, token: str) -> bool:
-    if record.state in {TicketState.RUNNING, TicketState.CANCELLING}:
+    if record.state in {
+        TicketState.RUNNING,
+        TicketState.CANCELLING,
+        TicketState.SETTLING,
+        TicketState.DELIVERY_UNCERTAIN,
+    }:
         return token == record.token
     return not token
 
 
 def _claim(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
-    if record.state not in {TicketState.ACCEPTED, TicketState.ENQUEUED}:
+    if record.state not in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.WAITING}:
         return AdmissionChange(None)
     if request.expected_envelope is not None and record.job != request.expected_envelope:
         return AdmissionChange(None)
     if request.now >= record.job.deadline:
-        terminal = record.model_copy(update={"state": TicketState.TERMINAL, "outcome": JobOutcome.EXPIRED})
-        return AdmissionChange(terminal, write=True, release=True, handoff=False)
+        return _queued_terminal(record, JobOutcome.EXPIRED)
     if request.now < record.not_before or record.stage != request.stage:
         return AdmissionChange(None)
     running = record.model_copy(
         update={"state": TicketState.RUNNING, "token": request.token, "attempt": record.attempt + 1}
     )
     return AdmissionChange(running, write=True, handoff=False, success=True)
+
+
+def _queued_terminal(record: AdmissionRecord, outcome: JobOutcome) -> AdmissionChange:
+    if record.budget_reserved:
+        intent = SettlementIntent(outcome=outcome, actual=(UnitAmount(UsageUnit.REQUESTS, 0),))
+        settling = record.model_copy(update={"state": TicketState.SETTLING, "token": "recovery", "settlement": intent})
+        return AdmissionChange(settling, write=True, handoff=False, success=True)
+    terminal = record.model_copy(
+        update={"state": TicketState.TERMINAL, "outcome": outcome, "terminal_notice_requested": True}
+    )
+    return AdmissionChange(terminal, write=True, release=True, handoff=False, success=True)
 
 
 def _handoff(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
@@ -375,6 +457,7 @@ def _handoff(record: AdmissionRecord, request: AdmissionTransition) -> Admission
             "token": "",
             "published": 0,
             "publication_registered": 0,
+            "retry_at": 0,
             "not_before": 0,
         }
     )
@@ -403,14 +486,17 @@ def _register(record: AdmissionRecord, request: AdmissionTransition) -> Admissio
 def _cancel(record: AdmissionRecord) -> AdmissionChange:
     if record.state == TicketState.RUNNING:
         return AdmissionChange(record.model_copy(update={"state": TicketState.CANCELLING}), write=True, success=True)
-    if record.state in {TicketState.ACCEPTED, TicketState.ENQUEUED}:
-        terminal = record.model_copy(update={"state": TicketState.TERMINAL, "outcome": JobOutcome.CANCELLED})
-        return AdmissionChange(terminal, write=True, release=True, handoff=False, success=True)
+    if record.state in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.WAITING}:
+        return _queued_terminal(record, JobOutcome.CANCELLED)
     return AdmissionChange(record)
 
 
 def _acknowledge(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
     match request.operation:
+        case AdmissionOperation.NOTICE:
+            return _notice(record, request)
+        case AdmissionOperation.REPUBLISH:
+            return _republish(record, request)
         case AdmissionOperation.ENQUEUED:
             if record.state == TicketState.ACCEPTED and (record.stage, record.attempt) == (
                 request.stage,
@@ -428,6 +514,107 @@ def _acknowledge(record: AdmissionRecord, request: AdmissionTransition) -> Admis
     return AdmissionChange(record)
 
 
+def _notice(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if request.notice == NoticeKind.DELAYED:
+        if record.state != TicketState.WAITING or not record.delayed_notice_requested or record.delayed_notice_claimed:
+            return AdmissionChange(record)
+        claimed = record.model_copy(update={"delayed_notice_claimed": True})
+        return AdmissionChange(claimed, write=True, success=True)
+    if request.notice == NoticeKind.TERMINAL:
+        if (
+            record.state != TicketState.TERMINAL
+            or not record.terminal_notice_requested
+            or record.terminal_notice_claimed
+        ):
+            return AdmissionChange(record)
+        claimed = record.model_copy(update={"terminal_notice_claimed": True})
+        return AdmissionChange(claimed, write=True, success=True)
+    msg = "Feedback requires a typed notice kind."
+    raise TypeError(msg)
+
+
+def _republish(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if record.state not in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.WAITING}:
+        return AdmissionChange(record)
+    if (record.stage, record.attempt) != (request.stage, request.attempt):
+        return AdmissionChange(record)
+    if not max(record.not_before, record.retry_at) <= request.now < record.job.deadline:
+        return AdmissionChange(record)
+    retried = record.model_copy(update={"retry_at": request.now + RECOVERY_RETRY_SECONDS})
+    return AdmissionChange(retried, write=True, success=True)
+
+
+def _defer(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if record.state != TicketState.RUNNING or record.token != request.token:
+        return AdmissionChange(None)
+    if record.budget_reserved:
+        return AdmissionChange(None)
+    if not math.isfinite(request.not_before) or not record.job.accepted_at <= request.not_before < record.job.deadline:
+        msg = "Quota waiting requires a finite nonnegative schedule."
+        raise ValueError(msg)
+    waiting = record.model_copy(
+        update={
+            "state": TicketState.WAITING,
+            "budget_reserved": False,
+            "delayed_notice_requested": True,
+            "token": "",
+            "not_before": request.not_before,
+            "published": 0,
+            "publication_registered": 0,
+            "retry_at": 0,
+        }
+    )
+    return AdmissionChange(waiting, write=True, success=True)
+
+
+def _delivery(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if record.state != TicketState.RUNNING or record.token != request.token:
+        return AdmissionChange(None)
+    if request.now >= record.job.deadline:
+        return AdmissionChange(None)
+    return AdmissionChange(
+        record.model_copy(update={"state": TicketState.DELIVERY_UNCERTAIN}), write=True, success=True
+    )
+
+
+def _prepare(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if record.token != request.token or not request.token:
+        return AdmissionChange(None)
+    if record.state not in {
+        TicketState.RUNNING,
+        TicketState.CANCELLING,
+        TicketState.DELIVERY_UNCERTAIN,
+        TicketState.SETTLING,
+    }:
+        return AdmissionChange(None)
+    intent = request.settlement
+    if intent is None:
+        msg = "Stopped execution requires settlement facts."
+        raise TypeError(msg)
+    if record.settlement is not None and record.settlement != intent:
+        msg = "Settlement facts conflict with the current owner."
+        raise AdmissionConflictError(msg)
+    prepared = record.model_copy(update={"state": TicketState.SETTLING, "settlement": intent})
+    prepared = AdmissionRecord.model_validate(prepared.model_dump())
+    return AdmissionChange(prepared, write=True, success=True)
+
+
+def _validate_receipt_binding(intent: SettlementIntent, job: JobEnvelope) -> None:
+    event = intent.event
+    if event is None:
+        return
+    if (event.event_id, event.subject.kind, event.subject.telegram_id) != (
+        job.job_id,
+        job.charged_kind,
+        job.charged_telegram_id,
+    ):
+        msg = "Settlement receipt disagrees with the admission subject."
+        raise AdmissionConflictError(msg)
+    if not int(job.accepted_at) <= event.occurred_at <= int(job.deadline):
+        msg = "Settlement receipt exceeds the original execution window."
+        raise AdmissionConflictError(msg)
+
+
 def calculate_change(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
     """Apply stage, attempt, owner and terminal fences without doing I/O."""
     match request.operation:
@@ -441,5 +628,21 @@ def calculate_change(record: AdmissionRecord, request: AdmissionTransition) -> A
             return _register(record, request)
         case AdmissionOperation.CANCEL:
             return _cancel(record)
+        case _:
+            return _execution_change(record, request)
+
+
+def _execution_change(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    match request.operation:
+        case AdmissionOperation.RESERVED:
+            if record.state not in {TicketState.RUNNING, TicketState.CANCELLING} or record.token != request.token:
+                return AdmissionChange(None)
+            return AdmissionChange(record.model_copy(update={"budget_reserved": True}), write=True, success=True)
+        case AdmissionOperation.DEFER:
+            return _defer(record, request)
+        case AdmissionOperation.DELIVERY:
+            return _delivery(record, request)
+        case AdmissionOperation.PREPARE:
+            return _prepare(record, request)
         case _:
             return _acknowledge(record, request)

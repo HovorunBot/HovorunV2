@@ -6,12 +6,17 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from hovorunv2.application.budgets import UnitAmount
 from hovorunv2.application.feature_jobs import JobEnvelope, JobOutcome, SealedPayload
 from hovorunv2.application.features import TriggerKind
 from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.usage_ledger import UsageEvent
 
 DEFAULT_INGRESS_PENDING = 10
 RECOVERY_PAGE_LIMIT = 100
+RECOVERY_RETRY_SECONDS = 5
 
 
 class AdmissionUnavailableError(ValueError):
@@ -35,6 +40,16 @@ class TicketState(StrEnum):
     ENQUEUED = "enqueued"
     RUNNING = "running"
     CANCELLING = "cancelling"
+    WAITING = "waiting"
+    SETTLING = "settling"
+    DELIVERY_UNCERTAIN = "delivery_uncertain"
+    TERMINAL = "terminal"
+
+
+class NoticeKind(StrEnum):
+    """At most one delayed or terminal feedback dispatch claim per admission ticket."""
+
+    DELAYED = "delayed"
     TERMINAL = "terminal"
 
 
@@ -43,6 +58,36 @@ class JobStage(StrEnum):
 
     MEDIA = "media"
     BROWSER = "browser"
+
+
+class SettlementIntent(BaseModel):
+    """Immutable proof of stopped execution and replayable consumption, without message contents."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+
+    outcome: JobOutcome
+    actual: tuple[UnitAmount, ...] = ()
+    event: UsageEvent | None = None
+
+    @model_validator(mode="after")
+    def validate_consumption(self) -> SettlementIntent:
+        """Bind successful consumption to a durable receipt and exact runtime amounts."""
+        if len({item.unit for item in self.actual}) != len(self.actual):
+            msg = "Settlement units must be distinct."
+            raise ValueError(msg)
+        consumed = any(item.amount for item in self.actual)
+        if consumed != (self.event is not None):
+            msg = "Successful consumption requires a durable receipt."
+            raise ValueError(msg)
+        if self.event is not None and self.outcome != JobOutcome.COMPLETE:
+            msg = "Consumption requires confirmed delivery."
+            raise ValueError(msg)
+        if self.event is not None:
+            amounts = {item.unit: item.amount for item in self.actual}
+            if any(charge.amount != amounts.get(charge.unit) for charge in self.event.charges):
+                msg = "Receipt charges must match runtime consumption."
+                raise ValueError(msg)
+        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +101,11 @@ class AdmissionTicket:
     token: str | None = None
     attempt: int = 0
     outcome: JobOutcome | None = None
+    not_before: float = 0
+    settlement: SettlementIntent | None = None
+    budget_reserved: bool = False
+    delayed_notice_requested: bool = False
+    terminal_notice_requested: bool = False
 
 
 class AdmissionState(StrEnum):
@@ -131,6 +181,10 @@ class AdmissionPort(Protocol):
         """Release once; missing/stale ownership returns None, conflicts or unavailable state raise."""
         ...
 
+    async def claim_notice(self, job_id: str, kind: NoticeKind) -> bool:
+        """Claim feedback once before sending; never retain rendered message contents."""
+        ...
+
     async def recoverable(self, now: float, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
         """Return a bounded page, possibly empty; raise AdmissionUnavailableError on inaccessible or corrupt state."""
         ...
@@ -155,6 +209,34 @@ class SyncAdmissionPort(Protocol):
 
     def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
         """Settle once using the current owner's token and the shared terminal rules."""
+        ...
+
+    def claim_notice(self, job_id: str, kind: NoticeKind) -> bool:
+        """Claim feedback once without retrying uncertain external acceptance."""
+        ...
+
+    def mark_reserved(self, job_id: str, token: str) -> AdmissionTicket | None:
+        """Bind an acknowledged reservation to the owner before any stage handoff."""
+        ...
+
+    def defer(self, job_id: str, token: str, not_before: float) -> AdmissionTicket | None:
+        """Release a quota-denied execution claim while retaining admission and original timestamps."""
+        ...
+
+    def begin_delivery(self, job_id: str, token: str, now: float) -> AdmissionTicket | None:
+        """Fence cancellation and expiry before marking external delivery potentially accepted."""
+        ...
+
+    def prepare_settlement(self, job_id: str, token: str, intent: SettlementIntent) -> AdmissionTicket | None:
+        """Record verified stopped effects before touching runtime or durable consumption."""
+        ...
+
+    def allow_republication(self, ticket: AdmissionTicket, now: float) -> bool:
+        """Rate bound uncertain publication retries using the current stage and attempt."""
+        ...
+
+    def recovery_page(self, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
+        """Rotate bounded subject/provider lanes without reclaiming active execution."""
         ...
 
     def cancel(self, job_id: str) -> bool:

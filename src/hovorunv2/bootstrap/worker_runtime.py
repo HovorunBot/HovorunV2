@@ -30,7 +30,12 @@ from hovorunv2.infrastructure.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import WorkerPayloadClient
-from hovorunv2.infrastructure.feature_queue import set_feature_task_runner
+from hovorunv2.infrastructure.feature_queue import (
+    BROKER_SOCKET_SECONDS,
+    BROKER_VISIBILITY_SECONDS,
+    set_feature_task_runner,
+    set_recovery_runner,
+)
 from hovorunv2.infrastructure.native_http import NativeHTTPClient
 from hovorunv2.interface.telegram.sync_delivery import NativeTelegramAPI, NativeTelegramDelivery
 
@@ -125,6 +130,17 @@ class WorkerQueuePublisher:
         self._media_queue = namespace.value + "media"
         self._browser_queue = namespace.value + "browser"
         self._app = Celery("worker_publisher", broker=broker_url)
+        self._app.conf.update(
+            broker_connection_timeout=BROKER_SOCKET_SECONDS,
+            broker_transport_options={
+                "global_keyprefix": namespace.value,
+                "visibility_timeout": BROKER_VISIBILITY_SECONDS,
+                "socket_connect_timeout": BROKER_SOCKET_SECONDS,
+                "socket_timeout": BROKER_SOCKET_SECONDS,
+                "retry_policy": {"max_retries": 0},
+            },
+            task_publish_retry=False,
+        )
 
     def publish_stage(self, envelope: JobEnvelope, stage: JobStage, not_before: float = 0) -> bool:
         """Send a task to the appropriate Celery queue for the target stage."""
@@ -301,6 +317,7 @@ def init_worker_child(
     context.open()
     _current_worker_context = context
     set_feature_task_runner(_execute_task_in_child)
+    set_recovery_runner(context.runner.recover)
     return context
 
 
@@ -315,6 +332,7 @@ def shutdown_worker_child() -> None:
         _current_worker_context.close()
         _current_worker_context = None
     set_feature_task_runner(None)
+    set_recovery_runner(None)
 
 
 def get_worker_runner() -> FeatureJobRunner:
@@ -335,6 +353,7 @@ def set_worker_runner(runner: FeatureJobRunner | None) -> None:
             _current_worker_context.close()
         _current_worker_context = WorkerChildContext(runner=runner)
         set_feature_task_runner(_execute_task_in_child)
+        set_recovery_runner(runner.recover)
 
 
 @contextmanager
@@ -357,6 +376,7 @@ def worker_child_context(
         context.open()
     _current_worker_context = context
     set_feature_task_runner(_execute_task_in_child)
+    set_recovery_runner(context.runner.recover)
     try:
         yield context.runner
     finally:
@@ -364,8 +384,10 @@ def worker_child_context(
         _current_worker_context = old_context
         if old_context is not None:
             set_feature_task_runner(_execute_task_in_child)
+            set_recovery_runner(old_context.runner.recover)
         else:
             set_feature_task_runner(None)
+            set_recovery_runner(None)
 
 
 @worker_process_init.connect

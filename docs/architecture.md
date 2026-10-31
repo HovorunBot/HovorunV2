@@ -170,3 +170,43 @@ budget changes use bounded WATCH/MULTI/EXEC transactions. Both runtimes share ty
 calculations; each adapter owns its concrete asynchronous or synchronous I/O. Missing or malformed active resource
 metadata fails closed. Payload SET NX writes and equality checks never extend the original retention on replay. No embedded
 Valkey Lua, second runtime receipt ledger or PostgreSQL executable queue is required.
+
+### Native waiting and terminal settlement
+
+`WorkerLifecycleService` owns native quota waiting recovery and terminal reconciliation. A quota-denied worker records
+`WAITING` with an eligibility time, releases its execution claim, and returns immediately. Admission counts, ciphertext,
+original acceptance, and deadline remain unchanged. Valkey sorted sets rotate charged-subject/provider lanes and tickets
+within each lane. New lanes and tickets join the rotation's tail; a flooded user or group cannot continually jump ahead.
+Each sweep examines at most 100 lanes. Empty lanes disappear with the final ticket's terminal release. Recovery publication
+uses a stage/attempt compare-and-set and a five-second retry guard. Duplicate or uncertain broker publication remains safe
+because consumers must acquire the exclusive admission claim.
+
+The admission ticket records acknowledged budget ownership across browser handoff. Queued cancellation or expiry of a
+continuation first records zero-consumption settlement; it cannot discard a held execution reservation. Active cancellation
+retains its owner until the worker records stopped effects. Immediately before Telegram delivery, the owner atomically
+checks cancellation and deadline and records `DELIVERY_UNCERTAIN`. Missing acknowledgements, partial delivery, unexpected
+execution exceptions, and child loss cannot cause an automatic refund or another send. Native worker logs use fixed safe
+messages without exception tracebacks or private provider inputs.
+
+After verified stopped effects, the owner records an immutable `SettlementIntent` on the same ticket. It contains only the
+safe outcome, measured units, and an optional technical usage event. Recovery replays the PostgreSQL receipt first, settles
+Valkey consumption second, then releases admission counts/bytes and deletes the encrypted payload. Either backend commit
+may be repeated after a crash. Event identity, charged subject, timestamp, amounts, and ownership are validated; the
+existing PostgreSQL receipt fingerprint prevents duplicate debits. Missing runtime ownership fails closed. A retained
+terminal ticket is replayed without renewing receipt or deduplication retention.
+
+Delayed and terminal feedback use ticket-bound intent flags and atomic `claim_notice` dispatch claims. Each kind can be
+claimed once across bot and workers; delayed feedback cannot be claimed after work leaves waiting. Dispatch claims precede
+external sends, so uncertain acceptance cannot request duplicate feedback. No rendered notice body is stored. Handler
+integration retains its separate cutover boundary.
+
+The synchronous Celery task `recover_feature_jobs` runs one bounded sweep using child-owned resources. Its Beat scheduling
+and production operations-service wiring belong to the maintenance cutover. It does not start a scheduler in the bot.
+Before deploying this ticket format, hold admission and drain tickets and reservations from older workers. Do not mix
+worker versions or delete runtime keys to manufacture a drain. No PostgreSQL migration is required.
+
+A crash between external delivery and recording settlement remains delivery-uncertain. A lost child without stopped-effect
+proof also remains held, even after its deadline. Operators must verify execution/browser descendants and delivery facts
+before resolving these holds; Celery results and elapsed time are insufficient. Recovery must run within existing runtime
+receipt/resource retention. If required resources have disappeared, automatic reconciliation retains admission capacity
+rather than assuming unused consumption or resetting budget windows.

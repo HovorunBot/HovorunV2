@@ -31,14 +31,31 @@ from hovorunv2.infrastructure.config import Settings
 BROKER_VISIBILITY_SECONDS = 2 * RUNTIME_RETENTION_SECONDS
 BROKER_SOCKET_SECONDS = 2
 
+RECOVERY_TASK_FUNCTION = "recover_feature_jobs"
+
 TaskRunner = Callable[[dict[str, object], JobStage], str]
 _task_runner: TaskRunner | None = None
+_recovery_runner: Callable[[], int] | None = None
 
 
 def set_feature_task_runner(runner: TaskRunner | None) -> None:
     """Attach the active runner callback for native worker processes."""
     global _task_runner  # noqa: PLW0603
     _task_runner = runner
+
+
+def set_recovery_runner(runner: Callable[[], int] | None) -> None:
+    """Attach recovery only after child-local resources are initialized."""
+    global _recovery_runner  # noqa: PLW0603
+    _recovery_runner = runner
+
+
+def recover_feature_jobs() -> int:
+    """Run one bounded native lifecycle sweep without private task inputs or results."""
+    if _recovery_runner is None:
+        msg = "Worker lifecycle recovery is not initialized."
+        raise ValueError(msg)
+    return _recovery_runner()
 
 
 def get_feature_task_runner() -> TaskRunner:
@@ -51,6 +68,8 @@ def get_feature_task_runner() -> TaskRunner:
 
 def register_feature_tasks(app: Celery) -> None:
     """Register synchronous worker tasks on a Celery application instance."""
+    if RECOVERY_TASK_FUNCTION not in app.tasks:
+        app.task(name=RECOVERY_TASK_FUNCTION, ignore_result=True)(recover_feature_jobs)
     if FEATURE_JOB_FUNCTION not in app.tasks:
 
         @app.task(name=FEATURE_JOB_FUNCTION, bind=True)
@@ -186,6 +205,9 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
             TicketState.RUNNING: JobStatus.RUNNING,
             TicketState.CANCELLING: JobStatus.CANCELLING,
             TicketState.TERMINAL: JobStatus.TERMINAL,
+            TicketState.WAITING: JobStatus.PENDING,
+            TicketState.SETTLING: JobStatus.RUNNING,
+            TicketState.DELIVERY_UNCERTAIN: JobStatus.RUNNING,
         }
         return QueuedFeature(
             ticket.envelope,
