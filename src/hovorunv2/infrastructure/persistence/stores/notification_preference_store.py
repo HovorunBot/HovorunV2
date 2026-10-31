@@ -12,6 +12,7 @@ from hovorunv2.application.operations.notification_preferences import (
     NotificationPreferenceStore,
 )
 from hovorunv2.domain.audit import ActorContext
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.notification_preference_repository import (
     NotificationPreferenceRepository,
 )
@@ -45,6 +46,13 @@ class SQLAlchemyNotificationPreferenceStore(NotificationPreferenceStore):
         enabled: bool,
     ) -> tuple[bool, dict[str, object]]:
         """Apply one switch through the session-bound repository."""
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                user_ids=(target.entity_id or 0,) if target.kind == "user" else (),
+                group_ids=(target.entity_id or 0,) if target.kind == "group" else (),
+            ),
+        )
         return await NotificationPreferenceRepository(session).set(target, category, enabled=enabled)
 
     async def set(

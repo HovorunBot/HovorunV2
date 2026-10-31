@@ -13,9 +13,11 @@ from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import ChatStatus, Platform, Role
 from hovorunv2.domain.group_beta import GroupBetaEnablerDB, GroupBetaFeatureDB
 from hovorunv2.domain.group_grant import GroupApprovalDB
+from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.notification import NotificationPreferenceDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 
 
 class SQLAlchemyRecoveryStore(RecoveryStore):
@@ -61,7 +63,12 @@ class SQLAlchemyRecoveryStore(RecoveryStore):
         """Count retained selections, membership state, preferences and approvals."""
         async with self._session_maker() as session:
             return {
-                "commands": await self._count(session, chat_commands, chat_commands.c.chat_id == chat_id),
+                "commands": await self._count(
+                    session,
+                    chat_commands,
+                    chat_commands.c.chat_id == chat_id,
+                    chat_commands.c.deleted_at.is_(None),
+                ),
                 "beta_selections": await self._count(
                     session,
                     GroupBetaFeatureDB,
@@ -89,12 +96,12 @@ class SQLAlchemyRecoveryStore(RecoveryStore):
             }
 
     async def group_commands(self, chat_id: int) -> tuple[str, ...]:
-        """List command names including soft-deleted association history."""
+        """List active command associations for the group."""
         async with self._session_maker() as session:
             rows = await session.scalars(
                 select(CommandDB.name)
                 .join(chat_commands, CommandDB.id == chat_commands.c.command_id)
-                .where(chat_commands.c.chat_id == chat_id)
+                .where(chat_commands.c.chat_id == chat_id, chat_commands.c.deleted_at.is_(None))
                 .order_by(CommandDB.name)
             )
             return tuple(rows.all())
@@ -109,6 +116,7 @@ class SQLAlchemyRecoveryStore(RecoveryStore):
         """Reactivate the tombstone as a new generation, preserving prior role/trust/settings."""
 
         async def operation(session: AsyncSession) -> tuple[int, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(users=(telegram_id,)))
             row = await self._tombstone_user(session, telegram_id)
             if row is None or row.generation != revision:
                 msg = "Deleted user revision changed; preview again."
@@ -136,6 +144,7 @@ class SQLAlchemyRecoveryStore(RecoveryStore):
         """Create a fresh USER generation while retaining the tombstone and prior history."""
 
         async def operation(session: AsyncSession) -> tuple[int, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(users=(telegram_id,)))
             active = await session.scalar(
                 select(UserDB.id).where(UserDB.telegram_id == telegram_id, UserDB.deleted_at.is_(None))
             )
@@ -171,6 +180,7 @@ class SQLAlchemyRecoveryStore(RecoveryStore):
         """Reactivate the group tombstone, preserving durable approval and retained settings."""
 
         async def operation(session: AsyncSession) -> tuple[int, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(chats=(telegram_id,)))
             row = await self._tombstone_group(session, telegram_id)
             if row is None or row.generation != revision:
                 msg = "Deleted group revision changed; preview again."
@@ -198,6 +208,7 @@ class SQLAlchemyRecoveryStore(RecoveryStore):
         """Create an unapproved fresh group generation without prior settings or selections."""
 
         async def operation(session: AsyncSession) -> tuple[int, dict[str, object]]:
+            await lock_async_mutation(session, MutationLocks(chats=(telegram_id,)))
             active = await session.scalar(
                 select(ChatDB.id).where(ChatDB.chat_id == telegram_id, ChatDB.deleted_at.is_(None))
             )
@@ -236,8 +247,15 @@ class SQLAlchemyRecoveryStore(RecoveryStore):
         )
 
     async def _tombstone_group(self, session: AsyncSession, telegram_id: int) -> ChatDB | None:
-        return await session.scalar(
+        row = await session.scalar(
             select(ChatDB)
             .where(ChatDB.chat_id == telegram_id, ChatDB.deleted_at.is_not(None))
             .order_by(ChatDB.id.desc())
         )
+        if row is not None:
+            return row
+        route = await session.scalar(select(GroupRouteDB).where(GroupRouteDB.telegram_id == telegram_id))
+        if route is None:
+            return None
+        routed = await session.get(ChatDB, route.group_id)
+        return routed if routed is not None and routed.deleted_at is not None else None

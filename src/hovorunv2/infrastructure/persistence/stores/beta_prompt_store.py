@@ -17,6 +17,7 @@ from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.domain.group_beta import GroupBetaEnablerDB, GroupBetaFeatureDB
 from hovorunv2.domain.notification_event import NotificationEventDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.policy_queries import exact_target
 
 MAX_BETA_RECIPIENTS = 1000
@@ -78,6 +79,13 @@ class SQLAlchemyBetaPromptStore(BetaPromptStore):
         feature: str,
         decision: BetaDecision,
     ) -> tuple[bool, dict[str, object]]:
+        await lock_async_mutation(
+            session,
+            MutationLocks(
+                user_ids=(target.entity_id or 0,) if target.kind == "user" else (),
+                group_ids=(target.entity_id or 0,) if target.kind == "group" else (),
+            ),
+        )
         statement = exact_target(target)
         if statement is None or await session.scalar(statement) is None:
             msg = "Beta decision requires the exact active target generation."

@@ -51,6 +51,7 @@ encryption configuration before starting against the new database.
 
 ### Fix
 
+- **persistence**: enforce advisory locks retry loops and schema parity
 - **queue**: retain cancelling worker budgets and enforce feedback gates
 - **operations**: harden notification delivery and escape html payloads
 - **identity**: correct chat type inference recovery order and route lookups

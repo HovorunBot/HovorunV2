@@ -16,6 +16,7 @@ from hovorunv2.application.operations.notification_ledger import (
 )
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.notification_event import NotificationEventDB, NotificationReceiptDB
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.notification_ledger_repository import (
     NotificationLedgerRepository,
 )
@@ -30,6 +31,7 @@ class SQLAlchemyNotificationLedgerStore(NotificationEventStore):
 
     async def _ensure(self, session: AsyncSession, event: NotificationEvent) -> tuple[bool, dict[str, object]]:
         """Create the event once through the session-bound repository."""
+        await lock_async_mutation(session, MutationLocks(keys=(f"notification:{event.event_key}",)))
         return await NotificationLedgerRepository(session).ensure_event(event)
 
     async def ensure_event(self, event: NotificationEvent, *, actor: ActorContext) -> bool:
@@ -77,6 +79,7 @@ class SQLAlchemyNotificationLedgerStore(NotificationEventStore):
         telegram_message_id: int | None,
     ) -> tuple[bool, dict[str, object]]:
         """Upsert one receipt through the session-bound repository."""
+        await lock_async_mutation(session, MutationLocks(keys=(f"notification:{event_key}",)))
         return await NotificationLedgerRepository(session).record(
             event_key,
             target,

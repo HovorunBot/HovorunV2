@@ -10,11 +10,12 @@ from hovorunv2.application.access.permissions import PermissionFacts, Permission
 from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.ports import CommandStore
-from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB, chat_commands
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import ActorOrigin, ChatStatus, Platform, TargetKind
+from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.chat_repository import SQLAlchemyChatRepository
 from hovorunv2.infrastructure.persistence.repositories.command_repository import SQLAlchemyCommandRepository
@@ -166,7 +167,13 @@ class SQLAlchemyCommandStore(CommandStore):
             return False, False, False
 
         chat = await chat_repo.get_by_id(chat_id, platform)
-        if not chat:
+        if chat is None:
+            route = await session.scalar(select(GroupRouteDB).where(GroupRouteDB.telegram_id == chat_id))
+            if route is not None:
+                candidate = await session.get(ChatDB, route.group_id)
+                if candidate is not None and candidate.deleted_at is None:
+                    chat = candidate
+        if chat is None:
             if await chat_repo.get_deleted_by_chat_id(chat_id, platform) is not None:
                 return False, False, False
             chat = ChatDB(
@@ -176,6 +183,19 @@ class SQLAlchemyCommandStore(CommandStore):
                 chat_type="private" if chat_id > 0 else "group",
             )
             session.add(chat)
+            await session.flush()
+            session.add(
+                AuditEventDB(
+                    actor_origin=actor.origin,
+                    actor_id=actor.actor_id,
+                    target_type="chat",
+                    target_id=str(chat_id),
+                    action="create",
+                    changed_fields={"telegram_id": chat_id, "platform": platform, "generation": chat.generation},
+                    reason=actor.reason,
+                    correlation_id=actor.correlation_id,
+                )
+            )
 
         legacy, first_selection = self._record_explicit_selection(chat)
         existing = await session.execute(

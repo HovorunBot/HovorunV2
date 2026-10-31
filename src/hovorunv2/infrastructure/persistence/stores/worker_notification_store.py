@@ -14,7 +14,7 @@ from hovorunv2.application.operations.notification_ledger import (
     NotificationReceipt,
 )
 from hovorunv2.application.operations.notification_preferences import NotificationCategory
-from hovorunv2.domain.audit import ActorContext, AuditEventDB
+from hovorunv2.domain.audit import ActorContext, AuditEventDB, sanitize_audit_changes
 from hovorunv2.domain.audit_schema import validate_audit_changes
 from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB
@@ -22,6 +22,11 @@ from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.domain.notification import NotificationPreferenceDB
 from hovorunv2.domain.notification_event import NotificationEventDB, NotificationReceiptDB
 from hovorunv2.domain.user import UserDB
+from hovorunv2.infrastructure.persistence.locking import (
+    MutationLocks,
+    lock_mutation,
+    serialization_retry,
+)
 
 
 class WorkerNotificationStore:
@@ -59,10 +64,12 @@ class WorkerNotificationStore:
             ).all()
             return tuple(self._receipt(event, receipt, user, chat) for receipt, event, user, chat in rows)
 
+    @serialization_retry
     def ensure_event(self, event: NotificationEvent, *, actor: ActorContext) -> bool:
         """Create the immutable event once and append its audit event in one transaction."""
         self._require_owner()
         with self._sessions.begin() as session:
+            lock_mutation(session, MutationLocks(keys=(f"notification:{event.event_key}",)))
             existing = session.scalar(
                 select(NotificationEventDB).where(NotificationEventDB.event_key == event.event_key)
             )
@@ -136,6 +143,7 @@ class WorkerNotificationStore:
                 return self._user_reachable(session, target)
             return self._group_reachable(session, target)
 
+    @serialization_retry
     def record(
         self,
         event_key: str,
@@ -164,6 +172,7 @@ class WorkerNotificationStore:
         """
         self._require_owner()
         with self._sessions.begin() as session:
+            lock_mutation(session, MutationLocks(keys=(f"notification:{event_key}",)))
             event = session.scalar(select(NotificationEventDB).where(NotificationEventDB.event_key == event_key))
             if event is None:
                 msg = "Notification receipt requires an existing immutable event."
@@ -199,6 +208,7 @@ class WorkerNotificationStore:
                 "attempts": attempts,
                 "telegram_message_id": telegram_message_id,
             }
+            changes = sanitize_audit_changes(changes) or {}
             validate_audit_changes("notification_receipt", "set", changes)
             session.add(
                 AuditEventDB(

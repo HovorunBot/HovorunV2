@@ -1,9 +1,11 @@
 """Deterministic subject locks shared by async stores and native worker transactions."""
 
 import hashlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from functools import partial
+from functools import partial, wraps
 
+import psycopg
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -12,6 +14,46 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.group_grant import GroupAccessRequestDB
 from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.user import UserDB
+
+MAX_SERIALIZATION_RETRIES = 3
+RETRYABLE_SQLSTATES = frozenset({"40001", "40P01"})
+
+
+def is_retryable_pg_error(error: BaseException) -> bool:
+    """Return whether PostgreSQL reported serialization failure or deadlock."""
+    return getattr(error, "sqlstate", None) in RETRYABLE_SQLSTATES
+
+
+def serialization_retry[**P, T](func: Callable[P, T]) -> Callable[P, T]:
+    """Retry a synchronous transaction after a retryable PostgreSQL conflict."""
+
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        for attempt in range(MAX_SERIALIZATION_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except psycopg.Error as error:
+                if attempt + 1 == MAX_SERIALIZATION_RETRIES or not is_retryable_pg_error(error):
+                    raise
+        raise AssertionError
+
+    return wrapper
+
+
+def async_serialization_retry[**P, T](func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+    """Retry an asynchronous transaction after a retryable PostgreSQL conflict."""
+
+    @wraps(func)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        for attempt in range(MAX_SERIALIZATION_RETRIES):
+            try:
+                return await func(*args, **kwargs)
+            except psycopg.Error as error:
+                if attempt + 1 == MAX_SERIALIZATION_RETRIES or not is_retryable_pg_error(error):
+                    raise
+        raise AssertionError
+
+    return wrapper
 
 
 @dataclass(frozen=True, slots=True)

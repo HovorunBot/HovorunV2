@@ -14,6 +14,7 @@ from hovorunv2.application.features.emergency import (
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.persistence.admin_authorization import require_private_administrator
+from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.feature_emergency_repository import (
     FeatureEmergencyRepository,
 )
@@ -71,6 +72,7 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
         transport_kind: str | None,
     ) -> tuple[FeatureEmergencyState, dict[str, object]]:
         """Authorize and persist one transition inside the audited transaction."""
+        await lock_async_mutation(session, MutationLocks(keys=(f"feature:{feature_key}",)))
         await require_private_administrator(session, actor, transport_kind, self._policy, message=MESSAGE)
         return await FeatureEmergencyRepository(session).set_state(
             feature_key, disabled=disabled, reason=reason, public_reason=public_reason

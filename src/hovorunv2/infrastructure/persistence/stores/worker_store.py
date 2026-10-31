@@ -28,7 +28,7 @@ from hovorunv2.application.usage.usage_ledger import (
     validate_usage_batch,
 )
 from hovorunv2.application.usage.usage_resolution import resolve_usage
-from hovorunv2.domain.audit import ActorContext, AuditEventDB
+from hovorunv2.domain.audit import ActorContext, AuditEventDB, sanitize_audit_changes
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB
@@ -40,6 +40,11 @@ from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.audited_transaction import (
     MAX_TRANSACTION_ATTEMPTS,
     RETRYABLE_TRANSACTION_STATES,
+)
+from hovorunv2.infrastructure.persistence.locking import (
+    MutationLocks,
+    lock_mutation,
+    serialization_retry,
 )
 from hovorunv2.infrastructure.persistence.repositories.membership_repository import (
     evidence_time,
@@ -299,7 +304,7 @@ class WorkerUsageLedgerStore:
         self, session: Session, events: tuple[UsageEvent, ...], actor: ActorContext, result: AppliedUsage
     ) -> None:
         """Validate and append one usage batch audit event."""
-        changes = usage_audit_changes(result)
+        changes = sanitize_audit_changes(usage_audit_changes(result)) or {}
         validate_audit_changes("usage_batch", "apply", changes)
         session.add(
             AuditEventDB(
@@ -438,6 +443,7 @@ class WorkerOperationsStore:
         with self._sessions() as session:
             return list(session.scalars(query).all())
 
+    @serialization_retry
     def save_bot(
         self,
         group_id: int,
@@ -461,6 +467,7 @@ class WorkerOperationsStore:
         member = evidence.membership
         validate_evidence_time(member.verified_at, member.expires_at)
         with self._sessions.begin() as session:
+            lock_mutation(session, MutationLocks(group_ids=(group_id,)))
             group = session.get(ChatDB, group_id)
             if group is None or group.deleted_at is not None or group.chat_type not in {"group", "supergroup"}:
                 return False
@@ -501,6 +508,7 @@ class WorkerOperationsStore:
             group.bot_capabilities_verified_at = member.verified_at
         state.policy_revision += 1
 
+    @serialization_retry
     def save_admins(
         self,
         group_id: int,
@@ -523,6 +531,7 @@ class WorkerOperationsStore:
         self._require_owner()
         validate_evidence_time(evidence.verified_at, evidence.expires_at)
         with self._sessions.begin() as session:
+            lock_mutation(session, MutationLocks(group_ids=(group_id,)))
             group = session.get(ChatDB, group_id)
             if group is None or group.deleted_at is not None or group.chat_type not in {"group", "supergroup"}:
                 return False
@@ -592,6 +601,7 @@ class WorkerOperationsStore:
                     row.admin_candidate = False
         return current_ids
 
+    @serialization_retry
     def save_member(
         self,
         group_id: int,
@@ -617,6 +627,7 @@ class WorkerOperationsStore:
         self._require_owner()
         validate_evidence_time(evidence.verified_at, evidence.expires_at)
         with self._sessions.begin() as session:
+            lock_mutation(session, MutationLocks(group_ids=(group_id,)))
             group = session.get(ChatDB, group_id)
             if group is None or group.deleted_at is not None or group.chat_type not in {"group", "supergroup"}:
                 return False
@@ -754,7 +765,8 @@ class WorkerOperationsStore:
         action: str,
         changes: dict[str, object],
     ) -> None:
-        """Validate and append one audit event to the session."""
+        """Validate and append one sanitized audit event to the session."""
+        changes = sanitize_audit_changes(changes) or {}
         validate_audit_changes(target_type, action, changes)
         session.add(
             AuditEventDB(
