@@ -19,6 +19,7 @@ from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.group_management_service import GROUPS_PER_PAGE, GroupManagementService
 from hovorunv2.application.identity.identity import GroupIdentityStore
 from hovorunv2.application.identity.membership import (
@@ -28,12 +29,11 @@ from hovorunv2.application.identity.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.identity.membership_store import MembershipStore
+from hovorunv2.application.messaging.message_service import MessageService
+from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.ports import CachePort, ChatStore, UserStore
-from hovorunv2.application.services.cleanup_service import CleanupService
-from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.application.services.language_service import LanguageService
-from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.settings.settings_session_service import SettingsSessionService
+from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.chat import ChatDB

@@ -12,20 +12,20 @@ import redis
 from celery import Celery
 from celery.signals import worker_process_init, worker_process_shutdown
 
-from hovorunv2.application.admission import JobStage
 from hovorunv2.application.browser import BrowserTab
-from hovorunv2.application.budgets import Clock, RuntimeNamespace, WallClock
-from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.feature_jobs import FEATURE_JOB_FUNCTION, JobEnvelope
-from hovorunv2.application.features import FEATURE_REGISTRY
+from hovorunv2.application.features.registry import FEATURE_REGISTRY
+from hovorunv2.application.jobs.admission import JobStage
+from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
+from hovorunv2.application.jobs.feature_jobs import FEATURE_JOB_FUNCTION, JobEnvelope
+from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
 from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.errors import MediaFailure
 from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
-from hovorunv2.application.services.native_translation import NativeTranslationService
-from hovorunv2.application.services.operations_runner import WorkerOperationsRunner
-from hovorunv2.application.usage import UsageSafetyCaps
-from hovorunv2.application.worker_io import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
+from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.application.operations.operations_runner import WorkerOperationsRunner
+from hovorunv2.application.translation.native_translation import NativeTranslationService
+from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace, WallClock
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.infrastructure.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.budgets import WorkerBudgetClient

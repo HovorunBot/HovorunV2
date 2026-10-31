@@ -8,10 +8,10 @@ from typing import Any
 import aiohttp
 from celery import Celery
 
-from hovorunv2.application.admission import AdmissionLimits
-from hovorunv2.application.feature_jobs import JobEnvelope, JobOutcome, JobTarget
-from hovorunv2.application.features import TriggerKind
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.features.registry import TriggerKind
+from hovorunv2.application.jobs.admission import AdmissionLimits
+from hovorunv2.application.jobs.feature_jobs import JobEnvelope, JobOutcome, JobTarget
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.cache import CacheService

@@ -7,7 +7,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.application.access.permissions import PermissionTarget
-from hovorunv2.application.group_beta import GroupBetaFacts
+from hovorunv2.application.features.group_beta import GroupBetaFacts
 from hovorunv2.application.identity.membership import MembershipStatus
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB

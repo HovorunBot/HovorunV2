@@ -7,8 +7,8 @@ from typing import Self
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
 
-from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureRegistry
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.infrastructure.authorization.casbin_policy import load_packaged_policy
 from hovorunv2.infrastructure.config import DatabaseSettings
 from hovorunv2.infrastructure.persistence.worker_store import (

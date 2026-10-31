@@ -4,12 +4,12 @@ from datetime import UTC, datetime
 
 from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permissions import AccessDecision
+from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.group_policy import GroupAccessFacts, group_access
 from hovorunv2.application.identity.membership import MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore
-from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 

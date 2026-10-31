@@ -2,9 +2,9 @@
 
 import pytest
 
-from hovorunv2.application.clients.config import BrowserFallbackConfig
-from hovorunv2.application.clients.parsing import MediaParser
-from hovorunv2.application.text import format_number
+from hovorunv2.application.media.provider_config import BrowserFallbackConfig
+from hovorunv2.application.media.provider_parsing import MediaParser
+from hovorunv2.utils.formatting import format_number
 
 CONFIG = BrowserFallbackConfig("video", default_title="Synthetic post")
 SOURCE = "https://synthetic.invalid/post"

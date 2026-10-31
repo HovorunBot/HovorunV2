@@ -6,22 +6,22 @@ from datetime import UTC, datetime, timedelta
 from dishka import AsyncContainer
 
 from hovorunv2.application.access.permissions import PermissionTarget
-from hovorunv2.application.beta import BetaEntitlementStore
-from hovorunv2.application.features import (
+from hovorunv2.application.features.beta import BetaEntitlementStore
+from hovorunv2.application.features.beta_service import BetaEligibilityService
+from hovorunv2.application.features.group_beta import GroupBetaStore
+from hovorunv2.application.features.group_beta_service import GroupBetaService
+from hovorunv2.application.features.registry import (
     FEATURE_REGISTRY,
     FeatureChannel,
     FeatureDefinition,
     FeatureRegistry,
     FeatureScope,
 )
-from hovorunv2.application.group_beta import GroupBetaStore
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.identity.membership import AdministratorEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.beta_service import BetaEligibilityService
-from hovorunv2.application.services.group_beta_service import GroupBetaService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.beta import ALL_BETA
 from hovorunv2.domain.enums import ChatStatus

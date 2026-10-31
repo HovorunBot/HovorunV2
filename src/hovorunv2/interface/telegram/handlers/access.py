@@ -13,7 +13,7 @@ from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.groups.activation import ActivationAction, ActivationOutcome, ActivationResult
 from hovorunv2.application.groups.activation_service import GroupActivationService
-from hovorunv2.application.services.owner_notifier import OwnerNotifier
+from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 

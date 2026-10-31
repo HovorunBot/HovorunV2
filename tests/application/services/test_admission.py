@@ -8,14 +8,14 @@ import pytest
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import AdmissionLimits, AdmissionState, TicketState, incoming_action_key
-from hovorunv2.application.feature_jobs import JobOutcome, JobStatus, JobTarget, PayloadState
-from hovorunv2.application.features import TriggerKind
+from hovorunv2.application.features.feature_access_service import FeatureAccessService
+from hovorunv2.application.features.registry import TriggerKind
+from hovorunv2.application.jobs.admission import AdmissionLimits, AdmissionState, TicketState, incoming_action_key
+from hovorunv2.application.jobs.admission_service import AdmissionService
+from hovorunv2.application.jobs.feature_jobs import JobOutcome, JobStatus, JobTarget, PayloadState
 from hovorunv2.application.ports import ChatStore, CommandStore, UserStore
-from hovorunv2.application.services.admission_service import AdmissionService
-from hovorunv2.application.services.feature_access_service import FeatureAccessService
-from hovorunv2.application.services.usage_policy_service import UsagePolicyService
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.usage.policies import UsageSafetyCaps
+from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore

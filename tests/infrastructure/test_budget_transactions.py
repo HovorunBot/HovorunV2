@@ -8,10 +8,10 @@ from dataclasses import replace
 import pytest
 from dishka import AsyncContainer
 
-from hovorunv2.application.budgets import BudgetRequest, ReservationState
-from hovorunv2.application.features import TriggerKind
-from hovorunv2.application.services.usage_policy_service import UsagePolicyService
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.features.registry import TriggerKind
+from hovorunv2.application.usage.budgets import BudgetRequest, ReservationState
+from hovorunv2.application.usage.policies import UsageSafetyCaps
+from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.infrastructure.budget_state import MAX_EXACT_INTEGER, build_record
 from hovorunv2.infrastructure.budgets import ValkeyBudgetStore

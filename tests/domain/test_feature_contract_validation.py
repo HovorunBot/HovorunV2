@@ -7,8 +7,8 @@ import pytest
 from pydantic import ValidationError
 
 from hovorunv2.application.access.administration import AdminAction, AdminRequest
-from hovorunv2.application.feature_jobs import MAX_JOB_LIFETIME_SECONDS, JobEnvelope, JobTarget
-from hovorunv2.application.features import FeatureChannel, FeatureDefinition, TriggerKind
+from hovorunv2.application.features.registry import FeatureChannel, FeatureDefinition, TriggerKind
+from hovorunv2.application.jobs.feature_jobs import MAX_JOB_LIFETIME_SECONDS, JobEnvelope, JobTarget
 from hovorunv2.domain.enums import TargetKind
 
 GROUP_TARGET = JobTarget(kind=TargetKind.GROUP, entity_id=1, generation=1, telegram_id=-101)

@@ -5,8 +5,13 @@ from dataclasses import replace
 
 import pytest
 
-from hovorunv2.application.budgets import RUNTIME_RETENTION_SECONDS, BudgetRequest, ReservationState, UnitAmount
-from hovorunv2.application.usage import ResolvedUsage, UsagePolicy, UsageSafetyCaps, UsageSubject, UsageUnit
+from hovorunv2.application.usage.budgets import (
+    RUNTIME_RETENTION_SECONDS,
+    BudgetRequest,
+    ReservationState,
+    UnitAmount,
+)
+from hovorunv2.application.usage.policies import ResolvedUsage, UsagePolicy, UsageSafetyCaps, UsageSubject, UsageUnit
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.budget_state import (
     MAX_EXACT_INTEGER,

@@ -16,8 +16,8 @@ from threading import Event
 import pytest
 
 from hovorunv2.application.browser import BrowserTab
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.browser_discovery import find_browser_executable
 from hovorunv2.infrastructure.browser_process import OwnedChromium

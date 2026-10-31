@@ -2,7 +2,7 @@
 
 from dishka import AsyncContainer
 
-from hovorunv2.application.services.language_service import LanguageService
+from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.infrastructure.config import Settings
 
 

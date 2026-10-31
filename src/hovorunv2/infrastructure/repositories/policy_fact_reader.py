@@ -12,13 +12,13 @@ from hovorunv2.application.access.permissions import (
     PermissionRequest,
     PermissionTarget,
 )
-from hovorunv2.application.beta import BetaEligibilityFacts
-from hovorunv2.application.feature_policy import FeatureFacts
-from hovorunv2.application.features import FeatureChannel, FeatureDefinition, FeatureScope, TriggerKind
+from hovorunv2.application.features.beta import BetaEligibilityFacts
+from hovorunv2.application.features.feature_policy import FeatureFacts
+from hovorunv2.application.features.registry import FeatureChannel, FeatureDefinition, FeatureScope, TriggerKind
 from hovorunv2.application.groups.group_policy import GroupAccessFacts, group_access
 from hovorunv2.application.identity.membership import MembershipStatus
 from hovorunv2.application.ports import AuthorizationPolicy
-from hovorunv2.application.usage import UsagePolicy, UsageSubject, UsageUnit, UsageWindow
+from hovorunv2.application.usage.policies import UsagePolicy, UsageSubject, UsageUnit, UsageWindow
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB

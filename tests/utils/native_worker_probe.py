@@ -7,10 +7,10 @@ import sys
 import traceback
 from os import _exit, fork, getpid, waitpid
 
-from hovorunv2.application.admission import JobStage
-from hovorunv2.application.budgets import RuntimeNamespace
-from hovorunv2.application.feature_jobs import JobOutcome
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.jobs.admission import JobStage
+from hovorunv2.application.jobs.feature_jobs import JobOutcome
+from hovorunv2.application.usage.budgets import RuntimeNamespace
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import (
     get_worker_runner,
     init_worker_child,

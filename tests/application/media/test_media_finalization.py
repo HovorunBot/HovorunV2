@@ -4,8 +4,6 @@ import re
 
 import pytest
 
-from hovorunv2.application.clients.config import ProviderConfig
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.finalization import (
     QUOTED_MEDIA_NOTE,
     append_translation,
@@ -13,7 +11,9 @@ from hovorunv2.application.media.finalization import (
     merge_quoted_media,
     prepare_caption_text,
 )
-from hovorunv2.application.services.translation_rules import TranslationResult
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
+from hovorunv2.application.media.provider_config import ProviderConfig
+from hovorunv2.application.translation.translation_rules import TranslationResult
 from hovorunv2.domain.enums import CommandName
 
 

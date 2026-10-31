@@ -13,8 +13,8 @@ from dishka import AsyncContainer
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.groups.activation import ActivationStore
 from hovorunv2.application.groups.activation_service import GroupActivationService
+from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
-from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter

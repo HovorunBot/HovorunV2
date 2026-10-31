@@ -12,7 +12,7 @@ from threading import Event, Lock, Thread
 from types import TracebackType
 from typing import Self
 
-from hovorunv2.application.worker_io import (
+from hovorunv2.application.jobs.http_ports import (
     HTTPFailure,
     HTTPFiles,
     HTTPForm,

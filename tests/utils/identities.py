@@ -2,13 +2,13 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hovorunv2.application.budgets import UnitAmount
-from hovorunv2.application.features import FEATURE_REGISTRY
-from hovorunv2.application.usage import (
+from hovorunv2.application.features.registry import FEATURE_REGISTRY
+from hovorunv2.application.usage.budgets import UnitAmount
+from hovorunv2.application.usage.policies import (
     MEDIA_BUCKET,
     UsageUnit,
 )
-from hovorunv2.application.usage_ledger import (
+from hovorunv2.application.usage.usage_ledger import (
     AccountingSubject,
     UsageCharge,
     UsageEvent,

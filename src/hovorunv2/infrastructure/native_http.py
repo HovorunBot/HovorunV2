@@ -11,7 +11,7 @@ from urllib.parse import urljoin, urlsplit
 
 import requests
 
-from hovorunv2.application.worker_io import (
+from hovorunv2.application.jobs.http_ports import (
     HTTPFailure,
     HTTPFiles,
     HTTPForm,

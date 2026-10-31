@@ -11,28 +11,28 @@ from typing import ClassVar, Self
 import aiohttp
 
 from hovorunv2.application.browser import BrowserTab
-from hovorunv2.application.clients.config import (
-    FACEBOOK_CONFIG,
-    BrowserFallbackConfig,
-    OGConfig,
-    ProviderConfig,
+from hovorunv2.application.jobs.http_ports import (
+    HTTPTransportError,
+    SyncBrowserPort,
+    SyncHTTPPort,
 )
-from hovorunv2.application.clients.parsing import MediaParser
-from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.errors import (
     BrowserContinuationRequired,
     BrowserError,
     MediaExtractionError,
 )
 from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.ports import BrowserPort
-from hovorunv2.application.text import extract_og_metadata
-from hovorunv2.application.worker_io import (
-    HTTPTransportError,
-    SyncBrowserPort,
-    SyncHTTPPort,
+from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.application.media.provider_config import (
+    FACEBOOK_CONFIG,
+    BrowserFallbackConfig,
+    OGConfig,
+    ProviderConfig,
 )
+from hovorunv2.application.media.provider_parsing import MediaParser
+from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.utils.metadata import extract_og_metadata
 
 __all__ = ["FACEBOOK_CONFIG", "BaseMediaClient", "BrowserFallbackConfig", "OGConfig", "ProviderConfig"]
 

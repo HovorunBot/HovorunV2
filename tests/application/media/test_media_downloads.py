@@ -9,7 +9,6 @@ import aiohttp
 import pytest
 from aiogram.types import BufferedInputFile
 
-from hovorunv2.application.dtos import MediaItem
 from hovorunv2.application.media.downloader import (
     MAX_MEDIA_BYTES,
     MediaDownloader,
@@ -17,6 +16,7 @@ from hovorunv2.application.media.downloader import (
     download_ytdlp_bytes,
 )
 from hovorunv2.application.media.errors import MediaDownloadError, MediaFailure
+from hovorunv2.application.media.payloads import MediaItem
 from hovorunv2.infrastructure.native_http import NativeHTTPClient
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 

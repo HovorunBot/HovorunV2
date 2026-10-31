@@ -10,14 +10,14 @@ from cryptography.fernet import Fernet
 from dishka import AsyncContainer
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-import hovorunv2.application.services.message_service as message_module
-from hovorunv2.application.crypto import (
+import hovorunv2.application.messaging.message_service as message_module
+from hovorunv2.application.messaging.crypto import (
     decrypt_payload,
     encrypt_payload,
     get_fernet_for_chat,
     verify_encryption_key,
 )
-from hovorunv2.application.services.message_service import MessageService
+from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.infrastructure.cache import CacheService
 
 
@@ -103,7 +103,7 @@ def test_verify_encryption_key_does_not_leak_key_value() -> None:
     secret_passphrase = "TOP_SECRET_SUPER_SENSITIVE_PASSPHRASE_NEVER_LOG_THIS"  # noqa: S105
 
     # Simulate derivation failure by patching PBKDF2HMAC to raise
-    with patch("hovorunv2.application.crypto.PBKDF2HMAC.derive", side_effect=RuntimeError("KDF error")):
+    with patch("hovorunv2.application.messaging.crypto.PBKDF2HMAC.derive", side_effect=RuntimeError("KDF error")):
         with pytest.raises(ValueError, match="Master encryption key is invalid or unusable") as exc_info:
             verify_encryption_key(secret_passphrase)
 

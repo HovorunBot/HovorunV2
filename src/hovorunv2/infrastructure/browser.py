@@ -8,8 +8,8 @@ from DrissionPage import ChromiumPage
 from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
 from hovorunv2.application.browser import BrowserTab
-from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
+from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.infrastructure.browser_process import OwnedChromium
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.infrastructure.native_browser import download_tab_media

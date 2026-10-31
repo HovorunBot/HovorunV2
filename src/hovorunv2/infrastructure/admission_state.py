@@ -8,7 +8,7 @@ from typing import Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from hovorunv2.application.admission import (
+from hovorunv2.application.jobs.admission import (
     RECOVERY_RETRY_SECONDS,
     AdmissionConflictError,
     AdmissionTicket,
@@ -18,9 +18,9 @@ from hovorunv2.application.admission import (
     SettlementIntent,
     TicketState,
 )
-from hovorunv2.application.budgets import TECHNICAL_ID, UnitAmount
-from hovorunv2.application.feature_jobs import EnqueueState, JobEnvelope, JobOutcome
-from hovorunv2.application.usage import UsageUnit
+from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobEnvelope, JobOutcome
+from hovorunv2.application.usage.budgets import TECHNICAL_ID, UnitAmount
+from hovorunv2.application.usage.policies import UsageUnit
 from hovorunv2.domain.enums import TargetKind
 
 _ACTIVE_CAPACITY_ERROR: Final = "Active admission capacity metadata is unavailable."

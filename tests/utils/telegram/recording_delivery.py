@@ -8,12 +8,12 @@ from aiogram.methods import SendMediaGroup, SendMessage, SendPhoto, SendVideo
 from aiogram.types import InputMediaPhoto, InputMediaVideo
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import JobStage
-from hovorunv2.application.budgets import RuntimeNamespace
-from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.feature_jobs import JobOutcome
+from hovorunv2.application.jobs.admission import JobStage
+from hovorunv2.application.jobs.feature_jobs import JobOutcome
+from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
+from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.application.media.rendering import build_caption
-from hovorunv2.application.worker_io import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.bootstrap.worker_runtime import worker_child_context
 from hovorunv2.infrastructure.config import Settings
 from tests.utils.jobs.envelopes import broker_envelopes

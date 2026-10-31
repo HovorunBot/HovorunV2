@@ -7,7 +7,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from hovorunv2.application.access.access_service import CommandPolicy
-from hovorunv2.application.services.feedback_service import FeedbackService
+from hovorunv2.application.messaging.feedback_service import FeedbackService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.handlers.base import BaseCommand

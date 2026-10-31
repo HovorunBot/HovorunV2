@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from hovorunv2.application.budgets import (
+from hovorunv2.application.usage.budgets import (
     RUNTIME_RETENTION_SECONDS,
     TECHNICAL_ID,
     BudgetRequest,
@@ -15,7 +15,7 @@ from hovorunv2.application.budgets import (
     ReservationState,
     UnitAmount,
 )
-from hovorunv2.application.usage import UsageUnit
+from hovorunv2.application.usage.policies import UsageUnit
 from hovorunv2.domain.enums import TargetKind
 
 MAX_EXACT_INTEGER = (1 << 53) - 1

@@ -7,9 +7,8 @@ from functools import partial
 from typing import ClassVar
 
 from hovorunv2.application.clients.base import BaseMediaClient
-from hovorunv2.application.clients.config import ProviderConfig
-from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.features import TriggerKind
+from hovorunv2.application.features.feature_access_service import FeatureAccessService
+from hovorunv2.application.features.registry import TriggerKind
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.extractor import MediaExtractor
 from hovorunv2.application.media.finalization import (
@@ -19,8 +18,9 @@ from hovorunv2.application.media.finalization import (
     merge_quoted_media,
     prepare_caption_text,
 )
-from hovorunv2.application.services.feature_access_service import FeatureAccessService
-from hovorunv2.application.services.translation_service import TranslationService
+from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.application.media.provider_config import ProviderConfig
+from hovorunv2.application.translation.service import TranslationService
 
 logger = logging.getLogger(__name__)
 

@@ -11,11 +11,12 @@ import pytest
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import JobStage
 from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.clients.instagram import INSTAGRAM_CONFIG
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
-from hovorunv2.application.feature_jobs import (
+from hovorunv2.application.features.registry import FEATURE_REGISTRY
+from hovorunv2.application.jobs.admission import JobStage
+from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
+from hovorunv2.application.jobs.feature_jobs import (
     EnqueueState,
     JobEnvelope,
     JobOutcome,
@@ -23,14 +24,13 @@ from hovorunv2.application.feature_jobs import (
     JobTarget,
     PayloadState,
 )
-from hovorunv2.application.features import FEATURE_REGISTRY
+from hovorunv2.application.jobs.http_ports import SyncHTTPPort
 from hovorunv2.application.media.extractor import NativeMediaExtractor
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
-from hovorunv2.application.services.native_translation import NativeTranslationService
-from hovorunv2.application.usage import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
-from hovorunv2.application.usage_ledger import AccountingSubject
-from hovorunv2.application.worker_io import SyncHTTPPort
+from hovorunv2.application.translation.native_translation import NativeTranslationService
+from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
+from hovorunv2.application.usage.usage_ledger import AccountingSubject
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.bootstrap.worker_runtime import (
     LazyBrowserService,

@@ -14,7 +14,7 @@ from uuid import uuid4
 import redis
 from celery.signals import worker_process_init, worker_ready
 
-from hovorunv2.application.budgets import RuntimeNamespace
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.bootstrap.worker_app import build_worker_application
 from hovorunv2.bootstrap.worker_runtime import init_worker_child, on_worker_process_init
 from hovorunv2.infrastructure.cache import CacheService

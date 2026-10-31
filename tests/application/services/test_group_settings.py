@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.access.trust_service import TrustService
-from hovorunv2.application.features import FeatureRegistry
+from hovorunv2.application.features.registry import FeatureRegistry
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.interface.telegram.callbacks import SettingsMenu
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand

@@ -4,9 +4,16 @@ from dataclasses import replace
 
 import pytest
 
-from hovorunv2.application.features import FeatureDefinition, FeatureRegistry
-from hovorunv2.application.usage import MEDIA_BUCKET, UsagePolicy, UsageSafetyCaps, UsageSubject, UsageUnit, UsageWindow
-from hovorunv2.application.usage_ledger import (
+from hovorunv2.application.features.registry import FeatureDefinition, FeatureRegistry
+from hovorunv2.application.usage.policies import (
+    MEDIA_BUCKET,
+    UsagePolicy,
+    UsageSafetyCaps,
+    UsageSubject,
+    UsageUnit,
+    UsageWindow,
+)
+from hovorunv2.application.usage.usage_ledger import (
     MAX_ACCOUNTING_INTEGER,
     MAX_BUCKET_LENGTH,
     MAX_USAGE_BATCH,
@@ -15,7 +22,7 @@ from hovorunv2.application.usage_ledger import (
     UsageEvent,
     validate_usage_batch,
 )
-from hovorunv2.application.usage_resolution import resolve_usage
+from hovorunv2.application.usage.usage_resolution import resolve_usage
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
 

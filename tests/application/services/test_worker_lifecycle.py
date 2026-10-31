@@ -11,7 +11,8 @@ import pytest
 from celery import Celery
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import (
+from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
+from hovorunv2.application.jobs.admission import (
     RECOVERY_RETRY_SECONDS,
     AdmissionLimits,
     AdmissionTicket,
@@ -21,13 +22,12 @@ from hovorunv2.application.admission import (
     SettlementIntent,
     TicketState,
 )
-from hovorunv2.application.budgets import BudgetRequest, ReservationState
-from hovorunv2.application.feature_jobs import JobEnvelope, JobOutcome, JobTarget, PayloadState
-from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
+from hovorunv2.application.jobs.feature_jobs import JobEnvelope, JobOutcome, JobTarget, PayloadState
+from hovorunv2.application.jobs.worker_lifecycle_service import WorkerLifecycleService
 from hovorunv2.application.ports import UserStore
-from hovorunv2.application.services.worker_lifecycle_service import WorkerLifecycleService
-from hovorunv2.application.usage import UsageSafetyCaps, UsageUnit, UsageWindow
-from hovorunv2.application.usage_ledger import AccountingSubject
+from hovorunv2.application.usage.budgets import BudgetRequest, ReservationState
+from hovorunv2.application.usage.policies import UsageSafetyCaps, UsageUnit, UsageWindow
+from hovorunv2.application.usage.usage_ledger import AccountingSubject
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.bootstrap.worker_runtime import WorkerQueuePublisher, WorkerRuntime, worker_child_context
 from hovorunv2.domain.audit import ActorContext

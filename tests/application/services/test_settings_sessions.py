@@ -13,10 +13,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
+from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.ports import CachePort, ChatStore, UserStore
-from hovorunv2.application.services.cleanup_service import CleanupService
-from hovorunv2.application.services.language_service import LanguageService
 from hovorunv2.application.settings.settings_session_service import SETTINGS_SESSION_TTL, SettingsSessionService
+from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import CommandName

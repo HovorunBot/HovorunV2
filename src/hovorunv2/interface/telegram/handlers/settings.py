@@ -13,17 +13,17 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from hovorunv2.application.access.access_service import AccessService, CommandPolicy
 from hovorunv2.application.access.permissions import DecisionReason, PermissionTarget
 from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
-from hovorunv2.application.features import FeatureChannel
+from hovorunv2.application.features.command_service import CommandService
+from hovorunv2.application.features.registry import FeatureChannel
 from hovorunv2.application.groups.group_management_service import GroupManagementService
-from hovorunv2.application.services.cleanup_service import CleanupService
-from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.application.services.language_service import LanguageService
+from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.settings.settings_session_service import (
     SETTINGS_SESSION_TTL,
     SettingsContext,
     SettingsSessionService,
     SettingsTarget,
 )
+from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
     CommandName,

@@ -3,9 +3,9 @@
 from collections.abc import Callable, Mapping
 
 from hovorunv2.application.browser import BrowserTab
-from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.jobs.http_ports import SyncBrowserPort
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
-from hovorunv2.application.worker_io import SyncBrowserPort
+from hovorunv2.application.media.payloads import RichMediaPayload
 
 
 class FakeSyncBrowser(SyncBrowserPort):

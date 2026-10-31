@@ -4,7 +4,7 @@ from http import HTTPStatus
 
 import pytest
 
-from hovorunv2.application.worker_io import HTTPFailure, HTTPTransportError
+from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportError
 from hovorunv2.infrastructure.native_http import NativeHTTPClient
 from tests.utils.sync_http import HTTPFixture, HTTPReply, json_reply
 

@@ -8,7 +8,7 @@ from uuid import uuid4
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
-from hovorunv2.application.budgets import RuntimeNamespace
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
 

@@ -6,12 +6,12 @@ from dataclasses import replace
 import pytest
 from dishka import AsyncContainer
 
-from hovorunv2.application.budgets import BudgetRequest, ReservationState, UnitAmount
-from hovorunv2.application.features import TriggerKind
-from hovorunv2.application.services.budget_service import BudgetService
-from hovorunv2.application.services.usage_policy_service import UsagePolicyService
-from hovorunv2.application.usage import UsageUnit
-from hovorunv2.application.usage_ledger import AccountingSubject, UsageCharge, UsageEvent, UsageLedgerStore
+from hovorunv2.application.features.registry import TriggerKind
+from hovorunv2.application.usage.budget_service import BudgetService
+from hovorunv2.application.usage.budgets import BudgetRequest, ReservationState, UnitAmount
+from hovorunv2.application.usage.policies import UsageUnit
+from hovorunv2.application.usage.usage_ledger import AccountingSubject, UsageCharge, UsageEvent, UsageLedgerStore
+from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.budgets import ValkeyBudgetStore

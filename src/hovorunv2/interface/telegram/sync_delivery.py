@@ -5,10 +5,7 @@ from contextlib import suppress
 from enum import StrEnum
 from http import HTTPStatus
 
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
-from hovorunv2.application.media.downloader import NativeMediaDownloader
-from hovorunv2.application.media.rendering import build_caption, plan_caption
-from hovorunv2.application.worker_io import (
+from hovorunv2.application.jobs.http_ports import (
     HTTPFiles,
     HTTPForm,
     HTTPTransportError,
@@ -17,6 +14,9 @@ from hovorunv2.application.worker_io import (
     TelegramRejectedError,
     TelegramRejection,
 )
+from hovorunv2.application.media.downloader import NativeMediaDownloader
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
+from hovorunv2.application.media.rendering import build_caption, plan_caption
 
 MAX_MEDIA_GROUP = 10
 

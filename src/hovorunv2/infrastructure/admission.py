@@ -9,7 +9,7 @@ from redis.asyncio.client import Pipeline as AsyncPipeline
 from redis.client import Pipeline
 from redis.exceptions import RedisError, WatchError
 
-from hovorunv2.application.admission import (
+from hovorunv2.application.jobs.admission import (
     RECOVERY_PAGE_LIMIT,
     AdmissionLimits,
     AdmissionPort,
@@ -22,14 +22,14 @@ from hovorunv2.application.admission import (
     SettlementIntent,
     TicketState,
 )
-from hovorunv2.application.budgets import RUNTIME_RETENTION_SECONDS, RuntimeNamespace
-from hovorunv2.application.feature_jobs import (
+from hovorunv2.application.jobs.feature_jobs import (
     PAYLOAD_CLEANUP_SECONDS,
     EnqueueState,
     JobEnvelope,
     JobOutcome,
     SealedPayload,
 )
+from hovorunv2.application.usage.budgets import RUNTIME_RETENTION_SECONDS, RuntimeNamespace
 from hovorunv2.infrastructure.admission_state import (
     AdmissionCapacity,
     AdmissionChange,

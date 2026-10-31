@@ -6,10 +6,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from hovorunv2.application.access.permissions import DecisionReason, GroupAdminEvidence, PermissionTarget
-from hovorunv2.application.beta import BetaEligibilityFacts
-from hovorunv2.application.feature_policy import FeatureDecision, FeatureFacts, evaluate_feature, feature_entry_allowed
-from hovorunv2.application.features import FeatureChannel, FeatureDefinition, FeatureScope, TriggerKind
-from hovorunv2.application.group_beta import GroupBetaFacts
+from hovorunv2.application.features.beta import BetaEligibilityFacts
+from hovorunv2.application.features.feature_policy import (
+    FeatureDecision,
+    FeatureFacts,
+    evaluate_feature,
+    feature_entry_allowed,
+)
+from hovorunv2.application.features.group_beta import GroupBetaFacts
+from hovorunv2.application.features.registry import FeatureChannel, FeatureDefinition, FeatureScope, TriggerKind
 from hovorunv2.application.groups.group_policy import GroupAccessFacts, group_access
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)

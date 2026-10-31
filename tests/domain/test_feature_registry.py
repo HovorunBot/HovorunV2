@@ -2,7 +2,7 @@
 
 import pytest
 
-from hovorunv2.application.features import (
+from hovorunv2.application.features.registry import (
     COMMAND_PRESENTATION,
     FEATURE_REGISTRY,
     FeatureChannel,

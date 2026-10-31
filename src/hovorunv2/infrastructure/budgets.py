@@ -8,7 +8,7 @@ from redis.asyncio.client import Pipeline as AsyncPipeline
 from redis.client import Pipeline
 from redis.exceptions import RedisError, WatchError
 
-from hovorunv2.application.budgets import (
+from hovorunv2.application.usage.budgets import (
     BudgetPort,
     BudgetRequest,
     ReservationDecision,

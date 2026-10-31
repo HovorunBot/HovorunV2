@@ -9,15 +9,15 @@ from dataclasses import replace
 import pytest
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import (
+from hovorunv2.application.jobs.admission import (
     AdmissionLimits,
     AdmissionState,
     AdmissionUnavailableError,
     JobStage,
     TicketState,
 )
-from hovorunv2.application.feature_jobs import EnqueueState, JobOutcome, PayloadState
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome, PayloadState
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.admission_state import admission_keys

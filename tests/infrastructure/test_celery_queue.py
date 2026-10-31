@@ -9,9 +9,9 @@ import pytest
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import AdmissionState, AdmissionUnavailableError
-from hovorunv2.application.feature_jobs import EnqueueState, JobOutcome, JobStatus
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.jobs.admission import AdmissionState, AdmissionUnavailableError
+from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome, JobStatus
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime, worker_child_context
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.config import Settings

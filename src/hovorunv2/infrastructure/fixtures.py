@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.features import FEATURE_REGISTRY
+from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.command import CommandDB

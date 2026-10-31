@@ -5,10 +5,10 @@ from aiogram import Bot
 from aiogram.types import Message
 from dishka import AsyncContainer
 
+from hovorunv2.application.messaging.feedback_service import FeedbackService
+from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.application.ports import CachePort, ChatStore
-from hovorunv2.application.services.feedback_service import FeedbackService
-from hovorunv2.application.services.owner_notifier import OwnerNotifier
-from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.domain.enums import CommandName, Role
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from tests.conftest import provision_role

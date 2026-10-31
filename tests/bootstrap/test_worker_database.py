@@ -19,13 +19,13 @@ from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.access.permissions import GroupAdminEvidence, PermissionRequest, PermissionTarget
 from hovorunv2.application.access.role_service import RoleService
-from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry, TriggerKind
+from hovorunv2.application.features.feature_access_service import FeatureAccessService
+from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureRegistry, TriggerKind
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
 from hovorunv2.application.ports import ChatStore, CommandStore, UserStore
-from hovorunv2.application.services.feature_access_service import FeatureAccessService
-from hovorunv2.application.services.usage_policy_service import UsagePolicyService
-from hovorunv2.application.usage import MEDIA_BUCKET, UsagePolicy, UsagePolicyStore, UsageUnit, UsageWindow
-from hovorunv2.application.usage_ledger import AppliedUsage, UsageLedgerStore
+from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsagePolicy, UsagePolicyStore, UsageUnit, UsageWindow
+from hovorunv2.application.usage.usage_ledger import AppliedUsage, UsageLedgerStore
+from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind

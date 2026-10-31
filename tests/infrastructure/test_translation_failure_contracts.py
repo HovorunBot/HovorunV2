@@ -7,10 +7,10 @@ import aiohttp
 import pytest
 from dishka import AsyncContainer
 
-from hovorunv2.application.services.native_translation import NativeTranslationService
+from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportError
 from hovorunv2.application.services.translation_providers import GoogleTranslationService
-from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.worker_io import HTTPFailure, HTTPTransportError
+from hovorunv2.application.translation.native_translation import NativeTranslationService
+from hovorunv2.application.translation.service import TranslationService
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.native_http import NativeHTTPClient

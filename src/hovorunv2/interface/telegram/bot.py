@@ -3,8 +3,8 @@
 from aiogram import Router
 
 from hovorunv2.application.access.access_service import AccessService
+from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.ports import AppSettings, CachePort
-from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.identity import IdentityMiddleware

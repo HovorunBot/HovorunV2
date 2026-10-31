@@ -6,13 +6,13 @@ from typing import Final
 
 import aiohttp
 
-from hovorunv2.application.services.translation_rules import (
+from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportError
+from hovorunv2.application.translation.translation_rules import (
     GOOGLE_TRANSLATION_URL,
     TranslationRawResult,
     google_translation_params,
     parse_google_translation,
 )
-from hovorunv2.application.worker_io import HTTPFailure, HTTPTransportError
 
 __all__ = ["BaseTranslationService", "GoogleTranslationService", "TranslationRawResult"]
 

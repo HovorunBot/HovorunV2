@@ -8,9 +8,9 @@ from typing import Any, Self
 import aiohttp
 
 from hovorunv2.application.clients.base import BaseMediaClient, OGConfig, ProviderConfig
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.jobs.http_ports import SyncHTTPPort
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import BrowserPort
-from hovorunv2.application.worker_io import SyncHTTPPort
 from hovorunv2.domain.enums import CommandName
 
 _YOUTUBE_OG_CONFIG = OGConfig(

@@ -8,8 +8,8 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
 from hovorunv2.application.access.permissions import AccessDecision, PermissionRequest, PermissionTarget
-from hovorunv2.application.feature_policy import FeatureDecision, evaluate_feature
-from hovorunv2.application.features import FeatureRegistry, TriggerKind
+from hovorunv2.application.features.feature_policy import FeatureDecision, evaluate_feature
+from hovorunv2.application.features.registry import FeatureRegistry, TriggerKind
 from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
@@ -17,8 +17,8 @@ from hovorunv2.application.identity.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.ports import AuthorizationPolicy
-from hovorunv2.application.usage import ResolvedUsage, UsageSafetyCaps, UsageUnit, UsageWindow
-from hovorunv2.application.usage_ledger import (
+from hovorunv2.application.usage.policies import ResolvedUsage, UsageSafetyCaps, UsageUnit, UsageWindow
+from hovorunv2.application.usage.usage_ledger import (
     AccountingSubject,
     AppliedUsage,
     UsageEvent,
@@ -26,7 +26,7 @@ from hovorunv2.application.usage_ledger import (
     usage_batch_id,
     validate_usage_batch,
 )
-from hovorunv2.application.usage_resolution import resolve_usage
+from hovorunv2.application.usage.usage_resolution import resolve_usage
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.domain.chat import ChatDB

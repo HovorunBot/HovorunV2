@@ -13,10 +13,10 @@ import aiohttp
 import yt_dlp
 from aiogram.types import BufferedInputFile
 
-from hovorunv2.application.dtos import MediaItem
+from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportError, SyncHTTPPort
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.media.errors import MediaDownloadError, MediaFailure
-from hovorunv2.application.worker_io import HTTPFailure, HTTPTransportError, SyncHTTPPort
+from hovorunv2.application.media.payloads import MediaItem
 
 logger = logging.getLogger(__name__)
 

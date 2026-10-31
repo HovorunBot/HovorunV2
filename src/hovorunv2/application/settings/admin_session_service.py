@@ -9,7 +9,7 @@ from cryptography.fernet import InvalidToken
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from hovorunv2.application.access.administration import AdminRequest, AdminTarget
-from hovorunv2.application.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
+from hovorunv2.application.messaging.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
 from hovorunv2.application.ports import AppSettings, CachePort, UserStore
 from hovorunv2.application.settings.settings_session_service import SETTINGS_SESSION_TTL
 from hovorunv2.domain.user import UserDB

@@ -10,11 +10,11 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.access.trust_service import TrustService
+from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.identity.membership import MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import CachePort, ChatStore, UserStore
-from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.config import Settings

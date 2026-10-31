@@ -3,7 +3,7 @@
 from dishka import AsyncContainer
 
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.usage import UsageSubject
+from hovorunv2.application.usage.policies import UsageSubject
 from hovorunv2.domain.enums import TargetKind
 
 USER = 360001

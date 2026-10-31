@@ -5,8 +5,8 @@ from functools import partial
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from hovorunv2.application.usage import UsageUnit, UsageWindow
-from hovorunv2.application.usage_ledger import AccountingSubject, AppliedUsage, UsageEvent
+from hovorunv2.application.usage.policies import UsageUnit, UsageWindow
+from hovorunv2.application.usage.usage_ledger import AccountingSubject, AppliedUsage, UsageEvent
 from hovorunv2.domain.usage_accounting import UsageAggregateDB
 from hovorunv2.infrastructure.repositories.usage_ledger import UsageLedgerRepository
 

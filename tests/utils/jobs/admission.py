@@ -4,11 +4,11 @@ import asyncio
 
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import AdmissionTicket, TicketState
+from hovorunv2.application.features.feature_access_service import FeatureAccessService
+from hovorunv2.application.jobs.admission import AdmissionTicket, TicketState
+from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.admission_service import AdmissionService
-from hovorunv2.application.services.feature_access_service import FeatureAccessService
-from hovorunv2.application.services.usage_policy_service import UsagePolicyService
+from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
 from tests.utils.runtime import ManualClock

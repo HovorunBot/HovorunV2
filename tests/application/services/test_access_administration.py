@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from hovorunv2.application.access.administration import AdminAction, AdminRequest
 from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.application.access.role_service import RoleService
-from hovorunv2.application.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
 from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.messaging.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
 from hovorunv2.application.ports import AppSettings, CachePort, ChatStore, UserStore
 from hovorunv2.application.settings.admin_session_service import AdminSessionService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB

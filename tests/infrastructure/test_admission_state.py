@@ -5,8 +5,8 @@ from dataclasses import replace
 import pytest
 from pydantic import ValidationError
 
-from hovorunv2.application.admission import AdmissionUnavailableError, JobStage, TicketState
-from hovorunv2.application.feature_jobs import EnqueueState, JobOutcome
+from hovorunv2.application.jobs.admission import AdmissionUnavailableError, JobStage, TicketState
+from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome
 from hovorunv2.infrastructure.admission_state import (
     AdmissionCapacity,
     AdmissionOperation,

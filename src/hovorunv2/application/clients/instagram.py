@@ -9,12 +9,12 @@ import aiohttp
 import instaloader
 
 from hovorunv2.application.clients.base import BaseMediaClient, BrowserFallbackConfig, OGConfig, ProviderConfig
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.jobs.http_ports import SyncHTTPPort
 from hovorunv2.application.media.errors import MediaExtractionError
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.ports import AppSettings, BrowserPort
-from hovorunv2.application.text import clean_caption_text
-from hovorunv2.application.worker_io import SyncHTTPPort
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.utils.text import clean_caption_text
 
 logger = logging.getLogger(__name__)
 

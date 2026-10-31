@@ -5,8 +5,8 @@ from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
-from hovorunv2.application.budgets import BudgetRequest, UnitAmount
-from hovorunv2.application.usage import (
+from hovorunv2.application.usage.budgets import BudgetRequest, UnitAmount
+from hovorunv2.application.usage.policies import (
     MEDIA_BUCKET,
     ResolvedUsage,
     UsagePolicy,

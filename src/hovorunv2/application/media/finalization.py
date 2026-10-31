@@ -2,10 +2,10 @@
 
 import html
 
-from hovorunv2.application.clients.config import ProviderConfig
-from hovorunv2.application.dtos import RichMediaPayload
-from hovorunv2.application.services.translation_rules import TranslationResult
-from hovorunv2.application.text import clean_caption_text
+from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.application.media.provider_config import ProviderConfig
+from hovorunv2.application.translation.translation_rules import TranslationResult
+from hovorunv2.utils.text import clean_caption_text
 
 QUOTED_MEDIA_NOTE = "\n\nℹ️️ <i>Post includes quoted media</i>"  # noqa: RUF001
 

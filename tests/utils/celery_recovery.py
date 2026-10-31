@@ -12,8 +12,8 @@ import redis
 from celery import Celery
 from celery.signals import worker_process_init
 
-from hovorunv2.application.budgets import RuntimeNamespace
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.usage.budgets import RuntimeNamespace
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import init_worker_child, on_worker_process_init
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings

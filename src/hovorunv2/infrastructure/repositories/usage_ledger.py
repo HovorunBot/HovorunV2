@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from hovorunv2.application.usage import UsageUnit, UsageWindow
-from hovorunv2.application.usage_ledger import (
+from hovorunv2.application.usage.policies import UsageUnit, UsageWindow
+from hovorunv2.application.usage.usage_ledger import (
     MAX_ACCOUNTING_INTEGER,
     AccountingSubject,
     AppliedUsage,

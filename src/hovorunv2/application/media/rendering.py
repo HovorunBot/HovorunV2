@@ -3,7 +3,7 @@
 import html
 from dataclasses import dataclass
 
-from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.media.payloads import RichMediaPayload
 
 CAPTION_LIMIT = 1024
 HEADER_TEMPLATE = (

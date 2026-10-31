@@ -9,10 +9,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.access.permission_service import PermissionService
-from hovorunv2.application.features import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry, TriggerKind
+from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry, TriggerKind
 from hovorunv2.application.ports import AuditedUnitOfWork, AuthorizationPolicy, ChatStore, UserStore
-from hovorunv2.application.services.usage_policy_service import UsagePolicyService
-from hovorunv2.application.usage import (
+from hovorunv2.application.usage.policies import (
     MEDIA_BUCKET,
     UsagePolicy,
     UsagePolicyStore,
@@ -20,6 +19,7 @@ from hovorunv2.application.usage import (
     UsageUnit,
     UsageWindow,
 )
+from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.domain.usage import UsageOverrideDB

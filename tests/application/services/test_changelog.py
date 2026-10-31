@@ -4,8 +4,8 @@ from pathlib import Path
 
 from _pytest.monkeypatch import MonkeyPatch
 
-from hovorunv2.application import changelog
-from hovorunv2.application.changelog import (
+from hovorunv2.application.operations import changelog
+from hovorunv2.application.operations.changelog import (
     extract_fallback_notes,
     extract_release_notes,
     format_markdown_for_telegram,

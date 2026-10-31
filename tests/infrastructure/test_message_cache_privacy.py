@@ -13,9 +13,9 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.access.trust_service import TrustService
-from hovorunv2.application.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
+from hovorunv2.application.messaging.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
+from hovorunv2.application.messaging.message_service import MessageService, minimal_message_data
 from hovorunv2.application.ports import ChatStore
-from hovorunv2.application.services.message_service import MessageService, minimal_message_data
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings

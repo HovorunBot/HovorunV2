@@ -6,10 +6,10 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from dishka import AsyncContainer
 
+from hovorunv2.application.jobs.http_ports import HTTPTransportError
 from hovorunv2.application.ports import ChatStore
-from hovorunv2.application.services.native_translation import NativeTranslationService
-from hovorunv2.application.services.translation_rules import parse_google_translation
-from hovorunv2.application.worker_io import HTTPTransportError
+from hovorunv2.application.translation.native_translation import NativeTranslationService
+from hovorunv2.application.translation.translation_rules import parse_google_translation
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.config import Settings

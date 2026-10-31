@@ -11,14 +11,26 @@ import pytest
 import redis.asyncio as async_redis
 from dishka import AsyncContainer
 
-from hovorunv2.application.admission import AdmissionLimits, AdmissionState, JobStage, TicketState, incoming_action_key
-from hovorunv2.application.budgets import BudgetRequest, ReservationState, RuntimeNamespace, UnitAmount, WallClock
-from hovorunv2.application.feature_jobs import EnqueueState, JobOutcome, JobTarget, PayloadState
-from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
+from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.jobs.admission import (
+    AdmissionLimits,
+    AdmissionState,
+    JobStage,
+    TicketState,
+    incoming_action_key,
+)
+from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome, JobTarget, PayloadState
 from hovorunv2.application.ports import CommandStore, UserStore
-from hovorunv2.application.services.usage_policy_service import UsagePolicyService
-from hovorunv2.application.usage import MEDIA_BUCKET, UsagePolicy, UsagePolicyStore, UsageSafetyCaps, UsageUnit
+from hovorunv2.application.usage.budgets import (
+    BudgetRequest,
+    ReservationState,
+    RuntimeNamespace,
+    UnitAmount,
+    WallClock,
+)
+from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsagePolicy, UsagePolicyStore, UsageSafetyCaps, UsageUnit
+from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName, TargetKind

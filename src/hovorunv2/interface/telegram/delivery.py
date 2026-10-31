@@ -10,10 +10,10 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramEntityTooLarge
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions, MediaUnion, Message
 
-from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media import rendering
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.errors import MediaFailure
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 
 logger = logging.getLogger(__name__)
 

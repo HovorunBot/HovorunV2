@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hovorunv2.application.budgets import RuntimeNamespace
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.bootstrap.worker_app import build_worker_application
 from hovorunv2.infrastructure.config import BrokerSettings
 from hovorunv2.infrastructure.feature_queue import build_beat_schedule

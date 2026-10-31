@@ -6,9 +6,9 @@ from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.clients.bluesky import BlueskyService
 from hovorunv2.application.clients.tiktok import TikTokService
 from hovorunv2.application.clients.twitter import TwitterService
-from hovorunv2.application.dtos import RichMediaPayload
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
+from hovorunv2.application.media.payloads import RichMediaPayload
 from tests.utils.sync_http import FakeSyncHTTP
 
 

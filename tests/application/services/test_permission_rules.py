@@ -17,9 +17,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from hovorunv2.application.access.access_service import AccessService, CommandPolicy
+from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.ports import CachePort
-from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import (
     DEFAULT_COMMANDS,

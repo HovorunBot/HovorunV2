@@ -9,8 +9,8 @@ import pytest
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
-from hovorunv2.application.feature_jobs import PayloadState
-from hovorunv2.application.usage import UsageSafetyCaps
+from hovorunv2.application.jobs.feature_jobs import PayloadState
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore

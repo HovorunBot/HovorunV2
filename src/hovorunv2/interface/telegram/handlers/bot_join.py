@@ -4,7 +4,7 @@ from aiogram import Bot, Router
 from aiogram.types import ChatMemberUpdated
 
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
-from hovorunv2.application.services.reminder_service import ChatReminderService
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
