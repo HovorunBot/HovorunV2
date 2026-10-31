@@ -74,6 +74,7 @@ GROUP_BETA_FIELDS: Final = {
     "enabler_added": FLAG,
     "enablers_revoked": NUMBER,
 }
+FEATURE_EMERGENCY_FIELDS: Final = {"disabled": FLAG_PAIR, "epoch": NUMBER_PAIR}
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
@@ -87,6 +88,8 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("usage_batch", "apply"): {"events_applied": NUMBER, "aggregates_updated": NUMBER, "units_added": NUMBER},
     ("usage_override", "set"): USAGE_POLICY_FIELDS,
     ("usage_override", "remove"): USAGE_POLICY_FIELDS,
+    ("feature_emergency", "disable"): FEATURE_EMERGENCY_FIELDS.copy(),
+    ("feature_emergency", "enable"): FEATURE_EMERGENCY_FIELDS.copy(),
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
     ("chat", "migrate_route"): {"group_id": NUMBER, "telegram_id": NUMBER_PAIR},

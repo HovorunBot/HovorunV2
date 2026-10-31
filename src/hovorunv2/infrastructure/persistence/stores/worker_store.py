@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from hovorunv2.application.access.permissions import AccessDecision, PermissionRequest, PermissionTarget
 from hovorunv2.application.access.ports import AuthorizationPolicy
+from hovorunv2.application.features.emergency import FeatureEmergencyState, resolve_emergency_key
 from hovorunv2.application.features.feature_policy import FeatureDecision, evaluate_feature
 from hovorunv2.application.features.registry import FeatureRegistry, TriggerKind
 from hovorunv2.application.identity.membership import (
@@ -30,6 +31,7 @@ from hovorunv2.application.usage.usage_resolution import resolve_usage
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.emergency import FeatureEmergencyDB
 from hovorunv2.domain.enums import ChatStatus, Platform, Role
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.system import SystemStateDB
@@ -88,6 +90,16 @@ class WorkerPolicyStore:
                 now=datetime.now(UTC),
             )
             return evaluate_feature(definition, facts, trigger=trigger, configure=configure)
+
+    def emergency_state(self, feature: str) -> FeatureEmergencyState:
+        """Read the current authoritative emergency state for stale-envelope fencing."""
+        self._require_owner()
+        key = resolve_emergency_key(feature)
+        with self._sessions() as session:
+            row = session.scalar(select(FeatureEmergencyDB).where(FeatureEmergencyDB.feature_key == key))
+            if row is None:
+                return FeatureEmergencyState(key)
+            return FeatureEmergencyState(row.feature_key, row.disabled, row.reason, row.epoch)
 
     def active_target(self, target: PermissionTarget) -> bool:
         """Validate a queued reference without converting a prior decision into an access grant."""

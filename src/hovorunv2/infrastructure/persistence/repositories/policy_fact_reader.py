@@ -14,6 +14,7 @@ from hovorunv2.application.access.permissions import (
 )
 from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.features.beta import BetaEligibilityFacts
+from hovorunv2.application.features.emergency import FeatureEmergencyState, resolve_emergency_key
 from hovorunv2.application.features.feature_policy import FeatureFacts
 from hovorunv2.application.features.registry import FeatureChannel, FeatureDefinition, FeatureScope, TriggerKind
 from hovorunv2.application.groups.group_policy import GroupAccessFacts, group_access
@@ -22,6 +23,7 @@ from hovorunv2.application.usage.policies import UsagePolicy, UsageSubject, Usag
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.emergency import FeatureEmergencyDB
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.domain.group_beta import GroupBetaFeatureDB
 from hovorunv2.domain.group_grant import GroupApprovalDB
@@ -205,6 +207,7 @@ class PolicyFactReader:
         actor = self.session.scalar(active_user(actor_id)) if actor_id is not None else None
         automatic = scope == FeatureScope.GROUP and trigger == TriggerKind.AUTOMATIC and not configure
         restricted = not automatic and actor_id is not None and self.banned(TargetKind.USER, actor_id)
+        emergency = self._emergency(definition.key)
         if scope == FeatureScope.PRIVATE:
             return FeatureFacts(
                 scope,
@@ -216,10 +219,27 @@ class PolicyFactReader:
                 eligible=actor is not None and self._eligible(actor, definition),
                 selected=self._selected(definition, chat_id),
                 capable=not definition.required_bot_capabilities,
+                emergency_disabled=emergency.disabled,
+                emergency_epoch=emergency.epoch,
             )
         return self._group_feature_facts(
-            definition, chat_id, actor_id, actor, restricted=restricted, configure=configure, now=now
+            definition,
+            chat_id,
+            actor_id,
+            actor,
+            restricted=restricted,
+            configure=configure,
+            now=now,
+            emergency=emergency,
         )
+
+    def _emergency(self, feature_key: str) -> FeatureEmergencyState:
+        """Read the provider-family emergency state; absence means enabled at epoch zero."""
+        key = resolve_emergency_key(feature_key)
+        row = self.session.scalar(select(FeatureEmergencyDB).where(FeatureEmergencyDB.feature_key == key))
+        if row is None:
+            return FeatureEmergencyState(key)
+        return FeatureEmergencyState(row.feature_key, row.disabled, row.reason, row.epoch)
 
     def _group_feature_facts(
         self,
@@ -231,6 +251,7 @@ class PolicyFactReader:
         restricted: bool,
         configure: bool,
         now: datetime,
+        emergency: FeatureEmergencyState,
     ) -> FeatureFacts:
         """Read group selection, support, access and capability facts in order."""
         chat = self.session.scalar(active_chat(chat_id))
@@ -252,6 +273,8 @@ class PolicyFactReader:
             selected=selected,
             supported=supported,
             capable=self._capable(chat, definition.required_bot_capabilities, now),
+            emergency_disabled=emergency.disabled,
+            emergency_epoch=emergency.epoch,
         )
 
     def _group_beta(

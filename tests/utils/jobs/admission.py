@@ -4,6 +4,7 @@ import asyncio
 
 from dishka import AsyncContainer
 
+from hovorunv2.application.features.emergency_service import FeatureEmergencyService
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
@@ -21,11 +22,13 @@ async def admission_service(
     container: AsyncContainer, store: ValkeyAdmissionStore, queue: CeleryFeatureQueue, clock: ManualClock
 ) -> AdmissionService:
     """Compose the real application service and its real stores/adapters."""
+    features = await container.get(FeatureAccessService)
     return AdmissionService(
         store,
         queue,
         await container.get(UsagePolicyService),
-        await container.get(FeatureAccessService),
+        features,
+        await container.get(FeatureEmergencyService),
         await container.get(UserStore),
         await container.get(ChatStore),
         clock,

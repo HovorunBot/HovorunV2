@@ -39,7 +39,7 @@ def job_envelope(reference: str, clock: ManualClock, *, job_id: str = "feature-j
         "accepted_at": clock.now(),
         "deadline": clock.now() + 300,
         "dedupe_key": "a" * 64,
-        "feature_epoch": 7,
+        "feature_epoch": 0,
         "message_id": 1,
     }
     values.update(changes)

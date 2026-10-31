@@ -6,6 +6,7 @@ from hovorunv2.domain.base import Base
 from hovorunv2.domain.beta import BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
+from hovorunv2.domain.emergency import FeatureEmergencyDB
 from hovorunv2.domain.group_beta import GroupBetaEnablerDB, GroupBetaFeatureDB
 from hovorunv2.domain.group_grant import (
     ApprovalBasis,
@@ -38,6 +39,7 @@ __all__ = [
     "BetaEntitlementDB",
     "ChatDB",
     "CommandDB",
+    "FeatureEmergencyDB",
     "GroupAccessRequestDB",
     "GroupApprovalDB",
     "GroupBetaEnablerDB",

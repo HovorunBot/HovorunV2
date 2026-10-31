@@ -4,6 +4,7 @@ from typing import NewType
 
 from dishka import Provider, Scope, alias, provide
 
+from hovorunv2.application.features.emergency_service import FeatureEmergencyService
 from hovorunv2.application.jobs.admission import AdmissionPort
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_jobs import PayloadPort
@@ -39,6 +40,7 @@ class RuntimeUsageProvider(Provider):
 
     admission_store_impl = provide(ValkeyAdmissionStore)
     admission_store = alias(source=ValkeyAdmissionStore, provides=AdmissionPort)
+    feature_emergency_service = provide(FeatureEmergencyService)
     admission_service = provide(AdmissionService)
 
     payload_store_impl = provide(ValkeyPayloadStore)

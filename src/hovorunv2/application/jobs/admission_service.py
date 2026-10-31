@@ -1,5 +1,6 @@
 """Revalidate access before bounded admission and recover an idempotent queue handoff."""
 
+from hovorunv2.application.features.emergency_service import FeatureEmergencyService
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.groups.ports import ChatStore
@@ -38,6 +39,7 @@ class AdmissionService:
         queue: FeatureQueuePort,
         policies: UsagePolicyService,
         features: FeatureAccessService,
+        emergency: FeatureEmergencyService,
         users: UserStore,
         chats: ChatStore,
         clock: Clock,
@@ -46,6 +48,7 @@ class AdmissionService:
         self._queue = queue
         self._policies = policies
         self._features = features
+        self._emergency = emergency
         self._users = users
         self._chats = chats
         self._clock = clock
@@ -78,18 +81,28 @@ class AdmissionService:
         now = self._clock.now()
         if now >= envelope.deadline:
             return AdmissionResult(AdmissionState.EXPIRED)
-        expected = incoming_action_key(
-            envelope.feature, envelope.target.telegram_id, envelope.actor_id, envelope.message_id, envelope.trigger
-        )
-        if envelope.dedupe_key != expected:
+        if not self._dedupe_matches(envelope):
             return AdmissionResult(AdmissionState.DENIED)
         if not await self._current(envelope):
             return AdmissionResult(AdmissionState.DENIED)
+        return await self._admit_current(envelope, payload, now)
 
+    def _dedupe_matches(self, envelope: JobEnvelope) -> bool:
+        """Bind acceptance to stable incoming metadata, never URL or processing time."""
+        expected = incoming_action_key(
+            envelope.feature, envelope.target.telegram_id, envelope.actor_id, envelope.message_id, envelope.trigger
+        )
+        return envelope.dedupe_key == expected
+
+    async def _admit_current(self, envelope: JobEnvelope, payload: SealedPayload, now: float) -> AdmissionResult:
+        """Stamp the authoritative emergency epoch before bounded runtime acceptance."""
+        emergency = await self._emergency.state(envelope.feature)
+        if emergency.disabled:
+            return AdmissionResult(AdmissionState.DENIED)
+        envelope = envelope.model_copy(update={"feature_epoch": emergency.epoch})
         provider = self._resolve_provider(envelope.feature)
         if not await self._capture_allowed(envelope, provider):
             return AdmissionResult(AdmissionState.DENIED)
-
         usage = await self._resolve_usage(envelope, provider)
         if usage.subject.kind != envelope.charged_kind or usage.subject.telegram_id != envelope.charged_telegram_id:
             return AdmissionResult(AdmissionState.DENIED)

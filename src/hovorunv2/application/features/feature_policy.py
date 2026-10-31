@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from hovorunv2.application.access.permissions import DecisionReason, PermissionTarget
+from hovorunv2.application.features.emergency import FeatureEmergencyState
 from hovorunv2.application.features.registry import FeatureDefinition, FeatureScope, TriggerKind
 from hovorunv2.application.usage.policies import ResolvedUsage, UsageUnit
 
@@ -33,6 +34,8 @@ class FeatureFacts:
     selected: bool = False
     supported: bool = False
     capable: bool = False
+    emergency_disabled: bool = False
+    emergency_epoch: int = 0
 
 
 def _uses_group_authority(scope: FeatureScope, trigger: TriggerKind, *, configure: bool) -> bool:
@@ -63,6 +66,8 @@ def evaluate_feature(
     definition: FeatureDefinition, facts: FeatureFacts, *, trigger: TriggerKind, configure: bool = False
 ) -> FeatureDecision:
     """Apply existing private/group rules independently of fact-loading I/O."""
+    if facts.emergency_disabled:
+        return FeatureDecision()
     if not facts.target_active:
         return FeatureDecision()
     if not feature_entry_allowed(
@@ -122,6 +127,10 @@ class SyncPolicyPort(Protocol):
         configure: bool = False,
     ) -> FeatureDecision:
         """Apply the bot's exact evaluator and database facts without an event loop."""
+        ...
+
+    def emergency_state(self, feature: str) -> FeatureEmergencyState:
+        """Read the current authoritative emergency state for stale-envelope fencing."""
         ...
 
     def active_target(self, target: PermissionTarget) -> bool:

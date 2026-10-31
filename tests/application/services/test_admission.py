@@ -8,6 +8,7 @@ import pytest
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
+from hovorunv2.application.features.emergency_service import FeatureEmergencyService
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import TriggerKind
@@ -161,6 +162,7 @@ async def admission_service(
         queue,
         await container.get(UsagePolicyService),
         await container.get(FeatureAccessService),
+        await container.get(FeatureEmergencyService),
         await container.get(UserStore),
         await container.get(ChatStore),
         clock,

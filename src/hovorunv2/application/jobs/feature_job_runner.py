@@ -7,6 +7,7 @@ from dataclasses import replace
 
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.configuration import AppSettings
+from hovorunv2.application.features.emergency import envelope_is_current
 from hovorunv2.application.features.feature_policy import SyncPolicyPort
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry
 from hovorunv2.application.jobs.admission import (
@@ -191,16 +192,25 @@ class FeatureJobRunner:
             reservation = self._reserve_execution_budget(envelope, now)
             if not reservation.allowed:
                 return self._handle_denied_reservation(envelope, token, reservation)
-            ticket = self._admission.mark_reserved(envelope.job_id, token)
-            if ticket is None:
-                return JobOutcome.FAILED.value
-            if ticket.state == TicketState.CANCELLING:
-                self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
-                return JobOutcome.CANCELLED.value
-            return self._extract_and_deliver(envelope, loaded, stage, token, now)
+            return self._execute_reserved(envelope, loaded, stage, token, now)
         except Exception:
             logger.exception("Claimed execution reconciliation deferred")
             return JobOutcome.FAILED.value
+
+    def _execute_reserved(
+        self, envelope: JobEnvelope, loaded: LoadedPayload, stage: JobStage, token: str, now: float
+    ) -> str:
+        """Fence cancellation and stale emergency epochs before extraction or delivery."""
+        ticket = self._admission.mark_reserved(envelope.job_id, token)
+        if ticket is None:
+            return JobOutcome.FAILED.value
+        if ticket.state == TicketState.CANCELLING:
+            self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
+            return JobOutcome.CANCELLED.value
+        if not envelope_is_current(envelope.feature_epoch, self._policies.emergency_state(envelope.feature)):
+            self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
+            return JobOutcome.CANCELLED.value
+        return self._extract_and_deliver(envelope, loaded, stage, token, now)
 
     def _load_payload(self, envelope: JobEnvelope, token: str) -> LoadedPayload | None:
         loaded = self._payloads.load(envelope.payload_ref, envelope.job_id)
