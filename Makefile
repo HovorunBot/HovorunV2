@@ -218,10 +218,13 @@ lint-imports:
 check: lint type-check lint-imports test
 	@echo "All quality checks passed!"
 
-# Docker handles build caching; lean roles share one image identity and browser/import roles use their own target.
-## Print build metadata and build every role-specific application image using Docker cache.
+# Build one representative per image sequentially to avoid concurrent exports to the same tag.
+# Bot, media/operations workers, Beat and migrations share the lean image.
+## Print build metadata and build each distinct application image once using Docker cache.
 build: verify-build
-	$(DOCKER_COMPOSE) build bot worker-media worker-browser worker-operations beat migrate import-sqlite
+	$(DOCKER_COMPOSE) build bot
+	$(DOCKER_COMPOSE) build worker-browser
+	$(DOCKER_COMPOSE) build import-sqlite
 
 ## Build the production role images regardless of COMPOSE_ENV.
 build-prod:
