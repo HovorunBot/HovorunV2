@@ -38,6 +38,11 @@ Confirm that the configured `appendonly`/`dir` volume is the one backed up. Exis
 
 ## 3. Migrate
 
+If the server is still running 0.2.1 with SQLite, follow the
+[0.2.1 to 0.3.0 production upgrade guide](upgrade-0.2.1-to-0.3.0.md) instead
+of this section. Import into an empty PostgreSQL target before running ordinary
+migrations or starting the new application.
+
 Build the selected images and run the one-shot migration service:
 
 ```bash

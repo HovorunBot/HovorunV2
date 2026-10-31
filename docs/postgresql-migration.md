@@ -1,5 +1,8 @@
 # PostgreSQL setup and one-time SQLite transfer
 
+For an existing production server running 0.2.1, follow the
+[step-by-step 0.2.1 to 0.3.0 upgrade guide](upgrade-0.2.1-to-0.3.0.md).
+
 Live bot and administration persistence uses PostgreSQL through SQLAlchemy and psycopg.
 Valkey remains the cache and broker server. SQLite support is retained only for reading
 legacy databases and testing historical upgrades.
