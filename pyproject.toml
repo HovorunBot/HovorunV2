@@ -33,7 +33,6 @@ dependencies = [
     "dishka",
     "cryptography",
     "pycountry",
-    "pycountry-convert",
     "celery[redis]>=5.7.0rc1",
     "casbin",
     "psycopg[binary]",

@@ -729,7 +729,6 @@ dependencies = [
     { name = "instaloader" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pycountry" },
-    { name = "pycountry-convert" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "redis" },
@@ -776,7 +775,6 @@ requires-dist = [
     { name = "instaloader" },
     { name = "psycopg", extras = ["binary"] },
     { name = "pycountry" },
-    { name = "pycountry-convert" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "redis", specifier = ">=7.4,<8" },
@@ -1113,15 +1111,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pprintpp"
-version = "0.4.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/06/1a/7737e7a0774da3c3824d654993cf57adc915cb04660212f03406334d8c0b/pprintpp-0.4.0.tar.gz", hash = "sha256:ea826108e2c7f49dc6d66c752973c3fc9749142a798d6b254e1e301cfdbc6403", size = 17995, upload-time = "2018-07-01T01:42:34.87Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4e/d1/e4ed95fdd3ef13b78630280d9e9e240aeb65cc7c544ec57106149c3942fb/pprintpp-0.4.0-py2.py3-none-any.whl", hash = "sha256:b6b4dcdd0c0c0d75e4d7b2f21a9e933e5b2ce62b26e1a54537f9651ae5a5c01d", size = 16952, upload-time = "2018-07-01T01:42:36.496Z" },
-]
-
-[[package]]
 name = "pre-commit"
 version = "4.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1253,24 +1242,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pycountry-convert"
-version = "0.7.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pprintpp" },
-    { name = "pycountry" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
-    { name = "repoze-lru" },
-    { name = "wheel" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/be/85/a5bcf01c5e8de1b611990c723e2b88bdbfb93375e18d1539f6fa8f0f9952/pycountry-convert-0.7.2.tar.gz", hash = "sha256:095d310f746bf2a5ef713b3a82eea28a27262286223765b1e7be8a5c4fa7e9b9", size = 12376, upload-time = "2018-02-18T17:36:06.648Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/e7/26c14899a43c34e04a58e3772007afe79dbd64fac15d2fbaeedff24082f2/pycountry_convert-0.7.2-py3-none-any.whl", hash = "sha256:5e33883a88b3cb752d332ca2358ac6c4de4defc86a2b93b713b36338e914952e", size = 13836, upload-time = "2018-02-18T17:36:09.704Z" },
-]
-
-[[package]]
 name = "pycparser"
 version = "3.12"
 source = { registry = "https://pypi.org/simple" }
@@ -1384,18 +1355,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pytest-mock"
-version = "3.17.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/97/c2/28b9f5b955ff2bcd4727a6f768e2ca9b586cd7c37b95ea5f7b9b873ac7b3/pytest_mock-3.17.0.tar.gz", hash = "sha256:e36576e0985e01027e999891e7a966c67822d40c89ef1b4c8b6e22737e3590b4", size = 43064, upload-time = "2026-10-17T16:21:42.435Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/ea/47fbdc8f37410956fd445720e927589b1e2a47772c5f28109f0ce2fa26d9/pytest_mock-3.17.0-py3-none-any.whl", hash = "sha256:1b82aa4b37137248bd687055e109723debeb07b489de1565297dc9589c5f2d6b", size = 11248, upload-time = "2026-10-17T16:21:41.265Z" },
-]
-
-[[package]]
 name = "pytest-recording"
 version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1479,15 +1438,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/51/93/05e7d4a65285066a74f48697f9b9cde5cfce71398033d69ed83c3d98f5c9/redis-7.4.1.tar.gz", hash = "sha256:1a1df5067062cf7cbe677994e391f8ee0840f499d370f1a71266e0dd3aa9308e", size = 4945742, upload-time = "2026-06-05T09:10:06.703Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4a/2e/2677f3f93dae0497e7e33b6637302e7f3744efc553f34231183e32584885/redis-7.4.1-py3-none-any.whl", hash = "sha256:1fa4647af1c5e93a2c685aa248ee44cce092691146d41390518dabe9a99839b0", size = 410171, upload-time = "2026-06-05T09:10:05.128Z" },
-]
-
-[[package]]
-name = "repoze-lru"
-version = "0.8"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b5/19/727d5c904ea513a6a9044bf43beaa2c5e632e017b1e0ab71e9d111d20967/repoze_lru-0.8.tar.gz", hash = "sha256:a252408cd93fe670c88d6665b96fe5d42e071dba2507a1f21a1e609ae4fa891a", size = 22169, upload-time = "2026-05-16T16:57:28.315Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/a1/cc0848069e3937651582c74db0fdddda96f853060a25617754a264913afe/repoze_lru-0.8-py3-none-any.whl", hash = "sha256:979a30d2e567e31f292009ba4467aa444c89ee0da3e3013980c35f1fb4f19d99", size = 6379, upload-time = "2026-05-16T16:57:27.257Z" },
 ]
 
 [[package]]
@@ -1796,18 +1746,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/cb/a5abcc2891249f393827c650c6296660ce40374ac22d99ab9aea41f9d2a2/websocket_client-1.9.2.tar.gz", hash = "sha256:0fcb57545848be86992e128218fd96dd87a6769ffdb1a968dff79632b85604d0", size = 84110, upload-time = "2026-08-31T14:08:40.964Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/d2/cc4dc1271e464942db7ee278baae2daa99ee77cb2af744025c04da585a3e/websocket_client-1.9.2-py3-none-any.whl", hash = "sha256:e1a673830a9c7bfa47b1cd3d5e4178f4c9651d80a4eab02c9c23a1c3ec6250ce", size = 95786, upload-time = "2026-08-31T14:08:39.899Z" },
-]
-
-[[package]]
-name = "wheel"
-version = "0.48.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/20/50ed6bdf27dec98b568a8ae25dc599f35baa3d9709f9e83fd1edb56b9a90/wheel-0.48.0.tar.gz", hash = "sha256:94800765601e9171bf5d58d066e640662842bcedcbab982b2c90787a2c987322", size = 66471, upload-time = "2026-08-11T22:02:27.327Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl", hash = "sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab", size = 33320, upload-time = "2026-08-11T22:02:26.1Z" },
 ]
 
 [[package]]
