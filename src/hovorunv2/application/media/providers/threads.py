@@ -81,7 +81,14 @@ class ThreadsService(BaseMediaClient):
         self,
         url: str,
     ) -> RichMediaPayload | None:
-        """Fetch Threads post via headless browser after yt-dlp is attempted."""
+        """Fetch the Threads post via the headless browser after yt-dlp is attempted.
+
+        Args:
+            url: Media URL to extract.
+
+        Returns:
+            Parsed provider payload, or None when the URL does not match.
+        """
         match = self._config.pattern.search(url)
         if not match:
             return None

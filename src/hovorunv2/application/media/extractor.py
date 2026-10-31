@@ -67,7 +67,18 @@ def _media_items(info: dict[str, object]) -> list[MediaItem]:
 
 
 def process_extraction_info(raw: object, url: str) -> RichMediaPayload:
-    """Parse provider-independent yt-dlp facts without any network, Telegram object or worker state."""
+    """Parse provider-independent yt-dlp facts without any network or bot state.
+
+    Args:
+        raw: Raw extraction result from the backend.
+        url: Original media URL.
+
+    Returns:
+        Parsed provider payload.
+
+    Raises:
+        MediaExtractionError: If the raw result lacks usable metadata.
+    """
     info = _mapping(raw)
     if not info:
         msg = "Media extraction returned unusable metadata."
@@ -123,7 +134,18 @@ def _add_cookies(ydl: yt_dlp.YoutubeDL, url: str, cookies: dict[str, str]) -> No
 
 
 def extract_info(url: str, cookies: dict[str, str] | None = None) -> object:
-    """Run ordinary bounded yt-dlp I/O without an event loop or payload-bearing diagnostics."""
+    """Run bounded yt-dlp I/O without an event loop or payload-bearing diagnostics.
+
+    Args:
+        url: Media URL to extract.
+        cookies: Optional provider cookies for the backend.
+
+    Returns:
+        Raw extraction result from yt-dlp.
+
+    Raises:
+        MediaExtractionError: If the backend fails or returns unusable data.
+    """
     options = {
         "quiet": True,
         "logger": MediaBackendLogger(),
@@ -150,7 +172,15 @@ class NativeMediaExtractor:
     """Synchronous worker entrypoint sharing the same extraction and parsing as the bot."""
 
     def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
-        """Return provider facts without crossing an asynchronous execution boundary."""
+        """Return provider facts without crossing an asynchronous execution boundary.
+
+        Args:
+            url: Media URL to extract.
+            cookies: Optional provider cookies for the backend.
+
+        Returns:
+            Parsed provider payload.
+        """
         return process_extraction_info(extract_info(url, cookies), url)
 
     extract_payload = extract
@@ -163,7 +193,15 @@ class MediaExtractor:
     YT_SHORTS_PATTERN = re.compile(r"https?://(?:www\.)?youtube\.com/shorts/(?P<id>[\w-]+)")
 
     async def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
-        """Offload the blocking backend only for the async bot path."""
+        """Offload the blocking backend to a worker thread for the async bot path.
+
+        Args:
+            url: Media URL to extract.
+            cookies: Optional provider cookies for the backend.
+
+        Returns:
+            Parsed provider payload.
+        """
         info = await asyncio.to_thread(self._extract_info, url, cookies)
         return process_extraction_info(info, url)
 

@@ -215,7 +215,14 @@ class InstagramService(BaseMediaClient):
             raise MediaExtractionError(msg) from None
 
     async def extract_fallback(self, url: str) -> RichMediaPayload | None:
-        """Try instaloader after yt-dlp fails, then fall back to headless browser."""
+        """Try instaloader after yt-dlp fails, then fall back to the headless browser.
+
+        Args:
+            url: Media URL to extract.
+
+        Returns:
+            Parsed provider payload, or None when no strategy succeeds.
+        """
         if match := self._config.pattern.search(url):
             try:
                 return await self._extract_via_instaloader(url, match)

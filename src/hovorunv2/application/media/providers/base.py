@@ -112,7 +112,17 @@ class BaseMediaClient(MediaParser):
         return bool(self._config.browser_config)
 
     async def extract(self, url: str) -> RichMediaPayload | None:
-        """Execute direct API extraction."""
+        """Execute direct API extraction.
+
+        Args:
+            url: Media URL to extract.
+
+        Returns:
+            Parsed provider payload, or None when the URL is not handled.
+
+        Raises:
+            MediaExtractionError: If the provider returns unusable extraction metadata.
+        """
         if self._config.post_url_pattern and not self._config.post_url_pattern.search(url):
             return None
 
@@ -132,7 +142,14 @@ class BaseMediaClient(MediaParser):
         return self._require_usable_payload(payload)
 
     async def extract_metadata(self, url: str) -> RichMediaPayload | None:
-        """Execute OpenGraph / HTML metadata extraction as final fallback."""
+        """Execute OpenGraph/HTML metadata extraction as the final fallback.
+
+        Args:
+            url: Media URL to extract.
+
+        Returns:
+            Parsed provider payload, or None when no OpenGraph configuration exists.
+        """
         if self._config.og_config is None:
             return None
 
@@ -140,7 +157,14 @@ class BaseMediaClient(MediaParser):
         return await self._extract_via_og(resolved_url, self._config.og_config)
 
     async def resolve_url(self, url: str) -> str:
-        """Resolve redirects when configured on the provider."""
+        """Resolve redirects when configured on the provider.
+
+        Args:
+            url: URL to resolve.
+
+        Returns:
+            Resolved URL, or the original URL when no redirect pattern matches.
+        """
         if self._config.redirect_pattern and self._config.redirect_pattern.search(url):
             return await self._resolve_redirect(url, headers=self._config.headers or None)
         return url
@@ -191,7 +215,17 @@ class BaseMediaClient(MediaParser):
         return []
 
     async def extract_fallback(self, url: str) -> RichMediaPayload | None:
-        """Perform config-driven headless browser fallback when configured."""
+        """Perform config-driven headless browser fallback when configured.
+
+        Args:
+            url: Media URL to extract.
+
+        Returns:
+            Parsed provider payload, or None when no browser fallback is configured.
+
+        Raises:
+            MediaExtractionError: If the browser extraction fails.
+        """
         b_cfg = self._config.browser_config
         if not b_cfg:
             return None
@@ -216,7 +250,18 @@ class BaseMediaClient(MediaParser):
             return self._require_usable_payload(payload)
 
     def extract_sync(self, url: str, http: SyncHTTPPort) -> RichMediaPayload | None:
-        """Execute direct API extraction synchronously."""
+        """Execute direct API extraction synchronously.
+
+        Args:
+            url: Media URL to extract.
+            http: Synchronous HTTP port for the request.
+
+        Returns:
+            Parsed provider payload, or None when the URL is not handled.
+
+        Raises:
+            MediaExtractionError: If the provider returns unusable extraction metadata.
+        """
         if self._config.post_url_pattern and not self._config.post_url_pattern.search(url):
             return None
 
@@ -236,7 +281,15 @@ class BaseMediaClient(MediaParser):
         return self._require_usable_payload(payload)
 
     def extract_metadata_sync(self, url: str, http: SyncHTTPPort) -> RichMediaPayload | None:
-        """Execute OpenGraph / HTML metadata extraction synchronously as final fallback."""
+        """Execute OpenGraph/HTML metadata extraction synchronously as the final fallback.
+
+        Args:
+            url: Media URL to extract.
+            http: Synchronous HTTP port for the request.
+
+        Returns:
+            Parsed provider payload, or None when no OpenGraph configuration exists.
+        """
         if self._config.og_config is None:
             return None
 
@@ -244,7 +297,15 @@ class BaseMediaClient(MediaParser):
         return self._extract_via_og_sync(resolved_url, self._config.og_config, http)
 
     def resolve_url_sync(self, url: str, http: SyncHTTPPort) -> str:
-        """Resolve redirects synchronously when configured on the provider."""
+        """Resolve redirects synchronously when configured on the provider.
+
+        Args:
+            url: URL to resolve.
+            http: Synchronous HTTP port for the request.
+
+        Returns:
+            Resolved URL, or the original URL when no redirect pattern matches.
+        """
         if self._config.redirect_pattern and self._config.redirect_pattern.search(url):
             return self._resolve_redirect_sync(http, url, headers=self._config.headers or None)
         return url
@@ -255,7 +316,20 @@ class BaseMediaClient(MediaParser):
         http: SyncHTTPPort,
         extractor: NativeMediaExtractor,
     ) -> RichMediaPayload:
-        """Execute multi-tier extraction synchronously in the media stage."""
+        """Execute multi-tier extraction synchronously in the media stage.
+
+        Args:
+            url: Media URL to extract.
+            http: Synchronous HTTP port for the request.
+            extractor: Native media extractor for the generic backend strategy.
+
+        Returns:
+            Parsed provider payload.
+
+        Raises:
+            BrowserContinuationRequired: If browser continuation is needed after non-browser tiers miss.
+            MediaExtractionError: If every extraction strategy is exhausted.
+        """
         cleaned_url = url.rstrip(".,")
 
         try:
@@ -304,7 +378,19 @@ class BaseMediaClient(MediaParser):
         http: SyncHTTPPort,
         browser: SyncBrowserPort,
     ) -> RichMediaPayload:
-        """Execute browser-stage extraction: Tier 3 (browser) -> Tier 4 (OpenGraph)."""
+        """Execute browser-stage extraction across the browser and OpenGraph tiers.
+
+        Args:
+            url: Media URL to extract.
+            http: Synchronous HTTP port for the request.
+            browser: Synchronous browser port for the browser tier.
+
+        Returns:
+            Parsed provider payload.
+
+        Raises:
+            MediaExtractionError: If every extraction strategy is exhausted.
+        """
         cleaned_url = url.rstrip(".,")
         try:
             payload = self._extract_browser_sync(cleaned_url, browser)

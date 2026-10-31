@@ -27,5 +27,5 @@ class RichMediaPayload:
 
     @property
     def is_video(self) -> bool:
-        """Backward compatibility: returns True if any item is a video."""
+        """Return whether any item is a video."""
         return any(item.is_video for item in self.media_items)

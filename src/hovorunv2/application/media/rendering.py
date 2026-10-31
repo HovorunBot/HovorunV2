@@ -38,7 +38,16 @@ def _footer(payload: RichMediaPayload, platform_name: str) -> str:
 
 
 def build_caption(payload: RichMediaPayload, sender_label: str | None, platform_name: str) -> str:
-    """Preserve prepared HTML content and quotes while escaping the transient sender label."""
+    """Build the media caption while escaping only the transient sender label.
+
+    Args:
+        payload: Payload carrying the prepared content and quote.
+        sender_label: Label for the sender sharing the media.
+        platform_name: Platform name for the footer link.
+
+    Returns:
+        Assembled caption text.
+    """
     content = payload.content + "\n\n" if payload.content else ""
     quote = ""
     if payload.quoted_payload:
@@ -57,7 +66,17 @@ def build_caption(payload: RichMediaPayload, sender_label: str | None, platform_
 def plan_caption(
     payload: RichMediaPayload, sender_label: str | None, platform_name: str, total_text: str | None = None
 ) -> CaptionPlan:
-    """Move long descriptions into a separate text message using the existing header/footer fallback."""
+    """Plan a caption, moving overlong text into a separate text message.
+
+    Args:
+        payload: Payload carrying the prepared content and quote.
+        sender_label: Label for the sender sharing the media.
+        platform_name: Platform name for the footer link.
+        total_text: Optional prebuilt caption text to plan against.
+
+    Returns:
+        Caption plan with an optional separate text message.
+    """
     text = total_text if total_text is not None else build_caption(payload, sender_label, platform_name)
     if len(text) <= CAPTION_LIMIT:
         return CaptionPlan(text)

@@ -75,10 +75,18 @@ class BrowserPort(Protocol):
         wait_selector: str | None = None,
         cookies: list[dict[str, object]] | None = None,
     ) -> tuple[T | None, list[bytes | MediaFailure]]:
-        """Run extraction and download in one browser session.
+        """Run extraction and download inside one browser session.
 
-        The current adapter returns (None, []) when extraction finds no metadata.
-        Navigation and browser failures raise BrowserError.
-        Each media position contains bytes or an explicit MediaFailure.
+        Returns (None, []) when extraction finds no metadata. Each media
+        position carries either bytes or an explicit MediaFailure.
+
+        Args:
+            url: URL to open in the browser.
+            extractor_fn: Callback that extracts a value from the open tab.
+            wait_selector: Optional CSS selector to await before extracting.
+            cookies: Optional cookies to inject before navigation.
+
+        Returns:
+            The extracted value paired with one media outcome per position.
         """
         ...

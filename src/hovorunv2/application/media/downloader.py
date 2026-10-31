@@ -32,7 +32,7 @@ DEFAULT_DOWNLOAD_HEADERS: Mapping[str, str] = {
 
 
 def is_hls_manifest(content: bytes) -> bool:
-    """Share content detection between direct async and native downloads."""
+    """Return whether the content is a small HLS manifest."""
     return len(content) < HLS_MANIFEST_SIZE_THRESHOLD and "#EXTM3U" in content.decode("utf-8", errors="ignore")
 
 
@@ -89,7 +89,18 @@ def _download_to_file(url: str, root: Path, max_bytes: int) -> Path:
 
 
 def download_ytdlp_bytes(url: str, *, max_bytes: int = MAX_MEDIA_BYTES) -> bytes:
-    """Require bounded output while owning and cleaning every temporary backend artifact."""
+    """Require bounded output while owning and cleaning every temporary backend artifact.
+
+    Args:
+        url: Media URL to download.
+        max_bytes: Upper bound on the downloaded payload.
+
+    Returns:
+        Downloaded content bytes.
+
+    Raises:
+        MediaDownloadError: If the backend fails or the output exceeds the bound.
+    """
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -116,7 +127,18 @@ class NativeMediaDownloader:
         return _require_content(content)
 
     def download(self, url: str, *, is_video: bool = False) -> bytes:
-        """Require direct bytes or use the existing video-only fallback strategy."""
+        """Require direct bytes or fall back to the video-only strategy.
+
+        Args:
+            url: Media URL to download.
+            is_video: Whether the media is a video.
+
+        Returns:
+            Downloaded content bytes.
+
+        Raises:
+            MediaDownloadError: If the download fails and no fallback applies.
+        """
         clean_url = html.unescape(url)
         if is_video and (".m3u8" in clean_url or "blob:" in clean_url):
             return download_ytdlp_bytes(clean_url)
@@ -139,7 +161,16 @@ class NativeMediaDownloader:
             return error.code
 
     def download_batch(self, items: list[MediaItem]) -> list[bytes | MediaFailure]:
-        """Preserve ordered partial results with explicit failures, including existing in-memory bytes."""
+        """Download every item while preserving order and explicit failures.
+
+        Existing in-memory bytes are reused without a second download.
+
+        Args:
+            items: Media items to download in order.
+
+        Returns:
+            One bytes payload or MediaFailure per input item, in input order.
+        """
         return [self._download_item(item) for item in items]
 
 
@@ -157,7 +188,17 @@ class MediaDownloader:
     async def download_as_buffered_file(
         self, url: str, filename: str, *, is_video: bool = False, session: aiohttp.ClientSession | None = None
     ) -> BufferedInputFile:
-        """Require one bounded download or raise MediaDownloadError."""
+        """Require one bounded download for a single URL.
+
+        Args:
+            url: Media URL to download.
+            filename: Name to attach to the buffered file.
+            is_video: Whether the media is a video.
+            session: Optional session override; defaults to the injected session.
+
+        Returns:
+            The downloaded content as a buffered input file.
+        """
         # Fix HTML entities in URLs (common in scraped meta tags)
         clean_url = html.unescape(url)
         actual_session = session or self._session
@@ -174,7 +215,16 @@ class MediaDownloader:
     async def download_batch(
         self, items: list[MediaItem], prefix: str = "media", session: aiohttp.ClientSession | None = None
     ) -> list[BufferedInputFile | MediaFailure]:
-        """Download concurrently, retaining input order and explicit per-item failures."""
+        """Download every item concurrently while preserving input order.
+
+        Args:
+            items: Media items to download.
+            prefix: Filename prefix for generated names.
+            session: Optional session override; defaults to the injected session.
+
+        Returns:
+            One buffered file or MediaFailure per input item, in input order.
+        """
         actual_session = session or self._session
         tasks = []
         for index, item in enumerate(items):

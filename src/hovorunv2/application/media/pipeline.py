@@ -50,7 +50,18 @@ class MediaPipeline:
         actor_id: int | None,
         trigger: TriggerKind,
     ) -> RichMediaPayload | None:
-        """Execute 4-tier extraction, verify capture permissions, and finalize payload."""
+        """Execute 4-tier extraction, verify capture permissions, and finalize the payload.
+
+        Args:
+            client: Provider client that owns the extraction strategies.
+            url: Media URL to process.
+            chat_id: Chat requesting the media.
+            actor_id: Acting user's ID for permission evaluation.
+            trigger: Trigger kind that initiated processing.
+
+        Returns:
+            Finalized payload, or None when capture is not permitted.
+        """
         definitions = tuple(self._features.registry.capture(client.name, is_video=video) for video in (True, False))
         admitted = False
         for definition in definitions:
