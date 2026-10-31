@@ -1,4 +1,4 @@
-"""Infrastructure service for managing a headless browser instance using DrissionPage."""
+"""Manage a headless DrissionPage browser with lifecycle and tab isolation."""
 
 import asyncio
 from collections.abc import Callable
@@ -38,24 +38,14 @@ async def _finish_cancelled_operation[T](task: asyncio.Task[T]) -> None:
 
 
 class BrowserLifecycleManager:
-    """Manager for browser instance lifecycle and idle shutdown.
-
-    Attributes:
-        _idle_timeout (int): Seconds to wait before shutting down idle browser.
-        _page (ChromiumPage | None): The managed DrissionPage instance.
-        _idle_timer (asyncio.Task | None): Task for scheduled shutdown.
-        _active_requests (int): Counter for active browser operations.
-        _lock (asyncio.Lock): Synchronization for lifecycle state changes.
-
-    """
+    """Manage the browser instance lifecycle and idle shutdown on a shared lock."""
 
     def __init__(self, idle_timeout: int, flags: list[str] | None = None) -> None:
-        """Initialize the manager.
+        """Create the owned browser and request tracking.
 
         Args:
-            idle_timeout: Seconds to wait before shutting down idle browser.
-            flags: Optional list of browser arguments (e.g., --headless).
-
+            idle_timeout: Seconds to wait before shutting down an idle browser.
+            flags: Optional browser launch arguments, such as ``--headless``.
         """
         self._idle_timeout = idle_timeout
         self._flags = flags or []
@@ -67,12 +57,7 @@ class BrowserLifecycleManager:
 
     @property
     def page(self) -> ChromiumPage | None:
-        """Get current page instance.
-
-        Returns:
-            ChromiumPage instance or None if not started.
-
-        """
+        """Return the current page instance or None if the browser is not started."""
         return self._page
 
     def require_page(self) -> ChromiumPage:
@@ -85,30 +70,25 @@ class BrowserLifecycleManager:
 
     @property
     def is_running(self) -> bool:
-        """Check if browser instance is currently running.
-
-        Returns:
-            True if _page exists.
-
-        """
+        """Return whether the browser process and attached page are running."""
         return self._browser.is_running
 
     async def acquire(self) -> None:
-        """Initialize browser and tracking for a new request."""
+        """Start the browser and register an active request."""
         async with self._lock:
             self._stop_idle_timer()
             await self._ensure_browser()
             self._active_requests += 1
 
     async def release(self) -> None:
-        """Update tracking and start idle timer if no active requests."""
+        """Deregister a request and start the idle timer when none remain."""
         async with self._lock:
             self._active_requests -= 1
             if self._active_requests == 0:
                 self._start_idle_timer()
 
     async def _ensure_browser(self) -> None:
-        """Ensure browser instance is running."""
+        """Start the browser if no page is attached yet."""
         if self._page is not None:
             return
         logger.info("Starting new headless DrissionPage instance")
@@ -122,23 +102,23 @@ class BrowserLifecycleManager:
             raise
 
     def _init_page(self) -> None:
-        """Initialize ChromiumPage in a thread with detected browser path."""
+        """Start the owned Chromium instance and attach its page."""
         self._page = self._browser.start()
 
     def _start_idle_timer(self) -> None:
-        """Start idle shutdown timer."""
+        """Schedule the idle shutdown task."""
         self._stop_idle_timer()
         self._idle_timer = asyncio.create_task(self._idle_shutdown())
 
     def _stop_idle_timer(self) -> None:
-        """Cancel idle shutdown timer."""
+        """Cancel the pending idle shutdown task."""
         if self._idle_timer:
             if self._idle_timer is not asyncio.current_task():
                 self._idle_timer.cancel()
             self._idle_timer = None
 
     async def _idle_shutdown(self) -> None:
-        """Shutdown browser after idle timeout."""
+        """Close the browser after the idle timeout elapses."""
         try:
             await asyncio.sleep(self._idle_timeout)
             async with self._lock:
@@ -149,7 +129,7 @@ class BrowserLifecycleManager:
             return
 
     async def _perform_close(self) -> None:
-        """Close without lock."""
+        """Close the browser and detach its page without re-acquiring the lock."""
         self._stop_idle_timer()
         try:
             await _run_owned_operation(self._browser.close)
@@ -158,33 +138,28 @@ class BrowserLifecycleManager:
         logger.info("Browser lifecycle manager closed")
 
     async def close(self) -> None:
-        """Close browser and page instance."""
+        """Close the browser and detach its page."""
         async with self._lock:
             await self._perform_close()
 
 
 class BrowserService:
-    """Service for fetching web content using a headless browser.
-
-    Provides a thread-safe interface for web scraping with automatic
-    lifecycle management and tab-based isolation.
-    """
+    """Fetch web content and media through a headless browser with retry and tab isolation."""
 
     DEFAULT_TIMEOUT_S = 30
     SELECTOR_TIMEOUT_S = 10
     MAX_RETRIES = 2
 
     def __init__(self, max_tabs: int, idle_timeout: int, flags: list[str] | None = None) -> None:
-        """Initialize the service.
+        """Create the browser manager and concurrency bound.
 
         Args:
-            max_tabs: Maximum concurrent tabs (controlled by semaphore).
-            idle_timeout: Seconds to wait before shutting down idle browser.
-            flags: Optional list of browser arguments.
+            max_tabs: Maximum concurrent tabs, guarded by a semaphore.
+            idle_timeout: Seconds to wait before shutting down an idle browser.
+            flags: Optional browser launch arguments.
 
         Raises:
             ValueError: If max_tabs is not positive.
-
         """
         if max_tabs <= 0:
             msg = "Browser tab capacity must be positive."
@@ -194,11 +169,11 @@ class BrowserService:
 
     @property
     def is_running(self) -> bool:
-        """Check if browser instance is currently running."""
+        """Return whether the managed browser instance is running."""
         return self._manager.is_running
 
     async def get_content(self, url: str, wait_selector: str | None = None) -> str:
-        """Fetch HTML content of given URL with retries."""
+        """Fetch HTML content of the URL, retrying recoverable browser failures."""
         async with self._semaphore:
             return await self._content_with_retries(url, wait_selector)
 
@@ -227,20 +202,19 @@ class BrowserService:
         wait_selector: str | None = None,
         cookies: list[dict[str, object]] | None = None,
     ) -> tuple[T | None, list[bytes | MediaFailure]]:
-        """Fetch URL, extract metadata, and download media in one browser session.
+        """Fetch the URL, extract metadata, and download media in one browser session.
 
         Args:
             url: Target URL.
-            extractor_fn: Function that takes HTML string and returns metadata.
-            wait_selector: Optional CSS selector to wait for.
+            extractor_fn: Callable that extracts metadata from a tab and URL, or returns None.
+            wait_selector: Optional CSS selector to wait for before extraction.
             cookies: Optional list of cookie dictionaries to set before navigation.
 
         Returns:
-            Tuple of (extracted_metadata, list of downloaded media bytes).
+            Extracted metadata and downloaded media bytes or per-item failures.
 
         Raises:
-            BrowserError: If the browser session cannot be acquired or executes.
-
+            BrowserError: If the browser session cannot be acquired or the extraction fails.
         """
         async with self._semaphore:
             await self._manager.acquire()
@@ -289,50 +263,19 @@ class BrowserService:
             tab.close()
 
     def _is_recoverable_error(self, error: Exception) -> bool:
-        """Check if browser error is recoverable by restarting.
-
-        Args:
-            error: The exception to check.
-
-        Returns:
-            True if error suggests a crash/disconnect that a restart might fix.
-
-        """
+        """Return whether the error is recoverable by restarting the browser."""
         if isinstance(error, (PageDisconnectedError, BrowserConnectError, ConnectionError)):
             return True
         err_msg = str(error).lower()
         return "closed" in err_msg or "connection" in err_msg or "disconnected" in err_msg
 
     async def _fetch_url_content(self, url: str, wait_selector: str | None = None) -> str:
-        """Fetch content using a new tab in the managed page.
-
-        Args:
-            url: URL to fetch.
-            wait_selector: CSS selector to wait for.
-
-        Returns:
-            HTML content.
-
-        """
+        """Fetch the URL content in a new tab using the managed page."""
         page = self._manager.require_page()
         return await _run_owned_operation(partial(self._sync_fetch, page, url, wait_selector))
 
     def _sync_fetch(self, page: ChromiumPage, url: str, wait_selector: str | None) -> str:
-        """Fetch content synchronously in a thread.
-
-        Uses tabs for lightweight control isolation. Note that in DrissionPage,
-        tabs within a single ChromiumPage instance share the same session,
-        cookies, and local storage.
-
-        Args:
-            page: Main ChromiumPage instance.
-            url: URL to fetch.
-            wait_selector: CSS selector to wait for.
-
-        Returns:
-            HTML content.
-
-        """
+        """Fetch the URL content synchronously in a new tab and return its HTML."""
         logger.info("Fetching browser content")
         # new_tab creates an empty tab; the bounded get(url) below performs its only navigation.
         tab: BrowserTab = page.new_tab()
@@ -352,14 +295,7 @@ class BrowserService:
             self._wait_for_selector_sync(tab, url, wait_selector)
 
     def _wait_for_selector_sync(self, tab: BrowserTab, url: str, selector: str) -> None:
-        """Wait for selector synchronously.
-
-        Args:
-            tab: DrissionPage tab instance.
-            url: URL being fetched (for logging).
-            selector: CSS selector to wait for.
-
-        """
+        """Wait for the selector, degrading to the current content on timeout."""
         try:
             logger.debug("Waiting for selector: %s", selector)
             tab.ele(selector, timeout=self.SELECTOR_TIMEOUT_S)
@@ -369,5 +305,5 @@ class BrowserService:
             )
 
     async def close(self) -> None:
-        """Close browser manager."""
+        """Close the managed browser and page."""
         await self._manager.close()

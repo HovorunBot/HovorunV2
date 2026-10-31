@@ -1,4 +1,4 @@
-"""Module for application caching."""
+"""Cache application data through a bounded Valkey client."""
 
 import json
 from typing import Any
@@ -11,14 +11,10 @@ logger = get_logger(__name__)
 
 
 class CacheService:
-    """Application cache service.
-
-    Used for keeping application data in memory and on disk temporarily.
-    Only communicates with Valkey and handles low-level data structures.
-    """
+    """Cache values and expose native Valkey transactions to infrastructure adapters."""
 
     def __init__(self, valkey_url: str) -> None:
-        """Initialize cache service."""
+        """Build the Valkey client from the supplied connection URL."""
         logger.info("Initializing CacheService")
         self._cache = redis.from_url(valkey_url)
 
@@ -28,7 +24,7 @@ class CacheService:
         return self._cache
 
     async def set(self, key: str, value: Any, expire: int | None = None) -> None:
-        """Store a value in the cache with an optional expiration time in seconds."""
+        """Store a JSON-serialized value with an optional expiration in seconds."""
         logger.debug("Caching key: %s (expire: %s)", key, expire)
 
         # Convert to JSON
@@ -98,5 +94,5 @@ class CacheService:
         return [r.decode("utf-8") if isinstance(r, bytes) else r for r in results]
 
     async def close(self) -> None:
-        """Close cache connection."""
+        """Close the underlying Valkey connection."""
         await self._cache.aclose()

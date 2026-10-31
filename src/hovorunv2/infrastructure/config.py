@@ -1,4 +1,4 @@
-"""Configuration settings for bot."""
+"""Pydantic settings schemas loaded from the project environment."""
 
 from pathlib import Path
 
@@ -40,13 +40,7 @@ class BrokerSettings(BaseSettings):
 
 
 class Settings(BrokerSettings, DatabaseSettings):
-    """Application settings schema.
-
-    Attributes:
-        bot_token: Telegram Bot API token.
-        database_url: PostgreSQL connection URL.
-
-    """
+    """Application settings schema with bot credentials and runtime tunables."""
 
     bot_token: str
     translation_target_lang: str = "uk"

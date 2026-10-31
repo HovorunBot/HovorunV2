@@ -59,7 +59,7 @@ def validate_reference(reference: str) -> None:
 
 
 class _PayloadExpiredError(ValueError):
-    """The original encrypted payload deadline has elapsed."""
+    """Encrypted payload deadline has elapsed."""
 
 
 @dataclass(frozen=True, slots=True)

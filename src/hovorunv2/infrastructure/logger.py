@@ -1,4 +1,4 @@
-"""Logging configuration module."""
+"""Configure privacy-filtered console and Telegram logging."""
 
 import asyncio
 import html
@@ -83,7 +83,7 @@ def safe_log_argument(value: object) -> object:
 
 
 class LogContextFilter(logging.Filter):
-    """Logging filter that injects user_id and chat_id from ContextVars into log records."""
+    """Inject user and chat IDs from context variables into log records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Attach user_id and chat_id attributes to the log record."""
@@ -95,17 +95,17 @@ class LogContextFilter(logging.Filter):
 
 
 class AsyncTelegramHandler(logging.Handler):
-    """Logging handler that sends messages to Telegram owners asynchronously."""
+    """Send error records to Telegram owners asynchronously."""
 
     def __init__(self, bot: Bot, roles: RoleService) -> None:
-        """Initialize with bot and current owner lookup."""
+        """Store the bot and owner lookup for later error delivery."""
         super().__init__()
         self.bot = bot
         self._roles = roles
         self._tasks: set[asyncio.Task] = set()
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Process log record."""
+        """Format, sanitize and schedule a log record for owner delivery."""
         msg = html.escape(PrivacyFormatter(LOG_FORMAT).format(record))
 
         # Condense message if it's an exception
@@ -144,7 +144,7 @@ class AsyncTelegramHandler(logging.Handler):
         return f"<pre>{html.escape(PrivacyFormatter(LOG_FORMAT).format(record))}</pre>"
 
     async def _send_to_telegram(self, message: str, owner_id: int) -> None:
-        """Actually send the message via Bot."""
+        """Send the message to one owner through the bot."""
         try:
             # We don't escape everything because _condense_exception_log provides HTML tags
             # but we ensure the message isn't insanely large

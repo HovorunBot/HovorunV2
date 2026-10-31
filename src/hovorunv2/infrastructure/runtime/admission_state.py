@@ -323,7 +323,7 @@ def read_capacity(totals: object, subject: object, ingress: object, pending: obj
 
 
 class AdmissionOperation(StrEnum):
-    """The closed set of lifecycle transitions implemented by admission transactions."""
+    """Closed set of lifecycle transitions implemented by admission transactions."""
 
     ENQUEUED = "enqueued"
     CLAIM = "claim"

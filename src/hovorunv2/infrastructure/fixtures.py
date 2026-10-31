@@ -1,4 +1,4 @@
-"""Database fixtures for initial setup."""
+"""Seed initial command fixtures into the database through audited transactions."""
 
 from functools import partial
 
