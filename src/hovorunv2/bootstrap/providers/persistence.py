@@ -12,6 +12,7 @@ from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.application.identity.recovery import RecoveryStore
 from hovorunv2.application.operations.announcements import AnnouncementStore
+from hovorunv2.application.operations.audit_inspection import AuditQueryStore
 from hovorunv2.application.operations.feature_status import FeatureAudienceStore
 from hovorunv2.application.operations.notification_ledger import NotificationEventStore
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceStore
@@ -25,6 +26,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyUserStore,
 )
 from hovorunv2.infrastructure.persistence.stores.announcement_store import SQLAlchemyAnnouncementStore
+from hovorunv2.infrastructure.persistence.stores.audit_query_store import SQLAlchemyAuditQueryStore
 from hovorunv2.infrastructure.persistence.stores.beta_prompt_store import SQLAlchemyBetaPromptStore
 from hovorunv2.infrastructure.persistence.stores.feature_audience_store import SQLAlchemyFeatureAudienceStore
 from hovorunv2.infrastructure.persistence.stores.feature_emergency_store import SQLAlchemyFeatureEmergencyStore
@@ -75,6 +77,9 @@ class AuditAndPersistenceProvider(Provider):
         return SQLAlchemyAnnouncementStore(session_maker, audited_uow, key)
 
     announcement_store = alias(source=SQLAlchemyAnnouncementStore, provides=AnnouncementStore)
+
+    audit_query_store_impl = provide(SQLAlchemyAuditQueryStore)
+    audit_query_store = alias(source=SQLAlchemyAuditQueryStore, provides=AuditQueryStore)
 
     recovery_store_impl = provide(SQLAlchemyRecoveryStore)
     recovery_store = alias(source=SQLAlchemyRecoveryStore, provides=RecoveryStore)

@@ -31,9 +31,54 @@ class RoleArguments(argparse.Namespace):
     operation: str
     target: str | None
     revision: int | None
+    entity: str | None
+    audit_action: str | None
+    since: str | None
+    until: str | None
+    before: str | None
     role: str | None
     yes: bool
     reason: str | None
+
+
+def _add_lifecycle_topic(topics: argparse._SubParsersAction) -> None:
+    """Register lifecycle deletion and recovery commands."""
+    lifecycle = topics.add_parser("lifecycle", help="Soft-delete user or group identities without losing history.")
+    lifecycle_operations = lifecycle.add_subparsers(dest="operation", required=True)
+    lifecycle.set_defaults(target=None, role=None, reason=None, yes=False)
+    delete_user = lifecycle_operations.add_parser("delete-user", help="Soft-delete one active user identity.")
+    delete_user.add_argument("target")
+    delete_user.add_argument("--reason", required=True)
+    delete_user.add_argument("--yes", action="store_true", help="Confirm soft-deletion.")
+    delete_group = lifecycle_operations.add_parser("delete-group", help="Soft-delete one active group route.")
+    delete_group.add_argument("target")
+    delete_group.add_argument("--reason", required=True)
+    delete_group.add_argument("--yes", action="store_true", help="Confirm soft-deletion.")
+    for name, help_text in (
+        ("restore-user", "Restore a deleted user tombstone as a new generation."),
+        ("fresh-user", "Create a fresh user generation from a tombstone."),
+        ("restore-group", "Restore a deleted group tombstone as a new generation."),
+        ("fresh-group", "Create a fresh group generation from a tombstone."),
+    ):
+        command = lifecycle_operations.add_parser(name, help=help_text)
+        command.add_argument("target")
+        command.add_argument("--revision", type=int, required=True)
+        command.add_argument("--reason", required=True)
+        command.add_argument("--yes", action="store_true", help="Confirm recovery.")
+
+
+def _add_audit_topic(topics: argparse._SubParsersAction) -> None:
+    """Register the bounded audit history listing."""
+    audit = topics.add_parser("audit", help="Inspect append-only administrative history.")
+    audit_operations = audit.add_subparsers(dest="operation", required=True)
+    audit.set_defaults(target=None, role=None, reason=None, yes=False, revision=None)
+    audit_list = audit_operations.add_parser("list", help="List a bounded page of audit entries.")
+    audit_list.add_argument("--type", dest="entity")
+    audit_list.add_argument("--action", dest="audit_action")
+    audit_list.add_argument("--since")
+    audit_list.add_argument("--until")
+    audit_list.add_argument("--limit", type=int, default=20)
+    audit_list.add_argument("--before")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,28 +112,8 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--reason")
     access = topics.add_parser("access", help="Inspect known identities and manage access and beta eligibility.")
     add_access_arguments(access)
-    lifecycle = topics.add_parser("lifecycle", help="Soft-delete user or group identities without losing history.")
-    lifecycle_operations = lifecycle.add_subparsers(dest="operation", required=True)
-    lifecycle.set_defaults(target=None, role=None, reason=None, yes=False)
-    delete_user = lifecycle_operations.add_parser("delete-user", help="Soft-delete one active user identity.")
-    delete_user.add_argument("target")
-    delete_user.add_argument("--reason", required=True)
-    delete_user.add_argument("--yes", action="store_true", help="Confirm soft-deletion.")
-    delete_group = lifecycle_operations.add_parser("delete-group", help="Soft-delete one active group route.")
-    delete_group.add_argument("target")
-    delete_group.add_argument("--reason", required=True)
-    delete_group.add_argument("--yes", action="store_true", help="Confirm soft-deletion.")
-    for name, help_text in (
-        ("restore-user", "Restore a deleted user tombstone as a new generation."),
-        ("fresh-user", "Create a fresh user generation from a tombstone."),
-        ("restore-group", "Restore a deleted group tombstone as a new generation."),
-        ("fresh-group", "Create a fresh group generation from a tombstone."),
-    ):
-        command = lifecycle_operations.add_parser(name, help=help_text)
-        command.add_argument("target")
-        command.add_argument("--revision", type=int, required=True)
-        command.add_argument("--reason", required=True)
-        command.add_argument("--yes", action="store_true", help="Confirm recovery.")
+    _add_lifecycle_topic(topics)
+    _add_audit_topic(topics)
 
     feature = topics.add_parser("feature", help="Disable or re-enable a feature capability.")
     feature.set_defaults(role=None, yes=False)

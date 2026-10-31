@@ -226,6 +226,11 @@ def _validate_audit_field(schema: dict[str, TypeAdapter[object]], field: str, va
     raise ValueError(_INVALID_AUDIT_FIELD_MESSAGE)
 
 
+def audit_field_names(target_type: str, action: str) -> tuple[str, ...]:
+    """Return only the schema-permitted field names for an audited event."""
+    return tuple((AUDIT_SCHEMAS.get((target_type, action)) or {}).keys())
+
+
 def validate_audit_changes(target_type: str, action: str, changes: dict[str, object] | None) -> None:
     """Reject unknown events, fields, and unsupported shapes without exposing rejected values.
 

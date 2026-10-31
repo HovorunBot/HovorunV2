@@ -1,7 +1,9 @@
 """Offline administration composition root and process entry point."""
 
 import asyncio
+import json
 import sys
+from datetime import UTC, datetime
 
 from dishka import AsyncContainer, Scope, alias, make_async_container, provide
 from sqlalchemy.exc import SQLAlchemyError
@@ -26,6 +28,7 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.lifecycle import IdentityLifecycleService
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.application.identity.recovery import RecoveryOption, RecoveryPreviewService, RecoveryStore
+from hovorunv2.application.operations.audit_inspection import AuditInspectionService, AuditQueryStore
 from hovorunv2.application.usage.budgets import Clock, WallClock
 from hovorunv2.application.usage.policies import UsagePolicyStore, UsageSafetyCaps
 from hovorunv2.application.usage.usage_administration import UsageAdministrationService
@@ -40,6 +43,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyRoleStore,
 )
 from hovorunv2.infrastructure.persistence.stores.activation_store import SQLAlchemyActivationStore
+from hovorunv2.infrastructure.persistence.stores.audit_query_store import SQLAlchemyAuditQueryStore
 from hovorunv2.infrastructure.persistence.stores.ban_store import SQLAlchemyBanStore
 from hovorunv2.infrastructure.persistence.stores.beta_store import SQLAlchemyBetaEntitlementStore
 from hovorunv2.infrastructure.persistence.stores.chat_store import SQLAlchemyChatStore
@@ -75,6 +79,9 @@ class AdminProvider(DatabaseProvider):
     recovery_store_impl = provide(SQLAlchemyRecoveryStore)
     recovery_store = alias(source=SQLAlchemyRecoveryStore, provides=RecoveryStore)
     recovery_service = provide(RecoveryPreviewService)
+    audit_store_impl = provide(SQLAlchemyAuditQueryStore)
+    audit_store = alias(source=SQLAlchemyAuditQueryStore, provides=AuditQueryStore)
+    audit_inspection = provide(AuditInspectionService)
     role_cli = provide(RoleCLI)
     user_store_impl = provide(SQLAlchemyUserStore)
     user_store = alias(source=SQLAlchemyUserStore, provides=UserStore)
@@ -160,6 +167,36 @@ async def _execute_feature_admin(container: AsyncContainer, arguments: RoleArgum
     )
 
 
+async def _execute_audit_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
+    """Return one bounded audit page for CLI inspection."""
+    service = await container.get(AuditInspectionService)
+    page = await service.query(
+        actor=ActorContext.cli(),
+        target_type=arguments.entity,
+        action=arguments.audit_action,
+        since=_parse_timestamp(arguments.since),
+        until=_parse_timestamp(arguments.until),
+        before=arguments.before,
+        limit=arguments.limit or 20,
+    )
+    lines = [
+        f"{entry.id}\t{entry.created_at.isoformat()}\t{entry.target_type}\t{entry.target_id}\t"
+        f"{entry.action}\t{entry.actor_origin.value}\t{entry.actor_id or '-'}\t"
+        f"{json.dumps(entry.fields, ensure_ascii=True, default=str)}\t{entry.reason or '-'}"
+        for entry in page.entries
+    ]
+    if page.next_cursor:
+        lines.append(f"next_cursor\t{page.next_cursor}")
+    return "\n".join(lines) or "No audit entries."
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    parsed = datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
 async def _execute_lifecycle_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
     """Apply one CLI-authorized identity soft-deletion and report the new generation."""
     if arguments.target is None or arguments.reason is None:
@@ -219,6 +256,8 @@ async def run_admin(arguments: RoleArguments) -> str:
             return await _execute_feature_admin(container, arguments)
         if arguments.topic == "lifecycle":
             return await _execute_lifecycle_admin(container, arguments)
+        if arguments.topic == "audit":
+            return await _execute_audit_admin(container, arguments)
         cli = await container.get(RoleCLI)
         return await cli.execute(arguments)
     finally:

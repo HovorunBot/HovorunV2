@@ -8,6 +8,7 @@ encryption configuration before starting against the new database.
 
 ### Feat
 
+- **audit**: inspect administrative change history
 - **recovery**: restore records with explicit lifecycle choice
 - **recovery**: preview explicit entity recovery choices
 - **lifecycle**: soft-delete user and group identities
