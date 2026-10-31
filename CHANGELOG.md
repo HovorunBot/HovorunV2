@@ -51,6 +51,7 @@ encryption configuration before starting against the new database.
 
 ### Fix
 
+- **settings**: preserve session tokens on alerts and optimize group discovery
 - **security**: enforce admin ban checks and atomic session tokens
 - **access**: restore middleware denial prompts and beta feature enforcement
 - **release**: correct handle resolution and log filtering

@@ -198,6 +198,8 @@ class SettingsCommand(BaseCommand):
                     callback.token = token
                     button.callback_data = callback.pack()
         await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+        if context.token is not None:
+            await self._sessions.consume(context.token)
         await self._cleanup_service.reset_ttl(
             message.chat.id, message.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
         )
@@ -398,7 +400,8 @@ class SettingsCommand(BaseCommand):
             summary = await self._usage_views.for_user(query.from_user.id)
             title = "📊 Your usage"
         builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
+        back = SettingsMenu.GROUPS if context.target is None else SettingsMenu.MAIN
+        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=back).pack()))
         await self._render(message, self._render_usage(title, summary), builder, context)
 
     def _render_usage(self, title: str, summary: UsageSummary) -> str:
@@ -650,7 +653,12 @@ class SettingsCommand(BaseCommand):
             nav_row.append(
                 InlineKeyboardButton(text="⬅️", callback_data=SettingsCallback(menu=menu_type, page=page - 1).pack())
             )
-        nav_row.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{page + 1}/{total_pages}",
+                callback_data=SettingsCallback(menu=menu_type, page=page, action=SettingsAction.PAGE).pack(),
+            )
+        )
         if page < total_pages - 1:
             nav_row.append(
                 InlineKeyboardButton(text="➡️", callback_data=SettingsCallback(menu=menu_type, page=page + 1).pack())
@@ -719,13 +727,10 @@ class SettingsCommand(BaseCommand):
         if context is None or not await self._authorized(query.from_user.id, context, query.bot):
             await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
             return
-        context = await self._sessions.resolve(
-            callback_data.token, operation, query.from_user.id, msg.chat.id, msg.message_id, consume=True
-        )
-        if context is None:
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
-            return
+        context = context.model_copy(update={"token": callback_data.token})
         await self._dispatch_callback(query, callback_data, context)
+        if callback_data.menu == SettingsMenu.CLOSE:
+            await self._sessions.consume(callback_data.token)
 
     async def _dispatch_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
@@ -770,6 +775,9 @@ class SettingsCommand(BaseCommand):
             callback_data: Unpacked settings callback payload.
             context: Current settings session context.
         """
+        if callback_data.action == SettingsAction.PAGE:
+            await query.answer()
+            return
         match callback_data.menu:
             case SettingsMenu.MODULES:
                 await self._handle_modules_callback(query, callback_data, context)

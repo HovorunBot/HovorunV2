@@ -36,6 +36,7 @@ class SettingsContext(BaseModel):
     actor_generation: int | None
     expires_at: float
     operations: list[str] = []
+    token: str | None = None
 
     @property
     def target_chat_id(self) -> int:
@@ -193,6 +194,10 @@ class SettingsSessionService:
         if consume and await self._cache.pop(key) != raw:
             return None
         return context
+
+    async def consume(self, token: str) -> None:
+        """Remove one consumed session token after a replacement render."""
+        await self._cache.pop(f"settings:session:{token}")
 
     async def _target_matches(self, context: SettingsContext, actor_id: int, transport_chat_id: int) -> bool:
         """Return whether the bound private or group target is still current."""

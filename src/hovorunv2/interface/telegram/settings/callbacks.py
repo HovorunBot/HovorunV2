@@ -34,6 +34,7 @@ class SettingsAction(StrEnum):
 
     TOGGLE = "toggle"
     SELECT = "select"
+    PAGE = "page"
 
 
 class AccessCallback(CallbackData, prefix="access"):
