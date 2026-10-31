@@ -35,7 +35,16 @@ class WorkerLifecycleService:
         self._clock = clock
 
     def complete(self, job_id: str, token: str, intent: SettlementIntent) -> None:
-        """Record terminal effects first, then reconcile both backends before releasing admission."""
+        """Record terminal effects first, then reconcile both backends before releasing admission.
+
+        Args:
+            job_id: ID of the job being completed.
+            token: Execution owner token.
+            intent: Settlement proof to replay.
+
+        Raises:
+            AdmissionUnavailableError: If the ticket is no longer owned by this execution.
+        """
         ticket = self._admission.prepare_settlement(job_id, token, intent)
         if ticket is None:
             msg = "Stopped execution no longer owns its admission ticket."
@@ -43,7 +52,14 @@ class WorkerLifecycleService:
         self.reconcile(ticket)
 
     def reconcile(self, ticket: AdmissionTicket) -> None:
-        """Replay the immutable receipt and runtime consumption without repeating external delivery."""
+        """Replay the immutable receipt and runtime consumption without repeating external delivery.
+
+        Args:
+            ticket: Admission ticket to reconcile.
+
+        Raises:
+            AdmissionUnavailableError: If settlement cannot be prepared, verified, or released.
+        """
         ticket = self._current_settlement(ticket)
         if ticket.state == TicketState.TERMINAL:
             return
@@ -79,7 +95,15 @@ class WorkerLifecycleService:
         return current
 
     def recover(self, publisher: SyncQueuePublisherPort, limit: int = RECOVERY_PAGE_LIMIT) -> int:
-        """Rotate a bounded fair page; one failed dependency cannot block another subject's recovery."""
+        """Rotate a bounded fair page so one failed dependency cannot block another subject.
+
+        Args:
+            publisher: Queue publisher used to republish recoverable stages.
+            limit: Maximum number of tickets to recover.
+
+        Returns:
+            Number of tickets recovered.
+        """
         recovered = 0
         for ticket in self._admission.recovery_page(limit):
             try:

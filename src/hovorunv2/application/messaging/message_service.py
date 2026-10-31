@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class MessageService:
-    """Service for handling and caching Telegram messages with per-chat encryption."""
+    """Handle and cache Telegram messages with per-chat encryption."""
 
     CACHE_TTL_SECONDS: int = 60 * 60 * 24  # 24 hours
 
@@ -33,7 +33,11 @@ class MessageService:
         logger.debug("MessageService initialized with TTL: %d seconds", self.ttl)
 
     async def cache_message(self, message: types.Message) -> None:
-        """Cache a Telegram message with per-chat encryption."""
+        """Cache a Telegram message with per-chat encryption.
+
+        Args:
+            message: Telegram message to cache.
+        """
         chat_id = message.chat.id
         message_id = message.message_id
         from_user = getattr(message, "from_user", None)
@@ -45,7 +49,18 @@ class MessageService:
         await self._store_encrypted_message(key, message, fernet)
 
     async def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
-        """Return an absent cache entry as None; propagate storage and decoding failures."""
+        """Return the cached message for a chat/message pair.
+
+        Args:
+            chat_id: Telegram ID of the chat.
+            message_id: Telegram ID of the message.
+
+        Returns:
+            The decoded message, or None when the entry is absent.
+
+        Raises:
+            ValueError: If the cached entry is unreadable or cannot be decoded.
+        """
         key = self._generate_key(chat_id, message_id)
         data = await self.cache.get_text(key)
         if data is None:
@@ -58,19 +73,43 @@ class MessageService:
             raise ValueError(msg) from None
 
     async def _store_encrypted_message(self, key: str, message: types.Message, fernet: Fernet) -> None:
-        """Serialize the minimal message and store only its encrypted payload."""
+        """Serialize the minimal message and store only its encrypted payload.
+
+        Args:
+            key: Cache key for the message.
+            message: Telegram message to serialize.
+            fernet: Per-chat Fernet instance for encryption.
+        """
         json_data = json.dumps(minimal_message_data(message))
         payload = encrypt_payload(json_data, fernet)
         await self.cache.set(key, payload, expire=self.ttl)
 
     def _decode_cached_message(self, data: str, fernet: Fernet) -> types.Message:
-        """Decrypt and minimize current or historical cached message representations."""
+        """Decrypt and minimize current or historical cached message representations.
+
+        Args:
+            data: Encrypted JSON payload.
+            fernet: Per-chat Fernet instance for decryption.
+
+        Returns:
+            The decoded and minimized message.
+        """
         decrypted_data = decrypt_payload(data, fernet)
         legacy = types.Message.model_validate_json(decrypted_data)
         return types.Message.model_validate(minimal_message_data(legacy))
 
     async def _get_fernet_for_chat(self, chat_id: int) -> Fernet:
-        """Require a configured key and derive a Fernet key using the chat's salt."""
+        """Require a configured key and derive a Fernet key using the chat's salt.
+
+        Args:
+            chat_id: Telegram ID of the chat.
+
+        Returns:
+            Cached or newly derived Fernet instance for the chat.
+
+        Raises:
+            ValueError: If the message cache encryption key is unavailable.
+        """
         encryption_key = self.settings.cache_encryption_key
         if not encryption_key:
             msg = "Message cache encryption key is unavailable."
@@ -98,6 +137,9 @@ def minimal_message_data(message: types.Message) -> dict[str, object]:
 
     Provider quotes are part of extraction payloads, not Telegram reply cache entries.
     Media handles keep identifiers and required technical dimensions only.
+
+    Args:
+        message: Telegram message to project.
 
     Returns:
         The minimal serialized message projection.

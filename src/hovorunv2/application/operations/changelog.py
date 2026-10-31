@@ -32,7 +32,14 @@ INTERNAL_SCOPES: Final[set[str]] = {
 
 
 def parse_version(version: str) -> tuple[int, ...]:
-    """Convert version string to a comparable tuple of integers."""
+    """Convert a version string to a comparable tuple of integers.
+
+    Args:
+        version: Version string to parse.
+
+    Returns:
+        Tuple of integer version components; defaults to (0, 0, 0) when unparseable.
+    """
     clean_version = version.lstrip("v").split("-")[0]
     parts = clean_version.split(".")
     parsed = [int(match.group()) for part in parts if (match := re.search(r"\d+", part))]
@@ -40,7 +47,11 @@ def parse_version(version: str) -> tuple[int, ...]:
 
 
 def get_current_version() -> str:
-    """Read current project version from environment, package metadata, pyproject, or fallback."""
+    """Read the current project version from the environment, package metadata, or pyproject.
+
+    Returns:
+        Current version string, or the default when unavailable.
+    """
     if env_ver := os.environ.get("APP_VERSION"):
         return env_ver.lstrip("v")
 
@@ -54,7 +65,11 @@ def get_current_version() -> str:
 
 
 def _version_from_pyproject() -> str | None:
-    """Read the fallback project version when package metadata is unavailable."""
+    """Read the fallback project version when package metadata is unavailable.
+
+    Returns:
+        Version string from pyproject.toml, or None when absent or unreadable.
+    """
     pyproject_path = Path(__file__).resolve().parents[3] / "pyproject.toml"
     if not pyproject_path.exists():
         return None
@@ -69,7 +84,14 @@ def _version_from_pyproject() -> str | None:
 
 
 def _find_file_in_project(filename: str) -> Path | None:
-    """Locate file across common locations (repo root, app dir, working dir)."""
+    """Locate a file across the repo root, application directory, and working directory.
+
+    Args:
+        filename: Name of the file to locate.
+
+    Returns:
+        Path to the file, or None when not found.
+    """
     candidates = [
         Path(__file__).resolve().parents[3] / filename,
         Path.cwd() / filename,
@@ -92,7 +114,14 @@ def get_technical_changelog_path() -> Path | None:
 
 
 def format_markdown_for_telegram(text: str) -> str:
-    """Format markdown text into clean Telegram HTML."""
+    """Format markdown text into clean Telegram HTML.
+
+    Args:
+        text: Markdown text to format.
+
+    Returns:
+        Telegram-compatible HTML with bullets, bold, and code converted.
+    """
     lines: list[str] = []
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
@@ -107,7 +136,16 @@ def format_markdown_for_telegram(text: str) -> str:
 
 
 def extract_release_notes(changelog_content: str, last_version: str, current_version: str) -> str | None:
-    """Extract release notes from markdown text between last_version and current_version."""
+    """Extract release notes between two versions from markdown text.
+
+    Args:
+        changelog_content: Changelog markdown text.
+        last_version: Lower version bound.
+        current_version: Upper version bound.
+
+    Returns:
+        Joined release notes, or None when no sections fall in range.
+    """
     clean_curr = parse_version(current_version)
     clean_last = parse_version(last_version)
     if clean_curr <= clean_last:
@@ -125,7 +163,16 @@ def extract_release_notes(changelog_content: str, last_version: str, current_ver
 
 
 def _release_section_notes(section: str, last: tuple[int, ...], current: tuple[int, ...]) -> str | None:
-    """Return a nonempty section body only when its version falls in the requested range."""
+    """Return a nonempty section body only when its version falls in the requested range.
+
+    Args:
+        section: Changelog section text.
+        last: Lower version bound.
+        current: Upper version bound.
+
+    Returns:
+        Section body without its header, or None when out of range or empty.
+    """
     clean_section = section.strip()
     if not clean_section:
         return None
@@ -141,7 +188,16 @@ def _release_section_notes(section: str, last: tuple[int, ...], current: tuple[i
 
 
 def extract_fallback_notes(technical_content: str, last_version: str, current_version: str) -> str | None:
-    """Extract and filter user-facing entries from technical CHANGELOG.md as fallback."""
+    """Extract and filter user-facing entries from the technical changelog as a fallback.
+
+    Args:
+        technical_content: Technical changelog markdown text.
+        last_version: Lower version bound.
+        current_version: Upper version bound.
+
+    Returns:
+        Filtered user-facing notes, or None when none remain.
+    """
     raw_notes = extract_release_notes(technical_content, last_version, current_version)
     if not raw_notes:
         return None
@@ -177,6 +233,10 @@ def get_changelog_updates(last_version: str, current_version: str) -> str | None
     """Extract formatted user-facing release notes between last_version and current_version.
 
     Prioritizes curated client notes from CHANGES.md, falling back to filtered CHANGELOG.md.
+
+    Args:
+        last_version: Lower version bound.
+        current_version: Upper version bound.
 
     Returns:
         Formatted user-facing notes, or None when no lines apply.

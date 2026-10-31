@@ -20,7 +20,7 @@ HOURLY_MAINTENANCE_CRON: Final = "0 * * * *"
 
 
 class ChatReminderService:
-    """Business service governing chat reminder scheduling, cooldowns, and maintenance.
+    """Govern chat reminder scheduling, cooldowns, and maintenance.
 
     Orchestrates:
     - Dispatching unauthorized prompts with cooldown tracking in Valkey.
@@ -48,10 +48,15 @@ class ChatReminderService:
         *,
         force: bool = False,
     ) -> bool:
-        """Send prompt to unauthorized chat if not currently in cooldown.
+        """Send a prompt to an unauthorized chat when not in cooldown.
+
+        Args:
+            bot: Telegram bot instance used for delivery.
+            chat_id: Telegram ID of the chat.
+            force: Whether to bypass the cooldown.
 
         Returns:
-            True if sent, False if throttled or delivery failed.
+            True when sent, False when throttled or delivery failed.
 
         """
         cooldown_key = f"{UNAUTHORIZED_PROMPT_KEY_PREFIX}:{chat_id}"
@@ -66,7 +71,11 @@ class ChatReminderService:
         return sent
 
     async def run_maintenance_cycle(self, bot: Bot) -> None:
-        """Execute full maintenance cycle across chats."""
+        """Execute the full maintenance cycle across chats.
+
+        Args:
+            bot: Telegram bot instance used for delivery.
+        """
         logger.info("Starting maintenance cycle")
 
         # 2. Check unauthorized group chats

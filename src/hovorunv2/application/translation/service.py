@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class TranslationService:
-    """Service to handle text translation using configured providers."""
+    """Handle text translation using configured providers."""
 
     MANDATORY_IGNORED_LANGS: tuple[str, ...] = MANDATORY_IGNORED_LANGS
     DEFAULT_FLAG: str = DEFAULT_TRANSLATION_FLAG
@@ -39,7 +39,7 @@ class TranslationService:
         self._session = session
 
     def get_flag(self, lang_code: str) -> str:
-        """Get flag emoji for a language code."""
+        """Return the flag emoji for a language code."""
         return translation_flag(lang_code)
 
     async def translate_if_needed(
@@ -48,7 +48,16 @@ class TranslationService:
         chat_id: int,
         session: aiohttp.ClientSession | None = None,
     ) -> TranslationResult | None:
-        """Translate text if it's not in ignored languages for the specific chat."""
+        """Translate text when it is not in the chat's ignored languages.
+
+        Args:
+            text: Text to translate.
+            chat_id: Telegram ID of the chat whose settings apply.
+            session: Optional HTTP client session overriding the configured one.
+
+        Returns:
+            Selected translation, or None for blank text, ignored languages, or provider failure.
+        """
         if not text.strip():
             return None
 
@@ -69,7 +78,16 @@ class TranslationService:
         chat_id: int,
         session: aiohttp.ClientSession | None = None,
     ) -> str:
-        """HTML-escape raw text and append translation block if needed."""
+        """HTML-escape raw text and append a translation block when needed.
+
+        Args:
+            raw_text: Text to escape and optionally translate.
+            chat_id: Telegram ID of the chat whose settings apply.
+            session: Optional HTTP client session overriding the configured one.
+
+        Returns:
+            Escaped text with the translated block appended when applicable.
+        """
         content = html.escape(raw_text)
         if trans_res := await self.translate_if_needed(content, chat_id, session):
             content += f"\n\n{trans_res.flag} <b>Translated:</b>\n{html.escape(trans_res.text)}"

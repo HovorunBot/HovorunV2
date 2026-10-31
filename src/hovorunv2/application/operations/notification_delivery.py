@@ -81,7 +81,14 @@ class NotificationDeliveryService:
         self._clock = clock
 
     def deliver_due(self, limit: int = DEFAULT_PENDING_LIMIT) -> int:
-        """Process a bounded page and return the number of accepted sends."""
+        """Process a bounded page and return the number of accepted sends.
+
+        Args:
+            limit: Maximum number of receipts to process.
+
+        Returns:
+            Number of receipts delivered.
+        """
         delivered = 0
         for receipt in self._ledger.pending(limit):
             if self._deliver(receipt):
@@ -118,7 +125,14 @@ class NotificationDeliveryService:
         return True
 
     def _eligible(self, receipt: NotificationReceipt) -> bool:
-        """Apply the preference, reachability and backoff gates before any send."""
+        """Apply the preference, reachability and backoff gates before any send.
+
+        Args:
+            receipt: Recipient receipt to gate.
+
+        Returns:
+            True when the receipt is due and eligible for delivery, False otherwise.
+        """
         category = receipt.category
         if category is None or not self._ledger.preference_enabled(receipt.target, category):
             self._record(receipt, NotificationOutcome.SKIPPED)
@@ -129,7 +143,14 @@ class NotificationDeliveryService:
         return self._due(receipt)
 
     def _body(self, receipt: NotificationReceipt) -> str | None:
-        """Load the encrypted body by reference; no body is rendered from ledger metadata."""
+        """Load the encrypted body by reference; no body is rendered from ledger metadata.
+
+        Args:
+            receipt: Recipient receipt holding the body reference.
+
+        Returns:
+            Decoded body text, or None when unavailable or undecodable.
+        """
         if receipt.body_ref is None:
             return None
         loaded = self._payloads.load(receipt.body_ref, receipt.event_key)

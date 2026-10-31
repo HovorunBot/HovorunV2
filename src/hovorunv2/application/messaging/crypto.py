@@ -13,7 +13,15 @@ PBKDF2_ITERATIONS = 100_000
 
 
 def get_fernet_for_chat(encryption_key: str, salt_hex: str) -> Fernet:
-    """Derive a unique Fernet key for a chat using PBKDF2 and DB salt."""
+    """Derive a unique Fernet key for a chat using PBKDF2 and the database salt.
+
+    Args:
+        encryption_key: Master encryption key used as the PBKDF2 password.
+        salt_hex: Hex-encoded per-chat salt.
+
+    Returns:
+        Fernet instance keyed to the derived 32-byte value.
+    """
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -26,7 +34,14 @@ def get_fernet_for_chat(encryption_key: str, salt_hex: str) -> Fernet:
 
 
 def verify_encryption_key(key: str | None) -> None:
-    """Validate that master encryption key is configured, non-blank, and usable."""
+    """Validate that the master encryption key is configured, non-blank, and usable.
+
+    Args:
+        key: Master encryption key, or None when unconfigured.
+
+    Raises:
+        ValueError: If the key is missing, blank, or fails the encryption self-check.
+    """
     if not key or not key.strip():
         msg = "Master encryption key is missing or blank. Please configure CACHE_ENCRYPTION_KEY."
         raise ValueError(msg)
@@ -35,7 +50,14 @@ def verify_encryption_key(key: str | None) -> None:
 
 
 def _require_encryption_roundtrip(key: str) -> None:
-    """Require a usable key without exposing underlying cryptographic exceptions."""
+    """Require a usable key without exposing underlying cryptographic exceptions.
+
+    Args:
+        key: Master encryption key to verify via a synthetic roundtrip.
+
+    Raises:
+        ValueError: If the key cannot derive, encrypt, or decrypt a self-check payload.
+    """
     synthetic_salt_hex = "00" * 16
     try:
         fernet = get_fernet_for_chat(key, synthetic_salt_hex)

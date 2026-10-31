@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class CleanupService:
-    """Service to manage message self-destruction based on Valkey TTL."""
+    """Manage message self-destruction based on Valkey TTL."""
 
     CLEANUP_INDEX = "cleanup:index"
     CLEANUP_SINGLETON_PREFIX = "cleanup:singleton"
@@ -37,7 +37,14 @@ class CleanupService:
         return f"{self.CLEANUP_SINGLETON_PREFIX}:{chat_id}:{cleanup_type}"
 
     async def register_window(self, chat_id: int, message_id: int, ttl: int, cleanup_type: str | None = None) -> None:
-        """Register a message for self-destruction after inactivity."""
+        """Register a message for self-destruction after inactivity.
+
+        Args:
+            chat_id: Telegram ID of the chat.
+            message_id: Telegram ID of the message.
+            ttl: Inactivity window in seconds.
+            cleanup_type: Optional cleanup category linking a singleton window.
+        """
         expires_at = datetime.now(UTC).timestamp() + ttl
         member = self._make_member(chat_id, message_id)
 
@@ -52,14 +59,27 @@ class CleanupService:
         await self.register_window(chat_id, message_id, ttl, cleanup_type)
 
     async def unregister_window(self, chat_id: int, message_id: int) -> None:
-        """Manually unregister a window from cleanup."""
+        """Manually unregister a window from cleanup.
+
+        Args:
+            chat_id: Telegram ID of the chat.
+            message_id: Telegram ID of the message.
+        """
         member = self._make_member(chat_id, message_id)
         await self._cache.zrem(self.CLEANUP_INDEX, member)
 
     async def replace_singleton_window(
         self, bot: Bot, chat_id: int, message_id: int, ttl: int, cleanup_type: str
     ) -> None:
-        """Replace any existing window of the same type in the chat with a new one."""
+        """Replace any existing window of the same type in the chat with a new one.
+
+        Args:
+            bot: Telegram bot instance used to delete the prior message.
+            chat_id: Telegram ID of the chat.
+            message_id: Telegram ID of the new message.
+            ttl: Inactivity window in seconds.
+            cleanup_type: Cleanup category identifying the singleton window.
+        """
         singleton_key = self._make_singleton_key(chat_id, cleanup_type)
         existing_msg_id = await self._cache.get(singleton_key)
 
@@ -71,7 +91,15 @@ class CleanupService:
         await self.register_window(chat_id, message_id, ttl, cleanup_type)
 
     async def process_expired(self, bot: Bot, now: float | None = None) -> int:
-        """Attempt each due deletion and remove the processed batch from the index."""
+        """Attempt each due deletion and remove the processed batch from the index.
+
+        Args:
+            bot: Telegram bot instance used for deletion.
+            now: Optional current timestamp overriding the wall clock.
+
+        Returns:
+            Number of messages successfully deleted.
+        """
         current_time = now if now is not None else datetime.now(UTC).timestamp()
         expired_members = await self._cache.zrangebyscore(self.CLEANUP_INDEX, 0, current_time)
         deleted_count = 0

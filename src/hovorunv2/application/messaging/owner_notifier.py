@@ -29,7 +29,19 @@ class OwnerNotifier:
         disable_web_page_preview: bool = True,
         include_admins: bool = False,
     ) -> int:
-        """Broadcast to active owners, optionally including bot admins for access-request review."""
+        """Broadcast a message to active owners, optionally including bot admins for access-request review.
+
+        Args:
+            bot: Telegram bot instance used to send messages.
+            text: Message text to deliver.
+            reply_markup: Optional inline or reply keyboard markup.
+            parse_mode: Telegram parse mode for the text.
+            disable_web_page_preview: Whether to disable link previews.
+            include_admins: Whether to include admins alongside owners.
+
+        Returns:
+            Number of messages successfully sent.
+        """
         sent_count = 0
         for owner in await self._roles.list_roles(None if include_admins else Role.OWNER):
             owner_id = owner.telegram_id

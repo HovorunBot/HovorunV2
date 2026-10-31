@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """Service to handle broadcasting update notifications to group chats."""
+    """Broadcast update notifications to group chats."""
 
     def __init__(self, chat_service: ChatStore, system_service: SystemStore, settings: AppSettings) -> None:
         """Initialize with its dependencies."""
@@ -26,7 +26,11 @@ class NotificationService:
         self._settings = settings
 
     async def notify_updates(self, bot: Bot) -> None:
-        """Check for version updates and notify approved group chats."""
+        """Check for version updates and notify approved group chats.
+
+        Args:
+            bot: Telegram bot instance used for delivery.
+        """
         current_version = get_current_version()
         last_notified = await self._system_service.get_last_notified_version()
 
@@ -66,7 +70,15 @@ class NotificationService:
         logger.info("Update notification broadcast complete.")
 
     def _release_message(self, current_version: str, updates_text: str) -> str:
-        """Render the selected release notes and link."""
+        """Render the selected release notes and link.
+
+        Args:
+            current_version: Version being announced.
+            updates_text: User-facing changelog entries.
+
+        Returns:
+            Formatted HTML release announcement.
+        """
         tag_name = f"v{current_version.lstrip('v')}"
         tag_url = f"{self._settings.github_url.rstrip('/')}/releases/tag/{tag_name}"
         return (
@@ -76,7 +88,13 @@ class NotificationService:
         )
 
     async def _broadcast_updates(self, bot: Bot, group_chats: list[ChatDB], message: str) -> None:
-        """Send to each eligible group, preserving order and rate-limit recovery."""
+        """Send to each eligible group, preserving order and rate-limit recovery.
+
+        Args:
+            bot: Telegram bot instance used for delivery.
+            group_chats: Approved group chats to notify.
+            message: Formatted announcement text.
+        """
         logger.info("Broadcasting update notification to %d group chat(s)...", len(group_chats))
         for chat in group_chats:
             await self._send_group_update(bot, chat.chat_id, message)
@@ -96,7 +114,13 @@ class NotificationService:
             logger.exception("Failed to send update notification to group chat %d", chat_id)
 
     async def _send_notification(self, bot: Bot, chat_id: int, text: str) -> None:
-        """Send formatted HTML update message with link preview disabled."""
+        """Send a formatted HTML update message with link previews disabled.
+
+        Args:
+            bot: Telegram bot instance used for delivery.
+            chat_id: Telegram ID of the target chat.
+            text: HTML text to send.
+        """
         await bot.send_message(
             chat_id=chat_id,
             text=text,

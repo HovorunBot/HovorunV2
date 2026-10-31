@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class FeedbackService:
-    """Service to handle user feedback processing and delivery to owners."""
+    """Dispatch user feedback to all registered bot owners."""
 
     def __init__(self, owner_notifier: OwnerNotifier) -> None:
         """Initialize feedback service with owner notifier."""
@@ -29,11 +29,20 @@ class FeedbackService:
         chat_type: str,
         message_text: str,
     ) -> bool:
-        """Dispatch user feedback to all registered bot owners in DM.
+        """Dispatch user feedback to all registered bot owners in a private message.
+
+        Args:
+            bot: Telegram bot instance used for delivery.
+            user_id: Telegram ID of the user who submitted the feedback.
+            user_name: Display name of the submitting user.
+            username: Optional username of the submitting user.
+            chat_id: Telegram ID of the chat where the feedback originated.
+            chat_title: Optional title of the source chat.
+            chat_type: Telegram type of the source chat.
+            message_text: Feedback text to deliver.
 
         Returns:
-            True if delivered to at least one owner, False otherwise.
-
+            True when delivered to at least one owner, False otherwise.
         """
         escaped_user = html.escape(user_name)
         escaped_username = f"@{username}" if username else "N/A"

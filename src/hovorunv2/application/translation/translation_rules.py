@@ -28,7 +28,15 @@ class TranslationResult(NamedTuple):
 
 
 def google_translation_params(text: str, target_lang: str) -> dict[str, str]:
-    """Preserve aliases and decode display HTML before sending only the required text."""
+    """Build Google translation query parameters, preserving aliases and decoding display HTML.
+
+    Args:
+        text: Text to translate.
+        target_lang: Target language code.
+
+    Returns:
+        Query parameters for the Google translation request.
+    """
     # Map some common aliases if needed
     return {
         "client": "gtx",
@@ -40,7 +48,17 @@ def google_translation_params(text: str, target_lang: str) -> dict[str, str]:
 
 
 def parse_google_translation(data: object) -> TranslationRawResult:
-    """Require usable translated segments or a safe malformed-response failure."""
+    """Require usable translated segments or raise a safe malformed-response failure.
+
+    Args:
+        data: Decoded JSON response from the translation provider.
+
+    Returns:
+        Raw translation result with normalized source language.
+
+    Raises:
+        HTTPTransportError: If the response is missing or lacks usable translated text.
+    """
     if not isinstance(data, list) or len(data) <= SOURCE_LANGUAGE_INDEX:
         raise HTTPTransportError(HTTPFailure.MALFORMED)
     source = data[SOURCE_LANGUAGE_INDEX]
@@ -62,7 +80,14 @@ def parse_google_translation(data: object) -> TranslationRawResult:
 
 
 def translation_flag(lang_code: str) -> str:
-    """Use shared language flags with the established regional-code fallback."""
+    """Return the flag emoji for a language code with the regional-code fallback.
+
+    Args:
+        lang_code: Language code to resolve.
+
+    Returns:
+        Flag emoji for the language.
+    """
     # Normalize and check centralized data
     code = lang_code.lower().split("-")[0].split("_")[0]
     if code in LANGUAGES:
@@ -77,7 +102,16 @@ def translation_flag(lang_code: str) -> str:
 def select_translation(
     result: TranslationRawResult, target_lang: str, ignored_langs: tuple[str, ...] | list[str]
 ) -> TranslationResult | None:
-    """Apply identical ignored-source and mandatory-undetermined-language rules in both runtimes."""
+    """Apply ignored-source and mandatory-undetermined-language rules in both runtimes.
+
+    Args:
+        result: Raw translation result to select.
+        target_lang: Target language code.
+        ignored_langs: Additional source languages to ignore.
+
+    Returns:
+        Selected translation, or None when the source language is ignored or undetermined.
+    """
     # Enforce mandatory ignores and include target_lang
     ignored = {*ignored_langs, target_lang, *MANDATORY_IGNORED_LANGS}
     if result.source_lang in ignored:

@@ -28,7 +28,18 @@ class AdmissionConflictError(ValueError):
 
 
 def incoming_action_key(feature: str, chat_id: int, actor_id: int | None, message_id: int, trigger: TriggerKind) -> str:
-    """Hash stable incoming action metadata, never URL/message contents or current processing time."""
+    """Hash stable incoming action metadata, never URL or message contents.
+
+    Args:
+        feature: Feature key.
+        chat_id: Telegram ID of the chat.
+        actor_id: Telegram ID of the actor, or None.
+        message_id: Telegram ID of the source message.
+        trigger: Trigger kind for the action.
+
+    Returns:
+        Hex-encoded dedupe key.
+    """
     identity = ["telegram", chat_id, actor_id or 0, message_id, trigger.value, feature]
     return hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
 

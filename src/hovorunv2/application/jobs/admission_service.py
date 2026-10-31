@@ -77,7 +77,15 @@ class AdmissionService:
         return chat.chat_id == target.telegram_id and chat.chat_type in {"group", "supergroup"}
 
     async def admit(self, envelope: JobEnvelope, payload: SealedPayload) -> AdmissionResult:
-        """Resolve permissions and policy before accepting; dedupe never depends on payload contents."""
+        """Resolve permissions and policy before accepting; dedupe never depends on payload contents.
+
+        Args:
+            envelope: Job envelope to admit.
+            payload: Sealed payload to bind to admission.
+
+        Returns:
+            Admission result describing acceptance, denial, or expiry.
+        """
         now = self._clock.now()
         if now >= envelope.deadline:
             return AdmissionResult(AdmissionState.EXPIRED)
@@ -95,7 +103,16 @@ class AdmissionService:
         return envelope.dedupe_key == expected
 
     async def _admit_current(self, envelope: JobEnvelope, payload: SealedPayload, now: float) -> AdmissionResult:
-        """Stamp the authoritative emergency epoch before bounded runtime acceptance."""
+        """Stamp the authoritative emergency epoch before bounded runtime acceptance.
+
+        Args:
+            envelope: Job envelope to admit.
+            payload: Sealed payload to bind to admission.
+            now: Current timestamp.
+
+        Returns:
+            Admission result from the runtime admission port.
+        """
         emergency = await self._emergency.state(envelope.feature)
         if emergency.disabled:
             return AdmissionResult(AdmissionState.DENIED)
@@ -147,7 +164,14 @@ class AdmissionService:
         return await self._policies.resolve(envelope.feature, envelope.trigger, envelope.actor_id, group_id=group_id)
 
     async def handoff(self, job_id: str) -> AdmissionResult:
-        """Keep accepted capacity on failure; retry after either side of an enqueue/acknowledgement crash."""
+        """Keep accepted capacity on failure; retry after an enqueue or acknowledgement crash.
+
+        Args:
+            job_id: ID of the job to hand off.
+
+        Returns:
+            Admission result describing the enqueue outcome.
+        """
         ticket = None
         try:
             ticket = await self._admission.get(job_id)
@@ -174,7 +198,14 @@ class AdmissionService:
         return AdmissionResult(state, acknowledged)
 
     async def recover(self, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionResult, ...]:
-        """Recover one bounded page; full scheduling and terminal expiry remain later blocks."""
+        """Recover one bounded page of recoverable tickets.
+
+        Args:
+            limit: Maximum number of tickets to recover.
+
+        Returns:
+            Tuple of admission results for each recovered ticket.
+        """
         try:
             tickets = await self._admission.recoverable(self._clock.now(), limit)
         except AdmissionUnavailableError:

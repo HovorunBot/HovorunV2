@@ -70,7 +70,17 @@ class NotificationPreferenceService:
         self._permissions = permissions
 
     async def own_target(self, actor_id: int) -> PermissionTarget:
-        """Resolve the actor's stable user target without inventing a private chat."""
+        """Resolve the actor's stable user target without inventing a private chat.
+
+        Args:
+            actor_id: Telegram ID of the actor.
+
+        Returns:
+            Permission target bound to the actor's current user generation.
+
+        Raises:
+            ValueError: If the actor has no active user record.
+        """
         user = await self._users.get_by_telegram_id(actor_id)
         if user is None:
             msg = "Notification preferences require an active user."
@@ -78,14 +88,29 @@ class NotificationPreferenceService:
         return PermissionTarget(TargetKind.USER.value, user.id, user.generation, actor_id)
 
     async def preferences(self, target: PermissionTarget) -> tuple[NotificationPreference, ...]:
-        """Merge explicit overrides over the four enabled defaults."""
+        """Merge explicit overrides over the four enabled defaults.
+
+        Args:
+            target: Permission target whose overrides are read.
+
+        Returns:
+            Ordered preferences with one resolved switch per category.
+        """
         resolved = dict.fromkeys(NotificationCategory, True)
         for preference in await self._store.list(target):
             resolved[preference.category] = preference.enabled
         return tuple(NotificationPreference(category, resolved[category]) for category in NotificationCategory)
 
     async def resolve(self, target: PermissionTarget, category: NotificationCategory) -> bool:
-        """Read one effective category switch for a delivery decision."""
+        """Read one effective category switch for a delivery decision.
+
+        Args:
+            target: Permission target whose preferences are read.
+            category: Category to resolve.
+
+        Returns:
+            True when the category is enabled, False otherwise.
+        """
         preferences = await self.preferences(target)
         return next(preference.enabled for preference in preferences if preference.category == category)
 
@@ -98,12 +123,32 @@ class NotificationPreferenceService:
         actor: ActorContext,
         transport_kind: str | None,
     ) -> bool:
-        """Re-check current subject authority, then persist one audited switch."""
+        """Re-check current subject authority, then persist one audited switch.
+
+        Args:
+            target: Permission target to update.
+            category: Category being switched.
+            enabled: New switch value.
+            actor: Authenticated caller for the audit.
+            transport_kind: Transport of the caller, or None for non-Telegram origins.
+
+        Returns:
+            True when the store reported a change, False for a no-op.
+        """
         await self._authorize(target, actor, transport_kind)
         return await self._store.set(target, category, enabled=enabled, actor=actor)
 
     async def _authorize(self, target: PermissionTarget, actor: ActorContext, transport_kind: str | None) -> None:
-        """Allow own private preferences, current group managers, or a current bot administrator."""
+        """Allow own private preferences, current group managers, or a current bot administrator.
+
+        Args:
+            target: Permission target being mutated.
+            actor: Authenticated caller.
+            transport_kind: Transport of the caller, or None for non-Telegram origins.
+
+        Raises:
+            PermissionError: If the caller lacks authority for the target.
+        """
         if actor.origin == ActorOrigin.CLI:
             return
         if actor.origin != ActorOrigin.TELEGRAM or actor.actor_id is None or transport_kind is None:

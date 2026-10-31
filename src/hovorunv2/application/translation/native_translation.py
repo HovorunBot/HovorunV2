@@ -39,7 +39,15 @@ class NativeTranslationService:
         self._api_url = api_url
 
     def translate_if_needed(self, text: str, chat_id: int) -> TranslationResult | None:
-        """Read preferences for each operation and keep provider failures independent of media delivery."""
+        """Read preferences for each operation and keep provider failures independent of media delivery.
+
+        Args:
+            text: Text to translate.
+            chat_id: Telegram ID of the chat whose preferences apply.
+
+        Returns:
+            Selected translation, or None for blank text, ignored languages, or provider failure.
+        """
         if not text.strip():
             return None
         target, ignored = self._current_languages(chat_id)
@@ -58,7 +66,15 @@ class NativeTranslationService:
         return target, ignored
 
     def escape_and_translate(self, raw_text: str, chat_id: int) -> str:
-        """Escape raw captions and append the shared translation display block."""
+        """Escape raw captions and append the shared translation display block.
+
+        Args:
+            raw_text: Caption to escape and optionally translate.
+            chat_id: Telegram ID of the chat whose preferences apply.
+
+        Returns:
+            Escaped caption with the translated block appended when applicable.
+        """
         content = html.escape(raw_text)
         translated = self.translate_if_needed(content, chat_id)
         if translated is not None:

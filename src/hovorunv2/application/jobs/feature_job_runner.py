@@ -72,7 +72,14 @@ logger = logging.getLogger(__name__)
 
 
 def default_media_clients(settings: AppSettings | None = None) -> dict[CommandName, BaseMediaClient]:
-    """Construct native synchronous provider clients for worker execution."""
+    """Construct native synchronous provider clients for worker execution.
+
+    Args:
+        settings: Optional application settings for provider construction.
+
+    Returns:
+        Mapping of command to its synchronous media client.
+    """
     return {
         CommandName.TWITTER: TwitterService.sync(),
         CommandName.INSTAGRAM: InstagramService.sync(settings),
@@ -136,7 +143,15 @@ class FeatureJobRunner:
         return {client.name: client for client in clients}
 
     def run(self, envelope_data: dict[str, object], stage: JobStage = JobStage.MEDIA) -> str:
-        """Catch request-bearing failures and return only an allowlisted safe terminal code."""
+        """Catch request-bearing failures and return only an allowlisted safe terminal code.
+
+        Args:
+            envelope_data: Serialized job envelope.
+            stage: Execution stage to run.
+
+        Returns:
+            Allowlisted terminal outcome code.
+        """
         try:
             claim_result = self._parse_and_claim(envelope_data, stage)
             if claim_result is None:
@@ -200,7 +215,18 @@ class FeatureJobRunner:
     def _execute_reserved(
         self, envelope: JobEnvelope, loaded: LoadedPayload, stage: JobStage, token: str, now: float
     ) -> str:
-        """Fence cancellation and stale emergency epochs before extraction or delivery."""
+        """Fence cancellation and stale emergency epochs before extraction or delivery.
+
+        Args:
+            envelope: Job envelope being executed.
+            loaded: Loaded payload.
+            stage: Execution stage to run.
+            token: Execution owner token.
+            now: Current timestamp.
+
+        Returns:
+            Allowlisted terminal outcome code.
+        """
         ticket = self._admission.mark_reserved(envelope.job_id, token)
         if ticket is None:
             return JobOutcome.FAILED.value
@@ -426,18 +452,33 @@ class FeatureJobRunner:
         )
 
     def recover(self) -> int:
-        """Run bounded recovery and clear durable work for disabled features."""
+        """Run bounded recovery and clear durable work for disabled features.
+
+        Returns:
+            Number of recovered tickets plus cleared disabled-feature tickets.
+        """
         return self._lifecycle.recover(self._publisher) + self._clear_disabled_features()
 
     def _clear_disabled_features(self) -> int:
-        """Retry per-feature cleanup from the durable disabled state each sweep."""
+        """Retry per-feature cleanup from the durable disabled state each sweep.
+
+        Returns:
+            Number of tickets cleared.
+        """
         cleared = 0
         for state in self._policies.disabled_features():
             cleared += self._clear_feature(state.feature_key)
         return cleared
 
     def _clear_feature(self, feature: str) -> int:
-        """Cancel pending/running work, drop ciphertext and release reservations idempotently."""
+        """Cancel pending or running work, drop ciphertext, and release reservations idempotently.
+
+        Args:
+            feature: Feature whose tickets are cleared.
+
+        Returns:
+            Number of tickets cleared.
+        """
         cleared = 0
         for ticket in self._admission.pending_for_feature(feature):
             job_id = ticket.envelope.job_id

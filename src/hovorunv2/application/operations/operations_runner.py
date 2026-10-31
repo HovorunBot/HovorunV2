@@ -42,7 +42,15 @@ def _matches_expected_user(user_obj: object, expected_id: int) -> bool:
 
 
 def membership_status_from_api(result: dict[str, object] | None, expected_user_id: int) -> MembershipStatus:
-    """Map Telegram API chat member payload to domain status."""
+    """Map a Telegram API chat member payload to the domain membership status.
+
+    Args:
+        result: Chat member payload, or None.
+        expected_user_id: Telegram ID the payload must match.
+
+    Returns:
+        Membership status inferred from the payload.
+    """
     if not isinstance(result, dict) or not _matches_expected_user(result.get("user"), expected_user_id):
         return MembershipStatus.UNKNOWN
     status = result.get("status")
@@ -58,7 +66,17 @@ def membership_status_from_api(result: dict[str, object] | None, expected_user_i
 def bot_capability_from_api(
     result: dict[str, object] | None, bot_id: int, group_telegram_id: int, now: datetime
 ) -> BotCapabilityEvidence:
-    """Extract bot presence and capability flags from API response."""
+    """Extract bot presence and capability flags from an API response.
+
+    Args:
+        result: Chat member payload for the bot, or None.
+        bot_id: Telegram ID of the bot.
+        group_telegram_id: Telegram ID of the group.
+        now: Current timestamp for evidence freshness.
+
+    Returns:
+        Bot capability evidence for the group.
+    """
     status = membership_status_from_api(result, bot_id)
     evidence = MembershipEvidence(group_telegram_id, bot_id, status, now, now + MEMBERSHIP_FRESHNESS)
     if status == MembershipStatus.UNKNOWN:
@@ -108,7 +126,16 @@ def bot_capability_from_api(
 
 
 def administrator_evidence_from_api(result: object, group_telegram_id: int, now: datetime) -> AdministratorEvidence:
-    """Extract human administrator evidence list from API response."""
+    """Extract human administrator evidence from an API response.
+
+    Args:
+        result: Chat administrators payload, or None.
+        group_telegram_id: Telegram ID of the group.
+        now: Current timestamp for evidence freshness.
+
+    Returns:
+        Administrator evidence for the group.
+    """
     if not isinstance(result, list):
         return AdministratorEvidence(
             group_telegram_id, known=False, members=(), verified_at=now, expires_at=now + MEMBERSHIP_FRESHNESS
@@ -160,7 +187,14 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         return 0
 
     def reconcile_memberships(self, now: datetime | None = None) -> int:
-        """Run bounded membership evidence reconciliation across active groups."""
+        """Run bounded membership evidence reconciliation across active groups.
+
+        Args:
+            now: Optional current timestamp overriding the wall clock.
+
+        Returns:
+            Number of groups refreshed; 0 when the reconciliation lock is held.
+        """
         lock_key = f"{self._namespace.value}lock:maintenance:reconciliation"
         if not self._client.set(lock_key, "1", nx=True, ex=30):
             return 0
@@ -205,7 +239,11 @@ class WorkerOperationsRunner(OperationsRunnerPort):
             self._ops.save_member(group_id, evidence, expected_user_id=user.id)
 
     def run_chat_reminders(self) -> int:
-        """Run hourly maintenance for unauthorized groups and pending approval reminders."""
+        """Run hourly maintenance for unauthorized groups and pending approval reminders.
+
+        Returns:
+            Number of reminders dispatched; 0 when the maintenance lock is held.
+        """
         lock_key = f"{self._namespace.value}lock:maintenance:chat_reminders"
         if not self._client.set(lock_key, "1", nx=True, ex=120):
             return 0
@@ -244,7 +282,15 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         return 0
 
     def send_unauthorized_reminder(self, chat_id: int, *, force: bool = False) -> bool:
-        """Send guidance prompt to unauthorized group chat if not in cooldown."""
+        """Send a guidance prompt to an unauthorized group chat when not in cooldown.
+
+        Args:
+            chat_id: Telegram ID of the chat.
+            force: Whether to bypass the cooldown.
+
+        Returns:
+            True when the prompt was sent, False otherwise.
+        """
         key = f"{UNAUTHORIZED_PROMPT_PREFIX}:{chat_id}"
         if not force and self._client.get(key):
             return False
@@ -257,7 +303,14 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         return False
 
     def sweep_expired_cleanups(self, now: float | None = None) -> int:
-        """Delete expired window messages and remove them from Valkey cleanup index."""
+        """Delete expired window messages and remove them from the Valkey cleanup index.
+
+        Args:
+            now: Optional current timestamp overriding the wall clock.
+
+        Returns:
+            Number of messages deleted; 0 when the sweep lock is held.
+        """
         lock_key = f"{self._namespace.value}lock:maintenance:cleanup_sweep"
         if not self._client.set(lock_key, "1", nx=True, ex=30):
             return 0
@@ -291,7 +344,11 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         return deleted
 
     def broadcast_release_notifications(self) -> int:
-        """Broadcast user-facing updates to approved groups upon version increment."""
+        """Broadcast user-facing updates to approved groups upon a version increment.
+
+        Returns:
+            Number of groups notified; 0 when the broadcast lock is held.
+        """
         lock_key = f"{self._namespace.value}lock:maintenance:release_notifications"
         if not self._client.set(lock_key, "1", nx=True, ex=60):
             return 0

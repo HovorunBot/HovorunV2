@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class LanguageService:
-    """Service to handle language-related business logic.
+    """Handle language-related business logic.
 
     Manages target language and ignored languages for chats,
     falling back to global settings when chat-specific ones are missing.
@@ -29,7 +29,14 @@ class LanguageService:
         self._default_ignored_langs = settings.translation_ignored_langs
 
     async def get_chat_settings(self, chat_id: int) -> tuple[str, list[str]]:
-        """Get target language and ignored languages for a chat."""
+        """Return the target language and ignored languages for a chat, applying global fallbacks.
+
+        Args:
+            chat_id: Telegram ID of the chat.
+
+        Returns:
+            Tuple of the effective target language and ignored language list.
+        """
         chat = await self._chat_service.get_chat(chat_id)
         if not chat:
             return self._default_target_lang, list(self._default_ignored_langs)
@@ -47,9 +54,9 @@ class LanguageService:
         """Update language settings for a chat.
 
         Args:
-            chat_id: The ID of the chat.
-            target_lang: The new target language code.
-            ignored_langs: List of language codes to ignore.
+            chat_id: Telegram ID of the chat.
+            target_lang: New target language code.
+            ignored_langs: Language codes to ignore.
             actor: Authenticated caller for the transactional audit.
 
         """

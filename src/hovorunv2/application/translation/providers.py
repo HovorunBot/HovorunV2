@@ -46,7 +46,19 @@ class GoogleTranslationService(BaseTranslationService):
         text: str,
         target_lang: str,
     ) -> TranslationRawResult:
-        """Require usable Google translation data without exposing private response diagnostics."""
+        """Require usable Google translation data without exposing private response diagnostics.
+
+        Args:
+            session: HTTP client session for the request.
+            text: Text to translate.
+            target_lang: Target language code.
+
+        Returns:
+            Raw translation result with normalized source language.
+
+        Raises:
+            HTTPTransportError: If the request fails or the response is unusable.
+        """
         params = google_translation_params(text, target_lang)
 
         try:
