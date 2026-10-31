@@ -3,16 +3,19 @@
 from typing import NewType
 
 from dishka import Provider, Scope, alias, provide
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.beta_prompts import BetaPromptStore
 from hovorunv2.application.features.emergency import FeatureEmergencyStore
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.operations.announcements import AnnouncementStore
 from hovorunv2.application.operations.feature_status import FeatureAudienceStore
 from hovorunv2.application.operations.notification_ledger import NotificationEventStore
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceStore
 from hovorunv2.application.operations.ports import SystemStore
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyAuditedTransaction,
     SQLAlchemyCommandStore,
@@ -20,6 +23,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemySystemStore,
     SQLAlchemyUserStore,
 )
+from hovorunv2.infrastructure.persistence.stores.announcement_store import SQLAlchemyAnnouncementStore
 from hovorunv2.infrastructure.persistence.stores.beta_prompt_store import SQLAlchemyBetaPromptStore
 from hovorunv2.infrastructure.persistence.stores.feature_audience_store import SQLAlchemyFeatureAudienceStore
 from hovorunv2.infrastructure.persistence.stores.feature_emergency_store import SQLAlchemyFeatureEmergencyStore
@@ -53,6 +57,22 @@ class AuditAndPersistenceProvider(Provider):
 
     feature_emergency_store_impl = provide(SQLAlchemyFeatureEmergencyStore)
     feature_emergency_store = alias(source=SQLAlchemyFeatureEmergencyStore, provides=FeatureEmergencyStore)
+
+    @provide
+    def build_announcement_store(
+        self,
+        session_maker: async_sessionmaker,
+        audited_uow: AuditedUnitOfWork,
+        settings: Settings,
+    ) -> SQLAlchemyAnnouncementStore:
+        """Compose the encrypted draft store with the configured Fernet key."""
+        key = settings.cache_encryption_key
+        if key is None:
+            msg = "Announcement drafts require a configured encryption key."
+            raise ValueError(msg)
+        return SQLAlchemyAnnouncementStore(session_maker, audited_uow, key)
+
+    announcement_store = alias(source=SQLAlchemyAnnouncementStore, provides=AnnouncementStore)
 
     feature_audience_store_impl = provide(SQLAlchemyFeatureAudienceStore)
     feature_audience_store = alias(source=SQLAlchemyFeatureAudienceStore, provides=FeatureAudienceStore)

@@ -41,6 +41,7 @@ class CommandName(StrEnum):
     DEBUG = "debug"
     EMERGENCY = "emergency"
     BETA = "beta"
+    ANNOUNCE = "announce"
     ALLOW_CHAT = "allow_chat"
     SETTINGS = "settings"
     HELP = "help"

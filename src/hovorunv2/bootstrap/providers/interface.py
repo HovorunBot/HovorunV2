@@ -13,6 +13,7 @@ from hovorunv2.application.groups.group_management_service import GroupManagemen
 from hovorunv2.application.messaging.feedback_service import FeedbackService
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
+from hovorunv2.application.operations.announcements import AnnouncementService
 from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.operations.feature_status import FeatureStatusNotifier
 from hovorunv2.application.operations.notification_ledger import NotificationLedgerService
@@ -24,6 +25,7 @@ from hovorunv2.application.settings.settings_session_service import SettingsSess
 from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
+from hovorunv2.interface.telegram.handlers.announcements import AnnounceCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.beta import BetaPromptCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
@@ -68,6 +70,8 @@ class InterfaceAndUtilityProvider(Provider):
     beta_prompts = provide(BetaPromptService)
     feature_status_notifier = provide(FeatureStatusNotifier)
     beta_prompt_command = provide(BetaPromptCommand)
+    announcement_service = provide(AnnouncementService)
+    announce_command = provide(AnnounceCommand)
     debug_command = provide(DebugCommand)
     emergency_command = provide(EmergencyCommand)
     help_command = provide(HelpCommand)
@@ -83,6 +87,7 @@ class InterfaceAndUtilityProvider(Provider):
         settings_command: SettingsCommand,
         debug_command: DebugCommand,
         beta_prompt_command: BetaPromptCommand,
+        announce_command: AnnounceCommand,
         emergency_command: EmergencyCommand,
         administration_command: AdministrationCommand,
     ) -> UtilityCommands:
@@ -96,6 +101,7 @@ class InterfaceAndUtilityProvider(Provider):
                 administration_command,
                 emergency_command,
                 beta_prompt_command,
+                announce_command,
             ]
         )
 
