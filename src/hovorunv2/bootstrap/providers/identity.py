@@ -1,7 +1,5 @@
 """Dependency injection configuration using dishka."""
 
-from typing import NewType
-
 from dishka import Provider, Scope, alias, provide
 
 from hovorunv2.application.groups.activation import ActivationStore
@@ -20,11 +18,8 @@ from hovorunv2.infrastructure.persistence.stores.group_grant_store import SQLAlc
 from hovorunv2.infrastructure.persistence.stores.group_identity_store import SQLAlchemyGroupIdentityStore
 from hovorunv2.infrastructure.persistence.stores.group_migration_store import SQLAlchemyGroupMigrationStore
 from hovorunv2.infrastructure.persistence.stores.membership_store import SQLAlchemyMembershipStore
-from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
-
-UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
 
 class IdentityAndMembershipProvider(Provider):

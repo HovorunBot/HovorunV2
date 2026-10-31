@@ -2,7 +2,7 @@
 
 import shlex
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from aiogram import Bot
 from aiogram.enums import ChatType
@@ -44,7 +44,7 @@ class AuditCommand(BaseCommand):
         """Private bot-administrator audit entry."""
         return Command(CommandName.AUDIT)
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Query one page for a current private bot administrator."""
         if message.chat.type != ChatType.PRIVATE or message.from_user is None:
             return

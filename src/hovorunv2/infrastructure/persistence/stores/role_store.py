@@ -1,7 +1,6 @@
 """Implementation of RoleStore using SQLAlchemy and audited unit of work."""
 
 from functools import partial
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -59,7 +58,7 @@ class SQLAlchemyRoleStore(RoleStore):
         telegram_id: int,
         role: Role,
         platform: Platform,
-    ) -> tuple[bool, dict[str, Any] | None]:
+    ) -> tuple[bool, dict[str, object] | None]:
         """Execute role assignment directly on UserDB within an audited transaction."""
         await lock_async_mutation(session, MutationLocks(users=(telegram_id,), platform=platform.value))
         user_repo = SQLAlchemyUserRepository(session)
@@ -110,7 +109,7 @@ class SQLAlchemyRoleStore(RoleStore):
             role=role,
             platform=platform,
         )
-        result: tuple[bool, dict[str, Any] | None] = await self._audited_uow.execute(
+        result: tuple[bool, dict[str, object] | None] = await self._audited_uow.execute(
             actor=actor,
             target_type="user_role",
             target_id=f"{telegram_id}:{role.name.lower()}",

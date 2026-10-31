@@ -2,8 +2,8 @@
 
 import json
 import re
-from collections.abc import Mapping, Sequence
-from typing import Any, Self
+from collections.abc import Sequence
+from typing import Self
 
 import aiohttp
 
@@ -12,6 +12,7 @@ from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient, OGConfig, ProviderConfig
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.utils.json_values import mapping, sequence, text
 
 _YOUTUBE_OG_CONFIG = OGConfig(
     default_author="YouTube Channel",
@@ -95,7 +96,7 @@ class YoutubeService(BaseMediaClient):
 
         return self._parse_og_html(html_content, fetch_url, _YOUTUBE_OG_CONFIG)
 
-    def _extract_post_renderer(self, html_content: str) -> dict[str, Any] | None:
+    def _extract_post_renderer(self, html_content: str) -> dict[str, object] | None:
         """Extract backstagePostRenderer or sharedPostRenderer from ytInitialData in page HTML."""
         data = self._read_initial_data(html_content)
         if data is None:
@@ -123,27 +124,28 @@ class YoutubeService(BaseMediaClient):
         except ValueError, RecursionError:
             return None
 
-    def _build_payload_from_renderer(self, renderer: dict[str, Any], url: str) -> RichMediaPayload | None:
+    def _build_payload_from_renderer(self, renderer: dict[str, object], url: str) -> RichMediaPayload | None:
         """Construct raw RichMediaPayload from YouTube backstagePostRenderer."""
-        author_runs = renderer.get("authorText", {}).get("runs", [])
+        author_runs = sequence(mapping(renderer.get("authorText")).get("runs"))
         author_name = self._join_runs(author_runs) or "YouTube Channel"
 
-        author_path = (
-            renderer.get("authorEndpoint", {}).get("commandMetadata", {}).get("webCommandMetadata", {}).get("url", "")
+        author_path = text(
+            mapping(
+                mapping(mapping(renderer.get("authorEndpoint")).get("commandMetadata")).get("webCommandMetadata")
+            ).get("url")
         )
         author_handle = author_path.lstrip("/@") if author_path else author_name
         author_url = f"https://www.youtube.com{author_path}" if author_path else "https://www.youtube.com"
 
-        content_runs = renderer.get("contentText", {}).get("runs", [])
+        content_runs = sequence(mapping(renderer.get("contentText")).get("runs"))
         raw_text = self._join_runs(content_runs)
-        media_items = self._extract_attachment_media(renderer.get("backstageAttachment", {}))
+        media_items = self._extract_attachment_media(mapping(renderer.get("backstageAttachment")))
 
         if not raw_text and not media_items:
             return None
 
-        likes = renderer.get("voteCount", {}).get("simpleText") or self._join_runs(
-            renderer.get("voteCount", {}).get("runs", [])
-        )
+        vote_count = mapping(renderer.get("voteCount"))
+        likes = text(vote_count.get("simpleText")) or self._join_runs(sequence(vote_count.get("runs")))
 
         return RichMediaPayload(
             author_name=author_name,
@@ -155,25 +157,28 @@ class YoutubeService(BaseMediaClient):
             media_items=media_items,
         )
 
-    def _join_runs(self, runs: Sequence[Mapping[str, str]]) -> str:
+    def _join_runs(self, runs: Sequence[object]) -> str:
         """Join provider text runs before trimming the complete author, caption or metric."""
-        return "".join(run.get("text", "") for run in runs).strip()
+        return "".join(text(mapping(run).get("text")) for run in runs).strip()
 
-    def _extract_attachment_media(self, attachment: dict[str, Any]) -> list[MediaItem]:
+    def _extract_attachment_media(self, attachment: dict[str, object]) -> list[MediaItem]:
         """Extract single or multi-image attachments from backstageAttachment."""
         items: list[MediaItem] = []
         if not attachment:
             return items
 
-        renderers = []
+        renderers: list[dict[str, object]] = []
         if single_img := attachment.get("backstageImageRenderer"):
-            renderers.append(single_img)
+            renderers.append(mapping(single_img))
         if multi_img := attachment.get("postMultiImageRenderer"):
-            renderers.extend(entry.get("backstageImageRenderer", {}) for entry in multi_img.get("images", []))
+            renderers.extend(
+                mapping(mapping(entry).get("backstageImageRenderer"))
+                for entry in sequence(mapping(multi_img).get("images"))
+            )
 
-        for img_renderer in renderers:
-            thumbnails = img_renderer.get("image", {}).get("thumbnails", [])
-            if thumbnails and isinstance(thumbnails[-1], dict) and (img_url := thumbnails[-1].get("url")):
-                items.append(MediaItem(url=str(img_url), is_video=False))
+        for renderer in renderers:
+            thumbnails = sequence(mapping(renderer.get("image")).get("thumbnails"))
+            if thumbnails and (img_url := text(mapping(thumbnails[-1]).get("url"))):
+                items.append(MediaItem(url=img_url, is_video=False))
 
         return items

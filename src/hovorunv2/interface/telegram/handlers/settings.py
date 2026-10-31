@@ -2,8 +2,9 @@
 
 import contextlib
 import math
+from collections.abc import Mapping
 from functools import partial
-from typing import Any, ClassVar, Final
+from typing import ClassVar, Final
 
 from aiogram import Bot, Router
 from aiogram.filters import Command
@@ -93,23 +94,10 @@ class SettingsCommand(BaseCommand):
         return Command(CommandName.SETTINGS)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Return whether the message text targets the /settings command.
+        """Return whether the message targets this command."""
+        return self._is_slash_command_triggered(message, CommandName.SETTINGS)
 
-        Args:
-            message: Telegram message to inspect.
-
-        Returns:
-            True if the message text starts with /settings.
-        """
-        if not message.text:
-            return False
-        parts = message.text.strip().split()
-        if not parts:
-            return False
-        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
-        return cmd_part == CommandName.SETTINGS
-
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Handle /settings command.
 
         Args:
@@ -907,11 +895,11 @@ class SettingsCommand(BaseCommand):
         await self._cleanup_service.unregister_window(msg.chat.id, msg.message_id)
         await query.answer()
 
-    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
+    def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:
         """Register settings callbacks.
 
         Args:
             router: Router receiving the callback registration.
             flags: Handler flags bound to the callback route.
         """
-        router.callback_query.register(self.handle_callback, SettingsCallback.filter(), flags=flags)
+        router.callback_query.register(self.handle_callback, SettingsCallback.filter(), flags=dict(flags))

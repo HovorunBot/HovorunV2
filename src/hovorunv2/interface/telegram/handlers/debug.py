@@ -1,7 +1,7 @@
 """Debug command module."""
 
 import html
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from aiogram import Bot
 from aiogram.filters import Command
@@ -32,23 +32,10 @@ class DebugCommand(BaseCommand):
         return Command(CommandName.DEBUG, "force_error")
 
     async def is_triggered(self, message: Message) -> bool:
-        """Return whether the message text targets /debug or /force_error.
+        """Return whether the message targets this command."""
+        return self._is_slash_command_triggered(message, CommandName.DEBUG, "force_error")
 
-        Args:
-            message: Telegram message to inspect.
-
-        Returns:
-            True if the message text starts with /debug or /force_error.
-        """
-        if not message.text:
-            return False
-        parts = message.text.strip().split()
-        if not parts:
-            return False
-        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
-        return cmd_part in (CommandName.DEBUG, "force_error")
-
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Handle debug commands.
 
         Args:

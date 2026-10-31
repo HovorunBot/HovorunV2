@@ -10,6 +10,7 @@ from hovorunv2.application.messaging.feedback_service import FeedbackService
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.operations.reminder_service import ChatReminderService
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.domain.enums import CommandName, Role
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from tests.conftest import provision_role
@@ -115,7 +116,7 @@ async def test_reminder_service_send_prompt_cooldown(
     """Test ChatReminderService sets Valkey cooldown when sending unauthorized prompt."""
     reminder_service = await test_container.get(ChatReminderService)
     cache_service = await test_container.get(CachePort)
-    await cache_service.delete("periodic:unauthorized_prompt:-100444")
+    await cache_service.delete(f"{RuntimeNamespace().value}periodic:unauthorized_prompt:-100444")
     chats = await test_container.get(ChatStore)
     await chats.get_or_create_chat(-100444)
     bot = recording_bot
@@ -123,7 +124,7 @@ async def test_reminder_service_send_prompt_cooldown(
     sent = await reminder_service.send_unauthorized_prompt(bot, -100444, force=False)
     assert sent is True
     assert len(bot.session.calls) == 1
-    assert await cache_service.get("periodic:unauthorized_prompt:-100444") == 1
+    assert await cache_service.get(f"{RuntimeNamespace().value}periodic:unauthorized_prompt:-100444") == 1
 
     # Calling again while in cooldown returns False and does not send
     bot.session.calls.clear()
@@ -138,9 +139,9 @@ async def test_scheduled_job_callbacks(test_container: AsyncContainer, recording
     chats = await test_container.get(ChatStore)
     await chats.get_or_create_chat(-100999)
     cache = await test_container.get(CachePort)
-    await cache.delete("periodic:unauthorized_prompt:-100999")
+    await cache.delete(f"{RuntimeNamespace().value}periodic:unauthorized_prompt:-100999")
     await reminder_service.send_unauthorized_prompt(recording_bot, -100999)
-    assert await cache.get("periodic:unauthorized_prompt:-100999") == 1
+    assert await cache.get(f"{RuntimeNamespace().value}periodic:unauthorized_prompt:-100999") == 1
     assert len(recording_bot.session.calls) == 1
     await reminder_service.run_maintenance_cycle(recording_bot)
     assert len(recording_bot.session.calls) == 1

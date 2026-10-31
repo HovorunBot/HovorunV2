@@ -3,8 +3,8 @@
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, ClassVar
 
 from aiogram import Bot, F
 from aiogram.filters import Filter
@@ -76,16 +76,26 @@ class BaseCommand(ABC):
 
     @property
     @abstractmethod
-    def trigger(self) -> Filter | MagicFilter | Callable[..., Any]:
+    def trigger(self) -> Filter | MagicFilter | Callable[..., object]:
         """Aiogram filter triggering this command."""
 
     @abstractmethod
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Handle the triggered command."""
 
-    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
+    def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:
         """Register any callback query handlers associated with this command."""
         return
+
+    def _is_slash_command_triggered(self, message: Message, *aliases: str) -> bool:
+        """Return whether the message targets this command or one of its aliases."""
+        if not message.text:
+            return False
+        parts = message.text.strip().split()
+        if not parts:
+            return False
+        command = parts[0].lstrip("/").split("@")[0].lower()
+        return command in {str(self.name), *(str(alias) for alias in aliases)}
 
 
 class RichMediaCommand(BaseCommand):
@@ -159,7 +169,7 @@ class RichMediaCommand(BaseCommand):
         self,
         message: Message,
         bot: Bot,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         """Standardized handling of rich media links.
 

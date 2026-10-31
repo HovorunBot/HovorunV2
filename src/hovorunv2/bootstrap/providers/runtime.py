@@ -1,7 +1,5 @@
 """Dependency injection configuration using dishka."""
 
-from typing import NewType
-
 from dishka import Provider, Scope, alias, provide
 
 from hovorunv2.application.features.emergency_service import FeatureEmergencyService
@@ -20,9 +18,6 @@ from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAl
 from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.runtime.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
-from hovorunv2.interface.telegram.handlers.base import BaseCommand
-
-UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
 
 class RuntimeUsageProvider(Provider):

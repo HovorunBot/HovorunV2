@@ -6,13 +6,13 @@ operations propagate failures to the owning workflow. Injected adapters are mand
 """
 
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import Protocol
 
 
 class CachePort(Protocol):
     """Protocol for key-value and sorted-set caching operations."""
 
-    async def get(self, key: str, default: Any = None) -> Any:
+    async def get(self, key: str, default: str | None = None) -> str | None:
         """Return decoded data or default for a missing or malformed JSON value."""
         ...
 
@@ -20,11 +20,11 @@ class CachePort(Protocol):
         """Return a cached JSON string, or None only when absent; reject malformed values."""
         ...
 
-    async def set(self, key: str, value: Any, expire: int | None = None) -> None:
+    async def set(self, key: str, value: object, expire: int | None = None) -> None:
         """Store a value in the cache with optional TTL."""
         ...
 
-    async def pop(self, key: str) -> Any:
+    async def pop(self, key: str) -> str | None:
         """Consume a value atomically; absent keys return None, malformed JSON raises."""
         ...
 
@@ -44,6 +44,6 @@ class CachePort(Protocol):
         """Remove members from a sorted set."""
         ...
 
-    async def zrange(self, name: str, start: int, end: int, *, withscores: bool = False) -> list[Any]:
+    async def zrange(self, name: str, start: int, end: int, *, withscores: bool = False) -> list[object]:
         """Fetch members from sorted set within an index range."""
         ...

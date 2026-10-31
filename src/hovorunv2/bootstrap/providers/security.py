@@ -1,7 +1,5 @@
 """Dependency injection configuration using dishka."""
 
-from typing import NewType
-
 from dishka import Provider, Scope, alias, provide
 
 from hovorunv2.application.access.access_service import AccessService
@@ -26,9 +24,6 @@ from hovorunv2.infrastructure.persistence.stores.ban_store import SQLAlchemyBanS
 from hovorunv2.infrastructure.persistence.stores.beta_store import SQLAlchemyBetaEntitlementStore
 from hovorunv2.infrastructure.persistence.stores.feature_fact_store import SQLAlchemyFeatureFactStore
 from hovorunv2.infrastructure.persistence.stores.group_beta_store import SQLAlchemyGroupBetaStore
-from hovorunv2.interface.telegram.handlers.base import BaseCommand
-
-UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
 
 class SecurityAndAccessProvider(Provider):

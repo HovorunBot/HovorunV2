@@ -1,7 +1,6 @@
 """Cache application data through a bounded Valkey client."""
 
 import json
-from typing import Any
 
 import redis.asyncio as redis
 
@@ -23,7 +22,7 @@ class CacheService:
         """Expose native transactions to infrastructure adapters within this cache lifetime."""
         return self._cache
 
-    async def set(self, key: str, value: Any, expire: int | None = None) -> None:
+    async def set(self, key: str, value: object, expire: int | None = None) -> None:
         """Store a JSON-serialized value with an optional expiration in seconds."""
         logger.debug("Caching key: %s (expire: %s)", key, expire)
 
@@ -31,7 +30,7 @@ class CacheService:
         payload = json.dumps(value)
         await self._cache.set(key, payload, ex=expire)
 
-    async def get(self, key: str, default: Any = None) -> Any:
+    async def get(self, key: str, default: str | None = None) -> str | None:
         """Retrieve a value from the cache by key."""
         raw_value = await self._cache.get(key)
         if raw_value is None:
@@ -64,7 +63,7 @@ class CacheService:
             raise TypeError(msg)
         return value
 
-    async def pop(self, key: str) -> Any:
+    async def pop(self, key: str) -> str | None:
         """Consume a cached value atomically, including concurrent UI requests."""
         raw = await self._cache.getdel(key)
         return json.loads(raw) if raw is not None else None
@@ -86,7 +85,7 @@ class CacheService:
         """Remove members from a sorted set."""
         await self._cache.zrem(name, *values)
 
-    async def zrange(self, name: str, start: int, end: int, *, withscores: bool = False) -> list[Any]:
+    async def zrange(self, name: str, start: int, end: int, *, withscores: bool = False) -> list[object]:
         """Return a range of members in a sorted set by their index."""
         results = await self._cache.zrange(name, start, end, withscores=withscores)
         if withscores:

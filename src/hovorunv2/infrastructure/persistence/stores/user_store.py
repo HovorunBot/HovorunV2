@@ -253,7 +253,7 @@ class SQLAlchemyUserStore(UserStore):
             operation=operation,
             changed_fields=lambda result: {
                 "is_trusted": [not is_trusted, is_trusted],
-                "trust_revision": [result[2] - 1, result[2]],
+                "trust_revision": [(result[2] or 0) - 1, result[2]],
             },
             audit_if=lambda r: r[1],
         )

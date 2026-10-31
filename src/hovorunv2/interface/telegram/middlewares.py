@@ -1,7 +1,6 @@
 """Telegram middlewares binding logging context, message caching and access control."""
 
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from aiogram import BaseMiddleware, Bot
 from aiogram.dispatcher.flags import get_flag
@@ -31,10 +30,10 @@ class LogContextMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
         event: TelegramObject,
-        data: dict[str, Any],
-    ) -> Any:
+        data: dict[str, object],
+    ) -> object:
         """Bind event user and chat IDs to logging context for the current update task.
 
         Args:
@@ -49,7 +48,7 @@ class LogContextMiddleware(BaseMiddleware):
         set_log_context(user_id=user_id, chat_id=chat_id)
         return await handler(event, data)
 
-    def _extract_ids(self, event: TelegramObject, data: dict[str, Any]) -> tuple[int | None, int | None]:
+    def _extract_ids(self, event: TelegramObject, data: dict[str, object]) -> tuple[int | None, int | None]:
         """Extract user_id and chat_id from Telegram events or aiogram EventContext.
 
         Args:
@@ -91,10 +90,10 @@ class MessageCacheMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
         event: TelegramObject,
-        data: dict[str, Any],
-    ) -> Any:
+        data: dict[str, object],
+    ) -> object:
         """Cache minimal content only after filters and access checks succeed.
 
         Args:
@@ -132,13 +131,13 @@ class AccessMiddleware(BaseMiddleware):
 
     async def _handle_private_chat(
         self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
         event: TelegramObject,
-        data: dict[str, Any],
+        data: dict[str, object],
         user_id: int | None,
         policy: CommandPolicy,
         command_name: str | None,
-    ) -> Any:
+    ) -> object:
         """Authorize private features without treating trust as group management authority.
 
         Args:
@@ -180,14 +179,14 @@ class AccessMiddleware(BaseMiddleware):
 
     async def _handle_group_chat(
         self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
         event: TelegramObject,
-        data: dict[str, Any],
+        data: dict[str, object],
         user_id: int | None,
         chat_id: int,
         policy: CommandPolicy,
         command_name: str | None,
-    ) -> Any:
+    ) -> object:
         """Authorize group interactions with ban enforcement and private-only bot administration.
 
         Args:
@@ -212,7 +211,8 @@ class AccessMiddleware(BaseMiddleware):
                 await event.answer("🚫 You are banned from using bot commands.", show_alert=True)
             return None
 
-        bot = data.get("bot")
+        raw_bot = data.get("bot")
+        bot = raw_bot if isinstance(raw_bot, Bot) else None
         is_allowed = await self._access_service.is_allowed(
             user_id=user_id,
             chat_id=chat_id,
@@ -252,10 +252,10 @@ class AccessMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
         event: TelegramObject,
-        data: dict[str, Any],
-    ) -> Any:
+        data: dict[str, object],
+    ) -> object:
         """Check authorization before executing handler with deny-by-default for missing policies.
 
         Args:
@@ -278,15 +278,16 @@ class AccessMiddleware(BaseMiddleware):
 
         policy = raw_policy if isinstance(raw_policy, CommandPolicy) else None
         flag_cmd = get_flag(data, "command_name")
-        command_name = (
-            data.get("command_name")
-            or (flag_cmd if isinstance(flag_cmd, str) else None)
-            or (
-                handler_obj.flags.get("command_name")
-                if handler_obj and hasattr(handler_obj, "flags") and isinstance(handler_obj.flags, dict)
-                else None
-            )
+        handler_cmd = (
+            handler_obj.flags.get("command_name")
+            if handler_obj and hasattr(handler_obj, "flags") and isinstance(handler_obj.flags, dict)
+            else None
         )
+        command_name: str | None = None
+        for candidate in (data.get("command_name"), flag_cmd, handler_cmd):
+            if isinstance(candidate, str):
+                command_name = candidate
+                break
 
         if not policy or not isinstance(policy, CommandPolicy):
             logger.warning("Event missing required command policy: denying by default")
@@ -321,7 +322,7 @@ class AccessMiddleware(BaseMiddleware):
     async def _deny_feature(
         self,
         event: TelegramObject,
-        data: dict[str, Any],
+        data: dict[str, object],
         user_id: int | None,
         chat_id: int,
         *,
@@ -338,7 +339,7 @@ class AccessMiddleware(BaseMiddleware):
     async def _deny_private_feature(
         self,
         event: TelegramObject,
-        data: dict[str, Any],
+        data: dict[str, object],
         user_id: int | None,
         policy: CommandPolicy,
         command_name: str | None,
@@ -357,7 +358,7 @@ class AccessMiddleware(BaseMiddleware):
     async def _deny_group_feature(
         self,
         event: TelegramObject,
-        data: dict[str, Any],
+        data: dict[str, object],
         user_id: int | None,
         chat_id: int,
         policy: CommandPolicy,
@@ -379,7 +380,7 @@ class AccessMiddleware(BaseMiddleware):
         if isinstance(event, CallbackQuery):
             await event.answer("Feature unavailable.", show_alert=True)
 
-    async def _not_approved(self, event: TelegramObject, data: dict[str, Any], chat_id: int) -> None:
+    async def _not_approved(self, event: TelegramObject, data: dict[str, object], chat_id: int) -> None:
         """Send the one-time approval prompt or a callback alert for an unapproved group."""
         if isinstance(event, CallbackQuery):
             await event.answer("🚫 This group is not approved yet.", show_alert=True)

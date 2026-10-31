@@ -1,7 +1,7 @@
 """Application service for Twitter/X media extraction."""
 
 import re
-from typing import Any, Self
+from typing import Self
 
 import aiohttp
 
@@ -11,6 +11,7 @@ from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient, ProviderConfig
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.utils.json_values import mapping, sequence, text
 
 TWITTER_CONFIG = ProviderConfig(
     name=CommandName.TWITTER,
@@ -78,21 +79,27 @@ class TwitterService(BaseMediaClient):
             return text
         return text.replace(quote_url, "").strip()
 
-    def _extract_media(self, data: dict[str, Any]) -> list[MediaItem]:
+    def _extract_media(self, data: dict[str, object]) -> list[MediaItem]:
         """Extract MediaItem list from vxtwitter media_extended."""
-        return [MediaItem(url=m["url"], is_video=m["type"] in ("video", "gif")) for m in data.get("media_extended", [])]
+        items: list[MediaItem] = []
+        for media in sequence(data.get("media_extended")):
+            entry = mapping(media)
+            url = text(entry.get("url"))
+            if url:
+                items.append(MediaItem(url=url, is_video=text(entry.get("type")) in ("video", "gif")))
+        return items
 
-    def _extract_quote(self, tweet_data: dict[str, Any]) -> RichMediaPayload | None:
+    def _extract_quote(self, tweet_data: dict[str, object]) -> RichMediaPayload | None:
         """Extract quoted tweet payload if present."""
-        quote_data = tweet_data.get("qrt")
-        if not isinstance(quote_data, dict) or not quote_data:
+        quote_data = mapping(tweet_data.get("qrt"))
+        if not quote_data:
             return None
 
-        handle = quote_data.get("user_screen_name", "unknown")
+        handle = text(quote_data.get("user_screen_name"), "unknown")
         return RichMediaPayload(
-            author_name=quote_data.get("user_name", "Unknown"),
+            author_name=text(quote_data.get("user_name"), "Unknown"),
             author_handle=handle,
             author_url=f"https://x.com/{handle}",
-            content=quote_data.get("text", ""),
+            content=text(quote_data.get("text")),
             media_items=self._extract_media(quote_data),
         )

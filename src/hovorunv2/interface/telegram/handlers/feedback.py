@@ -1,6 +1,6 @@
 """Handler for the /feedback command."""
 
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from aiogram import Bot
 from aiogram.filters import Command
@@ -41,21 +41,8 @@ class FeedbackCommand(BaseCommand):
         return Command(CommandName.FEEDBACK)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Return whether the message text targets the /feedback command.
-
-        Args:
-            message: Telegram message to inspect.
-
-        Returns:
-            True if the message text starts with /feedback.
-        """
-        if not message.text:
-            return False
-        parts = message.text.strip().split()
-        if not parts:
-            return False
-        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
-        return cmd_part == CommandName.FEEDBACK
+        """Return whether the message targets this command."""
+        return self._is_slash_command_triggered(message, CommandName.FEEDBACK)
 
     def _extract_feedback_content(self, message: Message) -> str:
         """Extract feedback body from command message.
@@ -101,7 +88,7 @@ class FeedbackCommand(BaseCommand):
             parse_mode="HTML",
         )
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Process user feedback via FeedbackService.
 
         Args:

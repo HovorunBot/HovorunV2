@@ -1,6 +1,6 @@
 """Handler for the /help command and landing page for non-admins."""
 
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from aiogram import Bot
 from aiogram.filters import Command
@@ -39,23 +39,10 @@ class HelpCommand(BaseCommand):
         return Command(CommandName.HELP, CommandName.START)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Return whether the message text targets /help or /start.
+        """Return whether the message targets this command."""
+        return self._is_slash_command_triggered(message, CommandName.HELP, CommandName.START)
 
-        Args:
-            message: Telegram message to inspect.
-
-        Returns:
-            True if the message text starts with /help or /start.
-        """
-        if not message.text:
-            return False
-        parts = message.text.strip().split()
-        if not parts:
-            return False
-        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
-        return cmd_part in (CommandName.HELP, CommandName.START)
-
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Handle help command.
 
         Args:

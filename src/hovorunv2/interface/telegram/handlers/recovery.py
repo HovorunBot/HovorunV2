@@ -1,7 +1,7 @@
 """Private bot-administrator inspection of deleted identity recovery choices."""
 
 import shlex
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from aiogram import Bot
 from aiogram.enums import ChatType
@@ -47,7 +47,7 @@ class RecoveryCommand(BaseCommand):
         """Private bot-administrator recovery entry."""
         return Command(CommandName.RECOVER)
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Inspect one deleted identity for a current private bot administrator."""
         if message.chat.type != ChatType.PRIVATE or message.from_user is None:
             return

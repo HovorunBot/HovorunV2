@@ -3,7 +3,8 @@
 import html
 import json
 import shlex
-from typing import Any, ClassVar
+from collections.abc import Mapping
+from typing import ClassVar
 
 from aiogram import Bot, Router
 from aiogram.enums import ChatType
@@ -52,7 +53,7 @@ class AdministrationCommand(BaseCommand):
         """Private bot administration entry."""
         return Command(CommandName.ADMIN)
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Preview exact active target; never mutate on initial command entry.
 
         Args:
@@ -144,11 +145,11 @@ class AdministrationCommand(BaseCommand):
         except PermissionError, ValueError:
             await query.answer(ADMIN_UNAVAILABLE, show_alert=True)
 
-    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
+    def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:
         """Register the same private admin policy for opaque confirmations.
 
         Args:
             router: Router receiving the callback registration.
             flags: Handler flags bound to the callback route.
         """
-        router.callback_query.register(self.handle_callback, AdminCallback.filter(), flags=flags)
+        router.callback_query.register(self.handle_callback, AdminCallback.filter(), flags=dict(flags))

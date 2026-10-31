@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Final
 
 from sqlalchemy import JSON, BigInteger, DateTime, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,7 +38,7 @@ def _is_sensitive_audit_field(field: str) -> bool:
     return any(fragment in lower_field for fragment in _SENSITIVE_FIELD_FRAGMENTS)
 
 
-def sanitize_audit_changes(changes: dict[str, Any] | None) -> dict[str, Any] | None:
+def sanitize_audit_changes(changes: dict[str, object] | None) -> dict[str, object] | None:
     """Redact secret and private payload material from audited changes.
 
     Args:
@@ -50,7 +50,7 @@ def sanitize_audit_changes(changes: dict[str, Any] | None) -> dict[str, Any] | N
     if not changes:
         return changes
 
-    sanitized: dict[str, Any] = {}
+    sanitized: dict[str, object] = {}
     for key, val in changes.items():
         if _is_sensitive_audit_field(key):
             sanitized[key] = SENSITIVE_FIELD_MARKER
@@ -132,6 +132,6 @@ class AuditEventDB(Base):
     target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     target_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
-    changed_fields: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    changed_fields: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

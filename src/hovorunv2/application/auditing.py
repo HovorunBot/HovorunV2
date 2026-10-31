@@ -6,7 +6,9 @@ operations propagate failures to the owning workflow. Injected adapters are mand
 """
 
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.domain.audit import ActorContext
 
@@ -15,16 +17,16 @@ from hovorunv2.domain.audit import ActorContext
 class AuditedUnitOfWork(Protocol):
     """Protocol for transactional execution with atomic audit logging."""
 
-    async def execute(
+    async def execute[T](
         self,
         actor: ActorContext,
         target_type: str,
         target_id: str | int,
         action: str,
-        operation: Callable[[Any], Awaitable[Any]],
-        changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None = None,
-        audit_if: Callable[[Any], bool] | None = None,
-    ) -> Any:
+        operation: Callable[[AsyncSession], Awaitable[T]],
+        changed_fields: dict[str, object] | Callable[[T], dict[str, object] | None] | None = None,
+        audit_if: Callable[[T], bool] | None = None,
+    ) -> T:
         """Return the callback result after atomic mutation and conditional audit.
 
         Callbacks perform database work only because a whole transaction may

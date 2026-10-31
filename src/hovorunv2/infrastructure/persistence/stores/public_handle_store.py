@@ -1,7 +1,6 @@
 """Implementation of PublicHandleStore using SQLAlchemy and audited unit of work."""
 
 from functools import partial
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -100,7 +99,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         target_id: int,
         raw_handle: str | None,
         platform: Platform,
-    ) -> tuple[ResolvedTarget | None, dict[str, Any] | None]:
+    ) -> tuple[ResolvedTarget | None, dict[str, object] | None]:
         """Execute handle synchronization within an audited transaction."""
         norm = normalize_handle(raw_handle)
         await lock_async_mutation(
@@ -127,7 +126,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
 
     async def _remove_target_handle(
         self, repo: SQLAlchemyPublicHandleRepository, existing: PublicHandleDB | None
-    ) -> tuple[None, dict[str, Any] | None]:
+    ) -> tuple[None, dict[str, object] | None]:
         """Delete the existing handle and return its removal changes."""
         if existing is None:
             return None, None
@@ -159,7 +158,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         norm: str,
         display: str,
         platform: Platform,
-    ) -> tuple[ResolvedTarget, dict[str, Any] | None]:
+    ) -> tuple[ResolvedTarget, dict[str, object] | None]:
         """Create or update the target's handle and return the resolved target."""
         if existing:
             old_norm = existing.handle_normalized
@@ -217,13 +216,13 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
             raw_handle=raw_handle,
             platform=platform,
         )
-        result: tuple[ResolvedTarget | None, dict[str, Any] | None] = await self._audited_uow.execute(
+        result: tuple[ResolvedTarget | None, dict[str, object] | None] = await self._audited_uow.execute(
             actor=actor,
             target_type="public_handle",
             target_id=f"{target_kind}:{target_id}",
             action="sync",
             operation=op,
-            changed_fields=lambda res: res[1] if res else None,
+            changed_fields=lambda res: res[1],
             audit_if=lambda res: res is not None and res[1] is not None,
         )
         return result[0]
@@ -234,7 +233,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         target_kind: TargetKind,
         target_id: int,
         platform: Platform,
-    ) -> tuple[bool, dict[str, Any] | None]:
+    ) -> tuple[bool, dict[str, object] | None]:
         """Execute handle release within an audited transaction."""
         await lock_async_mutation(
             session,
@@ -276,13 +275,13 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
             target_id=target_id,
             platform=platform,
         )
-        result: tuple[bool, dict[str, Any] | None] = await self._audited_uow.execute(
+        result: tuple[bool, dict[str, object] | None] = await self._audited_uow.execute(
             actor=actor,
             target_type="public_handle",
             target_id=f"{target_kind}:{target_id}",
             action="delete",
             operation=op,
-            changed_fields=lambda res: res[1] if res else None,
+            changed_fields=lambda res: res[1],
             audit_if=lambda res: res is not None and res[0] is True,
         )
         return result[0]

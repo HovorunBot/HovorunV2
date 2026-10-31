@@ -3,7 +3,7 @@
 import argparse
 import html
 import shlex
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from aiogram import Bot
 from aiogram.enums import ChatType
@@ -57,7 +57,7 @@ class EmergencyCommand(BaseCommand):
         """Private bot-administrator emergency entry."""
         return Command(CommandName.EMERGENCY)
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Apply one audited global transition only for a current private bot administrator.
 
         Args:

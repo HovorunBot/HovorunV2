@@ -1,7 +1,8 @@
 """Private beta introduction announcements and Activate/Decline callbacks."""
 
 import contextlib
-from typing import Any, ClassVar
+from collections.abc import Mapping
+from typing import ClassVar
 
 from aiogram import Bot, Router
 from aiogram.enums import ChatType
@@ -51,7 +52,7 @@ class BetaPromptCommand(BaseCommand):
         """Private bot-administrator announcement trigger."""
         return Command(CommandName.BETA)
 
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Queue announcements for newly introduced beta features on operator request."""
         if message.chat.type != ChatType.PRIVATE or message.from_user is None:
             return
@@ -110,7 +111,7 @@ class BetaPromptCommand(BaseCommand):
             return None
         return PermissionTarget("group", chat.id, chat.generation, chat.chat_id)
 
-    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
+    def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:
         """Register announcement buttons without the operator-only command policy."""
         callback_policy = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
         router.callback_query.register(

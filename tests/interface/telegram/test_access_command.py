@@ -15,6 +15,7 @@ from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.activation import ActivationOutcome, ActivationRequest, ActivationStore
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.domain.audit import AuditEventDB
 from hovorunv2.domain.enums import CommandName, Role
 from hovorunv2.domain.group_grant import GroupAccessRequestDB, GroupApprovalDB, RequestStatus
@@ -262,6 +263,7 @@ async def test_real_router_activates_trusted_user_in_unapproved_group(test_conta
             await test_container.get(Settings),
             await test_container.get(IdentityMiddleware),
             await test_container.get(CachePort),
+            await test_container.get(ChatReminderService),
         )
         dispatcher = Dispatcher()
         dispatcher.include_router(router)

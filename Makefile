@@ -157,7 +157,7 @@ tag-release release-tag:
 ## Preview user release notes and Commitizen version/changelog changes without releasing.
 release-dry-run release-preview:
 	@echo "=== Client-Side Release Notes Preview (CHANGES.md) ==="
-	@uv run python -c "from hovorunv2.application.changelog import get_changelog_updates, get_current_version; curr = '$(if $(VERSION),$(VERSION),0.2.1)'; print(get_changelog_updates('0.2.0', curr) or 'No client entry found in CHANGES.md for ' + curr)"
+	@uv run python -c "from hovorunv2.application.operations.changelog import get_changelog_updates, get_current_version; curr = '$(if $(VERSION),$(VERSION),0.2.1)'; print(get_changelog_updates('0.2.0', curr) or 'No client entry found in CHANGES.md for ' + curr)"
 	@echo ""
 	@echo "=== Commitizen Technical Changelog Preview (CHANGELOG.md) ==="
 	@if [ -n "$(VERSION)" ]; then \

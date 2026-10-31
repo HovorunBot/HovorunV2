@@ -1,7 +1,6 @@
 """Dependency injection configuration using dishka."""
 
 from collections.abc import AsyncIterable
-from typing import NewType
 
 import aiohttp
 from aiogram import Bot
@@ -17,10 +16,7 @@ from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.infrastructure.config import DatabaseSettings, Settings
 from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
 from hovorunv2.infrastructure.runtime.cache import CacheService
-from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.transport.membership import TelegramMembershipAdapter
-
-UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
 
 class InfrastructureProvider(DatabaseProvider):

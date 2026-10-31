@@ -1,7 +1,5 @@
 """Dependency injection configuration using dishka."""
 
-from typing import NewType
-
 from dishka import Provider, Scope, provide
 
 from hovorunv2.application.groups.ports import ChatStore
@@ -17,9 +15,7 @@ from hovorunv2.application.translation.providers import (
 from hovorunv2.application.translation.service import TranslationService
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
-
-UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
+from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 
 
 class MediaAndContentProvider(Provider):

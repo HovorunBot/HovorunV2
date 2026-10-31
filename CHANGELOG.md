@@ -84,6 +84,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **typing**: eliminate production Any annotations and deduplicate helpers
 - **lifecycle**: preserve durable configuration deletion history
 - **updates**: use recipient-aware release notifications
 - **notifications**: track per-recipient delivery state

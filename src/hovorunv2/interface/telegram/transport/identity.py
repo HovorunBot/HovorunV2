@@ -1,7 +1,6 @@
 """Early ingestion of public Telegram identity evidence."""
 
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from aiogram import BaseMiddleware
 from aiogram.enums import ChatType
@@ -27,10 +26,10 @@ class IdentityMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
         event: TelegramObject,
-        data: dict[str, Any],
-    ) -> Any:
+        data: dict[str, object],
+    ) -> object:
         """Persist minimal observed fields and never ingest message contents.
 
         Args:

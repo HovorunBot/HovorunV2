@@ -1,7 +1,5 @@
 """Dependency injection configuration using dishka."""
 
-from typing import NewType
-
 from dishka import Provider, Scope, alias, provide
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -38,9 +36,6 @@ from hovorunv2.infrastructure.persistence.stores.notification_preference_store i
     SQLAlchemyNotificationPreferenceStore,
 )
 from hovorunv2.infrastructure.persistence.stores.recovery_store import SQLAlchemyRecoveryStore
-from hovorunv2.interface.telegram.handlers.base import BaseCommand
-
-UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
 
 
 class AuditAndPersistenceProvider(Provider):

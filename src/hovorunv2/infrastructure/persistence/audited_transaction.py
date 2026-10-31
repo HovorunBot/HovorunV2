@@ -2,7 +2,6 @@
 
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any
 
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -23,16 +22,16 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
         """Initialize with session maker."""
         self._session_maker = session_maker
 
-    async def execute(
+    async def execute[T](
         self,
         actor: ActorContext,
         target_type: str,
         target_id: str | int,
         action: str,
-        operation: Callable[[AsyncSession], Awaitable[Any]],
-        changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None = None,
-        audit_if: Callable[[Any], bool] | None = None,
-    ) -> Any:
+        operation: Callable[[AsyncSession], Awaitable[T]],
+        changed_fields: dict[str, object] | Callable[[T], dict[str, object] | None] | None = None,
+        audit_if: Callable[[T], bool] | None = None,
+    ) -> T:
         """Execute operation and record audit entry atomically.
 
         Args:
@@ -73,16 +72,16 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
                 ):
                     raise
 
-    async def _execute_attempt(
+    async def _execute_attempt[T](
         self,
         actor: ActorContext,
         target_type: str,
         target_id: str | int,
         action: str,
-        operation: Callable[[AsyncSession], Awaitable[Any]],
-        changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None,
-        audit_if: Callable[[Any], bool] | None,
-    ) -> Any:
+        operation: Callable[[AsyncSession], Awaitable[T]],
+        changed_fields: dict[str, object] | Callable[[T], dict[str, object] | None] | None,
+        audit_if: Callable[[T], bool] | None,
+    ) -> T:
         """Run one atomic attempt with audit logging on the transaction session.
 
         Args:
@@ -106,15 +105,15 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
                     )
             return result
 
-    async def _append_audit_event(
+    async def _append_audit_event[T](
         self,
         session: AsyncSession,
         actor: ActorContext,
         target_type: str,
         target_id: str | int,
         action: str,
-        changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None,
-        result: Any,
+        changed_fields: dict[str, object] | Callable[[T], dict[str, object] | None] | None,
+        result: T,
     ) -> None:
         """Validate, sanitize and append the audit event for a committed change.
 

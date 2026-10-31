@@ -1,7 +1,7 @@
 """Application service for Bluesky media extraction."""
 
 import re
-from typing import Any, ClassVar, Self
+from typing import ClassVar, Self
 
 import aiohttp
 
@@ -11,6 +11,7 @@ from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient, ProviderConfig
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.utils.json_values import mapping, sequence, text
 
 BLUESKY_CONFIG = ProviderConfig(
     name=CommandName.BLUESKY,
@@ -119,51 +120,54 @@ class BlueskyService(BaseMediaClient):
             raise MediaExtractionError(msg)
         return did
 
-    def _get_record_view(self, embed: dict[str, Any]) -> dict[str, Any] | None:
+    def _get_record_view(self, embed: dict[str, object]) -> dict[str, object] | None:
         """Retrieve the record view from the embed if present."""
-        match embed.get("$type"):
+        match text(embed.get("$type")):
             case "app.bsky.embed.record#view":
-                return embed.get("record")
+                return mapping(embed.get("record"))
             case "app.bsky.embed.recordWithMedia#view":
-                return embed.get("record", {}).get("record")
+                return mapping(mapping(embed.get("record")).get("record"))
             case _:
                 return None
 
-    def _extract_quote(self, embed: dict[str, Any]) -> RichMediaPayload | None:
+    def _extract_quote(self, embed: dict[str, object]) -> RichMediaPayload | None:
         """Extract quoted post payload if present in the embed."""
         record_view = self._get_record_view(embed)
-        if not record_view or record_view.get("$type") not in (
+        if not record_view or text(record_view.get("$type")) not in (
             "app.bsky.feed.post#view",
             "app.bsky.embed.record#viewRecord",
         ):
             return None
 
-        quote_author = record_view.get("author", {})
-        quote_record = record_view.get("record") or record_view.get("value") or {}
-        quoted_media = self._extract_media_from_embed(record_view.get("embed", {}))
-        if not quoted_media and "embeds" in record_view:
-            for emb in record_view["embeds"]:
-                quoted_media.extend(self._extract_media_from_embed(emb))
+        quote_author = mapping(record_view.get("author"))
+        quote_record = mapping(record_view.get("record") or record_view.get("value"))
+        quoted_media = self._extract_media_from_embed(mapping(record_view.get("embed")))
+        if not quoted_media:
+            for embedded in sequence(record_view.get("embeds")):
+                quoted_media.extend(self._extract_media_from_embed(mapping(embedded)))
 
-        handle = quote_author.get("handle", "unknown")
+        handle = text(quote_author.get("handle"), "unknown")
         return RichMediaPayload(
-            author_name=quote_author.get("displayName") or handle,
+            author_name=text(quote_author.get("displayName"), handle),
             author_handle=handle,
             author_url=f"https://bsky.app/profile/{handle}",
-            content=quote_record.get("text", ""),
+            content=text(quote_record.get("text")),
             media_items=quoted_media,
         )
 
-    def _extract_media_from_embed(self, embed: dict[str, Any]) -> list[MediaItem]:
+    def _extract_media_from_embed(self, embed: dict[str, object]) -> list[MediaItem]:
         """Extract media items from a Bluesky embed."""
         items: list[MediaItem] = []
-        match embed.get("$type"):
+        match text(embed.get("$type")):
             case "app.bsky.embed.recordWithMedia#view":
-                items.extend(self._extract_media_from_embed(embed.get("media", {})))
+                items.extend(self._extract_media_from_embed(mapping(embed.get("media"))))
             case "app.bsky.embed.images#view":
-                items.extend(MediaItem(url=i.get("fullsize"), is_video=False) for i in embed.get("images", []))
-            case "app.bsky.embed.video#view" if playlist := embed.get("playlist"):
-                items.append(MediaItem(url=str(playlist), is_video=True))
+                for image in sequence(embed.get("images")):
+                    url = text(mapping(image).get("fullsize"))
+                    if url:
+                        items.append(MediaItem(url=url, is_video=False))
+            case "app.bsky.embed.video#view" if playlist := text(embed.get("playlist")):
+                items.append(MediaItem(url=playlist, is_video=True))
             case _:
                 pass
         return items

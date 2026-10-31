@@ -16,6 +16,7 @@ from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.messaging.crypto import get_fernet_for_chat
 from hovorunv2.application.messaging.message_service import MessageService, minimal_message_data
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.cache import CacheService
@@ -144,7 +145,17 @@ async def test_router_caches_only_authorized_messages(
     access = await test_container.get(AccessService)
     identity = await test_container.get(IdentityMiddleware)
     dispatcher = Dispatcher()
-    dispatcher.include_router(build_router([HelpCommand(settings, access)], service, access, settings, identity, cache))
+    dispatcher.include_router(
+        build_router(
+            [HelpCommand(settings, access)],
+            service,
+            access,
+            settings,
+            identity,
+            cache,
+            await test_container.get(ChatReminderService),
+        )
+    )
     message = Message(
         message_id=1,
         date=datetime.now(UTC),

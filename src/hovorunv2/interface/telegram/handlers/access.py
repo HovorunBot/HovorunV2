@@ -1,7 +1,8 @@
 """Intentional group activation and private approval decisions."""
 
 import html
-from typing import Any, ClassVar
+from collections.abc import Mapping
+from typing import ClassVar
 
 from aiogram import Bot, Router
 from aiogram.enums import ChatType
@@ -60,23 +61,10 @@ class AccessCommand(BaseCommand):
         return Command(CommandName.ALLOW_CHAT)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Return whether the message text targets the /allow_chat command.
+        """Return whether the message targets this command."""
+        return self._is_slash_command_triggered(message, CommandName.ALLOW_CHAT)
 
-        Args:
-            message: Telegram message to inspect.
-
-        Returns:
-            True if the message text starts with /allow_chat.
-        """
-        if not message.text:
-            return False
-        parts = message.text.strip().split()
-        if not parts:
-            return False
-        cmd_part = parts[0].lstrip("/").split("@")[0].lower()
-        return cmd_part == CommandName.ALLOW_CHAT
-
-    async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
         """Bind activation to the known group carrying the authenticated human command.
 
         Args:
@@ -184,11 +172,11 @@ class AccessCommand(BaseCommand):
             )
         await query.answer(RESULT_TEXT[result.outcome], show_alert=result.outcome not in SUCCESS_OUTCOMES)
 
-    def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
+    def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:
         """Register callback handlers with router.
 
         Args:
             router: Router receiving the callback registration.
             flags: Handler flags bound to the callback route.
         """
-        router.callback_query.register(self.handle_callback, AccessCallback.filter(), flags=flags)
+        router.callback_query.register(self.handle_callback, AccessCallback.filter(), flags=dict(flags))

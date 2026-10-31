@@ -222,8 +222,8 @@ async def test_policy_requires_access(test_container: AsyncContainer, recording_
     policy = CommandPolicy(requires_approval=True)
 
     user_id = 999
-    approved_chat_id = 123
-    non_approved_chat_id = 456
+    approved_chat_id = -123
+    non_approved_chat_id = -456
 
     await verify_group_admins(test_container, approved_chat_id)
     await chat_status_service.set_status(approved_chat_id, ChatStatus.APPROVED)
@@ -277,7 +277,7 @@ async def test_policy_is_toggleable(test_container: AsyncContainer, recording_bo
     command_name = CommandName.TIKTOK
 
     user_id = 999
-    chat_id = 123
+    chat_id = -123
 
     await verify_group_admins(test_container, chat_id)
     await chat_status_service.set_status(chat_id, ChatStatus.APPROVED)
@@ -306,7 +306,7 @@ async def test_chat_status_service_approve(test_container: AsyncContainer, recor
     """Test that chat_status_service.approve sets APPROVED and enables default commands."""
     chat_status_service = await test_container.get(ChatStatusService)
     command_service = await test_container.get(CommandService)
-    chat_id = 12345
+    chat_id = -12345
 
     await verify_group_admins(test_container, chat_id)
     await chat_status_service.approve(chat_id)
@@ -374,9 +374,9 @@ async def test_characterize_legacy_group_status_matrix(test_container: AsyncCont
     - Requires approval (policy.requires_approval=True):
       Only APPROVED grants access to regular users; all other statuses deny access.
     - Exempt policy (policy.requires_approval=False):
-      Access is GRANTED to regular users across ALL statuses (including BANNED and REJECTED)!
+      Access is granted for non-banned statuses; an active group ban still denies everyone.
     - Global Admin bypass:
-      Global admin bypasses requires_approval across ALL statuses (including BANNED and REJECTED)!
+      Global admin bypasses requires_approval, but a group ban still denies access.
     """
     session_maker = await test_container.get(async_sessionmaker)
     access_service = await test_container.get(AccessService)
@@ -396,7 +396,7 @@ async def test_characterize_legacy_group_status_matrix(test_container: AsyncCont
         ChatStatus.INACTIVE,
     ]
 
-    base_chat_id = 10000
+    base_chat_id = -10000
     for idx, status in enumerate(statuses_to_test):
         chat_id = base_chat_id + idx
         # Persist chat with target status
@@ -415,23 +415,23 @@ async def test_characterize_legacy_group_status_matrix(test_container: AsyncCont
         is_allowed_regular = await access_service.is_allowed(regular_user_id, chat_id, policy_requires_approval)
         assert is_allowed_regular is (status == ChatStatus.APPROVED)
 
-        # 4. Regular user evaluation: policy exempt from approval (legacy quirk: all allowed, even BANNED)
+        # 4. Regular user evaluation: exempt from approval, but group bans deny everyone
         is_allowed_exempt = await access_service.is_allowed(regular_user_id, chat_id, policy_exempt)
-        assert is_allowed_exempt is True
+        assert is_allowed_exempt is (status != ChatStatus.BANNED)
 
-        # 5. Global admin evaluation: bypasses approval check across all statuses (legacy quirk)
+        # 5. Global admin evaluation: approval bypass, but group bans deny everyone
         is_allowed_admin = await access_service.is_allowed(admin_id, chat_id, policy_requires_approval)
-        assert is_allowed_admin is True
+        assert is_allowed_admin is (status != ChatStatus.BANNED)
 
     # Also characterize nonexistent/unrecorded chat
-    unrecorded_chat_id = 99999
+    unrecorded_chat_id = -99999
     persisted_status, _ = await get_persisted_chat_and_commands(session_maker, unrecorded_chat_id)
     assert persisted_status is None
     assert await chat_status_service.get_status(unrecorded_chat_id) == ChatStatus.UNAUTHORIZED
     assert await chat_status_service.is_approved(unrecorded_chat_id) is False
     assert await access_service.is_allowed(regular_user_id, unrecorded_chat_id, policy_requires_approval) is False
-    assert await access_service.is_allowed(regular_user_id, unrecorded_chat_id, policy_exempt) is True
-    assert await access_service.is_allowed(admin_id, unrecorded_chat_id, policy_requires_approval) is True
+    assert await access_service.is_allowed(regular_user_id, unrecorded_chat_id, policy_exempt) is False
+    assert await access_service.is_allowed(admin_id, unrecorded_chat_id, policy_requires_approval) is False
 
 
 async def test_characterize_legacy_empty_command_set_capture(
@@ -587,7 +587,7 @@ async def test_characterize_legacy_default_activation(test_container: AsyncConta
     command_service = await test_container.get(CommandService)
     access_service = await test_container.get(AccessService)
 
-    chat_id = 30001
+    chat_id = -30001
     await verify_group_admins(test_container, chat_id)
     await chat_status_service.approve(chat_id)
 

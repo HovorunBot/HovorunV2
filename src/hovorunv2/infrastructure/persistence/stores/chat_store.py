@@ -262,7 +262,7 @@ class SQLAlchemyChatStore(ChatStore):
             operation=operation,
             changed_fields=lambda old: {
                 "status": status.value if hasattr(status, "value") else str(status),
-                "old_status": old.value if hasattr(old, "value") else (str(old) if old else None),
+                "old_status": old.value if old is not None else None,
             },
         )
 
