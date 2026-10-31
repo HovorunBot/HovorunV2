@@ -3,6 +3,7 @@
 import asyncio
 import html
 import logging
+import re
 import sys
 import traceback
 from contextvars import ContextVar, Token
@@ -22,6 +23,9 @@ LOG_FORMAT: Final = "%(asctime)s - %(name)s - %(levelname)s - [user=%(user_id)s 
 MAX_TB_LINES: Final = 8
 MAX_TELEGRAM_MESSAGE_LENGTH: Final = 4096
 SAFE_LOG_LABELS: Final = frozenset(str(value) for enum in (CommandName, ChatStatus) for value in enum)
+BOT_TOKEN_PATTERN: Final = re.compile(r"(bot)\d+:[A-Za-z0-9_-]+")
+BEARER_PATTERN: Final = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]+")
+URL_PATTERN: Final = re.compile(r"https?://\S+")
 
 current_user_id: ContextVar[int | None] = ContextVar("current_user_id", default=None)
 current_chat_id: ContextVar[int | None] = ContextVar("current_chat_id", default=None)
@@ -42,6 +46,13 @@ def reset_log_context(tokens: tuple[Token[int | None], Token[int | None]]) -> No
     current_chat_id.reset(chat_token)
 
 
+def redact_sensitive_text(text: str) -> str:
+    """Mask tokens, bearer values and URLs even in preformatted message text."""
+    redacted = BOT_TOKEN_PATTERN.sub(r"\1[redacted]", text)
+    redacted = BEARER_PATTERN.sub(r"\1[redacted]", redacted)
+    return URL_PATTERN.sub("[url]", redacted)
+
+
 class PrivacyFormatter(logging.Formatter):
     """Keep operation templates and numeric metadata, never exception values or payload arguments."""
 
@@ -53,7 +64,9 @@ class PrivacyFormatter(logging.Formatter):
         if not record.name.startswith("hovorunv2."):
             safe.msg = "External library event"
             safe.args = ()
-        elif isinstance(record.args, dict):
+        else:
+            safe.msg = redact_sensitive_text(str(record.msg))
+        if record.name.startswith("hovorunv2.") and isinstance(record.args, dict):
             safe.args = {key: safe_log_argument(value) for key, value in record.args.items()}
         elif record.args:
             safe.args = tuple(safe_log_argument(value) for value in record.args)

@@ -50,6 +50,7 @@ encryption configuration before starting against the new database.
 
 ### Fix
 
+- **audit**: close mutation coverage and privacy gaps
 - **features**: clear queued work on emergency disablement
 - **admin**: preserve ban reason validation message
 - **tests**: isolate worker valkey databases away from db 0
