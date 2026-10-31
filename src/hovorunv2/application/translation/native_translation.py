@@ -3,8 +3,8 @@
 import html
 from typing import Protocol
 
+from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.jobs.http_ports import HTTPTransportError, SyncHTTPPort
-from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.translation.translation_rules import (
     GOOGLE_TRANSLATION_URL,
     TranslationResult,

@@ -21,3 +21,9 @@ def test_cross_test_import_guard_rejects_deliberate_violation(tmp_path: Path) ->
 
     with pytest.raises(pytest.UsageError, match="Forbidden cross-test imports detected"):
         _check_no_cross_test_imports(fake_tests)
+
+
+def test_central_application_ports_module_is_removed() -> None:
+    """Protocol declarations live with capability owners; the old facade must stay deleted."""
+    source_root = Path(__file__).resolve().parents[2] / "src" / "hovorunv2"
+    assert not (source_root / "application" / "ports.py").exists()

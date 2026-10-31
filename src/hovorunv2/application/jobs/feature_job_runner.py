@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.features.feature_policy import SyncPolicyPort
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry
 from hovorunv2.application.jobs.admission import (
@@ -48,7 +49,6 @@ from hovorunv2.application.media.providers.threads import ThreadsService
 from hovorunv2.application.media.providers.tiktok import TikTokService
 from hovorunv2.application.media.providers.twitter import TwitterService
 from hovorunv2.application.media.providers.youtube import YoutubeService
-from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import (
     BudgetRequest,

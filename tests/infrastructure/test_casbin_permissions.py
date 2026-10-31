@@ -16,9 +16,11 @@ from hovorunv2.application.access.permissions import (
     PermissionRequest,
     PermissionTarget,
 )
+from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
-from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, Role
 from hovorunv2.infrastructure.authorization.casbin_policy import CasbinAuthorizationPolicy, load_authorization_policy

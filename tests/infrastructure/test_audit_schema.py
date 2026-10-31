@@ -7,7 +7,8 @@ from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.ports import AuditedUnitOfWork, SystemStore
+from hovorunv2.application.auditing import AuditedUnitOfWork
+from hovorunv2.application.operations.ports import SystemStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.domain.chat import ChatDB

@@ -20,9 +20,11 @@ from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.access.permissions import GroupAdminEvidence, PermissionRequest, PermissionTarget
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
+from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureRegistry, TriggerKind
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
-from hovorunv2.application.ports import ChatStore, CommandStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsagePolicy, UsagePolicyStore, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AppliedUsage, UsageLedgerStore
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService

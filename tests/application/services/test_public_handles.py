@@ -7,7 +7,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from hovorunv2.application.ports import PublicHandleStore, UserStore
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import Platform, TargetKind
 from hovorunv2.domain.handle import PublicHandleDB, normalize_handle, validate_handle

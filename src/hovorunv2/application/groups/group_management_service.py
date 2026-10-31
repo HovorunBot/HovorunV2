@@ -6,9 +6,10 @@ from typing import Final
 from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.access.permissions import GroupAdminEvidence, PermissionRequest, PermissionTarget
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import MembershipEvidence, MembershipPort, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import TargetKind
 

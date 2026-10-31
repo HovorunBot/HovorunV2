@@ -18,7 +18,7 @@ from hovorunv2.application.identity.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus

@@ -2,7 +2,8 @@
 
 import logging
 
-from hovorunv2.application.ports import AppSettings, ChatStore
+from hovorunv2.application.configuration import AppSettings
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.domain.audit import ActorContext
 
 logger = logging.getLogger(__name__)

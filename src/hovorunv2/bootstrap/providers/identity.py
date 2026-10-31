@@ -8,12 +8,10 @@ from hovorunv2.application.groups.activation import ActivationStore
 from hovorunv2.application.groups.activation_service import GroupActivationService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.identity import GroupIdentityStore
 from hovorunv2.application.identity.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import (
-    ChatStore,
-)
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyChatStore,
 )

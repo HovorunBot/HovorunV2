@@ -9,7 +9,7 @@ from aiogram.types import CallbackQuery, Chat, ChatMemberUpdated, Message, Teleg
 
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
 from hovorunv2.application.identity.identity import GroupIdentityStore
-from hovorunv2.application.ports import PublicHandleStore, UserStore
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
 

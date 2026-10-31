@@ -1,6 +1,6 @@
 """Application service for role evaluation and CLI-managed role assignment."""
 
-from hovorunv2.application.ports import RoleStore
+from hovorunv2.application.access.ports import RoleStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, Platform, Role
 from hovorunv2.domain.user import UserDB

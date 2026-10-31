@@ -2,7 +2,8 @@
 
 from dishka import AsyncContainer
 
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.usage.policies import UsageSubject
 from hovorunv2.domain.enums import TargetKind
 

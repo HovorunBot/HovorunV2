@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.ports import UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import ActorOrigin, Platform
 from hovorunv2.domain.user import UserDB

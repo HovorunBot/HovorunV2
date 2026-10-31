@@ -10,8 +10,9 @@ from hovorunv2.application.features.group_beta import GroupBetaStore
 from hovorunv2.application.features.policy_facts import FeatureFactStore
 from hovorunv2.application.features.registry import FeatureDefinition, FeatureRegistry
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.identity.ports import UserStore
 from tests.utils.runtimes.beta import REGISTRY, group_beta_runtime
 
 CAPABLE = FeatureDefinition(

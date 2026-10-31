@@ -13,9 +13,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from hovorunv2.application.access.administration import AdminAction, AdminRequest
 from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.groups.group_grants import GroupGrantStore
-from hovorunv2.application.messaging.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
-from hovorunv2.application.ports import AppSettings, CachePort, ChatStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
+from hovorunv2.application.messaging.crypto import get_fernet_for_chat
+from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.settings.admin_session_service import AdminSessionService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanDB
@@ -25,6 +28,7 @@ from hovorunv2.domain.user import UserDB
 from hovorunv2.interface.access_arguments import parse_access
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
 from hovorunv2.interface.telegram.settings.callbacks import AdminCallback
+from hovorunv2.utils.crypto import decrypt_payload, encrypt_payload
 from tests.conftest import provision_role
 from tests.utils.activation import sent_fields
 from tests.utils.settings import query_for, settings_http, settings_message

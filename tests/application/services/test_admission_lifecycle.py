@@ -11,8 +11,10 @@ import pytest
 import redis.asyncio as async_redis
 from dishka import AsyncContainer
 
+from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import (
     AdmissionLimits,
     AdmissionState,
@@ -21,7 +23,6 @@ from hovorunv2.application.jobs.admission import (
     incoming_action_key,
 )
 from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome, JobTarget, PayloadState
-from hovorunv2.application.ports import CommandStore, UserStore
 from hovorunv2.application.usage.budgets import (
     BudgetRequest,
     ReservationState,

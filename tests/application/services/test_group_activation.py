@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permissions import DecisionReason, GroupAdminEvidence, PermissionTarget
+from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.activation import (
@@ -22,9 +23,10 @@ from hovorunv2.application.groups.activation import (
 )
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.base import Base

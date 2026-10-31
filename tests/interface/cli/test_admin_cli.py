@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from alembic import command
 from hovorunv2.application.access.role_service import RoleService
-from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.bootstrap.admin import main, run_admin
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import ActorOrigin, Role, TargetKind

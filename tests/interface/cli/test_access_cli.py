@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from hovorunv2.application.groups.group_grants import GroupGrantStore
-from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.bootstrap.admin import AdminProvider, main, run_admin
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.base import Base

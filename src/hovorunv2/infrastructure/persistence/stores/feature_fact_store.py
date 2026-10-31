@@ -6,10 +6,10 @@ from functools import partial
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import Session
 
+from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.features.feature_policy import FeatureFacts
 from hovorunv2.application.features.policy_facts import FeatureFactStore
 from hovorunv2.application.features.registry import FeatureDefinition, TriggerKind
-from hovorunv2.application.ports import AuthorizationPolicy
 from hovorunv2.infrastructure.persistence.repositories.policy_fact_reader import PolicyFactReader
 
 

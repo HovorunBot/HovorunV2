@@ -1,7 +1,8 @@
 """Audited boolean trust administration, independent of authority roles."""
 
 from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
-from hovorunv2.application.ports import AuthorizationPolicy, PublicHandleStore, UserStore
+from hovorunv2.application.access.ports import AuthorizationPolicy
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
 

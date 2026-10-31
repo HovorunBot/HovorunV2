@@ -28,7 +28,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     QueuedFeature,
 )
 from hovorunv2.application.jobs.http_ports import SyncQueuePublisherPort
-from hovorunv2.application.ports import OperationsRunnerPort
+from hovorunv2.application.operations.ports import OperationsRunnerPort
 from hovorunv2.application.usage.budgets import RUNTIME_RETENTION_SECONDS, Clock, RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.infrastructure.config import Settings

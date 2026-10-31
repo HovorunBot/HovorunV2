@@ -2,6 +2,8 @@
 
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import (
     DEFAULT_INGRESS_PENDING,
     RECOVERY_PAGE_LIMIT,
@@ -21,7 +23,6 @@ from hovorunv2.application.jobs.feature_jobs import (
     JobTarget,
     SealedPayload,
 )
-from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.application.usage.policies import ResolvedUsage
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService

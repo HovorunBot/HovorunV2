@@ -6,8 +6,10 @@ import logging
 from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
 
+from hovorunv2.application.configuration import AppSettings
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.operations.changelog import get_changelog_updates, get_current_version, parse_version
-from hovorunv2.application.ports import AppSettings, ChatStore, SystemStore
+from hovorunv2.application.operations.ports import SystemStore
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus
 

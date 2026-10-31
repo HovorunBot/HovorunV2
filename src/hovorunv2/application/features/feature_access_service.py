@@ -16,9 +16,10 @@ from hovorunv2.application.features.group_beta import GroupBetaStore
 from hovorunv2.application.features.policy_facts import FeatureFactStore
 from hovorunv2.application.features.registry import FeatureChannel, FeatureRegistry, FeatureScope, TriggerKind
 from hovorunv2.application.groups.chat_status_service import ChatStatusService, evidence_time
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.domain.membership import GroupMembershipStateDB

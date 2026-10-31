@@ -15,7 +15,7 @@ from hovorunv2.application.jobs.http_ports import (
     SyncBrowserPort,
     SyncHTTPPort,
 )
-from hovorunv2.application.media.browser import BrowserTab
+from hovorunv2.application.media.browser import BrowserPort, BrowserTab
 from hovorunv2.application.media.errors import (
     BrowserContinuationRequired,
     BrowserError,
@@ -30,7 +30,6 @@ from hovorunv2.application.media.provider_config import (
     ProviderConfig,
 )
 from hovorunv2.application.media.provider_parsing import MediaParser
-from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.utils.metadata import extract_og_metadata
 

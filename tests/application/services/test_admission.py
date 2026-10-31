@@ -9,11 +9,13 @@ import redis.asyncio as redis
 from dishka import AsyncContainer
 
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
+from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import TriggerKind
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import AdmissionLimits, AdmissionState, TicketState, incoming_action_key
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_jobs import JobOutcome, JobStatus, JobTarget, PayloadState
-from hovorunv2.application.ports import ChatStore, CommandStore, UserStore
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.audit import ActorContext

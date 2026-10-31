@@ -7,7 +7,8 @@ from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware

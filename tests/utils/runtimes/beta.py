@@ -19,9 +19,10 @@ from hovorunv2.application.features.registry import (
 )
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import AdministratorEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.beta import ALL_BETA
 from hovorunv2.domain.enums import ChatStatus

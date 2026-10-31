@@ -4,14 +4,12 @@ from typing import NewType
 
 from dishka import Provider, Scope, provide
 
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_job_runner import default_media_clients
 from hovorunv2.application.jobs.feature_jobs import PayloadPort
 from hovorunv2.application.media.providers.base import BaseMediaClient
-from hovorunv2.application.ports import (
-    ChatStore,
-    UserStore,
-)
 from hovorunv2.application.translation.providers import (
     BaseTranslationService,
     GoogleTranslationService,

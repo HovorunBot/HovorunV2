@@ -7,12 +7,10 @@ import aiohttp
 from aiogram import Bot
 from dishka import Scope, alias, provide
 
+from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.identity.membership import MembershipPort
 from hovorunv2.application.jobs.feature_jobs import FeatureQueuePort
-from hovorunv2.application.ports import (
-    AppSettings,
-    CachePort,
-)
+from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.database import DatabaseProvider

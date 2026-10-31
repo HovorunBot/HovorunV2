@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
-from hovorunv2.application.ports import ChatStore
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.domain.audit import AuditEventDB
 from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler

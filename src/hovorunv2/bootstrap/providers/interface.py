@@ -5,6 +5,7 @@ from typing import NewType
 from dishka import Provider, Scope, alias, provide
 
 from hovorunv2.application.access.administration_service import AdministrationService
+from hovorunv2.application.access.ports import UnauthorizedPromptSender
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_management_service import GroupManagementService
@@ -14,9 +15,6 @@ from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.operations.notification_service import NotificationService
 from hovorunv2.application.operations.reminder_service import ChatReminderService
-from hovorunv2.application.ports import (
-    UnauthorizedPromptSender,
-)
 from hovorunv2.application.settings.admin_session_service import AdminSessionService
 from hovorunv2.application.settings.settings_session_service import SettingsSessionService
 from hovorunv2.application.translation.language_service import LanguageService

@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.ports import AuditedUnitOfWork
+from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext, AuditEventDB, sanitize_audit_changes
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.infrastructure.persistence.repositories.audit_repository import SQLAlchemyAuditRepository

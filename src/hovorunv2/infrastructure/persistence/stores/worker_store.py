@@ -8,6 +8,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
 from hovorunv2.application.access.permissions import AccessDecision, PermissionRequest, PermissionTarget
+from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.features.feature_policy import FeatureDecision, evaluate_feature
 from hovorunv2.application.features.registry import FeatureRegistry, TriggerKind
 from hovorunv2.application.identity.membership import (
@@ -16,7 +17,6 @@ from hovorunv2.application.identity.membership import (
     MembershipEvidence,
     MembershipStatus,
 )
-from hovorunv2.application.ports import AuthorizationPolicy
 from hovorunv2.application.usage.policies import ResolvedUsage, UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import (
     AccountingSubject,

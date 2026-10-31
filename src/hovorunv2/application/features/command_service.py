@@ -1,7 +1,7 @@
 """Application service for managing allowed commands per chat."""
 
+from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import COMMAND_PRESENTATION, FEATURE_REGISTRY
-from hovorunv2.application.ports import CommandStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
     PROVIDER_SPLIT_COMMANDS,

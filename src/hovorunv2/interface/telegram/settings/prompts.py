@@ -7,7 +7,8 @@ from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from hovorunv2.application.ports import ChatStore, SyncUnauthorizedPromptPort, WorkerTelegramPort
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.operations.ports import SyncUnauthorizedPromptPort, WorkerTelegramPort
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
 

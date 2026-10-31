@@ -6,10 +6,10 @@ from typing import ClassVar, Self
 import aiohttp
 
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
+from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient, ProviderConfig
-from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 
 TIKTOK_CONFIG = ProviderConfig(

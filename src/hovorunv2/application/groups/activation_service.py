@@ -1,14 +1,16 @@
 """Resolve activation targets and obtain only required current administrator evidence."""
 
 from hovorunv2.application.access.permissions import GroupAdminEvidence, PermissionFacts, PermissionTarget
+from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.groups.activation import (
     ActivationAction,
     ActivationRequest,
     ActivationResult,
     ActivationStore,
 )
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import MembershipPort, MembershipStatus
-from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.user import UserDB
 
 

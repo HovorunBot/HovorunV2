@@ -186,3 +186,14 @@ layers = [
     "hovorunv2.domain",
 ]
 
+[[tool.importlinter.contracts]]
+name = "Reusable Utilities Independence"
+type = "forbidden"
+source_modules = ["hovorunv2.utils"]
+forbidden_modules = [
+    "hovorunv2.domain",
+    "hovorunv2.application",
+    "hovorunv2.infrastructure",
+    "hovorunv2.interface",
+    "hovorunv2.bootstrap",
+]

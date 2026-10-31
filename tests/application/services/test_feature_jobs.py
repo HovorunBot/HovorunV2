@@ -12,6 +12,8 @@ import redis.asyncio as redis
 from dishka import AsyncContainer
 
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.jobs.feature_jobs import (
@@ -27,7 +29,6 @@ from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.media.providers.instagram import INSTAGRAM_CONFIG
-from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AccountingSubject

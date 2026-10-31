@@ -7,6 +7,7 @@ from typing import Final
 
 import redis
 
+from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
@@ -14,8 +15,7 @@ from hovorunv2.application.identity.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.operations.changelog import get_changelog_updates, get_current_version, parse_version
-from hovorunv2.application.ports import (
-    AppSettings,
+from hovorunv2.application.operations.ports import (
     OperationsRunnerPort,
     SyncUnauthorizedPromptPort,
     WorkerOperationsPort,

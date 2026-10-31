@@ -4,8 +4,8 @@ from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.registry import FeatureRegistry
-from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.application.usage.policies import UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import (
     AccountingSubject,

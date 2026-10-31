@@ -9,8 +9,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.access.permission_service import PermissionService
+from hovorunv2.application.access.ports import AuthorizationPolicy
+from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry, TriggerKind
-from hovorunv2.application.ports import AuditedUnitOfWork, AuthorizationPolicy, ChatStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.usage.policies import (
     MEDIA_BUCKET,
     UsagePolicy,

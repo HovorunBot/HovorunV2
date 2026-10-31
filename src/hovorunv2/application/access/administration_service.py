@@ -8,7 +8,8 @@ from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.features.beta_service import BetaEligibilityService
 from hovorunv2.application.groups.activation import ActivationAction, ActivationRequest, ActivationStore
 from hovorunv2.application.groups.group_grants import GroupGrantStore
-from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ActorOrigin, TargetKind

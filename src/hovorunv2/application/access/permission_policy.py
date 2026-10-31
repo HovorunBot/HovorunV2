@@ -9,7 +9,7 @@ from hovorunv2.application.access.permissions import (
     PermissionRequest,
     PermissionTarget,
 )
-from hovorunv2.application.ports import AuthorizationPolicy
+from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.domain.enums import Role
 
 

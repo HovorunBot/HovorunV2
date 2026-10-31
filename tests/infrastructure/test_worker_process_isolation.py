@@ -5,8 +5,9 @@ import time
 import pytest
 from dishka import AsyncContainer
 
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobEnvelope, JobOutcome, JobTarget
-from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.domain.audit import ActorContext

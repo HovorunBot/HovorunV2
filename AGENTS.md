@@ -17,10 +17,11 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Postg
 ## 3. Architecture Principles & Boundaries
 
 - **Layer Boundaries:** Layers depend strictly inward: `bootstrap` -> `interface` -> `infrastructure` -> `application` -> `domain`. Enforced by `lint-imports`.
-- **Ports & Adapters:** Application defines protocol contracts (`application/ports.py`); application imports only `domain`, stdlib, and third-party libraries—NEVER infrastructure or interface. Repositories accept session and query/persist; stores encapsulate session_maker and own transaction boundaries.
+- **Ports & Adapters:** Application defines protocol contracts in the capability package that owns them; application imports only `domain`, stdlib, and third-party libraries—NEVER infrastructure or interface. Repositories accept session and query/persist; stores encapsulate session_maker and own transaction boundaries.
 - **Dependency Injection:** Centralized Dishka DI container composition root (`bootstrap/container.py`). All injected service dependencies are mandatory (NEVER `None`; NEVER write `if self.dependency:` guards).
 - **DI Typing Consistency:** Consumer parameter type hints MUST match provider definitions exactly (e.g. bare `async_sessionmaker` instead of generic `async_sessionmaker[AsyncSession]`) to avoid adaptix fallback matching and Python 3.15 deprecation warnings.
 - **Reference Documentation:** See [architecture documentation](docs/architecture.md) for full layer responsibilities, permission policies, audit boundaries, and database deployment details.
+- **Reusable Utilities:** Root `hovorunv2.utils/` holds capability-independent technical helpers. Any layer may import it; it must not import a layer, directly or indirectly. Application contracts live with their capability owner, not in a central ports module.
 - **Execution Model:** Bot, interactive CLI, and bot-facing adapters use async I/O. Native Celery workers and synchronous application use cases use synchronous SQLAlchemy/psycopg, HTTP, Telegram, and browser adapters. Create worker resources inside each child process; never inherit live pools or wrap worker execution in an event loop. Share pure policy, parsing, and rendering rules between bot and workers.
 
 ## 4. Code Conventions

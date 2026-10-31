@@ -17,6 +17,7 @@ from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
@@ -24,7 +25,7 @@ from hovorunv2.application.identity.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ChatStatus, Role, TargetKind

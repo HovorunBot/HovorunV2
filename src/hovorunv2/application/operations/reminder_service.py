@@ -6,8 +6,10 @@ from typing import Final
 
 from aiogram import Bot
 
+from hovorunv2.application.access.ports import UnauthorizedPromptSender
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
-from hovorunv2.application.ports import CachePort, ChatStore, UnauthorizedPromptSender
+from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.domain.enums import ChatStatus
 
 logger = logging.getLogger(__name__)

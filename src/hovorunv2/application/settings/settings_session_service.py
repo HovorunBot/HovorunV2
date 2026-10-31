@@ -6,7 +6,9 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from hovorunv2.application.ports import CachePort, ChatStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
+from hovorunv2.application.messaging.ports import CachePort
 
 SETTINGS_SESSION_TTL: Final = 30
 

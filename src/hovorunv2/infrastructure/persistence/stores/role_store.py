@@ -5,7 +5,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.ports import AuditedUnitOfWork, RoleStore
+from hovorunv2.application.access.ports import RoleStore
+from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, Platform, Role
 from hovorunv2.domain.user import UserDB

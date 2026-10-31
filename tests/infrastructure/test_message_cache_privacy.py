@@ -13,9 +13,9 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.access.trust_service import TrustService
-from hovorunv2.application.messaging.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.messaging.crypto import get_fernet_for_chat
 from hovorunv2.application.messaging.message_service import MessageService, minimal_message_data
-from hovorunv2.application.ports import ChatStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.cache import CacheService
@@ -23,6 +23,7 @@ from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.middlewares import MessageCacheMiddleware
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
+from hovorunv2.utils.crypto import decrypt_payload, encrypt_payload
 from tests.utils.telegram import BOT_CREDENTIAL, RecordedResponse
 
 

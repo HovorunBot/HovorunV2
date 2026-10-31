@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
+from hovorunv2.application.access.ports import AuthorizationPolicy
+from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.groups.activation import (
     ActivationAction,
     ActivationOutcome,
@@ -14,7 +16,6 @@ from hovorunv2.application.groups.activation import (
     ActivationResult,
     ActivationStore,
 )
-from hovorunv2.application.ports import AuditedUnitOfWork, AuthorizationPolicy
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB

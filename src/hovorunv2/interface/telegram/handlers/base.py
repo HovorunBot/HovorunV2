@@ -13,6 +13,8 @@ from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import AdmissionState, incoming_action_key
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_jobs import (
@@ -22,7 +24,6 @@ from hovorunv2.application.jobs.feature_jobs import (
     PayloadPort,
 )
 from hovorunv2.application.media.providers.base import BaseMediaClient
-from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind

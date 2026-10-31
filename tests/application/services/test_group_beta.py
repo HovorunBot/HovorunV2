@@ -16,6 +16,7 @@ from hovorunv2.application.features.beta import BetaEntitlementStore
 from hovorunv2.application.features.beta_service import BetaEligibilityService
 from hovorunv2.application.features.group_beta import GroupBetaStore
 from hovorunv2.application.features.group_beta_service import GroupBetaService
+from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import (
     FEATURE_REGISTRY,
     FeatureChannel,
@@ -26,9 +27,10 @@ from hovorunv2.application.features.registry import (
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import AdministratorEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, CommandStore, UserStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB

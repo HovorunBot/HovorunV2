@@ -1,6 +1,9 @@
 """Typed browser callback operations without an infrastructure or SDK dependency."""
 
+from collections.abc import Callable
 from typing import Protocol
+
+from hovorunv2.application.media.errors import MediaFailure
 
 
 class BrowserElement(Protocol):
@@ -55,4 +58,27 @@ class BrowserTab(Protocol):
 
     def close(self) -> None:
         """Close this isolated tab."""
+        ...
+
+
+class BrowserPort(Protocol):
+    """Protocol for headless browser automation."""
+
+    async def get_content(self, url: str, wait_selector: str | None = None) -> str:
+        """Return rendered HTML; navigation or browser failures raise."""
+        ...
+
+    async def extract_and_download[T](
+        self,
+        url: str,
+        extractor_fn: Callable[[BrowserTab, str], T | None],
+        wait_selector: str | None = None,
+        cookies: list[dict[str, object]] | None = None,
+    ) -> tuple[T | None, list[bytes | MediaFailure]]:
+        """Run extraction and download in one browser session.
+
+        The current adapter returns (None, []) when extraction finds no metadata.
+        Navigation and browser failures raise BrowserError.
+        Each media position contains bytes or an explicit MediaFailure.
+        """
         ...

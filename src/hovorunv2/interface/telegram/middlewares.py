@@ -12,9 +12,10 @@ from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObj
 
 from hovorunv2.application.access.access_service import AccessService, CommandPolicy
 from hovorunv2.application.access.permissions import DecisionReason
+from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.features.registry import TriggerKind
 from hovorunv2.application.messaging.message_service import MessageService
-from hovorunv2.application.ports import AppSettings, CachePort
+from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger, set_log_context
 from hovorunv2.interface.telegram.handlers.help import HelpCommand

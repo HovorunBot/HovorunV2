@@ -16,9 +16,10 @@ from hovorunv2.application.groups.activation_service import GroupActivationServi
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.identity import GroupIdentityStore
-from hovorunv2.application.messaging.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
-from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.messaging.crypto import get_fernet_for_chat
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.chat import ChatDB
@@ -27,6 +28,7 @@ from hovorunv2.domain.group_grant import RequestStatus
 from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.handle import PublicHandleDB
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
+from hovorunv2.utils.crypto import decrypt_payload, encrypt_payload
 from tests.conftest import provision_role
 from tests.utils.activation import ACTOR
 from tests.utils.postgres import reject_audit

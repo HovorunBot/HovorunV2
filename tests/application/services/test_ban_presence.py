@@ -9,9 +9,9 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.access.access_service import AccessService, CommandPolicy
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.operations.reminder_service import ChatReminderService
-from hovorunv2.application.ports import ChatStore
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.cache import CacheService

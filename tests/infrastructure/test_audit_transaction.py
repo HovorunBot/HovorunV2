@@ -8,7 +8,7 @@ from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.ports import AuditedUnitOfWork
+from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.domain.audit import (
     SENSITIVE_FIELD_MARKER,
     ActorContext,

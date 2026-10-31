@@ -5,8 +5,8 @@ from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.groups.group_grants import GroupGrantStore
-from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.group_grant import (
     ApprovalBasis,

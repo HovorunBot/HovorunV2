@@ -4,13 +4,10 @@ from typing import NewType
 
 from dishka import Provider, Scope, alias, provide
 
-from hovorunv2.application.ports import (
-    AuditedUnitOfWork,
-    CommandStore,
-    PublicHandleStore,
-    SystemStore,
-    UserStore,
-)
+from hovorunv2.application.auditing import AuditedUnitOfWork
+from hovorunv2.application.features.ports import CommandStore
+from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.operations.ports import SystemStore
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyAuditedTransaction,
     SQLAlchemyCommandStore,

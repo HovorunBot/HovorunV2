@@ -11,14 +11,10 @@ from dishka import AsyncContainer
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 import hovorunv2.application.messaging.message_service as message_module
-from hovorunv2.application.messaging.crypto import (
-    decrypt_payload,
-    encrypt_payload,
-    get_fernet_for_chat,
-    verify_encryption_key,
-)
+from hovorunv2.application.messaging.crypto import get_fernet_for_chat, verify_encryption_key
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.infrastructure.runtime.cache import CacheService
+from hovorunv2.utils.crypto import decrypt_payload, encrypt_payload
 
 
 @pytest.fixture

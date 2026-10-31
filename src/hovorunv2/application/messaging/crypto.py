@@ -6,7 +6,8 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from hovorunv2.utils.crypto import decrypt_payload, encrypt_payload
+from hovorunv2.utils.crypto import decrypt_payload as _decrypt_payload
+from hovorunv2.utils.crypto import encrypt_payload as _encrypt_payload
 
 PBKDF2_ITERATIONS = 100_000
 
@@ -39,8 +40,8 @@ def _require_encryption_roundtrip(key: str) -> None:
     try:
         fernet = get_fernet_for_chat(key, synthetic_salt_hex)
         test_payload = "hovorun_startup_encryption_self_check"
-        encrypted = encrypt_payload(test_payload, fernet)
-        decrypted = decrypt_payload(encrypted, fernet)
+        encrypted = _encrypt_payload(test_payload, fernet)
+        decrypted = _decrypt_payload(encrypted, fernet)
         is_match = decrypted == test_payload
     except Exception:
         msg = "Master encryption key is invalid or unusable for key derivation."

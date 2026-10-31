@@ -9,7 +9,9 @@ from hovorunv2.application.access.permissions import (
     DecisionReason,
     PermissionRequest,
 )
-from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
+from hovorunv2.application.access.ports import AuthorizationPolicy
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 

@@ -23,6 +23,7 @@ from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.features.group_beta import GroupBetaStore
 from hovorunv2.application.features.policy_facts import FeatureFactStore
+from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import (
     FeatureChannel,
     FeatureDefinition,
@@ -30,12 +31,15 @@ from hovorunv2.application.features.registry import (
     TriggerKind,
 )
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
+from hovorunv2.application.identity.ports import UserStore
+from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.media.providers.twitter import TwitterService
-from hovorunv2.application.ports import BrowserPort, CachePort, ChatStore, CommandStore, UserStore
+from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.translation.service import TranslationService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind

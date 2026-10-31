@@ -4,7 +4,8 @@ from dataclasses import replace
 
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.features.registry import FeatureRegistry, TriggerKind
-from hovorunv2.application.ports import ChatStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.usage.policies import (
     MEDIA_BUCKET,
     ResolvedUsage,

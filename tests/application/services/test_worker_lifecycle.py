@@ -12,6 +12,7 @@ from celery import Celery
 from dishka import AsyncContainer
 
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import (
     RECOVERY_RETRY_SECONDS,
     AdmissionLimits,
@@ -24,7 +25,6 @@ from hovorunv2.application.jobs.admission import (
 )
 from hovorunv2.application.jobs.feature_jobs import JobEnvelope, JobOutcome, JobTarget, PayloadState
 from hovorunv2.application.jobs.worker_lifecycle_service import WorkerLifecycleService
-from hovorunv2.application.ports import UserStore
 from hovorunv2.application.usage.budgets import BudgetRequest, ReservationState
 from hovorunv2.application.usage.policies import UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AccountingSubject

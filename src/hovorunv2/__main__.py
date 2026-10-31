@@ -13,7 +13,7 @@ from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.messaging.crypto import verify_encryption_key
 from hovorunv2.application.messaging.message_service import MessageService
-from hovorunv2.application.ports import CachePort
+from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.bootstrap.container import AppProvider
 from hovorunv2.bootstrap.providers.infrastructure import InfrastructureProvider
 from hovorunv2.infrastructure.config import Settings

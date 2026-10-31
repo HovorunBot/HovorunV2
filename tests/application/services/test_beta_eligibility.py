@@ -15,8 +15,10 @@ from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.features.beta import BetaEntitlementStore
 from hovorunv2.application.features.beta_service import BetaEligibilityService
+from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureChannel, FeatureDefinition, FeatureRegistry
-from hovorunv2.application.ports import ChatStore, CommandStore, UserStore
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB, chat_commands

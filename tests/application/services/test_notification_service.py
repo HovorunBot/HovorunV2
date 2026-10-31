@@ -11,7 +11,7 @@ from dishka import AsyncContainer
 import hovorunv2.application.operations.notification_service as notification_module
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.operations.notification_service import NotificationService
-from hovorunv2.application.ports import SystemStore
+from hovorunv2.application.operations.ports import SystemStore
 from hovorunv2.domain.enums import ChatStatus
 
 

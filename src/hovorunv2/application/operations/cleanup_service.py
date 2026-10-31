@@ -5,7 +5,7 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from hovorunv2.application.ports import CachePort
+from hovorunv2.application.messaging.ports import CachePort
 
 if TYPE_CHECKING:
     from aiogram import Bot
