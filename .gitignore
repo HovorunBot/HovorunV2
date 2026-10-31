@@ -170,3 +170,6 @@ cython_debug/
 
 # Local implementation plans (ordinary Markdown; no AI-ignore rule)
 /ai-schemes/
+
+# Local Harness plugins (installed into the DSH profile, never shipped)
+/.agents/plugins/
