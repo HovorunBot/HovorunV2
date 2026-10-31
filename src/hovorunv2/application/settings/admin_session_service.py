@@ -40,7 +40,20 @@ class AdminSessionService:
         self._settings = settings
 
     async def issue(self, request: AdminRequest, target: AdminTarget, actor_id: int, message_id: int) -> str:
-        """Create a short-lived opaque confirmation; no message body enters the cache."""
+        """Create a short-lived opaque confirmation without caching message contents.
+
+        Args:
+            request: Administration request to confirm.
+            target: Target of the administration request.
+            actor_id: Telegram ID of the requesting administrator.
+            message_id: Message presenting the confirmation.
+
+        Returns:
+            Opaque confirmation token.
+
+        Raises:
+            ValueError: If the actor is unknown or the encryption key is missing.
+        """
         user = await self._users.get_by_telegram_id(actor_id)
         master = self._settings.cache_encryption_key
         if user is None or not master:
@@ -65,7 +78,17 @@ class AdminSessionService:
     async def resolve(
         self, token: str, actor_id: int, message_id: int, *, consume: bool = False
     ) -> AdminConfirmation | None:
-        """Check identity before GETDEL so another actor cannot consume a valid window."""
+        """Resolve a confirmation token, rejecting stale or cross-actor reuse.
+
+        Args:
+            token: Opaque confirmation token.
+            actor_id: Telegram ID of the resolving actor.
+            message_id: Message bound to the confirmation.
+            consume: True to delete the token on successful resolution.
+
+        Returns:
+            The confirmation, or None when invalid, expired or already consumed.
+        """
         key = f"admin:confirmation:{token}"
         raw = await self._cache.get(key)
         master = self._settings.cache_encryption_key
@@ -86,7 +109,17 @@ class AdminSessionService:
     def _confirmation_matches(
         self, confirmation: AdminConfirmation, user: UserDB | None, actor_id: int, message_id: int
     ) -> bool:
-        """Check live actor generation and window binding before consuming the token."""
+        """Return whether the confirmation matches the live actor and window binding.
+
+        Args:
+            confirmation: Confirmation to validate.
+            user: Live user record, if any.
+            actor_id: Telegram ID of the resolving actor.
+            message_id: Message bound to the confirmation.
+
+        Returns:
+            True if the confirmation is current and bound to the actor and message.
+        """
         if user is None:
             return False
         if confirmation.actor_id != actor_id or confirmation.actor_generation != user.generation:

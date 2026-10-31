@@ -39,7 +39,7 @@ class FeatureFacts:
 
 
 def _uses_group_authority(scope: FeatureScope, trigger: TriggerKind, *, configure: bool) -> bool:
-    """Only automatic group execution may enter without a current unrestricted actor."""
+    """Return whether automatic group execution may proceed without a current actor."""
     return scope == FeatureScope.GROUP and trigger == TriggerKind.AUTOMATIC and not configure
 
 
@@ -52,7 +52,19 @@ def feature_entry_allowed(
     trigger: TriggerKind,
     configure: bool,
 ) -> bool:
-    """Automatic group work uses group authority; human actions require a current actor."""
+    """Return whether the feature may be entered for the given scope and trigger.
+
+    Args:
+        definition: Feature definition whose scopes and triggers are checked.
+        scope: Scope in which the feature is being entered.
+        actor_active: Whether a current actor is present.
+        actor_restricted: Whether the current actor is restricted.
+        trigger: How the work enters the application.
+        configure: True when evaluating configuration rather than execution.
+
+    Returns:
+        True if the entry is allowed.
+    """
     if scope not in definition.scopes:
         return False
     if not configure and trigger not in definition.triggers:
@@ -65,7 +77,17 @@ def feature_entry_allowed(
 def evaluate_feature(
     definition: FeatureDefinition, facts: FeatureFacts, *, trigger: TriggerKind, configure: bool = False
 ) -> FeatureDecision:
-    """Apply existing private/group rules independently of fact-loading I/O."""
+    """Apply private and group rules to produce a feature decision.
+
+    Args:
+        definition: Feature definition being evaluated.
+        facts: Fresh typed facts for the evaluation.
+        trigger: How the work enters the application.
+        configure: True when evaluating configuration rather than execution.
+
+    Returns:
+        The resulting decision, safe by default.
+    """
     if facts.emergency_disabled:
         return FeatureDecision()
     if not facts.target_active:
@@ -85,7 +107,15 @@ def evaluate_feature(
 
 
 def _group_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecision:
-    """Keep management visibility, group access and execution capability as distinct decisions."""
+    """Return the group-scoped decision from management, access and capability facts.
+
+    Args:
+        facts: Fresh typed facts for the group.
+        configure: True when evaluating configuration rather than execution.
+
+    Returns:
+        The group decision, with guidance restricted to managers.
+    """
     if configure and not facts.manager:
         return FeatureDecision()
     if facts.access_reason != DecisionReason.ALLOWED:
@@ -105,6 +135,15 @@ def _group_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecision:
 
 
 def _private_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecision:
+    """Return the private-scope decision from access and eligibility facts.
+
+    Args:
+        facts: Fresh typed facts for the private scope.
+        configure: True when evaluating configuration rather than execution.
+
+    Returns:
+        The private decision.
+    """
     if not facts.private_access or not facts.eligible:
         return FeatureDecision()
     return FeatureDecision(

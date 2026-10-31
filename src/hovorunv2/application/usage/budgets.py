@@ -23,7 +23,11 @@ class RuntimeNamespace:
     value: str = "work:{work}:"
 
     def __post_init__(self) -> None:
-        """Require an explicit hash tag and a bounded technical namespace."""
+        """Require an explicit hash tag and a bounded technical namespace.
+
+        Raises:
+            ValueError: If the namespace lacks a hash tag or technical prefix.
+        """
         if re.fullmatch(r"[A-Za-z0-9_.:-]+\{[A-Za-z0-9_.-]+\}:", self.value) is None:
             msg = "Runtime namespace requires a technical prefix and Valkey hash tag."
             raise ValueError(msg)
@@ -65,7 +69,11 @@ class UnitAmount:
     amount: int
 
     def __post_init__(self) -> None:
-        """Keep runtime arithmetic within the established exact integer bound."""
+        """Keep runtime arithmetic within the established exact integer bound.
+
+        Raises:
+            ValueError: If the unit or amount is not a typed nonnegative exact integer.
+        """
         if (
             not isinstance(self.unit, UsageUnit)
             or type(self.amount) is not int
@@ -93,12 +101,23 @@ class BudgetRequest:
         self._validate_policy_coverage(units)
 
     def _validate_reservation_id(self) -> None:
-        """Require a bounded technical identity for reservation replay."""
+        """Require a bounded technical identity for reservation replay.
+
+        Raises:
+            ValueError: If the reservation ID is not a bounded technical identifier.
+        """
         if TECHNICAL_ID.fullmatch(self.reservation_id) is None:
             raise ValueError(_INVALID_RESERVATION_MESSAGE)
 
     def _validate_estimates(self, units: set[UsageUnit]) -> None:
-        """Require nonempty, unambiguous estimates with positive amounts."""
+        """Require nonempty, unambiguous estimates with positive amounts.
+
+        Args:
+            units: Set of units covered by the estimates.
+
+        Raises:
+            ValueError: If estimates are empty, duplicated, or non-positive.
+        """
         if not self.estimates:
             raise ValueError(_INVALID_RESERVATION_MESSAGE)
         if len(units) != len(self.estimates):
@@ -107,12 +126,23 @@ class BudgetRequest:
             raise ValueError(_INVALID_RESERVATION_MESSAGE)
 
     def _validate_deadline(self) -> None:
-        """Require a finite positive deadline without rounding the original timestamp."""
+        """Require a finite positive deadline without rounding the original timestamp.
+
+        Raises:
+            ValueError: If the deadline is not finite and positive.
+        """
         if not math.isfinite(self.deadline) or self.deadline <= 0:
             raise ValueError(_INVALID_RESERVATION_MESSAGE)
 
     def _validate_policy_coverage(self, units: set[UsageUnit]) -> None:
-        """Require estimates for exactly the resolved policy units."""
+        """Require estimates for exactly the resolved policy units.
+
+        Args:
+            units: Set of units covered by the estimates.
+
+        Raises:
+            ValueError: If the estimates do not match the resolved policy units.
+        """
         if units != {policy.unit for policy in self.usage.policies}:
             raise ValueError(_INVALID_RESERVATION_MESSAGE)
 
@@ -126,7 +156,7 @@ class ReservationDecision:
 
     @property
     def allowed(self) -> bool:
-        """Only a live reservation permits starting execution."""
+        """Return whether the reservation is live and permits execution."""
         return self.state == ReservationState.RESERVED
 
 

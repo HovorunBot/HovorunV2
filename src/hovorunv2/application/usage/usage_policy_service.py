@@ -40,6 +40,19 @@ class UsagePolicyService:
     async def _subject(
         self, actor_id: int | None, group_id: int | None, trigger: TriggerKind
     ) -> tuple[UsageSubject, bool]:
+        """Resolve the charged subject and its trusted flag for the trigger.
+
+        Args:
+            actor_id: Telegram ID of the direct actor, if any.
+            group_id: Telegram ID of the automatic group, if any.
+            trigger: How the work enters the application.
+
+        Returns:
+            The accounting subject and whether the actor is trusted.
+
+        Raises:
+            ValueError: If the trigger requires an active group or user that is unavailable.
+        """
         if trigger == TriggerKind.AUTOMATIC:
             chat = await self._chats.get_chat(group_id or 0)
             if chat is None or chat.chat_id != group_id or chat.chat_type not in {"group", "supergroup"}:
@@ -64,7 +77,21 @@ class UsagePolicyService:
         group_id: int | None = None,
         unit: UsageUnit = UsageUnit.REQUESTS,
     ) -> ResolvedUsage:
-        """Return intersecting feature/family limits and immutable independent safety inputs."""
+        """Return intersecting feature/family limits and independent safety inputs.
+
+        Args:
+            feature: Feature key to resolve.
+            trigger: How the work enters the application.
+            actor_id: Telegram ID of the direct actor, if any.
+            group_id: Telegram ID of the automatic group, if any.
+            unit: Accounting unit to resolve.
+
+        Returns:
+            The resolved usage for admission.
+
+        Raises:
+            ValueError: If the feature does not support the trigger or unit, or the subject is invalid.
+        """
         definition = self._registry.require(feature)
         if trigger not in definition.triggers or unit not in definition.units:
             msg = "Feature does not support this usage trigger or unit."
@@ -88,7 +115,17 @@ class UsagePolicyService:
     async def resolve_media(
         self, provider: CommandName, trigger: TriggerKind, actor_id: int | None, *, group_id: int | None = None
     ) -> ResolvedUsage:
-        """Reserve ingress against the shared family before extraction determines the exact content split."""
+        """Resolve the shared media-family policy for a provider ingress.
+
+        Args:
+            provider: Media provider whose family is resolved.
+            trigger: How the work enters the application.
+            actor_id: Telegram ID of the direct actor, if any.
+            group_id: Telegram ID of the automatic group, if any.
+
+        Returns:
+            The resolved media usage with only the shared family policy.
+        """
         feature = self._registry.capture(provider, is_video=True)
         usage = await self.resolve(feature.key, trigger, actor_id, group_id=group_id)
         return replace(usage, policies=tuple(policy for policy in usage.policies if policy.bucket == MEDIA_BUCKET))

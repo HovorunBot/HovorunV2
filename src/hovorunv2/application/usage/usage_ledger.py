@@ -27,7 +27,11 @@ class AccountingSubject:
     telegram_id: int
 
     def __post_init__(self) -> None:
-        """Reject ambiguous kinds, private group transports and invalid numeric identities."""
+        """Reject ambiguous kinds, private group transports and invalid numeric identities.
+
+        Raises:
+            ValueError: If the kind or Telegram identity is not a stable user/group identity.
+        """
         if (
             not isinstance(self.kind, TargetKind)
             or type(self.telegram_id) is not int
@@ -55,11 +59,21 @@ class UsageCharge:
         self._validate_window_capacity()
 
     def _validate_amount(self) -> None:
+        """Require a positive signed 64-bit integer amount.
+
+        Raises:
+            ValueError: If the amount is not a positive signed 64-bit integer.
+        """
         if type(self.amount) is not int or not 0 < self.amount <= MAX_ACCOUNTING_INTEGER:
             msg = "Accounting amount must be a positive signed 64-bit integer."
             raise ValueError(msg)
 
     def _validate_bucket(self) -> None:
+        """Require a bounded feature or family bucket.
+
+        Raises:
+            ValueError: If the bucket does not identify a bounded feature or family.
+        """
         if (
             not self.bucket.startswith(("feature:", "family:"))
             or not self.bucket.partition(":")[2]
@@ -69,11 +83,21 @@ class UsageCharge:
             raise ValueError(msg)
 
     def _validate_dimensions(self) -> None:
+        """Require typed accounting units and windows.
+
+        Raises:
+            TypeError: If the unit or window is not a typed usage value.
+        """
         if not isinstance(self.unit, UsageUnit) or not isinstance(self.window, UsageWindow):
             msg = "Accounting requires typed units and windows."
             raise TypeError(msg)
 
     def _validate_window_capacity(self) -> None:
+        """Require the window to fit within database integer capacity.
+
+        Raises:
+            ValueError: If the window exceeds database integer capacity.
+        """
         if self.window.seconds > MAX_ACCOUNTING_INTEGER:
             msg = "Accounting window exceeds database integer capacity."
             raise ValueError(msg)
@@ -96,19 +120,39 @@ class UsageEvent:
         self._validate_unique_dimensions()
 
     def _validate_event_id(self) -> None:
+        """Require a bounded technical event identity.
+
+        Raises:
+            ValueError: If the event ID is not a bounded technical identifier.
+        """
         if EVENT_ID_PATTERN.fullmatch(self.event_id) is None:
             raise ValueError(_EVENT_SHAPE_ERROR)
 
     def _validate_charge_count(self) -> None:
+        """Require a nonempty, bounded batch of charges.
+
+        Raises:
+            ValueError: If the charge count is empty or exceeds its bound.
+        """
         if not self.charges or len(self.charges) > MAX_USAGE_BATCH:
             raise ValueError(_EVENT_SHAPE_ERROR)
 
     def _validate_timestamp(self) -> None:
+        """Require a nonnegative signed 64-bit integer timestamp.
+
+        Raises:
+            ValueError: If the timestamp is not a nonnegative signed 64-bit integer.
+        """
         if type(self.occurred_at) is not int or not 0 <= self.occurred_at <= MAX_ACCOUNTING_INTEGER:
             msg = "Accounting timestamp must be a nonnegative signed 64-bit integer."
             raise ValueError(msg)
 
     def _validate_unique_dimensions(self) -> None:
+        """Require each bucket/unit/window to be charged at most once.
+
+        Raises:
+            ValueError: If any charge dimension is duplicated.
+        """
         dimensions = {(charge.bucket, charge.unit, charge.window.seconds) for charge in self.charges}
         if len(dimensions) != len(self.charges):
             msg = "Accounting event must charge each bucket/unit/window at most once."
@@ -116,7 +160,11 @@ class UsageEvent:
 
     @property
     def fingerprint(self) -> str:
-        """Detect event-key reuse with different operational charges, independent of tuple order."""
+        """Return a stable fingerprint detecting event-key reuse with different charges.
+
+        Returns:
+            The SHA-256 fingerprint of the ordered event payload.
+        """
         charges = sorted(
             (charge.bucket, charge.unit.value, charge.window.seconds, charge.amount) for charge in self.charges
         )
@@ -134,12 +182,26 @@ class AppliedUsage:
 
 
 def usage_batch_id(events: tuple[UsageEvent, ...]) -> str:
-    """Identify the ordered batch without including accounting payloads."""
+    """Return the ordered batch identity without including accounting payloads.
+
+    Args:
+        events: Batch of usage events.
+
+    Returns:
+        The SHA-256 batch identifier.
+    """
     return hashlib.sha256("\n".join(event.event_id for event in events).encode()).hexdigest()
 
 
 def usage_audit_changes(result: AppliedUsage) -> dict[str, object]:
-    """Build the operational summary shared by native and async accounting."""
+    """Return the operational summary shared by native and async accounting.
+
+    Args:
+        result: Applied usage summary.
+
+    Returns:
+        Serialized change summary.
+    """
     return {
         "events_applied": result.events_applied,
         "aggregates_updated": result.aggregates_updated,
@@ -186,7 +248,17 @@ class SyncLedgerPort(Protocol):
 
 
 def validate_usage_batch(registry: FeatureRegistry, events: tuple[UsageEvent, ...], actor: ActorContext) -> None:
-    """Validate trusted accounting origin and supported dimensions in either runtime."""
+    """Validate trusted accounting origin and supported dimensions.
+
+    Args:
+        registry: Feature registry used to validate charge dimensions.
+        events: Batch of usage events to validate.
+        actor: Actor performing the accounting mutation.
+
+    Raises:
+        PermissionError: If the actor is not a trusted system or CLI origin.
+        ValueError: If the batch exceeds its bound or a charge is unsupported.
+    """
     if actor.origin not in {ActorOrigin.SYSTEM, ActorOrigin.CLI}:
         msg = "Accounting mutations require trusted system or CLI origin."
         raise PermissionError(msg)
@@ -199,12 +271,33 @@ def validate_usage_batch(registry: FeatureRegistry, events: tuple[UsageEvent, ..
 
 
 def _require_supported_charge(registry: FeatureRegistry, charge: UsageCharge) -> None:
+    """Reject a charge whose unit is unsupported by its bucket definitions.
+
+    Args:
+        registry: Feature registry used to resolve bucket definitions.
+        charge: Charge to validate.
+
+    Raises:
+        ValueError: If the charge unit is unsupported.
+    """
     definitions = _require_bucket_definitions(registry, charge.bucket)
     if not any(charge.unit in definition.units for definition in definitions):
         raise ValueError(_UNSUPPORTED_CHARGE_ERROR)
 
 
 def _require_bucket_definitions(registry: FeatureRegistry, bucket: str) -> tuple[FeatureDefinition, ...]:
+    """Return the feature definitions a bucket charges against.
+
+    Args:
+        registry: Feature registry used to resolve the bucket.
+        bucket: Feature or family bucket to resolve.
+
+    Returns:
+        The feature definitions backing the bucket.
+
+    Raises:
+        ValueError: If the bucket is unknown or unsupported.
+    """
     scope, _, key = bucket.partition(":")
     if scope == "feature":
         return (registry.require(key),)

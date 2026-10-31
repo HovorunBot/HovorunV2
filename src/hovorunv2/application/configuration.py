@@ -13,50 +13,50 @@ class AppSettings(Protocol):
 
     @property
     def bot_token(self) -> str:
-        """Telegram bot token."""
+        """Return the Telegram bot token."""
         ...
 
     @property
     def cache_encryption_key(self) -> str | None:
-        """Optional encryption configuration; absence disables encrypted message caching."""
+        """Return the optional encryption key; absence disables encrypted caching."""
         ...
 
     @property
     def translation_target_lang(self) -> str:
-        """Default target language code."""
+        """Return the default target language code."""
         ...
 
     @property
     def translation_ignored_langs(self) -> list[str]:
-        """Default list of language codes to ignore for translation."""
+        """Return the language codes ignored for translation."""
         ...
 
     @property
     def instagram_sessionid(self) -> str | None:
-        """Optional sessionid cookie for Instagram extraction."""
+        """Return the optional Instagram session cookie."""
         ...
 
     @property
     def valkey_url(self) -> str:
-        """Connection URL for Valkey."""
+        """Return the Valkey connection URL."""
         ...
 
     @property
     def project_description(self) -> str:
-        """Short project description."""
+        """Return the short project description."""
         ...
 
     @property
     def github_url(self) -> str:
-        """URL to project GitHub repository."""
+        """Return the project GitHub repository URL."""
         ...
 
     @property
     def issue_tracker_url(self) -> str:
-        """URL to project issue tracker."""
+        """Return the project issue tracker URL."""
         ...
 
     @property
     def contact_email(self) -> str:
-        """Contact email address."""
+        """Return the contact email address."""
         ...

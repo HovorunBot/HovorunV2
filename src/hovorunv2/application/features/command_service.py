@@ -10,7 +10,16 @@ from hovorunv2.domain.enums import (
 
 
 def _provider_split(command_name: str) -> tuple[CommandName, CommandName] | None:
-    """Resolve only registered provider parents to their capture commands."""
+    """Return the capture commands for a registered provider parent.
+
+    Unknown or non-provider command names yield None.
+
+    Args:
+        command_name: Command name to resolve.
+
+    Returns:
+        The video/post capture command pair, or None if not a provider parent.
+    """
     try:
         command = CommandName(command_name)
     except ValueError:
@@ -26,20 +35,18 @@ class CommandService:
 
         Args:
             command_data_service: Data service for command persistence.
-
         """
         self._command_data_service = command_data_service
 
     async def is_command_allowed(self, chat_id: int, command_name: CommandName | str) -> bool:
-        """Check if specific command is allowed in chat.
+        """Return whether the command is allowed in the chat.
 
         Args:
-            chat_id: The ID of the chat to check.
-            command_name: The name of the command.
+            chat_id: ID of the chat to check.
+            command_name: Name of the command to check.
 
         Returns:
-            True if allowed, False otherwise.
-
+            True if the command is allowed.
         """
         presentation = COMMAND_PRESENTATION.get(command_name)
         if presentation is not None and not presentation.toggleable:
@@ -57,16 +64,15 @@ class CommandService:
         return cmd_str in allowed
 
     async def is_capture_allowed(self, chat_id: int, provider: CommandName, *, is_video: bool) -> bool:
-        """Check whether video or post capture is enabled for a provider.
+        """Return whether video or post capture is enabled for a provider.
 
         Args:
-            chat_id: The ID of the chat.
-            provider: The provider CommandName.
+            chat_id: ID of the chat.
+            provider: Provider command to check.
             is_video: True for video items, False for image/post items.
 
         Returns:
-            True if capture mode is allowed for the provider in the chat.
-
+            True if the capture mode is allowed for the provider in the chat.
         """
         feature = FEATURE_REGISTRY.capture(provider, is_video=is_video)
         allowed = await self.get_allowed_commands(chat_id)
@@ -79,8 +85,7 @@ class CommandService:
         """Enable all default media split commands for an approved chat.
 
         Args:
-            chat_id: The ID of the chat.
-
+            chat_id: ID of the chat.
         """
         defaults = tuple(feature.key for feature in FEATURE_REGISTRY.all() if feature.default_enabled)
         await self._command_data_service.initialize_defaults(chat_id, defaults)
@@ -88,16 +93,15 @@ class CommandService:
     async def enable_command(
         self, chat_id: int, command_name: CommandName | str, *, actor: ActorContext | None = None
     ) -> bool:
-        """Enable specific command for a chat.
+        """Enable a command for a chat.
 
         Args:
-            chat_id: The ID of the chat.
-            command_name: The name of the command to enable.
+            chat_id: ID of the chat.
+            command_name: Name of the command to enable.
             actor: Authenticated actor for the transactional audit event.
 
         Returns:
-            True if operation succeeded.
-
+            True if the operation succeeded.
         """
         cmd_str = str(command_name)
         split = _provider_split(cmd_str)
@@ -112,16 +116,15 @@ class CommandService:
     async def disable_command(
         self, chat_id: int, command_name: CommandName | str, *, actor: ActorContext | None = None
     ) -> bool:
-        """Disable specific command for a chat.
+        """Disable a command for a chat.
 
         Args:
-            chat_id: The ID of the chat.
-            command_name: The name of the command to disable.
+            chat_id: ID of the chat.
+            command_name: Name of the command to disable.
             actor: Authenticated actor for the transactional audit event.
 
         Returns:
-            True if operation succeeded, False if command is protected.
-
+            True if the operation succeeded, False if the command is protected.
         """
         presentation = COMMAND_PRESENTATION.get(command_name)
         if presentation is not None and not presentation.toggleable:
@@ -138,16 +141,15 @@ class CommandService:
         return await self._command_data_service.disable_command(chat_id, cmd_str, actor=actor)
 
     async def toggle(self, chat_id: int, command_name: CommandName | str, *, actor: ActorContext | None = None) -> bool:
-        """Toggle command between enabled and disabled, returning new state.
+        """Toggle a command and return its new state.
 
         Args:
-            chat_id: The ID of the chat.
-            command_name: The name of the command to toggle.
+            chat_id: ID of the chat.
+            command_name: Name of the command to toggle.
             actor: Authenticated actor for the transactional audit event.
 
         Returns:
-            True if command is now enabled, False if disabled.
-
+            True if the command is now enabled, False if disabled.
         """
         is_allowed = await self.is_command_allowed(chat_id, command_name)
         if is_allowed:
@@ -157,14 +159,13 @@ class CommandService:
         return True
 
     async def get_allowed_commands(self, chat_id: int) -> set[str]:
-        """Fetch all enabled commands for a chat (including active parent providers).
+        """Return all enabled commands for a chat, including active parent providers.
 
         Args:
-            chat_id: The ID of the chat.
+            chat_id: ID of the chat.
 
         Returns:
             Set of allowed command name strings.
-
         """
         allowed = set(await self._command_data_service.get_allowed_commands(chat_id))
         for provider, (video_cmd, post_cmd) in PROVIDER_SPLIT_COMMANDS.items():

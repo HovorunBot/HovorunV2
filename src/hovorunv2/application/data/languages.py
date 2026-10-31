@@ -20,12 +20,19 @@ class Language:
 
     @property
     def display_name(self) -> str:
-        """Get name with flag for UI."""
+        """Return the display name with its flag."""
         return f"{self.flag} {self.name}"
 
 
 def _get_flag_emoji(country_code: str) -> str:
-    """Convert country code to flag emoji with validation."""
+    """Return the flag emoji for a country code, falling back to a globe.
+
+    Args:
+        country_code: Two-letter country code.
+
+    Returns:
+        The regional-indicator flag emoji, or a globe for invalid codes.
+    """
     if len(country_code) != ISO_CODE_LEN:
         return "🌐"
 
@@ -80,7 +87,11 @@ _NON_COUNTRY_LANGUAGES: Final = frozenset({"eo", "la", "sa", "ia", "ie", "vo"})
 
 
 def _generate_languages() -> dict[str, Language]:
-    """Build the catalog, then append provider variants and shared canonical aliases."""
+    """Return the language catalog with provider variants and canonical aliases.
+
+    Returns:
+        Mapping of language code to language definition.
+    """
     languages: dict[str, Language] = {}
 
     # ISO 639-1 (2-letter) codes
@@ -102,6 +113,14 @@ def _generate_languages() -> dict[str, Language]:
 
 
 def _language_flag(code: str) -> str:
+    """Return the flag symbol for a language code, including policy overrides.
+
+    Args:
+        code: Language code to render.
+
+    Returns:
+        The flag emoji or policy symbol.
+    """
     # Security/Policy: Russia danger symbol
     if code == "ru":
         return "🩸"
@@ -111,6 +130,11 @@ def _language_flag(code: str) -> str:
 
 
 def _add_google_variants(languages: dict[str, Language]) -> None:
+    """Add Google Translate Chinese variants to the catalog.
+
+    Args:
+        languages: Language catalog to extend.
+    """
     # Add special Google Translate variants
     if "zh" in languages:
         languages["zh-CN"] = Language(
@@ -122,6 +146,11 @@ def _add_google_variants(languages: dict[str, Language]) -> None:
 
 
 def _add_language_aliases(languages: dict[str, Language]) -> None:
+    """Add common Google Translate aliases to the catalog.
+
+    Args:
+        languages: Language catalog to extend.
+    """
     # Add common aliases for Google Translate
     if "he" in languages:
         languages["iw"] = languages["he"]

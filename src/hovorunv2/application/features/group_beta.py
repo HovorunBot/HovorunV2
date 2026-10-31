@@ -20,7 +20,16 @@ class GroupBetaFacts:
     qualifying_enabler: bool = False
 
     def permits(self, feature: FeatureDefinition, *, group_allowed: bool, emergency_disabled: bool) -> bool:
-        """Require explicit independent access/emergency guards for group execution."""
+        """Return whether group execution is permitted for the feature.
+
+        Args:
+            feature: Feature definition to evaluate against these facts.
+            group_allowed: Whether live group access is currently allowed.
+            emergency_disabled: Whether the feature is currently emergency-disabled.
+
+        Returns:
+            True if group execution is permitted.
+        """
         if not self._has_selected_group_feature(feature):
             return False
         if not (self.group_granted or self.qualifying_enabler):
@@ -30,7 +39,14 @@ class GroupBetaFacts:
         return not emergency_disabled
 
     def _has_selected_group_feature(self, feature: FeatureDefinition) -> bool:
-        """Bind selected state to an active subject and a group-capable beta definition."""
+        """Return whether a group-capable beta feature is selected for an active subject.
+
+        Args:
+            feature: Feature definition to bind against.
+
+        Returns:
+            True if the feature is selected, group-scoped, beta, and the subject is active.
+        """
         if not self.subject_active:
             return False
         if self.feature != feature.key:

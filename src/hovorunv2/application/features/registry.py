@@ -59,19 +59,31 @@ class FeatureDefinition:
         self._validate_release_defaults()
 
     def _validate_identity_metadata(self) -> None:
-        """Require stable identity and release presentation metadata."""
+        """Require stable identity and release presentation metadata.
+
+        Raises:
+            ValueError: If any identity metadata field is empty.
+        """
         if not self.key or not self.display_name or not self.introduction:
             raise ValueError(_MISSING_FEATURE_METADATA_MESSAGE)
 
     def _validate_capabilities(self) -> None:
-        """Require explicit supported scopes and entry triggers."""
+        """Require explicit supported scopes and entry triggers.
+
+        Raises:
+            ValueError: If scopes or triggers are empty.
+        """
         if not self.scopes:
             raise ValueError(_MISSING_FEATURE_METADATA_MESSAGE)
         if not self.triggers:
             raise ValueError(_MISSING_FEATURE_METADATA_MESSAGE)
 
     def _validate_policy_references(self) -> None:
-        """Require accounting dimensions and each runtime policy reference."""
+        """Require accounting dimensions and every runtime policy reference.
+
+        Raises:
+            ValueError: If any required policy reference is empty.
+        """
         if not self.units:
             raise ValueError(_MISSING_FEATURE_POLICY_MESSAGE)
         if not self.usage_policy:
@@ -82,7 +94,11 @@ class FeatureDefinition:
             raise ValueError(_MISSING_FEATURE_POLICY_MESSAGE)
 
     def _validate_release_defaults(self) -> None:
-        """Keep beta activation an explicit decision rather than a release default."""
+        """Keep beta activation an explicit decision rather than a default.
+
+        Raises:
+            ValueError: If a beta feature is enabled by default.
+        """
         if self.channel == FeatureChannel.BETA and self.default_enabled:
             msg = "Beta features must start disabled"
             raise ValueError(msg)
@@ -104,7 +120,17 @@ class FeatureRegistry:
         return self._definitions.get(key)
 
     def require(self, key: str) -> FeatureDefinition:
-        """Resolve a protected feature or reject an unknown key."""
+        """Return the definition for a key or reject an unknown key.
+
+        Args:
+            key: Feature key to resolve.
+
+        Returns:
+            The matching feature definition.
+
+        Raises:
+            ValueError: If the key is unknown.
+        """
         definition = self.get(key)
         if definition is None:
             msg = f"Unknown feature key: {key}"
@@ -116,7 +142,18 @@ class FeatureRegistry:
         return tuple(self._definitions.values())
 
     def capture(self, provider: CommandName, *, is_video: bool) -> FeatureDefinition:
-        """Resolve provider capture to its canonical persisted split feature."""
+        """Return the canonical split feature for a provider capture.
+
+        Args:
+            provider: Media provider whose capture feature is resolved.
+            is_video: True for video capture, False for image/post capture.
+
+        Returns:
+            The canonical persisted feature definition.
+
+        Raises:
+            ValueError: If the provider is unknown.
+        """
         splits = PROVIDER_SPLIT_COMMANDS.get(provider)
         if splits is None:
             msg = f"Unknown media provider: {provider}"

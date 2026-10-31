@@ -19,7 +19,16 @@ class FeatureEmergencyState:
 
 
 def resolve_emergency_key(feature: str) -> str:
-    """Normalize a split sub-command to its provider family; keep other command keys."""
+    """Normalize a split sub-command to its provider family.
+
+    Unknown or non-command keys are returned unchanged.
+
+    Args:
+        feature: Feature or command key to normalize.
+
+    Returns:
+        The provider-family key, or the original key when not a known command.
+    """
     try:
         command = CommandName(feature)
     except ValueError:
@@ -28,7 +37,7 @@ def resolve_emergency_key(feature: str) -> str:
 
 
 def envelope_is_current(envelope_epoch: int, state: FeatureEmergencyState) -> bool:
-    """Reject work accepted before the latest disable or re-enable transition."""
+    """Return whether the envelope matches the current enabled epoch."""
     return not state.disabled and state.epoch == envelope_epoch
 
 

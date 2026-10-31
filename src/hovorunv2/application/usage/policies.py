@@ -33,13 +33,27 @@ class UsageWindow:
     seconds: int = MINUTE_SECONDS
 
     def __post_init__(self) -> None:
-        """Reject invalid durations before database or reservation operations."""
+        """Reject invalid durations before database or reservation operations.
+
+        Raises:
+            ValueError: If the window duration is not a positive integer.
+        """
         if type(self.seconds) is not int or self.seconds <= 0:
             msg = "Usage window seconds must be a positive integer."
             raise ValueError(msg)
 
     def start(self, timestamp: int) -> int:
-        """Align a Unix timestamp to a deterministic UTC window without consulting wall time."""
+        """Align a Unix timestamp to its deterministic UTC window.
+
+        Args:
+            timestamp: Unix timestamp to align.
+
+        Returns:
+            The window start timestamp.
+
+        Raises:
+            ValueError: If the timestamp is not a nonnegative integer.
+        """
         if type(timestamp) is not int or timestamp < 0:
             msg = "Usage timestamp must be a nonnegative integer."
             raise ValueError(msg)
@@ -65,7 +79,11 @@ class UsagePolicy:
         self._validate_dimensions()
 
     def _validate_limits(self) -> None:
-        """Require positive integer ceilings and a burst within the window limit."""
+        """Require positive integer ceilings and a burst within the window limit.
+
+        Raises:
+            ValueError: If any ceiling is not positive or burst exceeds limit.
+        """
         values = (self.limit, self.burst, self.concurrency, self.pending)
         if any(type(value) is not int or value <= 0 for value in values):
             raise ValueError(_INVALID_POLICY_LIMITS_MESSAGE)
@@ -73,13 +91,21 @@ class UsagePolicy:
             raise ValueError(_INVALID_POLICY_LIMITS_MESSAGE)
 
     def _validate_bucket(self) -> None:
-        """Require a nonempty feature or family scope."""
+        """Require a nonempty feature or family scope.
+
+        Raises:
+            ValueError: If the bucket does not identify a feature or family.
+        """
         if not self.bucket.startswith(("feature:", "family:")) or not self.bucket.partition(":")[2]:
             msg = "Usage bucket must identify a feature or family."
             raise ValueError(msg)
 
     def _validate_dimensions(self) -> None:
-        """Require typed accounting units and fixed-window configuration."""
+        """Require typed accounting units and fixed-window configuration.
+
+        Raises:
+            TypeError: If the unit or window is not a typed usage value.
+        """
         if not isinstance(self.unit, UsageUnit):
             raise TypeError(_INVALID_POLICY_DIMENSIONS_MESSAGE)
         if not isinstance(self.window, UsageWindow):
@@ -97,7 +123,7 @@ class UsageSubject:
 
     @property
     def target(self) -> PermissionTarget:
-        """Convert to the lifecycle-bound configuration reference."""
+        """Return the lifecycle-bound configuration reference."""
         return PermissionTarget(self.kind.value, self.entity_id, self.generation, self.telegram_id)
 
 
@@ -119,7 +145,11 @@ class UsageSafetyCaps:
         self._validate_execution_bounds()
 
     def _validate_positive_caps(self) -> None:
-        """Require all application ceilings to be positive exact integers."""
+        """Require all application ceilings to be positive exact integers.
+
+        Raises:
+            ValueError: If any ceiling is not a positive integer.
+        """
         values = (
             self.global_concurrency,
             self.global_pending,
@@ -132,12 +162,20 @@ class UsageSafetyCaps:
             raise ValueError(_INVALID_SAFETY_CAPS_MESSAGE)
 
     def _validate_payload_bounds(self) -> None:
-        """Keep one payload within the application's total payload ceiling."""
+        """Keep one payload within the application's total payload ceiling.
+
+        Raises:
+            ValueError: If a single payload exceeds the total ceiling.
+        """
         if self.payload_bytes > self.total_payload_bytes:
             raise ValueError(_INVALID_SAFETY_BOUNDS_MESSAGE)
 
     def _validate_execution_bounds(self) -> None:
-        """Keep execution time within the request's original deadline budget."""
+        """Keep execution time within the request's original deadline budget.
+
+        Raises:
+            ValueError: If execution time exceeds the deadline budget.
+        """
         if self.execution_seconds > self.deadline_seconds:
             raise ValueError(_INVALID_SAFETY_BOUNDS_MESSAGE)
 

@@ -19,7 +19,14 @@ class BudgetService:
         self._clock = clock
 
     async def reserve(self, request: BudgetRequest) -> ReservationDecision:
-        """Seed absent runtime quota windows from durable totals, preserving restart budgets."""
+        """Seed runtime quota windows from durable totals and reserve execution.
+
+        Args:
+            request: Reservation request with resolved policies and estimates.
+
+        Returns:
+            The reservation decision.
+        """
         now = self._clock.now()
         subject = AccountingSubject(request.usage.subject.kind, request.usage.subject.telegram_id)
         totals = tuple(
@@ -31,5 +38,15 @@ class BudgetService:
         return await self._budgets.reserve(request, now, totals)
 
     async def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...]) -> ReservationDecision:
-        """Settle runtime counters; durable idempotent accounting remains a separate replayable operation."""
+        """Settle runtime counters after execution.
+
+        Durable idempotent accounting remains a separate replayable operation.
+
+        Args:
+            reservation_id: Reservation being settled.
+            actual: Actual consumption per unit.
+
+        Returns:
+            The settlement decision.
+        """
         return await self._budgets.finish(reservation_id, actual, self._clock.now())

@@ -46,7 +46,11 @@ class UsageLimitsView:
     policies: tuple[UsagePolicyView, ...]
 
     def as_dict(self) -> dict[str, object]:
-        """Render an operational summary without private message contents."""
+        """Return an operational summary without private message contents.
+
+        Returns:
+            Serialized limits, safety caps and policy lines.
+        """
         return {
             "target_kind": self.target_kind,
             "target_telegram_id": self.target_telegram_id,
@@ -58,7 +62,11 @@ class UsageLimitsView:
         }
 
     def _safety_dict(self) -> dict[str, int]:
-        """Expose application ceilings separately from ordinary quota records."""
+        """Return application ceilings separately from ordinary quota records.
+
+        Returns:
+            Serialized safety caps.
+        """
         return {
             "global_concurrency": self.safety.global_concurrency,
             "global_pending": self.safety.global_pending,
@@ -69,7 +77,14 @@ class UsageLimitsView:
         }
 
     def _policy_dict(self, view: UsagePolicyView) -> dict[str, object]:
-        """Serialize one policy line with its resolved default/override source."""
+        """Return one serialized policy line with its source.
+
+        Args:
+            view: Policy view to serialize.
+
+        Returns:
+            Serialized policy line.
+        """
         return {
             "bucket": view.bucket,
             "unit": view.unit.value,
@@ -93,7 +108,19 @@ class UsageAdministrationService:
     async def inspect(
         self, target: PermissionTarget, feature: str, unit: UsageUnit = UsageUnit.REQUESTS
     ) -> UsageLimitsView:
-        """Resolve current defaults and overrides without granting execution or unlimited quota."""
+        """Return current defaults and overrides for one target and feature.
+
+        Args:
+            target: Target whose limits are inspected.
+            feature: Feature key to inspect.
+            unit: Accounting unit to resolve.
+
+        Returns:
+            Effective limits and safety caps for the target and feature.
+
+        Raises:
+            ValueError: If the feature key is a wildcard.
+        """
         if feature == "*":
             msg = "Limit inspection requires an explicit feature key."
             raise ValueError(msg)
@@ -126,7 +153,19 @@ class UsageAdministrationService:
         )
 
     async def _resolve(self, target: PermissionTarget, feature: str, unit: UsageUnit) -> ResolvedUsage:
-        """Resolve through the same charged-subject rules as execution."""
+        """Resolve usage through the same charged-subject rules as execution.
+
+        Args:
+            target: Target whose usage is resolved.
+            feature: Feature key to resolve.
+            unit: Accounting unit to resolve.
+
+        Returns:
+            The resolved usage.
+
+        Raises:
+            ValueError: If the target is neither a user nor a group.
+        """
         if target.kind == TargetKind.USER.value:
             return await self._policies.resolve(feature, TriggerKind.DIRECT, target.telegram_id, unit=unit)
         if target.kind == TargetKind.GROUP.value:
@@ -144,7 +183,17 @@ class UsageAdministrationService:
         actor: ActorContext,
         transport_kind: str | None,
     ) -> bool:
-        """Apply one audited override without resetting consumed usage."""
+        """Apply one audited override without resetting consumed usage.
+
+        Args:
+            target: Target receiving the override.
+            policy: Usage policy override to apply.
+            actor: Authenticated actor performing the change.
+            transport_kind: Transport that initiated the change, if any.
+
+        Returns:
+            True if the override changed durable state.
+        """
         return await self._store.set_override(target, policy, actor=actor, transport_kind=transport_kind)
 
     async def reset_override(
@@ -155,5 +204,15 @@ class UsageAdministrationService:
         actor: ActorContext,
         transport_kind: str | None,
     ) -> bool:
-        """Soft-delete one override so the current default applies again."""
+        """Soft-delete one override so the current default applies again.
+
+        Args:
+            target: Target whose override is removed.
+            policy: Usage policy override to remove.
+            actor: Authenticated actor performing the change.
+            transport_kind: Transport that initiated the change, if any.
+
+        Returns:
+            True if the override removal changed durable state.
+        """
         return await self._store.set_override(target, policy, actor=actor, transport_kind=transport_kind, remove=True)

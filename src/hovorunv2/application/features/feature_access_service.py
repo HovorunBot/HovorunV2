@@ -60,7 +60,15 @@ class FeatureAccessService:
         self._facts = facts
 
     def _admins_fresh(self, state: GroupMembershipStateDB | None, now: datetime) -> bool:
-        """Require a complete, currently valid administrator snapshot."""
+        """Return whether the administrator snapshot is complete and currently valid.
+
+        Args:
+            state: Membership state snapshot to inspect.
+            now: Current time for validity window comparison.
+
+        Returns:
+            True if the snapshot is known and its verification window covers now.
+        """
         if state is None or not state.admins_known:
             return False
         if state.admins_verified_at is None or state.admins_expires_at is None:
@@ -70,6 +78,17 @@ class FeatureAccessService:
     async def _manager(
         self, actor_id: int | None, target: PermissionTarget, now: datetime, *, inspection: bool = False
     ) -> bool:
+        """Return whether the actor may manage the target's settings.
+
+        Args:
+            actor_id: Telegram ID of the actor, if any.
+            target: Group target being managed.
+            now: Current time for snapshot freshness checks.
+            inspection: True to allow a stale administrator snapshot during inspection.
+
+        Returns:
+            True if the actor has current group-manager authority.
+        """
         if actor_id is None:
             return False
         user = await self._users.get_by_telegram_id(actor_id)
@@ -101,7 +120,18 @@ class FeatureAccessService:
         trigger: TriggerKind = TriggerKind.DIRECT,
         configure: bool = False,
     ) -> FeatureDecision:
-        """Evaluate fresh shared facts at discovery, configuration and execution boundaries."""
+        """Evaluate fresh shared facts for one entry point.
+
+        Args:
+            feature_key: Feature key to evaluate.
+            chat_id: Chat where the work is requested.
+            actor_id: Telegram ID of the requesting actor, if any.
+            trigger: How the work enters the application.
+            configure: True when evaluating configuration rather than execution.
+
+        Returns:
+            The feature decision, safe by default when the key is unknown.
+        """
         definition = self.registry.get(feature_key)
         if definition is None:
             return FeatureDecision()
@@ -116,7 +146,15 @@ class FeatureAccessService:
         return evaluate_feature(definition, facts, trigger=trigger, configure=configure)
 
     async def group_settings_status(self, chat_id: int, actor_id: int) -> GroupSettingsStatus | None:
-        """Explain current access and eligible capability requirements only to managers."""
+        """Return group-settings guidance, restricted to managers and inspectors.
+
+        Args:
+            chat_id: Chat whose settings status is requested.
+            actor_id: Telegram ID of the requesting actor.
+
+        Returns:
+            Operational guidance for the current manager, or None when not authorized.
+        """
         chat = await self._chats.get_chat(chat_id)
         if chat is None or chat.chat_id != chat_id or chat_id >= 0:
             return None
@@ -147,7 +185,21 @@ class FeatureAccessService:
     async def set_group_beta(
         self, key: str, chat_id: int, actor_id: int, *, enabled: bool, transport_kind: str = "group"
     ) -> bool:
-        """Use the existing transactional authority and eligibility boundary for group selection."""
+        """Set group beta selection through the existing authority boundary.
+
+        Args:
+            key: Beta feature key to select.
+            chat_id: Group chat being configured.
+            actor_id: Telegram ID of the requesting actor.
+            enabled: True to select the feature, False to deselect it.
+            transport_kind: Transport that initiated the change.
+
+        Returns:
+            True if the durable selection changed.
+
+        Raises:
+            ValueError: If the chat is inactive or the feature is not a group-scoped beta feature.
+        """
         definition = self.registry.require(key)
         chat = await self._chats.get_chat(chat_id)
         if chat is None or definition.channel != FeatureChannel.BETA or FeatureScope.GROUP not in definition.scopes:

@@ -52,7 +52,14 @@ class UsageViewService:
         self._clock = clock
 
     async def for_user(self, actor_id: int) -> UsageSummary:
-        """Return the actor's own direct-work allowance in the current windows."""
+        """Return the actor's own direct-work allowance in the current windows.
+
+        Args:
+            actor_id: Telegram ID of the user.
+
+        Returns:
+            The user's usage summary.
+        """
         return await self._summary(
             AccountingSubject(TargetKind.USER, actor_id),
             TriggerKind.DIRECT,
@@ -61,7 +68,14 @@ class UsageViewService:
         )
 
     async def for_group(self, group_id: int) -> UsageSummary:
-        """Return group-charged automatic work only, never another member's personal usage."""
+        """Return group-charged automatic work, never another member's personal usage.
+
+        Args:
+            group_id: Telegram ID of the group.
+
+        Returns:
+            The group's usage summary.
+        """
         return await self._summary(
             AccountingSubject(TargetKind.GROUP, group_id),
             TriggerKind.AUTOMATIC,
@@ -77,7 +91,17 @@ class UsageViewService:
         actor_id: int | None,
         group_id: int | None,
     ) -> UsageSummary:
-        """Resolve the same policies as execution and read their current-window totals."""
+        """Resolve the same policies as execution and read their current-window totals.
+
+        Args:
+            subject: Charged accounting subject.
+            trigger: How the work enters the application.
+            actor_id: Telegram ID of the direct actor, if any.
+            group_id: Telegram ID of the automatic group, if any.
+
+        Returns:
+            The aggregate usage summary.
+        """
         observed = int(self._clock.now())
         features: list[FeatureUsage] = []
         unlimited = False

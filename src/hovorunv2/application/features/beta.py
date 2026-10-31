@@ -18,7 +18,17 @@ class BetaEligibilityFacts:
     specific_feature: bool = False
 
     def permits(self, feature: FeatureDefinition) -> bool:
-        """Require an active subject and explicit beta entitlement; allow standard features without grants."""
+        """Return whether an active subject is entitled to the feature.
+
+        Standard-channel features are permitted without an explicit grant, while
+        beta features require all-beta or feature-specific entitlement.
+
+        Args:
+            feature: Feature definition to evaluate against these facts.
+
+        Returns:
+            True if the feature is permitted for the current subject.
+        """
         if not self.subject_active:
             return False
         if self.feature != feature.key:
