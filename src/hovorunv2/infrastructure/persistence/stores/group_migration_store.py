@@ -14,7 +14,7 @@ from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.handle import PublicHandleDB
 from hovorunv2.domain.membership import GroupMembershipStateDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
-from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
+from hovorunv2.infrastructure.persistence.repositories.chat_repository import SQLAlchemyChatRepository
 
 
 class SQLAlchemyGroupMigrationStore:

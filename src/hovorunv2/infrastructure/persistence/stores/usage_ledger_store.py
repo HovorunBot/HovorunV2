@@ -17,7 +17,7 @@ from hovorunv2.application.usage.usage_ledger import (
     validate_usage_batch,
 )
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.infrastructure.repositories.usage_ledger_repository import SQLAlchemyUsageLedgerRepository
+from hovorunv2.infrastructure.persistence.repositories.usage_ledger_repository import SQLAlchemyUsageLedgerRepository
 
 
 class SQLAlchemyUsageLedgerStore(UsageLedgerStore):

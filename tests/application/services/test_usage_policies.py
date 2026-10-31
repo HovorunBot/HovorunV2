@@ -23,7 +23,7 @@ from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.domain.usage import UsageOverrideDB
-from hovorunv2.infrastructure.persistence.usage_policy_store import SQLAlchemyUsagePolicyStore
+from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAlchemyUsagePolicyStore
 from tests.conftest import provision_role
 from tests.utils.postgres import reject_audit
 from tests.utils.usage import GROUP, USER, usage_subjects

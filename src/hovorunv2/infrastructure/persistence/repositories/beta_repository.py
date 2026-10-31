@@ -10,7 +10,7 @@ from hovorunv2.application.features.beta import BetaEligibilityFacts
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.repositories.policy_queries import exact_target
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import exact_target
 
 
 class SQLAlchemyBetaEntitlementRepository:

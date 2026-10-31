@@ -18,7 +18,7 @@ from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
-from hovorunv2.infrastructure.persistence.command_store import SQLAlchemyCommandStore
+from hovorunv2.infrastructure.persistence.stores.command_store import SQLAlchemyCommandStore
 from tests.utils.activation import ACTOR, GROUP, seed_activation
 from tests.utils.postgres import reject_audit
 

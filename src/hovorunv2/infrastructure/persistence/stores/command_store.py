@@ -14,10 +14,10 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import ActorOrigin, ChatStatus, Platform, TargetKind
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
-from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
-from hovorunv2.infrastructure.repositories.command_repository import SQLAlchemyCommandRepository
-from hovorunv2.infrastructure.repositories.group_beta_repository import SQLAlchemyGroupBetaRepository
-from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
+from hovorunv2.infrastructure.persistence.repositories.chat_repository import SQLAlchemyChatRepository
+from hovorunv2.infrastructure.persistence.repositories.command_repository import SQLAlchemyCommandRepository
+from hovorunv2.infrastructure.persistence.repositories.group_beta_repository import SQLAlchemyGroupBetaRepository
+from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
 
 
 class SQLAlchemyCommandStore(CommandStore):

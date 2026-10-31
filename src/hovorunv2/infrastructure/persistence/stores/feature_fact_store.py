@@ -10,7 +10,7 @@ from hovorunv2.application.features.feature_policy import FeatureFacts
 from hovorunv2.application.features.policy_facts import FeatureFactStore
 from hovorunv2.application.features.registry import FeatureDefinition, TriggerKind
 from hovorunv2.application.ports import AuthorizationPolicy
-from hovorunv2.infrastructure.repositories.policy_fact_reader import PolicyFactReader
+from hovorunv2.infrastructure.persistence.repositories.policy_fact_reader import PolicyFactReader
 
 
 class SQLAlchemyFeatureFactStore(FeatureFactStore):

@@ -15,7 +15,10 @@ from hovorunv2.domain.group_grant import (
     RequestStatus,
 )
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
-from hovorunv2.infrastructure.repositories.group_grant_repository import GrantMutation, SQLAlchemyGroupGrantRepository
+from hovorunv2.infrastructure.persistence.repositories.group_grant_repository import (
+    GrantMutation,
+    SQLAlchemyGroupGrantRepository,
+)
 
 
 class SQLAlchemyGroupGrantStore(GroupGrantStore):

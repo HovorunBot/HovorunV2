@@ -28,7 +28,7 @@ from hovorunv2.domain.group_grant import GroupApprovalDB
 from hovorunv2.domain.membership import GroupMembershipStateDB
 from hovorunv2.domain.usage import UsageOverrideDB
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.repositories.policy_queries import (
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import (
     active_chat,
     active_user,
     banned_admin_queries,

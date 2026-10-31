@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from hovorunv2.application.ports import AuditedUnitOfWork, SystemStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
-from hovorunv2.infrastructure.repositories.system_repository import SQLAlchemySystemRepository
+from hovorunv2.infrastructure.persistence.repositories.system_repository import SQLAlchemySystemRepository
 
 
 class SQLAlchemySystemStore(SystemStore):

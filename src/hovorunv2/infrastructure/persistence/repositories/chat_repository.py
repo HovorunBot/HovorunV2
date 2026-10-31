@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform
 from hovorunv2.domain.group_route import GroupRouteDB
-from hovorunv2.infrastructure.repositories.policy_queries import active_chat
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import active_chat
 
 
 class SQLAlchemyChatRepository:

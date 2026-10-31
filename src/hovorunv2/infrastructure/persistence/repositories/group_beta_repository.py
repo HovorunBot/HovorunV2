@@ -14,8 +14,8 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.group_beta import GroupBetaEnablerDB, GroupBetaFeatureDB
 from hovorunv2.domain.membership import MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.repositories.beta_repository import SQLAlchemyBetaEntitlementRepository
-from hovorunv2.infrastructure.repositories.policy_queries import fresh_admins, group_support
+from hovorunv2.infrastructure.persistence.repositories.beta_repository import SQLAlchemyBetaEntitlementRepository
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import fresh_admins, group_support
 
 
 @dataclass(frozen=True, slots=True)

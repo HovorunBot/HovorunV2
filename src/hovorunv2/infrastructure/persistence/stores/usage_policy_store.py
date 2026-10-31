@@ -14,7 +14,7 @@ from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
-from hovorunv2.infrastructure.repositories.usage_policy_repository import (
+from hovorunv2.infrastructure.persistence.repositories.usage_policy_repository import (
     SQLAlchemyUsagePolicyRepository,
     UsagePolicyMutation,
 )

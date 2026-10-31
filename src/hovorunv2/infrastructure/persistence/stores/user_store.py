@@ -11,7 +11,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, Role
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
-from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
+from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
 
 
 class SQLAlchemyUserStore(UserStore):

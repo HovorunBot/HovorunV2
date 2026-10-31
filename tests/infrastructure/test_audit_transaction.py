@@ -17,7 +17,7 @@ from hovorunv2.domain.audit import (
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ActorOrigin, ChatStatus
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
-from hovorunv2.infrastructure.repositories.audit_repository import SQLAlchemyAuditRepository
+from hovorunv2.infrastructure.persistence.repositories.audit_repository import SQLAlchemyAuditRepository
 
 
 def test_sanitize_audit_changes_redacts_secrets_and_payloads() -> None:

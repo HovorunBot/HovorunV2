@@ -11,7 +11,7 @@ from hovorunv2.application.usage.policies import UsagePolicy, UsageUnit, UsageWi
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.usage import UsageOverrideDB
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.repositories.policy_queries import exact_target
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import exact_target
 
 _POLICY_FIELDS = ("limit", "burst", "concurrency", "pending")
 

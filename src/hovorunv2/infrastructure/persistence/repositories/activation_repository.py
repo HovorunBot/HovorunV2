@@ -17,7 +17,7 @@ from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, ChatStatus
 from hovorunv2.domain.group_grant import GroupAccessRequestDB, GroupApprovalDB, RequestStatus
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.repositories.group_grant_repository import SQLAlchemyGroupGrantRepository
+from hovorunv2.infrastructure.persistence.repositories.group_grant_repository import SQLAlchemyGroupGrantRepository
 
 
 @dataclass(frozen=True, slots=True)

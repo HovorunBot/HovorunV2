@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext, AuditEventDB, sanitize_audit_changes
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
-from hovorunv2.infrastructure.repositories.audit_repository import SQLAlchemyAuditRepository
+from hovorunv2.infrastructure.persistence.repositories.audit_repository import SQLAlchemyAuditRepository
 
 MAX_TRANSACTION_ATTEMPTS = 3
 RETRYABLE_TRANSACTION_STATES = frozenset({"40001", "40P01"})

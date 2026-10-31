@@ -15,8 +15,8 @@ from hovorunv2.application.identity.membership import (
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.repositories.policy_queries import banned_admin_queries
-from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import banned_admin_queries
+from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
 
 
 def evidence_time(value: datetime) -> datetime:

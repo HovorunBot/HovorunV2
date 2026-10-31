@@ -28,7 +28,7 @@ from hovorunv2.domain.enums import Platform, TargetKind
 from hovorunv2.domain.usage_accounting import UsageAccountingEventDB, UsageAggregateDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
-from hovorunv2.infrastructure.persistence.usage_ledger_store import SQLAlchemyUsageLedgerStore
+from hovorunv2.infrastructure.persistence.stores.usage_ledger_store import SQLAlchemyUsageLedgerStore
 from tests.utils.postgres import reject_audit
 from tests.utils.usage import GROUP, USER, usage_subjects
 

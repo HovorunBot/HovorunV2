@@ -15,9 +15,9 @@ from hovorunv2.domain.handle import (
     validate_handle,
 )
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
-from hovorunv2.infrastructure.repositories.chat_repository import SQLAlchemyChatRepository
-from hovorunv2.infrastructure.repositories.public_handle_repository import SQLAlchemyPublicHandleRepository
-from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
+from hovorunv2.infrastructure.persistence.repositories.chat_repository import SQLAlchemyChatRepository
+from hovorunv2.infrastructure.persistence.repositories.public_handle_repository import SQLAlchemyPublicHandleRepository
+from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
 
 
 class SQLAlchemyPublicHandleStore(PublicHandleStore):

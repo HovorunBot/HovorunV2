@@ -11,7 +11,7 @@ from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureReg
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.infrastructure.authorization.casbin_policy import load_packaged_policy
 from hovorunv2.infrastructure.config import DatabaseSettings
-from hovorunv2.infrastructure.persistence.worker_store import (
+from hovorunv2.infrastructure.persistence.stores.worker_store import (
     WorkerOperationsStore,
     WorkerPolicyStore,
     WorkerUsageLedgerStore,

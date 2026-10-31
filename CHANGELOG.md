@@ -57,6 +57,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **persistence**: consolidate PostgreSQL persistence packages
 - **translation**: group translation ownership
 - **media**: organize provider and media I/O ownership
 - **application**: group capability application code

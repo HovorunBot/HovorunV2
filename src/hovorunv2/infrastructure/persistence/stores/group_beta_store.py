@@ -15,9 +15,12 @@ from hovorunv2.domain.beta import ALL_BETA
 from hovorunv2.domain.enums import ActorOrigin, ChatStatus, TargetKind
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
-from hovorunv2.infrastructure.repositories.beta_repository import SQLAlchemyBetaEntitlementRepository
-from hovorunv2.infrastructure.repositories.group_beta_repository import GroupBetaMutation, SQLAlchemyGroupBetaRepository
-from hovorunv2.infrastructure.repositories.user_repository import SQLAlchemyUserRepository
+from hovorunv2.infrastructure.persistence.repositories.beta_repository import SQLAlchemyBetaEntitlementRepository
+from hovorunv2.infrastructure.persistence.repositories.group_beta_repository import (
+    GroupBetaMutation,
+    SQLAlchemyGroupBetaRepository,
+)
+from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
 
 
 class SQLAlchemyGroupBetaStore(GroupBetaStore):

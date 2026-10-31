@@ -33,8 +33,8 @@ from hovorunv2.domain.enums import ActorOrigin, ChatStatus, CommandName, Role, T
 from hovorunv2.domain.group_grant import ApprovalBasis, GroupAccessRequestDB, GroupApprovalDB, RequestStatus
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.fixtures import setup_fixtures
-from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActivationStore
 from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
+from hovorunv2.infrastructure.persistence.stores.activation_store import SQLAlchemyActivationStore
 from tests.conftest import provision_role, verify_group_admins
 from tests.utils.activation import ACTOR, ADMIN, GROUP, activation_runtime, seed_activation, stub_telegram
 from tests.utils.postgres import reject_audit

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.domain.enums import Platform
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.repositories.policy_queries import active_user
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import active_user
 
 
 class SQLAlchemyUserRepository:

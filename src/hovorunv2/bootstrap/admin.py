@@ -35,12 +35,12 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyPublicHandleStore,
     SQLAlchemyRoleStore,
 )
-from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActivationStore
-from hovorunv2.infrastructure.persistence.ban_store import SQLAlchemyBanStore
-from hovorunv2.infrastructure.persistence.beta_store import SQLAlchemyBetaEntitlementStore
-from hovorunv2.infrastructure.persistence.chat_store import SQLAlchemyChatStore
-from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGroupGrantStore
-from hovorunv2.infrastructure.persistence.user_store import SQLAlchemyUserStore
+from hovorunv2.infrastructure.persistence.stores.activation_store import SQLAlchemyActivationStore
+from hovorunv2.infrastructure.persistence.stores.ban_store import SQLAlchemyBanStore
+from hovorunv2.infrastructure.persistence.stores.beta_store import SQLAlchemyBetaEntitlementStore
+from hovorunv2.infrastructure.persistence.stores.chat_store import SQLAlchemyChatStore
+from hovorunv2.infrastructure.persistence.stores.group_grant_store import SQLAlchemyGroupGrantStore
+from hovorunv2.infrastructure.persistence.stores.user_store import SQLAlchemyUserStore
 from hovorunv2.interface.cli.access import AccessCLI
 from hovorunv2.interface.cli.roles import RoleArguments, RoleCLI, build_parser
 

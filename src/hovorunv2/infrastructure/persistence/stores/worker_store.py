@@ -38,10 +38,13 @@ from hovorunv2.infrastructure.persistence.audited_transaction import (
     MAX_TRANSACTION_ATTEMPTS,
     RETRYABLE_TRANSACTION_STATES,
 )
-from hovorunv2.infrastructure.repositories.membership_repository import evidence_time, validate_evidence_time
-from hovorunv2.infrastructure.repositories.policy_fact_reader import PolicyFactReader
-from hovorunv2.infrastructure.repositories.policy_queries import exact_target
-from hovorunv2.infrastructure.repositories.usage_ledger import UsageLedgerRepository
+from hovorunv2.infrastructure.persistence.repositories.membership_repository import (
+    evidence_time,
+    validate_evidence_time,
+)
+from hovorunv2.infrastructure.persistence.repositories.policy_fact_reader import PolicyFactReader
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import exact_target
+from hovorunv2.infrastructure.persistence.repositories.usage_ledger import UsageLedgerRepository
 
 
 class WorkerPolicyStore:

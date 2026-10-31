@@ -86,17 +86,17 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemySystemStore,
     SQLAlchemyUserStore,
 )
-from hovorunv2.infrastructure.persistence.activation_store import SQLAlchemyActivationStore
-from hovorunv2.infrastructure.persistence.ban_store import SQLAlchemyBanStore
-from hovorunv2.infrastructure.persistence.beta_store import SQLAlchemyBetaEntitlementStore
-from hovorunv2.infrastructure.persistence.feature_fact_store import SQLAlchemyFeatureFactStore
-from hovorunv2.infrastructure.persistence.group_beta_store import SQLAlchemyGroupBetaStore
-from hovorunv2.infrastructure.persistence.group_grant_store import SQLAlchemyGroupGrantStore
-from hovorunv2.infrastructure.persistence.group_identity_store import SQLAlchemyGroupIdentityStore
-from hovorunv2.infrastructure.persistence.group_migration_store import SQLAlchemyGroupMigrationStore
-from hovorunv2.infrastructure.persistence.membership_store import SQLAlchemyMembershipStore
-from hovorunv2.infrastructure.persistence.usage_ledger_store import SQLAlchemyUsageLedgerStore
-from hovorunv2.infrastructure.persistence.usage_policy_store import SQLAlchemyUsagePolicyStore
+from hovorunv2.infrastructure.persistence.stores.activation_store import SQLAlchemyActivationStore
+from hovorunv2.infrastructure.persistence.stores.ban_store import SQLAlchemyBanStore
+from hovorunv2.infrastructure.persistence.stores.beta_store import SQLAlchemyBetaEntitlementStore
+from hovorunv2.infrastructure.persistence.stores.feature_fact_store import SQLAlchemyFeatureFactStore
+from hovorunv2.infrastructure.persistence.stores.group_beta_store import SQLAlchemyGroupBetaStore
+from hovorunv2.infrastructure.persistence.stores.group_grant_store import SQLAlchemyGroupGrantStore
+from hovorunv2.infrastructure.persistence.stores.group_identity_store import SQLAlchemyGroupIdentityStore
+from hovorunv2.infrastructure.persistence.stores.group_migration_store import SQLAlchemyGroupMigrationStore
+from hovorunv2.infrastructure.persistence.stores.membership_store import SQLAlchemyMembershipStore
+from hovorunv2.infrastructure.persistence.stores.usage_ledger_store import SQLAlchemyUsageLedgerStore
+from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAlchemyUsagePolicyStore
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
