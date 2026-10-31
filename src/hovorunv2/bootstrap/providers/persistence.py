@@ -9,6 +9,7 @@ from hovorunv2.application.features.beta_prompts import BetaPromptStore
 from hovorunv2.application.features.emergency import FeatureEmergencyStore
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.operations.feature_status import FeatureAudienceStore
 from hovorunv2.application.operations.notification_ledger import NotificationEventStore
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceStore
 from hovorunv2.application.operations.ports import SystemStore
@@ -20,6 +21,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyUserStore,
 )
 from hovorunv2.infrastructure.persistence.stores.beta_prompt_store import SQLAlchemyBetaPromptStore
+from hovorunv2.infrastructure.persistence.stores.feature_audience_store import SQLAlchemyFeatureAudienceStore
 from hovorunv2.infrastructure.persistence.stores.feature_emergency_store import SQLAlchemyFeatureEmergencyStore
 from hovorunv2.infrastructure.persistence.stores.notification_ledger_store import (
     SQLAlchemyNotificationLedgerStore,
@@ -51,6 +53,9 @@ class AuditAndPersistenceProvider(Provider):
 
     feature_emergency_store_impl = provide(SQLAlchemyFeatureEmergencyStore)
     feature_emergency_store = alias(source=SQLAlchemyFeatureEmergencyStore, provides=FeatureEmergencyStore)
+
+    feature_audience_store_impl = provide(SQLAlchemyFeatureAudienceStore)
+    feature_audience_store = alias(source=SQLAlchemyFeatureAudienceStore, provides=FeatureAudienceStore)
 
     beta_prompt_store_impl = provide(SQLAlchemyBetaPromptStore)
     beta_prompt_store = alias(source=SQLAlchemyBetaPromptStore, provides=BetaPromptStore)

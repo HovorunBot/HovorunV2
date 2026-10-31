@@ -14,6 +14,7 @@ from hovorunv2.application.messaging.feedback_service import FeedbackService
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.operations.cleanup_service import CleanupService
+from hovorunv2.application.operations.feature_status import FeatureStatusNotifier
 from hovorunv2.application.operations.notification_ledger import NotificationLedgerService
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceService
 from hovorunv2.application.operations.notification_service import NotificationService
@@ -65,6 +66,7 @@ class InterfaceAndUtilityProvider(Provider):
 
     bot_join_handler = provide(BotJoinHandler)
     beta_prompts = provide(BetaPromptService)
+    feature_status_notifier = provide(FeatureStatusNotifier)
     beta_prompt_command = provide(BetaPromptCommand)
     debug_command = provide(DebugCommand)
     emergency_command = provide(EmergencyCommand)

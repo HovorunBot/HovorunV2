@@ -8,6 +8,7 @@ encryption configuration before starting against the new database.
 
 ### Feat
 
+- **notifications**: announce feature outages by preference
 - **beta**: announce new features with activation choices
 - **notifications**: deliver through the operations worker
 - **notifications**: add scoped notification preferences

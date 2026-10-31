@@ -15,6 +15,7 @@ from hovorunv2.application.access.administration_service import AdministrationSe
 from hovorunv2.application.features.emergency import FeatureEmergencyState
 from hovorunv2.application.features.emergency_service import FeatureEmergencyService
 from hovorunv2.application.jobs.admission import AdmissionPort
+from hovorunv2.application.operations.feature_status import FeatureStatusNotifier
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.access_arguments import AccessArgumentParser
@@ -39,10 +40,12 @@ class EmergencyCommand(BaseCommand):
         administration: AdministrationService,
         emergency: FeatureEmergencyService,
         admission: AdmissionPort,
+        notifier: FeatureStatusNotifier,
     ) -> None:
         self._administration = administration
         self._emergency = emergency
         self._admission = admission
+        self._notifier = notifier
 
     @property
     def name(self) -> str:
@@ -83,8 +86,9 @@ class EmergencyCommand(BaseCommand):
                 actor=actor,
                 transport_kind=message.chat.type,
             )
+            queued = await self._notifier.publish(state, actor=actor, transport_kind=message.chat.type)
             pending = len(await self._admission.pending_for_feature(arguments.feature))
-            await message.answer(html.escape(self._summary(state, pending)))
+            await message.answer(html.escape(self._summary(state, pending, queued)))
         except PermissionError, ValueError:
             await message.answer(EMERGENCY_UNAVAILABLE)
 
@@ -106,12 +110,13 @@ class EmergencyCommand(BaseCommand):
         parser.add_argument("--public", dest="public_explanation")
         return parser.parse_args(words)
 
-    def _summary(self, state: FeatureEmergencyState, pending: int) -> str:
+    def _summary(self, state: FeatureEmergencyState, pending: int, queued: int) -> str:
         """Report the durable state without claiming a partial cleanup completed.
 
         Args:
             state: Current feature emergency state.
             pending: Count of pending jobs for the feature.
+            queued: Number of public notices queued for affected scopes.
 
         Returns:
             Human-readable summary of the transition and pending work.
@@ -126,5 +131,6 @@ class EmergencyCommand(BaseCommand):
             f"Feature {state.feature_key}: {'disabled' if state.disabled else 'enabled'} "
             f"(epoch {state.epoch}).\n"
             f"Public reason: {state.public_reason or 'None'}\n"
+            f"Queued public notices: {queued}\n"
             f"{cleanup}"
         )
