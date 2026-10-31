@@ -20,7 +20,8 @@ class SettingsMenu(StrEnum):
     GROUP_SELECT = "group_select"
     ACCESS = "access"
     USAGE = "usage"
-    NOTIFICATIONS = "notifications"
+    # Leave room for the session token and group.feature_status within Telegram's 64-byte limit.
+    NOTIFICATIONS = "notify"
     CLOSE = "close"
     MAIN = "main"
     LANG = "lang"

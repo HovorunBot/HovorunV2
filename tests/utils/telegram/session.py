@@ -17,7 +17,7 @@ class RecordingSession(BaseSession):
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[TelegramMethod[Any]] = []
-        self.responses: list[dict[str, object] | Exception] = []
+        self.responses: list[dict[str, object] | bool | Exception] = []
 
     async def close(self) -> None:
         """No network resources are opened."""

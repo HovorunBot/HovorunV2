@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **settings**: keep notification callbacks within Telegram limits
 - **build**: build shared Docker images only once
 
 ## v0.3.0 (2026-11-01)
