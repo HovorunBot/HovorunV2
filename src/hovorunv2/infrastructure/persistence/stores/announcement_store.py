@@ -296,6 +296,8 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         actor_user_id: int,
         recipients: tuple[PermissionTarget, ...],
         expires_at: float,
+        urgent: bool = False,
+        urgent_reason: str | None = None,
     ) -> AnnouncementConfirmation:
         """Create one single-use confirmation row bound to actor, revision and snapshot."""
         token = secrets.token_urlsafe(24)
@@ -316,13 +318,23 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
                 revision=draft.revision,
                 token=token,
                 audience_snapshot=snapshot,
+                urgent=urgent,
+                urgent_reason=urgent_reason,
                 status="pending",
                 expires_at=datetime.fromtimestamp(expires_at, UTC),
                 created_at=datetime.now(UTC),
             )
             session.add(row)
             await session.flush()
-            return row, {"revision": draft.revision, "recipients": len(recipients), "status": "pending"}
+            changes: dict[str, object] = {
+                "revision": draft.revision,
+                "recipients": len(recipients),
+                "status": "pending",
+                "urgent": urgent,
+            }
+            if urgent_reason:
+                changes["reason"] = urgent_reason
+            return row, changes
 
         result: tuple[AnnouncementConfirmationDB, dict[str, object]] = await self._audited_uow.execute(
             actor=actor,
@@ -335,7 +347,9 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         )
         return self._to_confirmation(result[0])
 
-    async def consume(self, draft_id: int, token: str, *, actor_user_id: int) -> AnnouncementConfirmation:
+    async def consume(
+        self, draft_id: int, token: str, *, actor_user_id: int, urgent_bypass: bool = False
+    ) -> AnnouncementConfirmation:
         """Atomically consume a fresh, same-actor, current-revision confirmation."""
 
         async def operation(session: AsyncSession) -> tuple[AnnouncementConfirmationDB, dict[str, object]]:
@@ -361,6 +375,9 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
                 raise ValueError(msg)
             if row.expires_at <= datetime.now(UTC):
                 msg = "Confirmation expired."
+                raise ValueError(msg)
+            if row.urgent and not urgent_bypass:
+                msg = "Urgent dispatch requires the second confirmation."
                 raise ValueError(msg)
             row.status = "dispatched"
             row.consumed_at = datetime.now(UTC)
@@ -483,6 +500,8 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
             row.expires_at.timestamp(),
             recipients,
             row.token,
+            row.urgent,
+            row.urgent_reason,
         )
 
     def _to_draft(self, row: AnnouncementDraftDB) -> AnnouncementDraft:

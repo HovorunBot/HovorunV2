@@ -123,7 +123,11 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("beta_decision", "set"): BETA_DECISION_FIELDS.copy(),
     ("announcement_draft", "create"): ANNOUNCEMENT_DRAFT_FIELDS.copy(),
     ("announcement_draft", "update"): ANNOUNCEMENT_DRAFT_FIELDS.copy(),
-    ("announcement_confirmation", "confirm"): ANNOUNCEMENT_CONFIRMATION_FIELDS.copy(),
+    ("announcement_confirmation", "confirm"): {
+        **ANNOUNCEMENT_CONFIRMATION_FIELDS,
+        "urgent": FLAG,
+        "reason": TEXT,
+    },
     ("announcement_confirmation", "dispatch"): ANNOUNCEMENT_CONFIRMATION_FIELDS.copy(),
     ("announcement_confirmation", "cancel"): {"cancelled": NUMBER},
     ("group_activation", "approve"): ACTIVATION_FIELDS,

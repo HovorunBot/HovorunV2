@@ -140,7 +140,9 @@ class NotificationDeliveryService:
             True when the receipt is due and eligible for delivery, False otherwise.
         """
         category = receipt.category
-        if category is None or not self._ledger.preference_enabled(receipt.target, category):
+        if not receipt.bypass_preferences and (
+            category is None or not self._ledger.preference_enabled(receipt.target, category)
+        ):
             self._record(receipt, NotificationOutcome.SKIPPED)
             return False
         if not self._ledger.reachable(receipt.target):

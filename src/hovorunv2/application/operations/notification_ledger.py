@@ -32,6 +32,7 @@ class NotificationEvent:
     release_identity: str
     body_ref: str | None = None
     body_markup: str | None = None
+    bypass_preferences: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,7 @@ class NotificationReceipt:
     category: NotificationCategory | None = None
     body_ref: str | None = None
     body_markup: str | None = None
+    bypass_preferences: bool = False
     last_attempt_at: float | None = None
 
 

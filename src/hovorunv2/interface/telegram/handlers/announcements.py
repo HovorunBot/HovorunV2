@@ -25,8 +25,8 @@ ANNOUNCE_HELP = (
     '[--target ID ...] --body "text"\n'
     "Then /announce preview ID, /announce show ID, or /announce edit ID [--category ...] "
     "[--audience ...] [--target ...] [--body ...].\n"
-    "Dispatch: /announce confirm ID, /announce dispatch ID TOKEN, /announce status ID, "
-    "/announce cancel ID."
+    "Dispatch: /announce confirm ID [--urgent --reason TEXT], /announce dispatch ID TOKEN "
+    "[--confirm-urgent], /announce status ID, /announce cancel ID."
 )
 ANNOUNCE_UNAVAILABLE = "Announcement composition unavailable. Use /announce privately."
 MIN_ANNOUNCE_TOKENS = 3
@@ -142,19 +142,35 @@ class AnnounceCommand(BaseCommand):
         if not rest or not rest[0].isdigit():
             await message.answer(ANNOUNCE_HELP)
             return
-        confirmation = await self._announcements.confirm(int(rest[0]), actor=actor)
+        parser = AccessArgumentParser(prog="/announce confirm", add_help=False)
+        parser.add_argument("--urgent", action="store_true")
+        parser.add_argument("--reason")
+        args = parser.parse_args(rest[1:])
+        confirmation = await self._announcements.confirm(
+            int(rest[0]), actor=actor, urgent=args.urgent, reason=args.reason
+        )
+        warning = (
+            "\nURGENT: category opt-outs will be bypassed. Dispatch with --confirm-urgent."
+            if confirmation.urgent
+            else ""
+        )
         await message.answer(
             f"Confirmation for revision {confirmation.revision} and "
             f"{len(confirmation.recipients)} recipient(s):\n"
             f"/announce dispatch {confirmation.draft_id} {confirmation.token}\n"
-            f"Single use; expires in 5 minutes."
+            f"Single use; expires in 5 minutes.{warning}"
         )
 
     async def _dispatch_flow(self, message: Message, actor: ActorContext, rest: list[str]) -> None:
         if len(rest) < DISPATCH_ARGUMENTS or not rest[0].isdigit():
             await message.answer(ANNOUNCE_HELP)
             return
-        status = await self._announcements.dispatch(int(rest[0]), rest[1], actor=actor)
+        parser = AccessArgumentParser(prog="/announce dispatch", add_help=False)
+        parser.add_argument("--confirm-urgent", action="store_true")
+        args = parser.parse_args(rest[2:])
+        status = await self._announcements.dispatch(
+            int(rest[0]), rest[1], actor=actor, urgent_bypass=args.confirm_urgent
+        )
         await message.answer(self._status_text(status))
 
     async def _cancel(self, message: Message, actor: ActorContext, rest: list[str]) -> None:

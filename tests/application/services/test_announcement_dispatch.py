@@ -24,8 +24,10 @@ from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.announcement import AnnouncementAudience
 from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.enums import Role
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
+from tests.conftest import provision_role
 from tests.utils.runtime import ManualClock
 
 AUTHOR = 610001
@@ -186,3 +188,101 @@ async def test_cancel_pending_confirmation_blocks_dispatch(test_container: Async
     await service.cancel(draft_id, actor=ActorContext.telegram(AUTHOR))
     with pytest.raises(ValueError, match="no longer usable"):
         await service.dispatch(draft_id, confirmation.token, actor=ActorContext.telegram(AUTHOR))
+
+
+async def test_urgent_requires_reason_and_current_bot_admin(test_container: AsyncContainer) -> None:
+    """Urgent classification needs both a reason and current bot authority."""
+    service, draft_id = await _draft(test_container)
+    with pytest.raises(ValueError, match="reason"):
+        await service.confirm(draft_id, actor=ActorContext.telegram(AUTHOR), urgent=True)
+    with pytest.raises(PermissionError):
+        await service.confirm(draft_id, actor=ActorContext.telegram(AUTHOR), urgent=True, reason="provider outage")
+    await provision_role(test_container, AUTHOR, Role.ADMIN)
+    confirmation = await service.confirm(
+        draft_id, actor=ActorContext.telegram(AUTHOR), urgent=True, reason="provider outage"
+    )
+    assert confirmation.urgent is True
+    assert confirmation.urgent_reason == "provider outage"
+
+
+async def test_urgent_requires_second_confirmation_and_bypasses_preferences(
+    test_container: AsyncContainer,
+) -> None:
+    """The first urgent confirmation alone cannot dispatch or bypass opt-outs."""
+    service, draft_id = await _draft(test_container)
+    await provision_role(test_container, AUTHOR, Role.ADMIN)
+    confirmation = await service.confirm(
+        draft_id, actor=ActorContext.telegram(AUTHOR), urgent=True, reason="provider outage"
+    )
+    user = await (await test_container.get(UserStore)).get_by_telegram_id(USER)
+    assert user is not None
+    with pytest.raises(ValueError, match="second confirmation"):
+        await service.dispatch(draft_id, confirmation.token, actor=ActorContext.telegram(AUTHOR))
+    preferences = await test_container.get(NotificationPreferenceService)
+    await preferences.set_preference(
+        PermissionTarget("user", user.id, user.generation, USER),
+        NotificationCategory.ANNOUNCEMENT,
+        enabled=False,
+        actor=ActorContext.telegram(USER),
+        transport_kind="private",
+    )
+    await service.dispatch(
+        draft_id,
+        confirmation.token,
+        actor=ActorContext.telegram(AUTHOR),
+        urgent_bypass=True,
+    )
+    sender = RecordingSender()
+    assert await _deliver(test_container, sender) == 1
+    status = await service.status(draft_id)
+    assert status.outcomes.get(NotificationOutcome.DELIVERED) == 1
+
+
+async def test_routine_confirmation_cannot_bypass_preferences(test_container: AsyncContainer) -> None:
+    """A routine confirmation ignores the urgent flag and keeps opt-outs suppressed."""
+    service, draft_id = await _draft(test_container)
+    user = await (await test_container.get(UserStore)).get_by_telegram_id(USER)
+    assert user is not None
+    confirmation = await service.confirm(draft_id, actor=ActorContext.telegram(AUTHOR))
+    preferences = await test_container.get(NotificationPreferenceService)
+    await preferences.set_preference(
+        PermissionTarget("user", user.id, user.generation, USER),
+        NotificationCategory.ANNOUNCEMENT,
+        enabled=False,
+        actor=ActorContext.telegram(USER),
+        transport_kind="private",
+    )
+    await service.dispatch(
+        draft_id,
+        confirmation.token,
+        actor=ActorContext.telegram(AUTHOR),
+        urgent_bypass=True,
+    )
+    sender = RecordingSender()
+    assert await _deliver(test_container, sender) == 0
+    status = await service.status(draft_id)
+    assert status.outcomes.get(NotificationOutcome.SKIPPED) == 1
+
+
+async def test_changed_draft_invalidates_urgent_approval(test_container: AsyncContainer) -> None:
+    """Editing the draft after an urgent confirmation invalidates the second confirmation."""
+    service, draft_id = await _draft(test_container)
+    await provision_role(test_container, AUTHOR, Role.ADMIN)
+    confirmation = await service.confirm(
+        draft_id, actor=ActorContext.telegram(AUTHOR), urgent=True, reason="provider outage"
+    )
+    await service.update(
+        draft_id,
+        author=ActorContext.telegram(AUTHOR),
+        category=NotificationCategory.ANNOUNCEMENT,
+        audience=AnnouncementAudience.SELECTED,
+        target_ids=(USER,),
+        body="Changed urgently",
+    )
+    with pytest.raises(ValueError, match="stale"):
+        await service.dispatch(
+            draft_id,
+            confirmation.token,
+            actor=ActorContext.telegram(AUTHOR),
+            urgent_bypass=True,
+        )

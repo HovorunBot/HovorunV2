@@ -3,7 +3,20 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, and_, column
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    and_,
+    column,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -97,6 +110,8 @@ class AnnouncementConfirmationDB(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     audience_snapshot: Mapped[list[dict[str, int | str]]] = mapped_column(JSON, nullable=False)
+    urgent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    urgent_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

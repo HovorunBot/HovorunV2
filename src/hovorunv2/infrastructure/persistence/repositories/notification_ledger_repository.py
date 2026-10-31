@@ -54,6 +54,7 @@ class NotificationLedgerRepository:
                 release_identity=event.release_identity,
                 body_ref=event.body_ref,
                 body_markup=event.body_markup,
+                bypass_preferences=event.bypass_preferences,
                 created_at=datetime.now(UTC),
             )
         )

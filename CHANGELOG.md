@@ -8,6 +8,7 @@ encryption configuration before starting against the new database.
 
 ### Feat
 
+- **announcements**: confirm urgent notification bypass
 - **announcements**: dispatch confirmed routine broadcasts
 - **announcements**: compose encrypted scoped broadcast drafts
 - **notifications**: announce feature outages by preference

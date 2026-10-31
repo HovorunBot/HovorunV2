@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
@@ -45,6 +46,8 @@ class AnnouncementConfirmation:
     expires_at: float
     recipients: tuple[PermissionTarget, ...]
     token: str
+    urgent: bool = False
+    urgent_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,11 +143,15 @@ class AnnouncementStore(Protocol):
         actor_user_id: int,
         recipients: tuple[PermissionTarget, ...],
         expires_at: float,
+        urgent: bool = False,
+        urgent_reason: str | None = None,
     ) -> AnnouncementConfirmation:
         """Create one single-use confirmation row."""
         ...
 
-    async def consume(self, draft_id: int, token: str, *, actor_user_id: int) -> AnnouncementConfirmation:
+    async def consume(
+        self, draft_id: int, token: str, *, actor_user_id: int, urgent_bypass: bool = False
+    ) -> AnnouncementConfirmation:
         """Atomically consume a fresh pending confirmation or raise a semantic error."""
         ...
 
@@ -168,6 +175,7 @@ class AnnouncementService:
         ledger: NotificationLedgerService,
         bodies: PayloadPort,
         clock: Clock,
+        permissions: PermissionService,
     ) -> None:
         self._store = store
         self._users = users
@@ -175,6 +183,7 @@ class AnnouncementService:
         self._ledger = ledger
         self._bodies = bodies
         self._clock = clock
+        self._permissions = permissions
 
     async def create(
         self,
@@ -238,8 +247,17 @@ class AnnouncementService:
         draft = await self._required(draft_id)
         return draft, await self._store.body(draft_id)
 
-    async def confirm(self, draft_id: int, *, actor: ActorContext) -> AnnouncementConfirmation:
+    async def confirm(
+        self,
+        draft_id: int,
+        *,
+        actor: ActorContext,
+        urgent: bool = False,
+        reason: str | None = None,
+    ) -> AnnouncementConfirmation:
         """Bind the current revision and concrete audience snapshot to one actor."""
+        if urgent:
+            await self._require_urgent_authority(actor, reason)
         draft = await self._required(draft_id)
         actor_user_id = await self._author_user_id(actor)
         targets = await self._store.targets(draft_id)
@@ -253,13 +271,19 @@ class AnnouncementService:
             actor_user_id=actor_user_id,
             recipients=recipients,
             expires_at=self._clock.now() + CONFIRMATION_TTL_SECONDS,
+            urgent=urgent,
+            urgent_reason=reason.strip() if reason is not None and reason.strip() else None,
         )
 
-    async def dispatch(self, draft_id: int, token: str, *, actor: ActorContext) -> AnnouncementStatus:
+    async def dispatch(
+        self, draft_id: int, token: str, *, actor: ActorContext, urgent_bypass: bool = False
+    ) -> AnnouncementStatus:
         """Consume a confirmation and queue the announcement through the delivery worker."""
         draft = await self._required(draft_id)
         actor_user_id = await self._author_user_id(actor)
-        confirmation = await self._store.consume(draft_id, token, actor_user_id=actor_user_id)
+        confirmation = await self._store.consume(
+            draft_id, token, actor_user_id=actor_user_id, urgent_bypass=urgent_bypass
+        )
         event_key = self._event_key(draft.id, confirmation.revision)
         sealed = await self._bodies.seal(
             event_key,
@@ -270,7 +294,14 @@ class AnnouncementService:
             msg = "Announcement body is not available."
             raise ValueError(msg)
         await self._ledger.ensure_event(
-            NotificationEvent(event_key, draft.category, "announcement", f"draft:{draft.id}", sealed.reference),
+            NotificationEvent(
+                event_key,
+                draft.category,
+                "announcement",
+                f"draft:{draft.id}",
+                sealed.reference,
+                bypass_preferences=confirmation.urgent,
+            ),
             actor=actor,
         )
         for recipient in confirmation.recipients:
@@ -300,6 +331,14 @@ class AnnouncementService:
         event_key = self._event_key(draft.id, confirmation.revision) if confirmation is not None else None
         outcomes = await self._ledger.outcomes(event_key) if event_key is not None else {}
         return AnnouncementStatus(draft, confirmation, event_key, outcomes)
+
+    async def _require_urgent_authority(self, actor: ActorContext, reason: str | None) -> None:
+        if reason is None or not reason.strip():
+            msg = "Urgent announcements require an internal reason."
+            raise ValueError(msg)
+        if actor.actor_id is None or not await self._permissions.has_authority(actor.actor_id, "bot:administer"):
+            msg = "Urgent announcements require a current bot administrator."
+            raise PermissionError(msg)
 
     def _event_key(self, draft_id: int, revision: int) -> str:
         return f"announcement.{draft_id}.r{revision}"

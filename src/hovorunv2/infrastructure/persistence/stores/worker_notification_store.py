@@ -76,6 +76,7 @@ class WorkerNotificationStore:
                     release_identity=event.release_identity,
                     body_ref=event.body_ref,
                     body_markup=event.body_markup,
+                    bypass_preferences=event.bypass_preferences,
                     created_at=datetime.now(UTC),
                 )
             )
@@ -278,5 +279,6 @@ class WorkerNotificationStore:
             category=NotificationCategory(event.category),
             body_ref=event.body_ref,
             body_markup=event.body_markup,
+            bypass_preferences=event.bypass_preferences,
             last_attempt_at=receipt.updated_at.timestamp(),
         )
