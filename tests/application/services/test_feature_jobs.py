@@ -78,7 +78,7 @@ class RecordingTelegram:
     def __init__(self) -> None:
         self.calls: list[tuple[int, str]] = []
 
-    def send_message(self, chat_id: int, text: str) -> int:
+    def send_message(self, chat_id: int, text: str, *, reply_to_message_id: int | None = None) -> int:
         """Capture one feedback message."""
         self.calls.append((chat_id, text))
         return 1
@@ -88,6 +88,14 @@ class AllowFeedback:
     """Allow feedback for synthetic active targets."""
 
     def feedback_allowed(self, target: object) -> bool:
+        """Return True for the controlled test target."""
+        return True
+
+
+class AllowGate:
+    """Allow one delayed notice for synthetic targets."""
+
+    def claim_delayed(self, target_key: str, ttl: int) -> bool:
         """Return True for the controlled test target."""
         return True
 
@@ -308,6 +316,7 @@ async def test_post_extraction_split_feature_recheck_blocks_delivery_and_charges
                 clients=[video_client],
                 telegram=RecordingTelegram(),
                 feedback=AllowFeedback(),
+                gate=AllowGate(),
             )
             outcome = runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
             assert outcome == JobOutcome.COMPLETE.value

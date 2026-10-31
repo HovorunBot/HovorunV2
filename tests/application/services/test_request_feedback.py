@@ -9,6 +9,7 @@ from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.jobs.admission import JobStage, NoticeKind
 from hovorunv2.application.jobs.feature_job_runner import (
+    DELAYED_NOTICE_SECONDS,
     DELAYED_NOTICE_TEXT,
     TIMEOUT_NOTICE_TEXT,
     FeatureJobRunner,
@@ -37,15 +38,25 @@ from tests.utils.runtime import ManualClock, runtime_cache
 GROUP = -440001
 
 
+class AllowGate:
+    """Allow one delayed notice for synthetic targets."""
+
+    def claim_delayed(self, target_key: str, ttl: int) -> bool:
+        """Return True for the controlled test target."""
+        return True
+
+
 class RecordingTelegram:
     """Capture feedback text without network I/O."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[int, str]] = []
+        self.replies: list[int | None] = []
 
-    def send_message(self, chat_id: int, text: str) -> int:
+    def send_message(self, chat_id: int, text: str, *, reply_to_message_id: int | None = None) -> int:
         """Capture one feedback message."""
         self.calls.append((chat_id, text))
+        self.replies.append(reply_to_message_id)
         return 1
 
 
@@ -112,6 +123,7 @@ def _runner(
         clients=[],
         telegram=telegram,
         feedback=database.policies,
+        gate=AllowGate(),
     )
 
 
@@ -175,9 +187,10 @@ async def test_delayed_job_sends_one_notice_and_skips_banned_target(
             runner = _runner(database, runtime, http, settings, clock, namespace, telegram)
             token = "t" * 32
             assert runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), token) is not None
-            waiting = ReservationDecision(ReservationState.WAITING, clock.now() + 10)
+            waiting = ReservationDecision(ReservationState.WAITING, clock.now() + DELAYED_NOTICE_SECONDS + 1)
             runner._handle_denied_reservation(envelope, token, waiting)  # noqa: SLF001
             assert telegram.calls == [(GROUP, DELAYED_NOTICE_TEXT)]
+            assert telegram.replies == [envelope.message_id]
             runner._notify(envelope, NoticeKind.DELAYED, DELAYED_NOTICE_TEXT)  # noqa: SLF001
             assert len(telegram.calls) == 1
     await (await test_container.get(BanStore)).set_ban(

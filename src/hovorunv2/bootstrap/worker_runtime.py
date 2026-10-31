@@ -41,6 +41,7 @@ from hovorunv2.infrastructure.queues.feature_queue import (
 from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
+from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
 from hovorunv2.interface.telegram.settings.prompts import SyncTelegramUnauthorizedPromptSender
 from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramAPI, NativeTelegramDelivery
 
@@ -289,6 +290,7 @@ class WorkerChildContext:
             publisher=self._publisher,
             telegram=api,
             feedback=self._db.policies,
+            gate=ValkeyFeedbackGate(self._runtime.client, self._namespace),
         )
         prompt_sender = SyncTelegramUnauthorizedPromptSender(api)
         notification_delivery = NotificationDeliveryService(

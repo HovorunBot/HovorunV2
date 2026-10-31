@@ -110,6 +110,7 @@ class NativeTelegramAPI:
         parse_mode: str = "HTML",
         reply_markup: str | None = None,
         disable_web_page_preview: bool = True,
+        reply_to_message_id: int | None = None,
     ) -> int | None:
         """Send formatted text message and return message ID if delivered.
 
@@ -119,6 +120,7 @@ class NativeTelegramAPI:
             parse_mode: Parsing mode for the message text.
             reply_markup: Optional serialized reply markup.
             disable_web_page_preview: Whether to disable link previews.
+            reply_to_message_id: Optional message to reply to.
 
         Returns:
             Delivered message ID, or None when the API rejects or transport fails.
@@ -131,6 +133,8 @@ class NativeTelegramAPI:
         }
         if reply_markup is not None:
             data["reply_markup"] = reply_markup
+        if reply_to_message_id is not None:
+            data["reply_to_message_id"] = reply_to_message_id
         try:
             result = self.call(TelegramMethod.SEND_MESSAGE, data=data)
         except TelegramRejectedError, TelegramDeliveryUncertainError:

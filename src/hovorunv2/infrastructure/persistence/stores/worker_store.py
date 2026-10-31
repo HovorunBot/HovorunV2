@@ -46,7 +46,7 @@ from hovorunv2.infrastructure.persistence.repositories.membership_repository imp
     validate_evidence_time,
 )
 from hovorunv2.infrastructure.persistence.repositories.policy_fact_reader import PolicyFactReader
-from hovorunv2.infrastructure.persistence.repositories.policy_queries import exact_target
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import banned_admin_queries, exact_target
 from hovorunv2.infrastructure.persistence.repositories.usage_ledger import UsageLedgerRepository
 
 
@@ -159,7 +159,11 @@ class WorkerPolicyStore:
                 return False
             if target.kind == "group":
                 status = session.scalar(select(ChatDB.status).where(ChatDB.id == target.entity_id))
-                if status != ChatStatus.APPROVED:
+                if status != ChatStatus.APPROVED or target.entity_id is None:
+                    return False
+                now = datetime.now(UTC)
+                admin_banned, unverifiable_banned = banned_admin_queries(target.entity_id, now)
+                if session.scalar(admin_banned) is not None or session.scalar(unverifiable_banned) is not None:
                     return False
             ban = session.scalar(
                 select(BanDB.id).where(

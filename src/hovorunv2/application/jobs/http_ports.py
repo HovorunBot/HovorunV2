@@ -134,8 +134,16 @@ class SyncFeedbackPort(Protocol):
 class SyncFeedbackTelegramPort(Protocol):
     """Minimal synchronous Telegram text contract for request feedback."""
 
-    def send_message(self, chat_id: int, text: str) -> int | None:
+    def send_message(self, chat_id: int, text: str, *, reply_to_message_id: int | None = None) -> int | None:
         """Send one short operational text and return its message ID when accepted."""
+        ...
+
+
+class SyncFeedbackGate(Protocol):
+    """Per-target coalescing for delayed progress notices."""
+
+    def claim_delayed(self, target_key: str, ttl: int) -> bool:
+        """Return True when this target may receive one delayed notice."""
         ...
 
 

@@ -28,6 +28,7 @@ from hovorunv2.application.jobs.feature_jobs import (
 from hovorunv2.application.jobs.http_ports import (
     HTTPTransportError,
     SyncBrowserPort,
+    SyncFeedbackGate,
     SyncFeedbackPort,
     SyncFeedbackTelegramPort,
     SyncHTTPPort,
@@ -119,6 +120,7 @@ class FeatureJobRunner:
         *,
         telegram: SyncFeedbackTelegramPort,
         feedback: SyncFeedbackPort,
+        gate: SyncFeedbackGate,
         registry: FeatureRegistry = FEATURE_REGISTRY,
         browser: SyncBrowserPort | None = None,
         clients: Sequence[BaseMediaClient] | Mapping[CommandName, BaseMediaClient] | None = None,
@@ -139,6 +141,7 @@ class FeatureJobRunner:
         self._publisher = publisher
         self._telegram = telegram
         self._feedback = feedback
+        self._gate = gate
         self._clients = self._init_clients(clients, settings)
         self._lifecycle = WorkerLifecycleService(admission, budgets, ledger, clock)
 
@@ -245,6 +248,8 @@ class FeatureJobRunner:
         if ticket.state == TicketState.CANCELLING:
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
             return JobOutcome.CANCELLED.value
+        if now - envelope.accepted_at >= DELAYED_NOTICE_SECONDS:
+            self._notify(envelope, NoticeKind.DELAYED, DELAYED_NOTICE_TEXT)
         if not envelope_is_current(envelope.feature_epoch, self._policies.emergency_state(envelope.feature)):
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
             return JobOutcome.CANCELLED.value
@@ -296,10 +301,18 @@ class FeatureJobRunner:
         )
         if not self._feedback.feedback_allowed(target):
             return
+        if kind == NoticeKind.DELAYED and not self._gate.claim_delayed(
+            f"{envelope.target.kind.value}:{envelope.target.entity_id}", 60
+        ):
+            return
         if not self._admission.claim_notice(envelope.job_id, kind):
             return
         try:
-            self._telegram.send_message(envelope.target.telegram_id, text)
+            message_id = self._telegram.send_message(
+                envelope.target.telegram_id, text, reply_to_message_id=envelope.message_id
+            )
+            if message_id is None:
+                self._telegram.send_message(envelope.target.telegram_id, text)
         except Exception:
             logger.warning("Request progress feedback deferred")
 
@@ -314,7 +327,8 @@ class FeatureJobRunner:
                 if deferred is None:
                     self._finish_ticket_safe(envelope.job_id, token, JobOutcome.CANCELLED)
                     return JobOutcome.CANCELLED.value
-                self._notify(envelope, NoticeKind.DELAYED, DELAYED_NOTICE_TEXT)
+                if retry - envelope.accepted_at >= DELAYED_NOTICE_SECONDS:
+                    self._notify(envelope, NoticeKind.DELAYED, DELAYED_NOTICE_TEXT)
                 return ReservationState.WAITING.value
         if reservation.state == ReservationState.UNAVAILABLE:
             # A lost reserve acknowledgement can hide a live reservation; do not refund it.
@@ -372,6 +386,7 @@ class FeatureJobRunner:
         token: str,
         now: float,
     ) -> str:
+        _ = now
         self._translate_payload(raw_payload, envelope.target.telegram_id, strip_hashtags=client.config.strip_hashtags)
         if self._admission.begin_delivery(envelope.job_id, token, self._clock.now()) is None:
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
@@ -489,7 +504,22 @@ class FeatureJobRunner:
         Returns:
             Number of recovered tickets plus cleared disabled-feature tickets.
         """
-        return self._lifecycle.recover(self._publisher) + self._clear_disabled_features()
+        return (
+            self._notify_expired_notices() + self._lifecycle.recover(self._publisher) + self._clear_disabled_features()
+        )
+
+    def _notify_expired_notices(self) -> int:
+        """Send terminal feedback for expired tickets before lifecycle reconciliation."""
+        now = self._clock.now()
+        notified = 0
+        for ticket in self._admission.recovery_page():
+            if ticket.state not in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.WAITING}:
+                continue
+            if now < ticket.envelope.deadline:
+                continue
+            self._notify(ticket.envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
+            notified += 1
+        return notified
 
     def _clear_disabled_features(self) -> int:
         """Retry per-feature cleanup from the durable disabled state each sweep.
@@ -521,9 +551,14 @@ class FeatureJobRunner:
                 TicketState.RUNNING,
             }:
                 self._admission.cancel(job_id)
-            self._payloads.delete(ticket.envelope.payload_ref)
-            if ticket.budget_reserved:
-                self._budgets.finish(job_id, (), self._clock.now())
+            updated = self._admission.get(job_id) or ticket
+            terminal = updated.state == TicketState.TERMINAL or (
+                updated.state == TicketState.CANCELLING and self._clock.now() >= updated.envelope.deadline
+            )
+            if terminal:
+                self._payloads.delete(updated.envelope.payload_ref)
+                if updated.budget_reserved:
+                    self._budgets.finish(job_id, (), self._clock.now())
             cleared += 1
         return cleared
 

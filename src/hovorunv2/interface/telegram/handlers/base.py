@@ -42,8 +42,9 @@ BUSY_NOTICE_TEXT = "⏳ I'm handling the maximum number of media requests right 
 class BusyNoticeGate:
     """Bound repeated overflow replies per chat without blocking the event loop."""
 
-    def __init__(self, cooldown: float = BUSY_NOTICE_COOLDOWN_SECONDS) -> None:
+    def __init__(self, cooldown: float = BUSY_NOTICE_COOLDOWN_SECONDS, max_entries: int = 1024) -> None:
         self._cooldown = cooldown
+        self._max_entries = max_entries
         self._last: dict[int, float] = {}
 
     def should_notify(self, chat_id: int, now: float) -> bool:
@@ -51,6 +52,9 @@ class BusyNoticeGate:
         last = self._last.get(chat_id)
         if last is not None and now - last < self._cooldown:
             return False
+        if len(self._last) >= self._max_entries:
+            oldest = min(self._last, key=self._last.__getitem__)
+            del self._last[oldest]
         self._last[chat_id] = now
         return True
 
@@ -94,6 +98,8 @@ class RichMediaCommand(BaseCommand):
         is_automatic=True,
     )
 
+    _BUSY_GATE = BusyNoticeGate()
+
     def __init__(
         self,
         primary_client: BaseMediaClient,
@@ -112,7 +118,7 @@ class RichMediaCommand(BaseCommand):
         self._chats = chats
         self._users = users
         self._clock = clock
-        self._busy_gate = BusyNoticeGate()
+        self._busy_gate = self._BUSY_GATE
 
     @property
     def name(self) -> str:
