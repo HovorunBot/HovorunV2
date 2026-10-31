@@ -1,4 +1,4 @@
-"""Verify entity/action audit schemas with real SQLite mutation rollback."""
+"""Verify entity/action audit schemas with real PostgreSQL mutation rollback."""
 
 from functools import partial
 

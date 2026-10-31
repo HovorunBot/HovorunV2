@@ -1,4 +1,4 @@
-"""Activation handlers and callbacks with real services, SQLite and intercepted Telegram HTTP."""
+"""Activation handlers and callbacks with real services, PostgreSQL and intercepted Telegram HTTP."""
 
 import json
 from datetime import UTC, datetime

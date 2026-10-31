@@ -1,4 +1,4 @@
-"""Durable group activation with real SQLite, current authority and transactional audit."""
+"""Durable group activation with real PostgreSQL, current authority and transactional audit."""
 
 import asyncio
 from dataclasses import replace

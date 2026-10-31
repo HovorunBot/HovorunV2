@@ -1,4 +1,4 @@
-"""Reconcile real SQLite state through the Telegram HTTP adapter."""
+"""Reconcile real PostgreSQL state through the Telegram HTTP adapter."""
 
 import asyncio
 from datetime import UTC, datetime, timedelta

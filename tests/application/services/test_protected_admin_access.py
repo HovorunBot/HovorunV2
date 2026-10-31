@@ -1,4 +1,4 @@
-"""Real SQLite and Telegram dispatcher regressions for protected administrator access."""
+"""Real PostgreSQL and Telegram dispatcher regressions for protected administrator access."""
 
 from datetime import UTC, datetime, timedelta
 

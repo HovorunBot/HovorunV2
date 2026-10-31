@@ -1,4 +1,4 @@
-"""Whole-group beta support, current authority and atomic audit on real SQLite."""
+"""Whole-group beta support, current authority and atomic audit on real PostgreSQL."""
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta

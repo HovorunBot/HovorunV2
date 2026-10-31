@@ -135,7 +135,7 @@ async def noop_op(_session: AsyncSession) -> None:
 
 
 async def test_audited_transaction_commits_mutation_and_audit_together(test_container: AsyncContainer) -> None:
-    """Verify a business mutation and audit record commit together in a single SQLite transaction."""
+    """Verify a business mutation and audit record commit together in a single PostgreSQL transaction."""
     unit_of_work = await test_container.get(AuditedUnitOfWork)
     session_maker = await test_container.get(async_sessionmaker)
 
@@ -154,7 +154,7 @@ async def test_audited_transaction_commits_mutation_and_audit_together(test_cont
     )
     assert result_chat.chat_id == chat_id
 
-    # Direct SQLite query verifying both the mutation and the audit event exist
+    # Direct PostgreSQL query verifying both the mutation and the audit event exist
     async with session_maker() as session:
         # Check chat was persisted
         chat_stmt = select(ChatDB).where(ChatDB.chat_id == chat_id)
@@ -194,7 +194,7 @@ async def test_audited_transaction_rolls_back_both_on_failure(test_container: As
             changed_fields={"platform": "telegram"},
         )
 
-    # Direct SQLite check: NEITHER the chat NOR the audit event exists
+    # Direct PostgreSQL check: NEITHER the chat NOR the audit event exists
     async with session_maker() as session:
         chat_stmt = select(ChatDB).where(ChatDB.chat_id == chat_id)
         chat = (await session.execute(chat_stmt)).scalar_one_or_none()
@@ -222,6 +222,6 @@ async def test_audited_transaction_forbids_recursive_audit(test_container: Async
 
 
 async def test_dishka_provides_audited_unit_of_work(test_container: AsyncContainer) -> None:
-    """Verify Dishka composition root provides AuditedUnitOfWork backed by real SQLite."""
+    """Verify Dishka composition root provides AuditedUnitOfWork backed by real PostgreSQL."""
     uow = await test_container.get(AuditedUnitOfWork)
     assert isinstance(uow, SQLAlchemyAuditedTransaction)

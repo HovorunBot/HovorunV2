@@ -1,8 +1,4 @@
-"""Real SQLite eligibility, current authority, lifecycle and atomic audit regressions."""
-
-import sqlite3
-from contextlib import closing
-from pathlib import Path
+"""Real PostgreSQL eligibility, current authority, lifecycle and atomic audit regressions."""
 
 import pytest
 from dishka import AsyncContainer
@@ -10,7 +6,6 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from alembic import command
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.features.beta import BetaEntitlementStore
@@ -24,7 +19,6 @@ from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB, chat_commands
 from hovorunv2.domain.enums import Role
 from tests.conftest import provision_role
-from tests.migrations.helpers import migration_config
 from tests.utils.postgres import reject_audit
 
 BETA = FeatureDefinition("synthetic_beta", "Synthetic beta", channel=FeatureChannel.BETA)
@@ -193,48 +187,6 @@ async def test_beta_entitlement_audit_failure_rolls_back(test_container: AsyncCo
     with pytest.raises(IntegrityError):
         await service.set_grant(target, ALL_BETA, granted=False, actor=ActorContext.cli())
     assert await service.is_eligible(target, BETA.key)
-
-
-def test_beta_upgrade_preserves_existing_data_and_constraints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Upgrade a real predecessor database; infer no beta grants from current trust or settings."""
-    database = tmp_path / "beta-upgrade.db"
-    config = migration_config(monkeypatch, database)
-    command.upgrade(config, "group025_routing_aliases")
-    with closing(sqlite3.connect(database)) as connection, connection:
-        connection.execute(
-            "INSERT INTO users (platform, telegram_id, role, is_trusted, generation, created_at, updated_at) "
-            "VALUES ('telegram', 880286, 10, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-        )
-        before = connection.execute("SELECT * FROM users").fetchall()
-    command.upgrade(config, "beta028")
-    with closing(sqlite3.connect(database)) as connection, connection:
-        assert connection.execute("SELECT * FROM users").fetchall() == before
-        assert connection.execute("SELECT COUNT(*) FROM beta_entitlements").fetchone() == (0,)
-        for feature in ("*", BETA.key):
-            connection.execute(
-                "INSERT INTO beta_entitlements(user_id, feature, revision, created_at) "
-                "VALUES (1, ?, 1, CURRENT_TIMESTAMP)",
-                (feature,),
-            )
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                "INSERT INTO beta_entitlements(user_id, feature, revision, created_at) "
-                "VALUES (1, '*', 1, CURRENT_TIMESTAMP)"
-            )
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                "INSERT INTO beta_entitlements(group_id, feature, revision, created_at) "
-                "VALUES (1, '*', 1, CURRENT_TIMESTAMP)"
-            )
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                "INSERT INTO beta_entitlements(feature, revision, created_at) VALUES ('bad', 1, CURRENT_TIMESTAMP)"
-            )
-        connection.execute("UPDATE beta_entitlements SET revoked_at = CURRENT_TIMESTAMP WHERE feature = '*'")
-        connection.execute(
-            "INSERT INTO beta_entitlements(user_id, feature, revision, created_at) "
-            "VALUES (1, '*', 1, CURRENT_TIMESTAMP)"
-        )
 
 
 async def test_beta_regrant_retains_history_and_filters_deleted_grants_and_groups(

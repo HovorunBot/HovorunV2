@@ -1,4 +1,4 @@
-"""Real SQLite trust authorization, revision and audit coverage."""
+"""Real PostgreSQL trust authorization, revision and audit coverage."""
 
 import pytest
 from dishka import AsyncContainer

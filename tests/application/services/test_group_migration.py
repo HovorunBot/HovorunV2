@@ -1,4 +1,4 @@
-"""Real SQLite routing migration preserves configuration and fails closed on conflicts."""
+"""Real PostgreSQL routing migration preserves configuration and fails closed on conflicts."""
 
 from datetime import UTC, datetime
 

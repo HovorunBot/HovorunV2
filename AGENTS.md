@@ -58,7 +58,7 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Postg
 
 ## 5. Testing (`PYTHONPATH=src uv run pytest`)
 
-- **Real Infrastructure:** Test against real PostgreSQL in isolated schemas and local Valkey. Keep temporary SQLite only for historical migration and one-time import coverage. NEVER use `unittest.mock` for internal services, repositories, or persistence—verify DB/Valkey state directly.
+- **Real Infrastructure:** Test against real PostgreSQL in isolated schemas and local Valkey. Run migration coverage against PostgreSQL in isolated schemas. NEVER use `unittest.mock` for internal services, repositories, or persistence—verify DB/Valkey state directly.
 - **Network Mocking:** Mock external HTTP APIs only (e.g., `api.vxtwitter.com`, `tikwm.com`) using `aioresponses`.
 - **Zero Warnings Policy:** Test suite runs must remain clean of deprecation, resource, and framework warnings. Investigate and eliminate root causes immediately.
 

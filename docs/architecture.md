@@ -95,7 +95,7 @@ Chat command associations are explicit selected activation for private and group
 
 ## Database deployment
 
-PostgreSQL and Valkey run independently of application processes with named data volumes. Every application process owns its connection pools. Audited mutations use scoped parent/row locks and conflict-safe PostgreSQL writes. Shared actor locks permit independent target mutations to progress concurrently. Missing-key gates protect ingestion and other absent rows; no application-wide writer lock remains. See the [complete writer lock matrix](postgresql-concurrency.md). See [database setup and transfer](postgresql-migration.md).
+PostgreSQL and Valkey run independently of application processes with named data volumes. Every application process owns its connection pools. Audited mutations use scoped parent/row locks and conflict-safe PostgreSQL writes. Shared actor locks permit independent target mutations to progress concurrently. Missing-key gates protect ingestion and other absent rows; no application-wide writer lock remains. See the [complete writer lock matrix](postgresql-concurrency.md). See [database setup](postgresql.md).
 
 
 ## Package ownership
@@ -117,7 +117,7 @@ The following process ownership is the implemented production architecture. Medi
 
 PostgreSQL owns durable business records, audit and accounting. Valkey owns broker traffic and bounded encrypted runtime state. The admission ticket owns execution claims, stages and terminal state; queue transport never creates a second receipt ledger or bypasses admission. Celery supplies delivery, routing and native process pools. Each child creates and closes its own database/network/browser resources. No worker asyncio pool, asyncio.run wrapper or live dependency passed from the bot is permitted.
 
-Bot, media, browser, operations, singleton Beat and migration run as independent Compose services with direct commands. The lean image carries no Chromium, DrissionPage or SQLite importer dependency; the browser target installs Chromium at build time and starts it lazily inside a browser worker child. Beat stores its schedule in a private named volume, and no embedded scheduler or worker starts with the bot.
+Bot, media, browser, operations, singleton Beat and migration run as independent Compose services with direct commands. The lean image carries no Chromium or DrissionPage; the browser target installs Chromium at build time and starts it lazily inside a browser worker child. Beat stores its schedule in a private named volume, and no embedded scheduler or worker starts with the bot.
 
 Shared values include PermissionRequest/PermissionTarget/PermissionFacts/AccessDecision, FeatureDefinition/FeatureDecision, BetaEligibilityFacts/GroupBetaFacts, UsageSubject/UsagePolicy/ResolvedUsage, and strict JobEnvelope/SealedPayload metadata. These are inputs/results, not transferable permission grants. Re-read authority, generation, route and feature state before execution and delivery. Extract pure evaluators from asynchronous fact collection; share provider parsing and formatting independently of HTTP/Telegram transports. No generic sync/async compatibility framework or unused port is required.
 

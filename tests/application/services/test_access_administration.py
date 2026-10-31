@@ -1,4 +1,4 @@
-"""Private administrative previews and audited commands using real SQLite and Valkey."""
+"""Private administrative previews and audited commands using real PostgreSQL and Valkey."""
 
 import json
 import time

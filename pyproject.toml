@@ -40,7 +40,6 @@ dependencies = [
 
 [project.optional-dependencies]
 browser = ["DrissionPage"]
-legacy-import = ["aiosqlite"]
 
 [project.urls]
 Repository = "https://github.com/HovorunBot/HovorunV2"
@@ -49,7 +48,6 @@ Issues = "https://github.com/HovorunBot/HovorunV2/issues"
 [project.scripts]
 hovorunv2 = "hovorunv2.__main__:main"
 hovorun-admin = "hovorunv2.bootstrap.admin:main"
-hovorun-import-sqlite = "hovorunv2.bootstrap.sqlite_to_postgres:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -60,7 +58,6 @@ packages = ["src/hovorunv2"]
 
 [dependency-groups]
 dev = [
-    "aiosqlite",
     "aioresponses",
     "commitizen",
     "DrissionPage",

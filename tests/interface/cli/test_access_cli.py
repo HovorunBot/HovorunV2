@@ -1,4 +1,4 @@
-"""Offline access commands using the production CLI container and real temporary SQLite."""
+"""Offline access commands using the production CLI container and real temporary PostgreSQL."""
 
 import asyncio
 import json

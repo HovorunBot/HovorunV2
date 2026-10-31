@@ -1,4 +1,4 @@
-"""Synthetic Telegram HTTP helpers backed by real activation services and SQLite stores."""
+"""Synthetic Telegram HTTP helpers backed by real activation services and PostgreSQL stores."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager

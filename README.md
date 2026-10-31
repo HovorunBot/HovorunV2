@@ -33,7 +33,7 @@ Edit the generated `.env` file:
 BOT_TOKEN=...
 ```
 
-The generator creates database credentials and an encryption passphrase. Preserve an existing encryption key when upgrading. See [PostgreSQL setup and SQLite transfer](docs/postgresql-migration.md) before starting an existing installation. Provision an owner using your numeric Telegram user ID; the example ID below is synthetic:
+The generator creates database credentials and an encryption passphrase. Preserve an existing encryption key when upgrading. See [PostgreSQL setup](docs/postgresql.md) before starting an existing installation. Provision an owner using your numeric Telegram user ID; the example ID below is synthetic:
 
 ```bash
 make migrate

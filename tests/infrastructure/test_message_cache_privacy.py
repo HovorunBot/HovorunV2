@@ -1,4 +1,4 @@
-"""Cache privacy using real SQLite, local Valkey, and synthetic Telegram data."""
+"""Cache privacy using real PostgreSQL, local Valkey, and synthetic Telegram data."""
 
 import json
 import secrets

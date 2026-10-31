@@ -1,4 +1,4 @@
-"""Usage policy precedence, charging and audited lifecycle behavior against real SQLite."""
+"""Usage policy precedence, charging and audited lifecycle behavior against real PostgreSQL."""
 
 from dataclasses import replace
 
@@ -159,7 +159,7 @@ async def test_override_authority_lifecycle_removal_and_audit(test_container: As
 
 @pytest.mark.fresh_schema
 async def test_audit_failure_rolls_back_policy_and_unknown_units_fail(test_container: AsyncContainer) -> None:
-    """A real SQLite trigger rejects audit insertion after mutation; both rows must roll back."""
+    """A real PostgreSQL trigger rejects audit insertion after mutation; both rows must roll back."""
     user, _group = await usage_subjects(test_container)
     store = await test_container.get(UsagePolicyStore)
     policy = UsagePolicy(MEDIA_BUCKET, 8, 4, 2, 10)

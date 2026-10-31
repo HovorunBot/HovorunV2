@@ -1,4 +1,4 @@
-"""Settings target, lifecycle, replay and authority checks with real SQLite and Valkey."""
+"""Settings target, lifecycle, replay and authority checks with real PostgreSQL and Valkey."""
 
 import asyncio
 import json

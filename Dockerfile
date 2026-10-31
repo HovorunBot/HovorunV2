@@ -1,4 +1,4 @@
-# Shared build base. Runtime roles select one of the final lean/browser/import targets.
+# Shared build base. Runtime roles select one of the final lean/browser targets.
 FROM python:3.15-slim AS base
 
 WORKDIR /app
@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 # Lean target for the bot, media/operations workers, Beat, migration and administration.
-# No Chromium, DrissionPage or legacy SQLite importer dependency is installed here.
+# Chromium and DrissionPage are excluded from this image.
 FROM base AS lean
 RUN apt-get purge -y --auto-remove gcc libc6-dev
 CMD ["uv", "run", "--no-sync", "hovorunv2"]
@@ -53,12 +53,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --extra browser
 ENV BROWSER_PATH=/usr/bin/chromium
 CMD ["uv", "run", "--no-sync", "celery", "-A", "hovorunv2.bootstrap.worker_app:app", "worker", "--pool=prefork", "--concurrency=1", "--queues=work:{work}:browser"]
-
-# One-shot SQLite importer target; keeps the historical aiosqlite tool out of live application images.
-FROM lean AS legacy-import
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra legacy-import
-CMD ["uv", "run", "--no-sync", "hovorun-import-sqlite"]
 
 # Keep an untargeted build identical to the lean application image.
 FROM lean AS default

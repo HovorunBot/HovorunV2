@@ -1,4 +1,4 @@
-"""Real SQLite group access evaluation, durable approvals and blocker precedence (021)."""
+"""Real PostgreSQL group access evaluation, durable approvals and blocker precedence (021)."""
 
 from datetime import UTC, datetime, timedelta
 

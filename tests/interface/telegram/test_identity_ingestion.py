@@ -1,4 +1,4 @@
-"""Public identity ingestion against real audited SQLite stores."""
+"""Public identity ingestion against real audited PostgreSQL stores."""
 
 from datetime import UTC, datetime
 

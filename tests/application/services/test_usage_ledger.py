@@ -1,4 +1,4 @@
-"""Stable-subject usage accounting, replay safety and transaction rollback with real SQLite."""
+"""Stable-subject usage accounting, replay safety and transaction rollback with real PostgreSQL."""
 
 import asyncio
 from dataclasses import replace
@@ -154,7 +154,7 @@ async def test_fresh_generations_and_deleted_subjects_keep_current_window_usage(
 
 @pytest.mark.fresh_schema
 async def test_audit_failure_rolls_back_receipt_and_aggregate(test_container: AsyncContainer) -> None:
-    """A SQLite audit rejection proves accounting and its replay receipt share the audit transaction."""
+    """A PostgreSQL audit rejection proves accounting and its replay receipt share the audit transaction."""
     await usage_subjects(test_container)
     store = await test_container.get(UsageLedgerStore)
     session_maker = await test_container.get(async_sessionmaker)
@@ -201,7 +201,7 @@ async def test_unknown_subject_unit_batch_and_telegram_origin_fail_closed(test_c
 
 
 async def test_aggregate_integer_overflow_rolls_back_new_receipt(test_container: AsyncContainer) -> None:
-    """Overflow cannot convert exact accounting to SQLite floating-point arithmetic."""
+    """Overflow cannot convert exact accounting to PostgreSQL floating-point arithmetic."""
     await usage_subjects(test_container)
     store = await test_container.get(UsageLedgerStore)
     await store.apply_batch((usage_event("maximum", amount=MAX_ACCOUNTING_INTEGER),), actor=ACTOR)

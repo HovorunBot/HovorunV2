@@ -5,6 +5,10 @@
 - **settings**: keep notification callbacks within Telegram limits
 - **build**: build shared Docker images only once
 
+### Refactor
+
+- **storage**: remove obsolete sqlite support
+
 ## v0.3.0 (2026-11-01)
 
 ### BREAKING CHANGE

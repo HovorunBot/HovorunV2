@@ -1,4 +1,4 @@
-"""Verify console and Telegram privacy with real logging and SQLite authority."""
+"""Verify console and Telegram privacy with real logging and PostgreSQL authority."""
 
 import asyncio
 import io

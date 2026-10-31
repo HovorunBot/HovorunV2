@@ -1,4 +1,4 @@
-"""Real SQLite restriction administration acceptance tests."""
+"""Real PostgreSQL restriction administration acceptance tests."""
 
 import pytest
 from dishka import AsyncContainer

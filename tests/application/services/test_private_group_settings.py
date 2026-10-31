@@ -1,4 +1,4 @@
-"""Private group selection with real SQLite/Valkey and external Telegram HTTP only."""
+"""Private group selection with real PostgreSQL/Valkey and external Telegram HTTP only."""
 
 import json
 from collections.abc import AsyncIterator

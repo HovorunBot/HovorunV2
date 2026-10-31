@@ -224,7 +224,6 @@ check: lint type-check lint-imports test
 build: verify-build
 	$(DOCKER_COMPOSE) build bot
 	$(DOCKER_COMPOSE) build worker-browser
-	$(DOCKER_COMPOSE) build import-sqlite
 
 ## Build the production role images regardless of COMPOSE_ENV.
 build-prod:

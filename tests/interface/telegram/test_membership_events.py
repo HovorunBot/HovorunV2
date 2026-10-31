@@ -1,4 +1,4 @@
-"""Real SQLite membership evidence, event routing, freshness and invalidation."""
+"""Real PostgreSQL membership evidence, event routing, freshness and invalidation."""
 
 from datetime import UTC, datetime, timedelta
 

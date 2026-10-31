@@ -72,20 +72,17 @@ def test_compose_files_wire_independent_application_roles() -> None:
 
 
 @pytest.mark.unit
-def test_image_targets_keep_browser_and_legacy_import_dependencies_out_of_lean_runtime() -> None:
-    """Lean roles contain no Chromium or SQLite importer dependency; browser builds them at build time."""
+def test_image_targets_keep_browser_dependencies_out_of_lean_runtime() -> None:
+    """Lean roles contain no Chromium; browser installs it at build time."""
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "entrypoint" not in dockerfile.lower()
     assert "ENTRYPOINT [" not in dockerfile
     lean = _dockerfile_stage(dockerfile, "lean")
     browser = _dockerfile_stage(dockerfile, "browser")
-    legacy_import = _dockerfile_stage(dockerfile, "legacy-import")
     assert "chromium" not in lean
     assert "--extra browser" not in lean
-    assert "--extra legacy-import" not in lean
     assert "chromium" in browser
     assert "--extra browser" in browser
-    assert "--extra legacy-import" in legacy_import
 
 
 @pytest.mark.unit

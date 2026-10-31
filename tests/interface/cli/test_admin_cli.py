@@ -1,4 +1,4 @@
-"""Offline role administration using real application services and SQLite."""
+"""Offline role administration using real application services and PostgreSQL."""
 
 import asyncio
 import socket

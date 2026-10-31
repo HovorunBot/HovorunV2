@@ -1,4 +1,4 @@
-"""Shared discovery and execution regressions with real SQLite and Telegram HTTP."""
+"""Shared discovery and execution regressions with real PostgreSQL and Telegram HTTP."""
 
 import json
 from dataclasses import replace

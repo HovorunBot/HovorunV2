@@ -78,7 +78,7 @@ async def get_persisted_chat_and_commands(
     session_maker: async_sessionmaker,
     chat_id: int,
 ) -> tuple[ChatStatus | None, set[str]]:
-    """Directly query real SQLite database without using internal application services."""
+    """Directly query real PostgreSQL database without using internal application services."""
     async with session_maker() as session:
         stmt = select(ChatDB).where(ChatDB.chat_id == chat_id).options(selectinload(ChatDB.commands))
         res = await session.execute(stmt)
@@ -367,7 +367,7 @@ async def test_command_service_is_capture_allowed(test_container: AsyncContainer
 
 
 async def test_characterize_legacy_group_status_matrix(test_container: AsyncContainer, recording_bot: Bot) -> None:
-    """Characterize legacy permission evaluation across all group statuses in real SQLite.
+    """Characterize legacy permission evaluation across all group statuses in real PostgreSQL.
 
     Legacy Matrix:
     - Stored statuses: APPROVED, PENDING, REJECTED, BANNED, INACTIVE, and UNAUTHORIZED (nonexistent).
@@ -403,7 +403,7 @@ async def test_characterize_legacy_group_status_matrix(test_container: AsyncCont
         await verify_group_admins(test_container, chat_id)
         await chat_status_service.set_status(chat_id, status)
 
-        # 1. Assert real SQLite state directly
+        # 1. Assert real PostgreSQL state directly
         persisted_status, _ = await get_persisted_chat_and_commands(session_maker, chat_id)
         assert persisted_status == status
 
@@ -440,7 +440,7 @@ async def test_characterize_legacy_empty_command_set_capture(
     """Characterize legacy capture and command check behavior for an empty command set.
 
     Legacy Behavior / Quirk:
-    - When no commands are associated with a chat in SQLite (`chat_commands` is empty):
+    - When no commands are associated with a chat in PostgreSQL (`chat_commands` is empty):
       - `command_service.get_allowed_commands(chat_id)` returns an empty set.
       - `is_command_allowed` for media commands (e.g. TWITTER, TWITTER_VIDEO, TIKTOK) returns False.
       - BUT `is_capture_allowed` returns True for ALL media providers and formats (both video and post)!
@@ -459,7 +459,7 @@ async def test_characterize_legacy_empty_command_set_capture(
         chat = (await session.execute(select(ChatDB).where(ChatDB.chat_id == chat_id))).scalar_one()
         chat.legacy_empty_capture = True
 
-    # 1. Assert real SQLite state: chat exists, but has 0 associated commands
+    # 1. Assert real PostgreSQL state: chat exists, but has 0 associated commands
     persisted_status, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
     assert persisted_status == ChatStatus.APPROVED
     assert persisted_commands == set()
@@ -499,7 +499,7 @@ async def test_characterize_legacy_partially_enabled_command_set(
 
     Legacy Behavior:
     - When at least one command is enabled (e.g. `twitter_post`):
-      - SQLite contains only `twitter_post`.
+      - PostgreSQL contains only `twitter_post`.
       - `get_allowed_commands` returns `{"twitter_post", "twitter"}` (parent is synthesized).
       - `is_command_allowed(TWITTER)` is True because one of its split sub-commands is active.
       - `is_command_allowed(TWITTER_POST)` is True; `is_command_allowed(TWITTER_VIDEO)` is False.
@@ -518,7 +518,7 @@ async def test_characterize_legacy_partially_enabled_command_set(
     # Enable ONLY twitter_post
     await command_service.enable_command(chat_id, CommandName.TWITTER_POST)
 
-    # 1. Assert real SQLite state: exactly 1 command record
+    # 1. Assert real PostgreSQL state: exactly 1 command record
     _, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
     assert persisted_commands == {str(CommandName.TWITTER_POST)}
 
@@ -544,7 +544,7 @@ async def test_characterize_legacy_partially_enabled_command_set(
 async def test_characterize_legacy_parent_provider_bulk_and_toggle(
     test_container: AsyncContainer, recording_bot: Bot
 ) -> None:
-    """Characterize parent provider bulk operations and toggle behavior in real SQLite."""
+    """Characterize parent provider bulk operations and toggle behavior in real PostgreSQL."""
     session_maker = await test_container.get(async_sessionmaker)
     command_service = await test_container.get(CommandService)
     chat_status_service = await test_container.get(ChatStatusService)
@@ -575,11 +575,11 @@ async def test_characterize_legacy_parent_provider_bulk_and_toggle(
 
 
 async def test_characterize_legacy_default_activation(test_container: AsyncContainer, recording_bot: Bot) -> None:
-    """Characterize default activation via chat_status_service.approve in real SQLite.
+    """Characterize default activation via chat_status_service.approve in real PostgreSQL.
 
     When chat_status_service.approve is called:
-    - Chat status is set to APPROVED in SQLite.
-    - All 16 split media sub-commands (8 providers x 2) are inserted into `chat_commands` in SQLite.
+    - Chat status is set to APPROVED in PostgreSQL.
+    - All 16 split media sub-commands (8 providers x 2) are inserted into `chat_commands` in PostgreSQL.
     - Regular users are granted access to all media commands.
     """
     session_maker = await test_container.get(async_sessionmaker)
@@ -591,7 +591,7 @@ async def test_characterize_legacy_default_activation(test_container: AsyncConta
     await verify_group_admins(test_container, chat_id)
     await chat_status_service.approve(chat_id)
 
-    # 1. Assert SQLite state directly
+    # 1. Assert PostgreSQL state directly
     persisted_status, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
     assert persisted_status == ChatStatus.APPROVED
 

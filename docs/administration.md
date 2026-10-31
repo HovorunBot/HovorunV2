@@ -177,4 +177,4 @@ Inspect output excludes internal restriction notes, keys, salts and private payl
 CLI retains the existing protected-role safeguards and can manage protected personal restrictions
 where Telegram administration cannot. No new command changes authority roles indirectly.
 
-See [PostgreSQL setup and one-time SQLite transfer](postgresql-migration.md) for credentials, migration order and backup preservation.
+See [PostgreSQL setup](postgresql.md) for credentials, migration order and backup preservation.

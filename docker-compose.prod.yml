@@ -16,14 +16,6 @@ x-browser: &browser
     args:
       APP_VERSION: ${APP_VERSION:-}
 
-x-import: &import
-  image: hovorunv2-import:${APP_VERSION:-local}
-  build:
-    context: .
-    target: legacy-import
-    args:
-      APP_VERSION: ${APP_VERSION:-}
-
 x-app-environment: &app-environment
   DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
   VALKEY_URL: redis://valkey:6379/0
@@ -188,17 +180,6 @@ services:
       - --pidfile=/var/lib/celery/beat/celerybeat.pid
     volumes:
       - beat_state:/var/lib/celery/beat
-
-  import-sqlite:
-    <<: *import
-    profiles: [tools]
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: ["uv", "run", "--no-sync", "hovorun-import-sqlite"]
-    restart: "no"
 
 volumes:
   postgres_data:
