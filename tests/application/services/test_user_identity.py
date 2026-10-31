@@ -72,13 +72,13 @@ async def test_soft_deleted_and_active_generations_can_coexist(test_container: A
     deleted = await user_store.soft_delete_user(tg_id, actor=actor, reason="operator reset")
     assert deleted is True
 
-    # 3. Insert historical/new generation directly (e.g. recovery workflow)
+    # 3. Insert the next active generation directly (deletion advanced the tombstone to 2)
     async with session_maker() as session:
         gen2 = UserDB(
             telegram_id=tg_id,
             platform=Platform.TELEGRAM,
             is_trusted=False,
-            generation=2,
+            generation=3,
         )
         session.add(gen2)
         await session.commit()
@@ -86,12 +86,12 @@ async def test_soft_deleted_and_active_generations_can_coexist(test_container: A
     # 4. Verify historical lookup returns both generations
     history = await user_store.get_historical_by_telegram_id(tg_id)
     assert len(history) == 2
-    assert [u.generation for u in history] == [2, 1]
+    assert [u.generation for u in history] == [3, 2]
 
-    # Active lookup returns only generation 2
+    # Active lookup returns only the fresh generation
     active = await user_store.get_by_telegram_id(tg_id)
     assert active is not None
-    assert active.generation == 2
+    assert active.generation == 3
 
 
 async def test_tombstone_aware_ingestion_prevents_silent_resurrection(test_container: AsyncContainer) -> None:

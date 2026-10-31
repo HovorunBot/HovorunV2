@@ -73,12 +73,12 @@ async def test_handle_mapping_cannot_alias_deleted_target(test_container: AsyncC
     user = await users.get_by_telegram_id(USER)
     assert user is not None
     handles = await test_container.get(PublicHandleStore)
-    resolved = await handles.sync_handle(TargetKind.USER, user.id, "lifecycle_alias", ActorContext.cli())
+    resolved = await handles.sync_handle(TargetKind.USER, USER, "lifecycle_alias", ActorContext.cli())
     assert resolved is not None
-    assert await handles.get_handle_by_target(TargetKind.USER, user.id) is not None
+    assert await handles.get_handle_by_target(TargetKind.USER, USER) is not None
     service = await _service(test_container)
     await service.delete_user(USER, reason="cleanup", actor=ActorContext.cli())
-    assert await handles.get_handle_by_target(TargetKind.USER, user.id) is None
+    assert await handles.get_handle_by_target(TargetKind.USER, USER) is None
     assert await handles.resolve_handle("lifecycle_alias") is None
 
 

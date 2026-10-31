@@ -50,6 +50,7 @@ encryption configuration before starting against the new database.
 
 ### Fix
 
+- **release**: correct handle resolution and log filtering
 - **audit**: close mutation coverage and privacy gaps
 - **features**: clear queued work on emergency disablement
 - **admin**: preserve ban reason validation message

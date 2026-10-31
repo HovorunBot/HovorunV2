@@ -66,10 +66,10 @@ class PrivacyFormatter(logging.Formatter):
             safe.args = ()
         else:
             safe.msg = redact_sensitive_text(str(record.msg))
-        if record.name.startswith("hovorunv2.") and isinstance(record.args, dict):
-            safe.args = {key: safe_log_argument(value) for key, value in record.args.items()}
-        elif record.args:
-            safe.args = tuple(safe_log_argument(value) for value in record.args)
+            if isinstance(record.args, dict):
+                safe.args = {key: safe_log_argument(value) for key, value in record.args.items()}
+            elif record.args:
+                safe.args = tuple(safe_log_argument(value) for value in record.args)
         return super().format(safe)
 
     def formatException(  # noqa: N802
