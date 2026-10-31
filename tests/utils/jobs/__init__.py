@@ -1,6 +1,6 @@
 """Job and admission test utilities."""
 
-from tests.utils.jobs.admission import admission_service
+from tests.utils.jobs.admission import admission_service, wait_for_terminal
 from tests.utils.jobs.envelopes import (
     PRIVATE_BODY,
     PRIVATE_URL,
@@ -18,4 +18,5 @@ __all__ = [
     "admit_test_job",
     "broker_envelopes",
     "job_envelope",
+    "wait_for_terminal",
 ]

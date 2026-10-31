@@ -1,7 +1,12 @@
 """Real Chromium ownership, cancellation and ordered browser download contracts."""
 
 import asyncio
+import multiprocessing
+import os
+import signal
+import sys
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http import HTTPStatus
@@ -14,8 +19,10 @@ from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
 from hovorunv2.infrastructure.browser import BrowserService
+from hovorunv2.infrastructure.browser_discovery import find_browser_executable
 from hovorunv2.infrastructure.browser_process import OwnedChromium
 from hovorunv2.infrastructure.native_browser import NativeBrowserService, cookies_for_url
+from tests.utils.browser_termination import hold_owned_chromium
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 
 pytestmark = [pytest.mark.browser]
@@ -157,3 +164,38 @@ def test_cookie_transfer_respects_destination(cookie: dict[str, object], url: st
     """Transient cookies never cross host, path or secure-transport boundaries."""
     scoped = {"name": "synthetic", "value": "fixture", **cookie}
     assert cookies_for_url([scoped], url) == ({"synthetic": "fixture"} if expected else {})
+
+
+@pytest.mark.slow
+@pytest.mark.subprocess
+def test_sigkilled_worker_child_terminates_owned_chromium(tmp_path: Path) -> None:
+    """A SIGKILLed worker child cannot leave its owned Chromium process behind."""
+    if sys.platform != "linux" or find_browser_executable() is None:
+        pytest.skip("Parent-death browser cleanup requires Linux and Chromium")
+    pid_file = tmp_path / "chromium.pid"
+    process = multiprocessing.get_context("spawn").Process(target=hold_owned_chromium, args=(str(pid_file),))
+    process.start()
+    try:
+        deadline = time.monotonic() + 20
+        while not pid_file.exists():
+            assert process.is_alive()
+            if time.monotonic() > deadline:
+                pytest.fail("Owned browser did not start")
+            time.sleep(0.05)
+        chromium_pid = int(pid_file.read_text())
+        assert Path(f"/proc/{chromium_pid}").exists()
+
+        os.kill(process.pid, signal.SIGKILL)
+        process.join(10)
+        assert not process.is_alive()
+
+        deadline = time.monotonic() + 5
+        while Path(f"/proc/{chromium_pid}").exists():
+            if time.monotonic() > deadline:
+                pytest.fail("Chromium survived its owning worker child")
+            time.sleep(0.05)
+    finally:
+        if process.is_alive():
+            process.kill()
+        process.join(5)
+        process.close()

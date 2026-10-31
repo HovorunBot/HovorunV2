@@ -37,6 +37,7 @@ def build_worker_application(settings: BrokerSettings, namespace: RuntimeNamespa
         worker_send_task_events=False,
         task_acks_late=True,
         task_reject_on_worker_lost=False,
+        worker_cancel_long_running_tasks_on_connection_loss=False,
         worker_prefetch_multiplier=1,
         broker_connection_timeout=BROKER_SOCKET_SECONDS,
         broker_connection_retry_on_startup=True,

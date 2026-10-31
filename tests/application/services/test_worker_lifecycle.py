@@ -40,7 +40,7 @@ from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
 from hovorunv2.infrastructure.feature_queue import RECOVERY_TASK_FUNCTION
 from tests.utils.celery_recovery import native_recovery_worker
 from tests.utils.identities import FEATURE, FEATURE_BUCKET, ONE, OTHER_FEATURE, ZERO
-from tests.utils.jobs import PRIVATE_BODY, PRIVATE_URL, broker_envelopes, job_envelope
+from tests.utils.jobs import PRIVATE_BODY, PRIVATE_URL, broker_envelopes, job_envelope, wait_for_terminal
 from tests.utils.lifecycle import crash_at_settlement_checkpoint
 from tests.utils.runtime import ManualClock, RuntimeNamespace, runtime_cache
 
@@ -360,20 +360,9 @@ async def test_real_celery_prefork_recovery_task_expires_queued_ticket(
             with closing(Celery("probe_publisher", broker=settings.valkey_url)) as app:
                 app.conf.broker_transport_options = {"global_keyprefix": namespace.value}
                 await asyncio.to_thread(app.send_task, RECOVERY_TASK_FUNCTION, queue=namespace.value + "operations")
-            ticket = await _wait_terminal(store, envelope.job_id)
+            ticket = await wait_for_terminal(store, envelope.job_id)
             assert ticket.outcome == JobOutcome.EXPIRED
             assert (await payloads.load(envelope.payload_ref, envelope.job_id)).state == PayloadState.MISSING
-
-
-async def _wait_terminal(store: ValkeyAdmissionStore, job_id: str) -> AdmissionTicket:
-    """Wait for broker execution without substituting Celery's result status for admission facts."""
-    async with asyncio.timeout(15):
-        while True:
-            ticket = await store.get(job_id)
-            assert ticket is not None
-            if ticket.state == TicketState.TERMINAL:
-                return ticket
-            await asyncio.sleep(0.05)
 
 
 async def test_runner_defers_real_quota_denial_without_holding_execution_claim(

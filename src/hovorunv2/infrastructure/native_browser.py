@@ -103,7 +103,7 @@ class NativeBrowserService:
         if max_tabs <= 0:
             msg = "Browser tab capacity must be positive."
             raise ValueError(msg)
-        self._browser = OwnedChromium(flags)
+        self._browser = OwnedChromium(flags, terminate_with_parent=True)
         self._semaphore = BoundedSemaphore(max_tabs)
 
     @property

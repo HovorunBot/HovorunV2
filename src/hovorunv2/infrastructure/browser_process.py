@@ -3,6 +3,7 @@
 import math
 import shutil
 import subprocess
+import sys
 import time
 from os import getpid
 from pathlib import Path
@@ -42,11 +43,18 @@ DEFAULT_BROWSER_FLAGS = (
 class OwnedChromium:
     """Launch lazily in the using process, retain its handle, and attach without a library-owned launch."""
 
-    def __init__(self, flags: list[str] | None = None, startup_timeout: float = DEFAULT_STARTUP_SECONDS) -> None:
+    def __init__(
+        self,
+        flags: list[str] | None = None,
+        startup_timeout: float = DEFAULT_STARTUP_SECONDS,
+        *,
+        terminate_with_parent: bool = False,
+    ) -> None:
         if not math.isfinite(startup_timeout) or startup_timeout <= 0:
             msg = "Browser startup requires a finite positive timeout."
             raise ValueError(msg)
         self._flags = tuple(flags or ())
+        self._terminate_with_parent = terminate_with_parent
         if any(flag.startswith(OWNED_ARGUMENTS) for flag in self._flags):
             msg = "Browser ownership arguments cannot be overridden."
             raise ValueError(msg)
@@ -124,7 +132,7 @@ class OwnedChromium:
             msg = "Browser executable is unavailable."
             raise BrowserError(msg)
         self._profile = TemporaryDirectory(prefix="hovorun-browser-", ignore_cleanup_errors=True)
-        arguments = [
+        browser_arguments = [
             executable,
             *DEFAULT_BROWSER_FLAGS,
             *self._flags,
@@ -133,6 +141,14 @@ class OwnedChromium:
             f"--user-data-dir={self._profile.name}",
             "about:blank",
         ]
+        arguments = browser_arguments
+        if self._terminate_with_parent:
+            arguments = [
+                sys.executable,
+                "-m",
+                "hovorunv2.infrastructure.chromium_launcher",
+                *browser_arguments,
+            ]
         self._process = subprocess.Popen(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: S603
         return self._process, Path(self._profile.name)
 
