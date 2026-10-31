@@ -1,5 +1,7 @@
 ## Unreleased
 
+## v0.3.0 (2026-11-01)
+
 ### BREAKING CHANGE
 
 - DATABASE_URL and PostgreSQL replace the SQLite DB_PATH runtime.
