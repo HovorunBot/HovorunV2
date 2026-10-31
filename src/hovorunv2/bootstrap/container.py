@@ -14,7 +14,6 @@ from hovorunv2.application.access.ban_service import BanService
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.access.trust_service import TrustService
-from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.features.beta import BetaEntitlementStore
 from hovorunv2.application.features.beta_service import BetaEligibilityService
 from hovorunv2.application.features.command_service import CommandService
@@ -37,6 +36,7 @@ from hovorunv2.application.jobs.admission import AdmissionPort
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_job_runner import default_media_clients
 from hovorunv2.application.jobs.feature_jobs import FeatureQueuePort, PayloadPort
+from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.messaging.feedback_service import FeedbackService
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier

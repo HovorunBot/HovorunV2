@@ -2,7 +2,7 @@
 
 import aiohttp
 
-from hovorunv2.application.clients.threads import ThreadsService
+from hovorunv2.application.media.providers.threads import ThreadsService
 from hovorunv2.infrastructure.browser import BrowserService
 
 

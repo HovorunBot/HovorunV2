@@ -6,12 +6,12 @@ import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
-from hovorunv2.application.clients.youtube import YoutubeService
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.jobs.feature_jobs import JobOutcome
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
+from hovorunv2.application.media.providers.youtube import YoutubeService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command

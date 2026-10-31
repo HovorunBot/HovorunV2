@@ -6,14 +6,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 from hovorunv2.application.access.permissions import PermissionTarget
-from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
-from hovorunv2.application.clients.bluesky import BlueskyService
-from hovorunv2.application.clients.instagram import InstagramService
-from hovorunv2.application.clients.reddit import RedditService
-from hovorunv2.application.clients.threads import ThreadsService
-from hovorunv2.application.clients.tiktok import TikTokService
-from hovorunv2.application.clients.twitter import TwitterService
-from hovorunv2.application.clients.youtube import YoutubeService
 from hovorunv2.application.features.feature_policy import SyncPolicyPort
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry
 from hovorunv2.application.jobs.admission import (
@@ -48,6 +40,14 @@ from hovorunv2.application.media.errors import (
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.finalization import append_translation, prepare_caption_text
 from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.application.media.providers.base import FACEBOOK_CONFIG, BaseMediaClient
+from hovorunv2.application.media.providers.bluesky import BlueskyService
+from hovorunv2.application.media.providers.instagram import InstagramService
+from hovorunv2.application.media.providers.reddit import RedditService
+from hovorunv2.application.media.providers.threads import ThreadsService
+from hovorunv2.application.media.providers.tiktok import TikTokService
+from hovorunv2.application.media.providers.twitter import TwitterService
+from hovorunv2.application.media.providers.youtube import YoutubeService
 from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import (

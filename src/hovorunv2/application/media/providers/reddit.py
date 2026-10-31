@@ -7,9 +7,9 @@ from typing import ClassVar, Self
 import aiohttp
 from bs4 import BeautifulSoup, Tag
 
-from hovorunv2.application.clients.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
+from hovorunv2.application.media.providers.base import BaseMediaClient, ProviderConfig
 from hovorunv2.application.ports import BrowserPort
 from hovorunv2.domain.enums import CommandName
 

@@ -6,7 +6,6 @@ from collections.abc import Awaitable, Callable
 from functools import partial
 from typing import ClassVar
 
-from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.features.registry import TriggerKind
 from hovorunv2.application.media.errors import MediaExtractionError
@@ -20,6 +19,7 @@ from hovorunv2.application.media.finalization import (
 )
 from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.application.media.provider_config import ProviderConfig
+from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.translation.service import TranslationService
 
 logger = logging.getLogger(__name__)
