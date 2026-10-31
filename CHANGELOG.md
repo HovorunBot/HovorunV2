@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **workers**: bound media extraction and trace failures
 - **notifications**: keep combined release notes within telegram limits
 - **settings**: keep notification callbacks within Telegram limits
 - **build**: build shared Docker images only once

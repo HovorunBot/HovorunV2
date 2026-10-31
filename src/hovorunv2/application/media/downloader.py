@@ -106,9 +106,10 @@ def download_ytdlp_bytes(url: str, *, max_bytes: int = MAX_MEDIA_BYTES) -> bytes
             root = Path(tmp_dir)
             return _read_downloaded_file(_download_to_file(url, root, max_bytes), root, max_bytes)
     except MediaDownloadError:
+        logger.exception("Media backend download failed")
         raise
     except yt_dlp.utils.YoutubeDLError, OSError, ValueError:
-        logger.warning("Media download failed")
+        logger.exception("Media backend download failed")
         raise MediaDownloadError from None
 
 
@@ -139,6 +140,16 @@ class NativeMediaDownloader:
         Raises:
             MediaDownloadError: If the download fails and no fallback applies.
         """
+        logger.info("Worker starting media download")
+        try:
+            content = self._download(url, is_video=is_video)
+        except MediaDownloadError as error:
+            logger.exception("Media download failed (%s)", error.code)
+            raise
+        logger.info("Worker downloaded %s media bytes", len(content))
+        return content
+
+    def _download(self, url: str, *, is_video: bool) -> bytes:
         clean_url = html.unescape(url)
         if is_video and (".m3u8" in clean_url or "blob:" in clean_url):
             return download_ytdlp_bytes(clean_url)
@@ -234,6 +245,7 @@ class MediaDownloader:
 
     async def _read_response(self, response: aiohttp.ClientResponse) -> bytes:
         if response.status != HTTPStatus.OK:
+            logger.error("HTTP media request rejected (status %s)", response.status)
             raise MediaDownloadError
         if response.content_length is not None and response.content_length > MAX_MEDIA_BYTES:
             raise MediaDownloadError(MediaFailure.TOO_LARGE)
@@ -260,6 +272,19 @@ class MediaDownloader:
 
     async def _perform_download(
         self, session: aiohttp.ClientSession, url: str, filename: str, *, is_video: bool = False
+    ) -> BufferedInputFile:
+        """Trace the required download and surface terminal failures to error sinks."""
+        logger.info("Starting media download")
+        try:
+            downloaded = await self._download_media(session, url, filename, is_video=is_video)
+        except MediaDownloadError as error:
+            logger.exception("Media download failed (%s)", error.code)
+            raise
+        logger.info("Downloaded %s media bytes", len(downloaded.data))
+        return downloaded
+
+    async def _download_media(
+        self, session: aiohttp.ClientSession, url: str, filename: str, *, is_video: bool
     ) -> BufferedInputFile:
         """Require a direct response or a successful video strategy without swallowing failures."""
         # 1. Direct HLS/M3U8 detection

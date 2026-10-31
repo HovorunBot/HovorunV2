@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import redis.asyncio as redis
+from billiard.exceptions import SoftTimeLimitExceeded
 from dishka import AsyncContainer
 
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
@@ -70,6 +71,14 @@ class VideoMediaClient(BaseMediaClient):
             content="test caption",
             media_items=[MediaItem(url="https://synthetic.invalid/video.mp4", is_video=True)],
         )
+
+
+class TimedOutMediaClient(VideoMediaClient):
+    """Raise Celery's cooperative timeout at the extraction boundary."""
+
+    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+        """Interrupt extraction before delivery or accounting can begin."""
+        raise SoftTimeLimitExceeded
 
 
 class RecordingTelegram:
@@ -265,11 +274,17 @@ async def test_missing_encryption_and_actual_ciphertext_bound_fail_before_write(
             await bounded.seal("overhead", b"x" * 150, clock.now() + 300)
 
 
-async def test_post_extraction_split_feature_recheck_blocks_delivery_and_charges_zero(
+@pytest.mark.parametrize(
+    ("client_type", "expected_outcome"),
+    [(VideoMediaClient, JobOutcome.COMPLETE), (TimedOutMediaClient, JobOutcome.EXPIRED)],
+)
+async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges_zero(
     test_container: AsyncContainer,
     postgres_database_url: str,
+    client_type: type[VideoMediaClient],
+    expected_outcome: JobOutcome,
 ) -> None:
-    """Disabled video variant blocks delivery, charges zero units/events, and settles budget."""
+    """Disabled capture and soft timeouts both settle without delivery or consumption."""
     settings = await test_container.get(Settings)
     settings = settings.model_copy(update={"database_url": postgres_database_url})
     clock = ManualClock(time.time())
@@ -288,7 +303,7 @@ async def test_post_extraction_split_feature_recheck_blocks_delivery_and_charges
         await admit_test_job(settings, cache, namespace, clock, envelope)
 
         delivery = RecordingDelivery()
-        video_client = VideoMediaClient()
+        video_client = client_type()
         with (
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
@@ -319,12 +334,12 @@ async def test_post_extraction_split_feature_recheck_blocks_delivery_and_charges
                 gate=AllowGate(),
             )
             outcome = runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
-            assert outcome == JobOutcome.COMPLETE.value
+            assert outcome == expected_outcome.value
             assert len(delivery.calls) == 0
 
             ticket = runtime.admission.get(envelope.job_id)
             assert ticket is not None
-            assert ticket.outcome == JobOutcome.COMPLETE
+            assert ticket.outcome == expected_outcome
 
             subject = AccountingSubject(envelope.target.kind, envelope.target.telegram_id)
             total = database.ledger.total(subject, MEDIA_BUCKET, UsageUnit.REQUESTS, UsageWindow(), int(clock.now()))

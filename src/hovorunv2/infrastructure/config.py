@@ -39,7 +39,15 @@ class BrokerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore", hide_input_in_errors=True)
 
 
-class Settings(BrokerSettings, DatabaseSettings):
+class ErrorLoggingSettings(BaseSettings):
+    """Read the error-routing switch without requiring bot credentials for Beat."""
+
+    error_dm_enabled: bool = False
+
+    model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore", hide_input_in_errors=True)
+
+
+class Settings(BrokerSettings, DatabaseSettings, ErrorLoggingSettings):
     """Application settings schema with bot credentials and runtime tunables."""
 
     bot_token: str
@@ -48,7 +56,6 @@ class Settings(BrokerSettings, DatabaseSettings):
     browser_max_tabs: int = 4
     browser_idle_timeout: int = 600  # 10 minutes
     instagram_sessionid: str | None = None
-    error_dm_enabled: bool = False
     cache_encryption_key: str | None = None
 
     # Project Metadata

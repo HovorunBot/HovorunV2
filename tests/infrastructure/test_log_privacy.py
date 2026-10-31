@@ -107,6 +107,9 @@ async def test_media_download_failure_logs_no_message_url(
             assert error.value.__suppress_context__
     assert all(PRIVATE_URL not in record.getMessage() for record in caplog.records)
     assert any(record.msg == "Media download failed" for record in caplog.records), caplog.record_tuples
+    assert any(
+        record.levelno == logging.ERROR and "Media download failed" in record.getMessage() for record in caplog.records
+    )
 
 
 def test_safe_debug_metadata_survives_privacy_formatting() -> None:

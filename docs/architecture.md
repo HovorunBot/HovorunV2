@@ -193,7 +193,9 @@ continuation first records zero-consumption settlement; it cannot discard a held
 retains its owner until the worker records stopped effects. Immediately before Telegram delivery, the owner atomically
 checks cancellation and deadline and records `DELIVERY_UNCERTAIN`. Missing acknowledgements, partial delivery, unexpected
 execution exceptions, and child loss cannot cause an automatic refund or another send. Native worker logs use fixed safe
-messages without exception tracebacks or private provider inputs.
+messages, job IDs, stages, timing, and allowlisted failure reasons. Exception traces include only types and code locations,
+never exception values, provider URLs, credentials, or message contents. See [worker diagnostics](worker-diagnostics.md)
+for request tracing and optional owner alerts from both worker parent and child processes.
 
 After verified stopped effects, the owner records an immutable `SettlementIntent` on the same ticket. It contains only the
 safe outcome, measured units, and an optional technical usage event. Recovery replays the PostgreSQL receipt first, settles

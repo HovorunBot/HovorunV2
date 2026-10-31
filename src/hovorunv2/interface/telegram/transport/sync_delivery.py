@@ -1,6 +1,7 @@
 """Narrow synchronous Telegram media delivery and operations for native workers."""
 
 import json
+import logging
 from contextlib import suppress
 from enum import StrEnum
 from http import HTTPStatus
@@ -19,6 +20,7 @@ from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.rendering import build_caption, plan_caption
 
 MAX_MEDIA_GROUP = 10
+logger = logging.getLogger(__name__)
 
 
 class TelegramMethod(StrEnum):
@@ -298,14 +300,17 @@ class NativeTelegramDelivery:
     def _send_group(
         self, chat_id: int, message_id: int, items: list[MediaItem], start: int, caption: str
     ) -> tuple[int, ...]:
+        logger.info("Worker sending %s Telegram media items", len(items))
         media, files = _media_group(items, start, caption)
         method, fields = _group_request(chat_id, message_id, media)
         receipts = _message_ids(self._api.call(method, fields, files or None))
+        logger.info("Telegram acknowledged %s media messages", len(receipts))
         if len(receipts) != len(items):
             raise TelegramDeliveryUncertainError(receipts)
         return receipts
 
     def _fallback(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
+        logger.info("Telegram could not fetch media URLs; starting download and upload fallback")
         placeholder = self._text(chat_id, caption + "\n\n⏳ <i>Downloading media...</i>")[0]
         try:
             return self._upload_fallback(chat_id, message_id, payload, caption, placeholder)
@@ -324,10 +329,12 @@ class NativeTelegramDelivery:
             if isinstance(data, bytes)
         ]
         if not items:
+            logger.error("Worker media download fallback produced no usable media")
             return self._text(chat_id, caption + "\n\n⚠️ <i>Failed to download media.</i>", message_id=placeholder)
         try:
             receipts = self._send_items(chat_id, message_id, items, caption)
         except TelegramRejectedError as exc:
+            logger.exception("Telegram rejected worker media upload (%s)", exc.reason)
             text = (
                 "Media is too large, view on original resource."
                 if exc.reason == TelegramRejection.TOO_LARGE
@@ -387,5 +394,6 @@ class NativeTelegramDelivery:
             if exc.reason == TelegramRejection.FETCH:
                 return self._fallback(chat_id, message_id, payload, caption)
             if exc.reason == TelegramRejection.TOO_LARGE:
+                logger.exception("Telegram rejected oversized worker media")
                 return self._text(chat_id, caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>")
             raise

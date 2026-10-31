@@ -4,6 +4,9 @@ import logging
 import secrets
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from time import monotonic
+
+from billiard.exceptions import SoftTimeLimitExceeded
 
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.configuration import AppSettings
@@ -71,6 +74,7 @@ from hovorunv2.domain.enums import (
     CommandName,
     TargetKind,
 )
+from hovorunv2.utils.job_logging import reset_job_log_context, set_job_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -167,27 +171,52 @@ class FeatureJobRunner:
             Allowlisted terminal outcome code.
         """
         try:
-            claim_result = self._parse_and_claim(envelope_data, stage)
-            if claim_result is None:
-                return self._resolve_unclaimed(envelope_data)
-            envelope, token = claim_result
-            return self._execute_claimed(envelope, stage, token)
-        except Exception:
-            logger.warning("Feature job execution deferred")
-            return JobOutcome.FAILED.value
-
-    def _parse_and_claim(self, envelope_data: dict[str, object], stage: JobStage) -> tuple[JobEnvelope, str] | None:
-        try:
             envelope = JobEnvelope.model_validate(envelope_data)
         except ValueError, TypeError:
-            return None
+            logger.exception("Worker rejected an invalid feature envelope")
+            return JobOutcome.FAILED.value
+        tokens = set_job_log_context(envelope.job_id, stage.value)
+        try:
+            return self._run_envelope(envelope, stage)
+        except Exception:
+            logger.exception("Feature job execution deferred")
+            return JobOutcome.FAILED.value
+        finally:
+            reset_job_log_context(tokens)
+
+    def _run_envelope(self, envelope: JobEnvelope, stage: JobStage) -> str:
+        started = monotonic()
+        logger.info("Worker received feature task")
+        claim_result = self._parse_and_claim(envelope, stage)
+        if claim_result is None:
+            outcome = self._resolve_unclaimed(envelope)
+        else:
+            envelope, token = claim_result
+            logger.info("Worker claimed feature task")
+            outcome = self._execute_claimed(envelope, stage, token)
+        self._log_outcome(outcome, monotonic() - started)
+        return outcome
+
+    def _log_outcome(self, outcome: str, seconds: float) -> None:
+        failures = {
+            JobOutcome.FAILED,
+            JobOutcome.EXPIRED,
+            JobOutcome.PAYLOAD_UNAVAILABLE,
+            TicketState.DELIVERY_UNCERTAIN,
+        }
+        level = logging.ERROR if outcome in failures else logging.INFO
+        logger.log(level, "Worker finished feature task: %s (%.3f seconds)", outcome, seconds)
+
+    def _parse_and_claim(self, envelope: JobEnvelope, stage: JobStage) -> tuple[JobEnvelope, str] | None:
         now = self._clock.now()
         if now >= envelope.deadline:
+            logger.error("Worker received an expired task")
             self._finish_expired_unclaimed(envelope)
             return None
         token = secrets.token_hex(16)
         ticket = self._admission.claim_stage(envelope.job_id, stage, now, token, expected_envelope=envelope)
         if ticket is None:
+            logger.info("Worker did not acquire execution claim; inspecting existing task state")
             return None
         return envelope, token
 
@@ -198,13 +227,12 @@ class FeatureJobRunner:
             logger.warning("Expired ticket reconciliation deferred")
         self._notify(envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
 
-    def _resolve_unclaimed(self, envelope_data: dict[str, object]) -> str:
-        job_id = envelope_data.get("job_id")
-        if not isinstance(job_id, str):
-            return JobOutcome.FAILED.value
-        ticket = self._admission.get(job_id)
+    def _resolve_unclaimed(self, envelope: JobEnvelope) -> str:
+        ticket = self._admission.get(envelope.job_id)
         if ticket is None:
+            logger.error("Worker task has no admission ticket")
             return JobOutcome.FAILED.value
+        logger.info("Worker inspected unclaimed task state: %s", ticket.state)
         if ticket.outcome is not None:
             return ticket.outcome.value
         if ticket.envelope.deadline <= self._clock.now():
@@ -251,6 +279,7 @@ class FeatureJobRunner:
         if now - envelope.accepted_at >= DELAYED_NOTICE_SECONDS:
             self._notify(envelope, NoticeKind.DELAYED, DELAYED_NOTICE_TEXT)
         if not envelope_is_current(envelope.feature_epoch, self._policies.emergency_state(envelope.feature)):
+            logger.info("Worker skipped a task with an outdated feature emergency epoch")
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
             return JobOutcome.CANCELLED.value
         return self._extract_and_deliver(envelope, loaded, stage, token, now)
@@ -258,6 +287,7 @@ class FeatureJobRunner:
     def _load_payload(self, envelope: JobEnvelope, token: str) -> LoadedPayload | None:
         loaded = self._payloads.load(envelope.payload_ref, envelope.job_id)
         if loaded.state != PayloadState.READY or loaded.data is None:
+            logger.error("Worker encrypted payload is unavailable")
             outcome = JobOutcome.EXPIRED if loaded.state == PayloadState.EXPIRED else JobOutcome.PAYLOAD_UNAVAILABLE
             self._finish_ticket_safe(envelope.job_id, token, outcome)
             return None
@@ -317,6 +347,7 @@ class FeatureJobRunner:
             logger.warning("Request progress feedback deferred")
 
     def _handle_denied_reservation(self, envelope: JobEnvelope, token: str, reservation: ReservationDecision) -> str:
+        logger.info("Worker execution budget was not granted: %s", reservation.state)
         if reservation.state == ReservationState.WAITING:
             retry = reservation.next_eligible_at
             if retry is None:
@@ -356,8 +387,14 @@ class FeatureJobRunner:
             raw_payload, client = self._extract_stage(envelope, loaded.data, stage, token)
         except BrowserContinuationRequired:
             return JobOutcome.COMPLETE.value
+        except SoftTimeLimitExceeded:
+            self._complete_zero(envelope.job_id, token, JobOutcome.EXPIRED)
+            logger.exception("Feature extraction reached its execution time limit")
+            self._notify(envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
+            return JobOutcome.EXPIRED.value
         except MediaExtractionError, BrowserError, HTTPTransportError:
             self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
+            logger.exception("Worker media extraction failed")
             return JobOutcome.FAILED.value
         return self._finish_extraction(envelope, raw_payload, client, loaded.sender_label, token, now)
 
@@ -372,6 +409,7 @@ class FeatureJobRunner:
     ) -> str:
         split_def = self._check_post_extraction_gates(envelope, raw_payload, client)
         if split_def is None:
+            logger.info("Worker skipped delivery after the access or lifecycle check")
             self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
             return JobOutcome.COMPLETE.value
         return self._deliver_and_account(envelope, raw_payload, client, sender_label, split_def, token, now)
@@ -392,6 +430,7 @@ class FeatureJobRunner:
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
             return JobOutcome.CANCELLED.value
         try:
+            logger.info("Worker starting Telegram media delivery")
             self._delivery.deliver(
                 envelope.target.telegram_id,
                 envelope.message_id,
@@ -400,8 +439,10 @@ class FeatureJobRunner:
                 sender_label,
             )
         except TelegramDeliveryUncertainError:
+            logger.exception("Telegram media delivery acceptance is uncertain; automatic resend stopped")
             return TicketState.DELIVERY_UNCERTAIN.value
         except TelegramRejectedError:
+            logger.exception("Telegram rejected worker media delivery")
             self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
             return JobOutcome.FAILED.value
         self._lifecycle.complete(envelope.job_id, token, self._settlement_intent(envelope, split_def, now))
@@ -415,6 +456,7 @@ class FeatureJobRunner:
         if client is None:
             msg = f"No media client found for feature {envelope.feature} or URL."
             raise MediaExtractionError(msg)
+        logger.info("Worker starting media extraction for provider %s", client.name)
         if stage == JobStage.MEDIA:
             return self._extract_media_stage(envelope, url, client, token)
         return self._extract_browser_stage(url, client)
@@ -428,6 +470,7 @@ class FeatureJobRunner:
             self._handoff_to_browser(envelope, token)
             raise
         else:
+            logger.info("Worker extracted %s media items", len(raw_payload.media_items))
             return raw_payload, client
 
     def _extract_browser_stage(self, url: str, client: BaseMediaClient) -> tuple[RichMediaPayload, BaseMediaClient]:
@@ -438,11 +481,15 @@ class FeatureJobRunner:
         return raw_payload, client
 
     def _handoff_to_browser(self, envelope: JobEnvelope, token: str) -> None:
+        logger.info("Worker requesting browser continuation")
         ready = self._admission.handoff_stage(envelope.job_id, token, JobStage.BROWSER)
         if ready is None:
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
             return
-        self._publisher.publish_stage(envelope, JobStage.BROWSER)
+        if self._publisher.publish_stage(envelope, JobStage.BROWSER):
+            logger.info("Worker published browser continuation")
+            return
+        logger.error("Worker browser continuation expired before publication")
 
     def _check_post_extraction_gates(
         self, envelope: JobEnvelope, raw_payload: RichMediaPayload, client: BaseMediaClient

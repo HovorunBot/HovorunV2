@@ -5,9 +5,11 @@ import logging
 import math
 import re
 from http.cookiejar import Cookie
+from time import monotonic
 from urllib.parse import urlsplit
 
 import yt_dlp
+from yt_dlp.networking import Request, Response
 
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.media.errors import MediaExtractionError
@@ -19,6 +21,35 @@ logger = logging.getLogger(__name__)
 MIN_DESCRIPTION_LENGTH = 10
 EXTRACTION_TIMEOUT_SECONDS = 30
 MAX_PLAYLIST_ITEMS = 100
+
+
+class BoundedYoutubeDL(yt_dlp.YoutubeDL):
+    """Share one request budget across the backend's sequential extraction requests."""
+
+    def __init__(self, options: dict[str, object], timeout_seconds: float = EXTRACTION_TIMEOUT_SECONDS) -> None:
+        super().__init__(options)
+        self._request_deadline = monotonic() + timeout_seconds
+
+    def urlopen(self, req: Request | str) -> Response:
+        """Bound each request by the time remaining for this extraction.
+
+        Args:
+            req: Backend HTTP request or URL.
+
+        Returns:
+            Backend HTTP response.
+
+        Raises:
+            MediaExtractionError: If the extraction request budget is exhausted.
+        """
+        remaining = self._request_deadline - monotonic()
+        if remaining <= 0:
+            msg = "Media extraction request budget expired."
+            raise MediaExtractionError(msg)
+        request = Request(req) if isinstance(req, str) else req
+        configured = request.extensions.get("timeout")
+        request.extensions["timeout"] = min(remaining, configured) if isinstance(configured, int | float) else remaining
+        return super().urlopen(request)
 
 
 def _mapping(value: object) -> dict[str, object]:
@@ -146,7 +177,7 @@ def extract_info(url: str, cookies: dict[str, str] | None = None) -> object:
     Raises:
         MediaExtractionError: If the backend fails or returns unusable data.
     """
-    options = {
+    options: dict[str, object] = {
         "quiet": True,
         "logger": MediaBackendLogger(),
         "no_warnings": True,
@@ -158,7 +189,7 @@ def extract_info(url: str, cookies: dict[str, str] | None = None) -> object:
         "playlistend": MAX_PLAYLIST_ITEMS,
     }
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with BoundedYoutubeDL(options) as ydl:
             if cookies:
                 _add_cookies(ydl, url, cookies)
             return ydl.extract_info(url, download=False)

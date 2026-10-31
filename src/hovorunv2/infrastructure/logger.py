@@ -11,18 +11,43 @@ from copy import copy
 from types import TracebackType
 from typing import TYPE_CHECKING, Final
 
+from hovorunv2.application.jobs.admission import JobStage, TicketState
+from hovorunv2.application.jobs.feature_jobs import JobOutcome
+from hovorunv2.application.jobs.http_ports import HTTPFailure, TelegramRejection
+from hovorunv2.application.media.backend_logging import MediaBackendFailure
+from hovorunv2.application.media.errors import MediaFailure
+from hovorunv2.application.usage.budgets import ReservationState
 from hovorunv2.domain.enums import ChatStatus, CommandName, Role
+from hovorunv2.utils.job_logging import current_job_id, current_job_stage
 
 if TYPE_CHECKING:
     from aiogram import Bot
 
     from hovorunv2.application.access.role_service import RoleService
 
-LOG_FORMAT: Final = "%(asctime)s - %(name)s - %(levelname)s - [user=%(user_id)s chat=%(chat_id)s] - %(message)s"
+LOG_FORMAT: Final = (
+    "%(asctime)s - %(name)s - %(levelname)s - [user=%(user_id)s chat=%(chat_id)s] "
+    "[job=%(job_id)s stage=%(job_stage)s process=%(processName)s] - %(message)s"
+)
 
 MAX_TB_LINES: Final = 8
 MAX_TELEGRAM_MESSAGE_LENGTH: Final = 4096
-SAFE_LOG_LABELS: Final = frozenset(str(value) for enum in (CommandName, ChatStatus) for value in enum)
+SAFE_LOG_LABELS: Final = frozenset(
+    str(value)
+    for enum in (
+        CommandName,
+        ChatStatus,
+        JobStage,
+        TicketState,
+        JobOutcome,
+        MediaFailure,
+        MediaBackendFailure,
+        HTTPFailure,
+        TelegramRejection,
+        ReservationState,
+    )
+    for value in enum
+)
 BOT_TOKEN_PATTERN: Final = re.compile(r"(bot)\d+:[A-Za-z0-9_-]+")
 BEARER_PATTERN: Final = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]+")
 URL_PATTERN: Final = re.compile(r"https?://\S+")
@@ -59,6 +84,8 @@ class PrivacyFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format a copy so another handler cannot supply cached unsanitized exception text."""
         safe = copy(record)
+        safe.job_id = current_job_id.get()
+        safe.job_stage = current_job_stage.get()
         safe.exc_text = None
         safe.stack_info = None
         if not record.name.startswith("hovorunv2."):

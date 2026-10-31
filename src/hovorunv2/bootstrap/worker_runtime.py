@@ -1,6 +1,6 @@
 """Child-owned synchronous Valkey resources and Celery native worker lifecycle wiring."""
 
-import math
+import logging
 from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
@@ -34,6 +34,7 @@ from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.infrastructure.queues.feature_queue import (
     BROKER_SOCKET_SECONDS,
     BROKER_VISIBILITY_SECONDS,
+    feature_task_time_limits,
     set_feature_task_runner,
     set_operations_runner,
     set_recovery_runner,
@@ -47,6 +48,7 @@ from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramA
 
 RUNTIME_SOCKET_SECONDS = 2
 DEFAULT_SAFETY = UsageSafetyCaps()
+logger = logging.getLogger(__name__)
 
 
 class WorkerRuntime:
@@ -168,7 +170,7 @@ class WorkerQueuePublisher:
                 queue=queue,
                 eta=datetime.fromtimestamp(not_before, UTC) if not_before else None,
                 expires=datetime.fromtimestamp(envelope.deadline, UTC),
-                time_limit=max(1, math.ceil(min(self._safety.execution_seconds, remaining))),
+                **feature_task_time_limits(min(self._safety.execution_seconds, remaining)),
                 ignore_result=True,
                 retry=False,
                 argsrepr="()",
@@ -384,6 +386,7 @@ def init_worker_child(
     set_feature_task_runner(_execute_task_in_child)
     set_recovery_runner(context.runner.recover)
     set_operations_runner(context.operations)
+    logger.info("Worker child resources initialized")
     return context
 
 
@@ -395,6 +398,7 @@ def shutdown_worker_child() -> None:
     """Tear down resources when the worker child process exits."""
     global _current_worker_context  # noqa: PLW0603
     if _current_worker_context is not None:
+        logger.info("Worker child resources shutting down")
         _current_worker_context.close()
         _current_worker_context = None
     set_feature_task_runner(None)

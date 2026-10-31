@@ -1,6 +1,7 @@
 """Bounded synchronous HTTP owned by the native worker process using it."""
 
 import json
+import logging
 import time
 from collections.abc import Mapping
 from http import HTTPStatus
@@ -27,6 +28,7 @@ MAX_REDIRECTS = 5
 CONNECT_TIMEOUT_SECONDS = 5
 READ_TIMEOUT_SECONDS = 30
 TOTAL_TIMEOUT_SECONDS = 60
+logger = logging.getLogger(__name__)
 REDIRECT_STATUSES = frozenset(
     {
         HTTPStatus.MOVED_PERMANENTLY,
@@ -55,6 +57,7 @@ def _validate_url(url: str) -> tuple[str, str, int | None]:
 
 def _require_success(response: requests.Response) -> None:
     if response.status_code != HTTPStatus.OK:
+        logger.error("HTTP media request rejected (status %s)", response.status_code)
         raise HTTPTransportError(HTTPFailure.REJECTED)
 
 
@@ -196,6 +199,7 @@ class NativeHTTPClient:
                 _require_success(response)
                 return self._read(response, limit, started)
         except requests.RequestException, UnicodeError:
+            logger.exception("Worker HTTP media read failed")
             raise HTTPTransportError from None
 
     def read_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:

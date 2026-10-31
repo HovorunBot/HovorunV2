@@ -12,6 +12,7 @@ from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
 from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.errors import MediaExtractionError
+from hovorunv2.application.media.extractor import EXTRACTION_TIMEOUT_SECONDS
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient, BrowserFallbackConfig, OGConfig, ProviderConfig
 from hovorunv2.domain.enums import CommandName
@@ -20,8 +21,32 @@ from hovorunv2.utils.text import clean_caption_text
 logger = logging.getLogger(__name__)
 
 
+class FailFastRateController(instaloader.RateController):
+    """Leave rate-limited extraction to the next strategy instead of sleeping in a worker."""
+
+    def sleep(self, secs: float) -> None:
+        """Reject a backend wait that would consume the worker execution budget.
+
+        Raises:
+            instaloader.exceptions.ConnectionException: When Instagram requires a wait.
+        """
+        if secs > 0:
+            msg = "Instagram extraction requires a rate-limit wait."
+            raise instaloader.exceptions.ConnectionException(msg)
+
+
 class PrivateInstaloaderContext(instaloader.InstaloaderContext):
     """Keep backend retry diagnostics out of stderr and retained error strings."""
+
+    def __init__(self, *, quiet: bool = True, user_agent: str | None = None) -> None:
+        super().__init__(
+            quiet=quiet,
+            user_agent=user_agent,
+            sleep=False,
+            max_connection_attempts=1,
+            request_timeout=EXTRACTION_TIMEOUT_SECONDS,
+            rate_controller=FailFastRateController,
+        )
 
     def error(self, msg: str, repeat_at_end: bool = True) -> None:  # noqa: FBT001, FBT002
         """Emit a stable operation identifier without the backend payload."""

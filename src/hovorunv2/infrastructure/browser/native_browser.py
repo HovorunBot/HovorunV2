@@ -1,6 +1,7 @@
 """Lazy synchronous browser extraction with owned Chromium and bounded media downloads."""
 
 import html
+import logging
 from collections.abc import Callable
 from threading import BoundedSemaphore
 from urllib.parse import SplitResult, urlsplit
@@ -19,6 +20,7 @@ SELECTOR_TIMEOUT_SECONDS = 10
 MAX_BROWSER_ATTEMPTS = 2
 MAX_BROWSER_HTML_BYTES = 2 * 1024 * 1024
 MAX_BROWSER_MEDIA_BYTES = 50 * 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 def cookies_for_url(cookies: list[dict[str, object]], url: str) -> dict[str, str]:
@@ -75,16 +77,20 @@ def download_tab_media(tab: BrowserTab, payload: RichMediaPayload, referer: str)
     with NativeHTTPClient() as http:
         for item in payload.media_items:
             if not item.url:
+                logger.error("Browser media download has no usable source")
                 downloaded.append(MediaFailure.UNUSABLE)
                 continue
             url = html.unescape(item.url)
             try:
+                logger.info("Browser worker starting media download")
                 content = http.download_bytes(url, headers, cookies=cookies_for_url(cookies, url))
             except HTTPTransportError as error:
+                logger.exception("Browser media download failed (%s)", error.code)
                 code = MediaFailure.TOO_LARGE if error.code == HTTPFailure.TOO_LARGE else MediaFailure.UNAVAILABLE
                 downloaded.append(code)
                 continue
             if not content:
+                logger.error("Browser media download returned empty content")
                 downloaded.append(MediaFailure.UNUSABLE)
                 continue
             total_bytes += len(content)
@@ -92,6 +98,7 @@ def download_tab_media(tab: BrowserTab, payload: RichMediaPayload, referer: str)
                 msg = "Browser media exceeds its aggregate byte limit."
                 raise BrowserError(msg)
             item.data = content
+            logger.info("Browser worker downloaded %s media bytes", len(content))
             downloaded.append(content)
     return downloaded
 

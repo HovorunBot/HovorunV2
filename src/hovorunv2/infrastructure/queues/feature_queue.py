@@ -37,6 +37,24 @@ from hovorunv2.infrastructure.runtime.cache import CacheService
 
 BROKER_VISIBILITY_SECONDS = 2 * RUNTIME_RETENTION_SECONDS
 BROKER_SOCKET_SECONDS = 2
+TASK_CLEANUP_GRACE_SECONDS = 10
+
+
+def feature_task_time_limits(execution_seconds: float) -> dict[str, int]:
+    """Leave cleanup time before Celery's process-killing hard limit.
+
+    Args:
+        execution_seconds: Remaining execution allowance.
+
+    Returns:
+        Hard limit and, when possible, an earlier cooperative soft limit.
+    """
+    hard = max(1, math.ceil(execution_seconds))
+    limits = {"time_limit": hard}
+    if hard > 1:
+        limits["soft_time_limit"] = max(1, hard - TASK_CLEANUP_GRACE_SECONDS)
+    return limits
+
 
 RECOVERY_TASK_FUNCTION = "recover_feature_jobs"
 MEMBERSHIP_RECONCILIATION_TASK = "reconcile_memberships"
@@ -303,7 +321,7 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
                 queue=queue,
                 eta=datetime.fromtimestamp(not_before, UTC) if not_before else None,
                 expires=datetime.fromtimestamp(envelope.deadline, UTC),
-                time_limit=max(1, math.ceil(min(self._safety.execution_seconds, remaining))),
+                **feature_task_time_limits(min(self._safety.execution_seconds, remaining)),
                 ignore_result=True,
                 retry=False,
                 argsrepr="()",

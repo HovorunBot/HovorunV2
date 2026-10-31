@@ -89,6 +89,9 @@ def _drain_queue_messages(queue: Any) -> list[dict[str, object]]:
             return envelopes
         assert PRIVATE_URL not in json.dumps(message.payload)
         assert message.headers["kwargsrepr"] == "<feature envelope>"
+        hard, soft = message.headers["timelimit"]
+        assert hard >= 1
+        assert soft is None if hard == 1 else 0 < soft < hard
         envelopes.append(message.payload[1]["envelope"])
         message.ack()
 

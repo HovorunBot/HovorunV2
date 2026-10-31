@@ -333,6 +333,7 @@ class BaseMediaClient(MediaParser):
         cleaned_url = url.rstrip(".,")
 
         try:
+            logger.info("Starting direct extraction strategy for provider %s", self.name)
             payload = self.extract_sync(cleaned_url, http)
             if payload is not None:
                 return payload
@@ -342,6 +343,7 @@ class BaseMediaClient(MediaParser):
         is_post_url = bool(self._config.post_url_pattern and self._config.post_url_pattern.search(cleaned_url))
         if not is_post_url:
             try:
+                logger.info("Starting generic extraction strategy for provider %s", self.name)
                 payload = extractor.extract(cleaned_url, cookies=self.get_ytdlp_cookies())
                 if payload is not None:
                     return payload
@@ -349,6 +351,7 @@ class BaseMediaClient(MediaParser):
                 logger.info("Generic extraction strategy failed for provider %s", self.name)
 
         try:
+            logger.info("Starting non-browser fallback strategy for provider %s", self.name)
             payload = self._extract_non_browser_fallback_sync(cleaned_url, http)
             if payload is not None:
                 return payload
@@ -356,6 +359,7 @@ class BaseMediaClient(MediaParser):
             logger.info("Non-browser fallback strategy failed for provider %s", self.name)
 
         if self.has_browser_fallback:
+            logger.info("Provider requires browser continuation: %s", self.name)
             raise BrowserContinuationRequired
 
         try:

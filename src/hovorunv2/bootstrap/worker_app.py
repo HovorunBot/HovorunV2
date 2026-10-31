@@ -4,7 +4,10 @@ from celery import Celery
 from kombu import Queue
 
 from hovorunv2.application.usage.budgets import RuntimeNamespace
-from hovorunv2.bootstrap import worker_runtime  # noqa: F401  # Registers child lifecycle listeners.
+from hovorunv2.bootstrap import (
+    worker_logging,  # noqa: F401  # Registers parent and child logging listeners.
+    worker_runtime,  # noqa: F401  # Registers child lifecycle listeners.
+)
 from hovorunv2.infrastructure.config import BrokerSettings
 from hovorunv2.infrastructure.queues.feature_queue import (
     BROKER_SOCKET_SECONDS,

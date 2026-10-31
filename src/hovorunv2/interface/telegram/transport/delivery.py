@@ -201,13 +201,13 @@ class TelegramMediaDelivery:
                 chat_id=message.chat.id, media=media_group, reply_to_message_id=message.message_id
             )
         except TelegramEntityTooLarge:
-            logger.warning("Media too large even for URL delivery")
+            logger.exception("Media too large even for URL delivery")
             await self._answer_delivery_error(message, caption, DeliveryError.TOO_LARGE)
             return True
         except TelegramBadRequest as e:
             err_msg = str(e).upper()
             if not any(item in err_msg for item in ("WEBPAGE_CURL_FAILED", "FAILED TO GET")):
-                logger.warning("Telegram rejected URL media without a fetch recovery")
+                logger.exception("Telegram rejected URL media without a fetch recovery")
                 raise
         else:
             return True
@@ -237,6 +237,7 @@ class TelegramMediaDelivery:
         final_group = self._downloaded_group(payload.media_items, downloaded_files, caption)
 
         if not final_group:
+            logger.error("Media download fallback produced no usable media")
             await self._edit_placeholder_error(
                 bot, message.chat.id, placeholder_msg.message_id, caption, DeliveryError.DOWNLOAD
             )
@@ -247,12 +248,12 @@ class TelegramMediaDelivery:
                 chat_id=message.chat.id, media=final_group, reply_to_message_id=message.message_id
             )
         except TelegramEntityTooLarge:
-            logger.warning("Media too large for Telegram upload")
+            logger.exception("Media too large for Telegram upload")
             await self._edit_placeholder_error(
                 bot, message.chat.id, placeholder_msg.message_id, caption, DeliveryError.TOO_LARGE
             )
         except TelegramBadRequest:
-            logger.warning("Telegram rejected uploaded media")
+            logger.exception("Telegram rejected uploaded media")
             await self._edit_placeholder_error(
                 bot, message.chat.id, placeholder_msg.message_id, caption, DeliveryError.UPLOAD
             )

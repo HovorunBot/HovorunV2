@@ -69,6 +69,7 @@ def test_compose_files_wire_independent_application_roles() -> None:
         for role in ("media", "browser", "operations"):
             assert f"--queues={namespace.value}{role}" in compose, f"{filename}: {role} queue"
         assert "entrypoint:" not in compose
+        assert "ERROR_DM_ENABLED: ${ERROR_DM_ENABLED:-False}" in compose
 
 
 @pytest.mark.unit
