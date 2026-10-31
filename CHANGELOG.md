@@ -187,6 +187,7 @@ encryption configuration before starting against the new database.
 
 ### Perf
 
+- **limits**: validate bounded media execution defaults
 - **encryption**: cache PBKDF2 Fernet keys and derive in thread pool
 
 ## v0.2.1 (2026-10-23)
