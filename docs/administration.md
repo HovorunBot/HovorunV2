@@ -6,7 +6,7 @@
 
 Each user has one authority role: USER, ADMIN or OWNER. Trust, bans, group membership and feature access remain separate.
 
-Prepare an empty or existing database with `uv run alembic upgrade head`, then use the standalone CLI:
+Prepare an empty or existing database with `uv run alembic upgrade head`, then use the standalone CLI. For backup, migration ordering, encryption preservation, and recovery, see [operations rollout](operations-rollout.md):
 
 ```bash
 uv run hovorun-admin role add 123456789 --role owner --reason "Initial bootstrap"
