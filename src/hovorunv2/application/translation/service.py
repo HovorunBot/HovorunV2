@@ -6,8 +6,8 @@ import logging
 import aiohttp
 
 from hovorunv2.application.jobs.http_ports import HTTPTransportError
-from hovorunv2.application.services.translation_providers import BaseTranslationService
 from hovorunv2.application.translation.language_service import LanguageService
+from hovorunv2.application.translation.providers import BaseTranslationService
 from hovorunv2.application.translation.translation_rules import (
     DEFAULT_TRANSLATION_FLAG,
     MANDATORY_IGNORED_LANGS,

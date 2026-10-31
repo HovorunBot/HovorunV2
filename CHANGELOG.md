@@ -57,6 +57,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **translation**: group translation ownership
 - **media**: organize provider and media I/O ownership
 - **application**: group capability application code
 - **application**: group access and identity application code

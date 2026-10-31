@@ -7,7 +7,7 @@ import pytest
 from aiohttp import web
 
 from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportError
-from hovorunv2.application.services.translation_providers import GoogleTranslationService
+from hovorunv2.application.translation.providers import GoogleTranslationService
 
 RESPONSE_PAYLOAD = web.AppKey("translation_response", object)
 
