@@ -6,6 +6,7 @@ from dishka import Provider, Scope, alias, provide
 
 from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.application.access.ports import UnauthorizedPromptSender
+from hovorunv2.application.features.beta_prompts import BetaPromptService
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_management_service import GroupManagementService
@@ -23,6 +24,7 @@ from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
+from hovorunv2.interface.telegram.handlers.beta import BetaPromptCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 from hovorunv2.interface.telegram.handlers.emergency import EmergencyCommand
@@ -62,6 +64,8 @@ class InterfaceAndUtilityProvider(Provider):
     settings_command = provide(SettingsCommand)
 
     bot_join_handler = provide(BotJoinHandler)
+    beta_prompts = provide(BetaPromptService)
+    beta_prompt_command = provide(BetaPromptCommand)
     debug_command = provide(DebugCommand)
     emergency_command = provide(EmergencyCommand)
     help_command = provide(HelpCommand)
@@ -76,6 +80,7 @@ class InterfaceAndUtilityProvider(Provider):
         feedback_command: FeedbackCommand,
         settings_command: SettingsCommand,
         debug_command: DebugCommand,
+        beta_prompt_command: BetaPromptCommand,
         emergency_command: EmergencyCommand,
         administration_command: AdministrationCommand,
     ) -> UtilityCommands:
@@ -88,6 +93,7 @@ class InterfaceAndUtilityProvider(Provider):
                 debug_command,
                 administration_command,
                 emergency_command,
+                beta_prompt_command,
             ]
         )
 

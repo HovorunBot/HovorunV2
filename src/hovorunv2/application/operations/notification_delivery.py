@@ -65,6 +65,7 @@ class NotificationSenderPort(Protocol):
         *,
         parse_mode: str = "HTML",
         disable_web_page_preview: bool = True,
+        reply_markup: str | None = None,
     ) -> int | None:
         """Send one formatted message and return its ID when accepted."""
         ...
@@ -113,7 +114,7 @@ class NotificationDeliveryService:
             return False
         attempts = receipt.attempts + 1
         try:
-            message_id = self._sender.send_message(telegram_id, text)
+            message_id = self._sender.send_message(telegram_id, text, reply_markup=receipt.body_markup)
         except Exception:
             logger.warning("Notification delivery deferred")
             outcome = (

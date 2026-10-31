@@ -4,6 +4,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB, sanitize_audit_ch
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.beta import BetaEntitlementDB
+from hovorunv2.domain.beta_decision import BetaDecisionDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.emergency import FeatureEmergencyDB
@@ -38,6 +39,7 @@ __all__ = [
     "BanDB",
     "BanKind",
     "Base",
+    "BetaDecisionDB",
     "BetaEntitlementDB",
     "ChatDB",
     "CommandDB",

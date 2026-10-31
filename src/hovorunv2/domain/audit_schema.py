@@ -88,6 +88,7 @@ NOTIFICATION_RECEIPT_FIELDS: Final = {
     "attempts": NUMBER,
     "telegram_message_id": _adapter(StrictInt | None),
 }
+BETA_DECISION_FIELDS: Final = {"decision": _adapter(Pair[StrictStr | None]), "feature": TEXT}
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
@@ -106,6 +107,7 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("notification_preference", "set"): NOTIFICATION_PREFERENCE_FIELDS.copy(),
     ("notification_event", "create"): NOTIFICATION_EVENT_FIELDS.copy(),
     ("notification_receipt", "set"): NOTIFICATION_RECEIPT_FIELDS.copy(),
+    ("beta_decision", "set"): BETA_DECISION_FIELDS.copy(),
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
     ("chat", "migrate_route"): {"group_id": NUMBER, "telegram_id": NUMBER_PAIR},

@@ -31,6 +31,7 @@ class NotificationEvent:
     introduction: str
     release_identity: str
     body_ref: str | None = None
+    body_markup: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +45,7 @@ class NotificationReceipt:
     telegram_message_id: int | None
     category: NotificationCategory | None = None
     body_ref: str | None = None
+    body_markup: str | None = None
     last_attempt_at: float | None = None
 
 

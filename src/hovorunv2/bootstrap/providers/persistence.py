@@ -5,6 +5,7 @@ from typing import NewType
 from dishka import Provider, Scope, alias, provide
 
 from hovorunv2.application.auditing import AuditedUnitOfWork
+from hovorunv2.application.features.beta_prompts import BetaPromptStore
 from hovorunv2.application.features.emergency import FeatureEmergencyStore
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
@@ -18,6 +19,7 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemySystemStore,
     SQLAlchemyUserStore,
 )
+from hovorunv2.infrastructure.persistence.stores.beta_prompt_store import SQLAlchemyBetaPromptStore
 from hovorunv2.infrastructure.persistence.stores.feature_emergency_store import SQLAlchemyFeatureEmergencyStore
 from hovorunv2.infrastructure.persistence.stores.notification_ledger_store import (
     SQLAlchemyNotificationLedgerStore,
@@ -49,6 +51,9 @@ class AuditAndPersistenceProvider(Provider):
 
     feature_emergency_store_impl = provide(SQLAlchemyFeatureEmergencyStore)
     feature_emergency_store = alias(source=SQLAlchemyFeatureEmergencyStore, provides=FeatureEmergencyStore)
+
+    beta_prompt_store_impl = provide(SQLAlchemyBetaPromptStore)
+    beta_prompt_store = alias(source=SQLAlchemyBetaPromptStore, provides=BetaPromptStore)
 
     notification_preference_store_impl = provide(SQLAlchemyNotificationPreferenceStore)
     notification_preference_store = alias(

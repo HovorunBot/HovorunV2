@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.features.beta_prompts import BetaPromptService
 from hovorunv2.application.messaging.crypto import verify_encryption_key
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
@@ -90,6 +91,7 @@ async def run_bot() -> None:
         settings = await container.get(Settings)
         verify_encryption_key(settings.cache_encryption_key)
         bot = await container.get(Bot)
+        await (await container.get(BetaPromptService)).announce_new()
 
         router = await _build_bot_router(container, settings)
         dp = _configure_dispatcher(container, router)

@@ -46,6 +46,21 @@ class AccessCallback(CallbackData, prefix="access"):
     request_id: int = 0
 
 
+class BetaAction(StrEnum):
+    """Actions for announced beta feature prompts."""
+
+    ACTIVATE = "activate"
+    DECLINE = "decline"
+    FEATURES = "features"
+
+
+class BetaCallback(CallbackData, prefix="beta"):
+    """Fixed announcement choice for exactly one beta feature."""
+
+    action: BetaAction
+    feature: str
+
+
 class SettingsCallback(CallbackData, prefix="settings"):
     """Callback for unified settings menu."""
 

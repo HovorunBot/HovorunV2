@@ -45,6 +45,7 @@ class RecordingSender:
         *,
         parse_mode: str = "HTML",
         disable_web_page_preview: bool = True,
+        reply_markup: str | None = None,
     ) -> int | None:
         """Record one synthetic send."""
         self.calls.append((chat_id, text))
@@ -64,6 +65,7 @@ class FailingSender:
         *,
         parse_mode: str = "HTML",
         disable_web_page_preview: bool = True,
+        reply_markup: str | None = None,
     ) -> int | None:
         """Fail one synthetic send."""
         self.calls += 1
