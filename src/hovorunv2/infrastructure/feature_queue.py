@@ -192,14 +192,6 @@ def register_feature_tasks(app: Celery) -> None:
     _register_feature_execution_tasks(app)
 
 
-celery_app = Celery("hovorun_features")
-celery_app.conf.update(
-    task_queues=[Queue("media"), Queue("browser"), Queue(OPERATIONS_QUEUE_NAME)],
-    beat_schedule=build_beat_schedule(""),
-)
-register_feature_tasks(celery_app)
-
-
 class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
     """Keep publication uncertainty separate from exclusive execution and verified terminal outcomes.
 
