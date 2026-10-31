@@ -17,6 +17,10 @@ from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.features.registry import FeatureChannel
 from hovorunv2.application.groups.group_management_service import GroupManagementService
 from hovorunv2.application.operations.cleanup_service import CleanupService
+from hovorunv2.application.operations.notification_preferences import (
+    NotificationCategory,
+    NotificationPreferenceService,
+)
 from hovorunv2.application.settings.settings_session_service import (
     SETTINGS_SESSION_TTL,
     SettingsContext,
@@ -39,6 +43,12 @@ logger = get_logger(__name__)
 CONFIG_WINDOW_TTL: Final = SETTINGS_SESSION_TTL
 LANGS_PER_PAGE: Final = 10
 UNPOPULAR_LANGUAGE_RANK: Final = 999
+NOTIFICATION_LABELS: Final[dict[NotificationCategory, str]] = {
+    NotificationCategory.RELEASE: "🚀 Releases",
+    NotificationCategory.BETA: "🧪 Beta invites",
+    NotificationCategory.FEATURE_STATUS: "🛠 Feature status",
+    NotificationCategory.ANNOUNCEMENT: "📣 Announcements",
+}
 
 
 class SettingsCommand(BaseCommand):
@@ -60,6 +70,7 @@ class SettingsCommand(BaseCommand):
         sessions: SettingsSessionService,
         groups: GroupManagementService,
         usage_views: UsageViewService,
+        notification_preferences: NotificationPreferenceService,
     ) -> None:
         """Initialize command."""
         self._language_service = language_service
@@ -69,6 +80,7 @@ class SettingsCommand(BaseCommand):
         self._sessions = sessions
         self._groups = groups
         self._usage_views = usage_views
+        self._notification_preferences = notification_preferences
 
     @property
     def name(self) -> str:
@@ -196,6 +208,12 @@ class SettingsCommand(BaseCommand):
             )
         )
         builder.row(
+            InlineKeyboardButton(
+                text="🔔 My notifications",
+                callback_data=SettingsCallback(menu=SettingsMenu.NOTIFICATIONS, value="own").pack(),
+            )
+        )
+        builder.row(
             InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
         )
         text = "👥 <b>Manage groups</b>\n\nSelect a group to configure. Authority is checked again for every action."
@@ -246,6 +264,12 @@ class SettingsCommand(BaseCommand):
             builder.row(
                 InlineKeyboardButton(
                     text="📊 Group usage", callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="group").pack()
+                )
+            )
+            builder.row(
+                InlineKeyboardButton(
+                    text="🔔 Notifications",
+                    callback_data=SettingsCallback(menu=SettingsMenu.NOTIFICATIONS, value="group").pack(),
                 )
             )
         builder.row(
@@ -346,6 +370,89 @@ class SettingsCommand(BaseCommand):
         if summary.unlimited_personal_quota:
             lines.append("Bot administrators bypass ordinary personal quota; safety caps still apply.")
         return "\n".join(lines)
+
+    async def _show_notifications(self, query: CallbackQuery, context: SettingsContext, scope: str | None) -> None:
+        """Show category switches for the actor or the selected group."""
+        message = query.message
+        if not isinstance(message, Message):
+            return
+        target = await self._notification_target(query, context, scope)
+        if target is None:
+            await query.answer("Notifications unavailable.", show_alert=True)
+            return
+        preferences = await self._notification_preferences.preferences(target)
+        builder = InlineKeyboardBuilder()
+        for preference in preferences:
+            label = NOTIFICATION_LABELS[preference.category]
+            builder.row(
+                InlineKeyboardButton(
+                    text=f"{'✅' if preference.enabled else '❌'} {label}",
+                    callback_data=SettingsCallback(
+                        menu=SettingsMenu.NOTIFICATIONS,
+                        action=SettingsAction.TOGGLE,
+                        value=f"{scope}.{preference.category.value}",
+                    ).pack(),
+                )
+            )
+        back = SettingsMenu.GROUPS if scope == "own" else SettingsMenu.MAIN
+        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=back).pack()))
+        text = (
+            "🔔 <b>Notification preferences</b>\n\n"
+            "Toggle routine release, beta, feature-status and announcement categories. "
+            "Request progress and administration confirmations are always delivered."
+        )
+        await self._render(message, text, builder, context)
+
+    async def _handle_notifications_callback(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
+        """Toggle exactly one category, then re-render the same scope."""
+        scope, _, category_value = (callback_data.value or "").partition(".")
+        category = next((item for item in NotificationCategory if item.value == category_value), None)
+        if category is None:
+            await query.answer("Notifications unavailable.", show_alert=True)
+            return
+        target = await self._notification_target(query, context, scope)
+        if target is None:
+            await query.answer("Notifications unavailable.", show_alert=True)
+            return
+        current = await self._notification_preferences.resolve(target, category)
+        transport = "private" if context.transport_chat_id > 0 else "group"
+        try:
+            await self._notification_preferences.set_preference(
+                target,
+                category,
+                enabled=not current,
+                actor=ActorContext.telegram(query.from_user.id),
+                transport_kind=transport,
+            )
+        except PermissionError, ValueError:
+            await query.answer("Notifications unavailable.", show_alert=True)
+            return
+        await query.answer()
+        await self._show_notifications(query, context, scope)
+
+    async def _notification_target(
+        self, query: CallbackQuery, context: SettingsContext, scope: str | None
+    ) -> PermissionTarget | None:
+        """Resolve the explicit scope target; never substitute another subject."""
+        if scope == "own":
+            if context.actor_id is None or context.transport_chat_id <= 0:
+                return None
+            try:
+                return await self._notification_preferences.own_target(query.from_user.id)
+            except ValueError:
+                return None
+        if scope == "group":
+            if context.target is None or context.target_chat_id >= 0:
+                return None
+            return PermissionTarget(
+                "group",
+                context.target.entity_id,
+                context.target.generation,
+                context.target.telegram_id,
+            )
+        return None
 
     async def _show_lang_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
         """Show language configuration menu."""
@@ -531,7 +638,9 @@ class SettingsCommand(BaseCommand):
                 await self._show_usage(query, context, callback_data.value)
             case SettingsMenu.LANG:
                 await self._show_lang_menu(query, context)
-            case SettingsMenu.MODULES | SettingsMenu.LANG_TARGET | SettingsMenu.LANG_IGNORED:
+            case (
+                SettingsMenu.MODULES | SettingsMenu.LANG_TARGET | SettingsMenu.LANG_IGNORED | SettingsMenu.NOTIFICATIONS
+            ):
                 await self._dispatch_action(query, callback_data, context)
             case SettingsMenu.CLOSE:
                 await self.handle_close(query)
@@ -547,6 +656,11 @@ class SettingsCommand(BaseCommand):
                 await self._handle_lang_target_callback(query, callback_data, context)
             case SettingsMenu.LANG_IGNORED:
                 await self._handle_lang_ignored_callback(query, callback_data, context)
+            case SettingsMenu.NOTIFICATIONS:
+                if callback_data.action == SettingsAction.TOGGLE:
+                    await self._handle_notifications_callback(query, callback_data, context)
+                else:
+                    await self._show_notifications(query, context, callback_data.value)
 
     async def _handle_modules_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext

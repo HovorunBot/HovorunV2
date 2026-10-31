@@ -8,6 +8,7 @@ from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.emergency import FeatureEmergencyStore
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.operations.notification_preferences import NotificationPreferenceStore
 from hovorunv2.application.operations.ports import SystemStore
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyAuditedTransaction,
@@ -17,6 +18,9 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyUserStore,
 )
 from hovorunv2.infrastructure.persistence.stores.feature_emergency_store import SQLAlchemyFeatureEmergencyStore
+from hovorunv2.infrastructure.persistence.stores.notification_preference_store import (
+    SQLAlchemyNotificationPreferenceStore,
+)
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
@@ -41,6 +45,11 @@ class AuditAndPersistenceProvider(Provider):
 
     feature_emergency_store_impl = provide(SQLAlchemyFeatureEmergencyStore)
     feature_emergency_store = alias(source=SQLAlchemyFeatureEmergencyStore, provides=FeatureEmergencyStore)
+
+    notification_preference_store_impl = provide(SQLAlchemyNotificationPreferenceStore)
+    notification_preference_store = alias(
+        source=SQLAlchemyNotificationPreferenceStore, provides=NotificationPreferenceStore
+    )
 
     audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
     audited_transaction = alias(source=SQLAlchemyAuditedTransaction, provides=AuditedUnitOfWork)

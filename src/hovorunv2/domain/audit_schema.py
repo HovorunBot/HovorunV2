@@ -79,6 +79,7 @@ FEATURE_EMERGENCY_FIELDS: Final = {
     "epoch": NUMBER_PAIR,
     "public_reason_changed": FLAG,
 }
+NOTIFICATION_PREFERENCE_FIELDS: Final = {"category": TEXT, "enabled": FLAG_PAIR}
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
@@ -94,6 +95,7 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("usage_override", "remove"): USAGE_POLICY_FIELDS,
     ("feature_emergency", "disable"): FEATURE_EMERGENCY_FIELDS.copy(),
     ("feature_emergency", "enable"): FEATURE_EMERGENCY_FIELDS.copy(),
+    ("notification_preference", "set"): NOTIFICATION_PREFERENCE_FIELDS.copy(),
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
     ("chat", "migrate_route"): {"group_id": NUMBER, "telegram_id": NUMBER_PAIR},

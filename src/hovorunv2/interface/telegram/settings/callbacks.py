@@ -20,6 +20,7 @@ class SettingsMenu(StrEnum):
     GROUP_SELECT = "group_select"
     ACCESS = "access"
     USAGE = "usage"
+    NOTIFICATIONS = "notifications"
     CLOSE = "close"
     MAIN = "main"
     LANG = "lang"
