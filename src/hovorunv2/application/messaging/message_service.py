@@ -46,6 +46,8 @@ class MessageService:
         logger.debug("Caching message %d from user %s in chat %d", message_id, user_id, chat_id)
 
         fernet = await self._get_fernet_for_chat(chat_id)
+        if fernet is None:
+            return
         await self._store_encrypted_message(key, message, fernet)
 
     async def get_message(self, chat_id: int, message_id: int) -> types.Message | None:
@@ -66,6 +68,8 @@ class MessageService:
         if data is None:
             return None
         fernet = await self._get_fernet_for_chat(chat_id)
+        if fernet is None:
+            return None
         try:
             return self._decode_cached_message(data, fernet)
         except InvalidToken, UnicodeError, ValidationError, ValueError:
@@ -98,7 +102,7 @@ class MessageService:
         legacy = types.Message.model_validate_json(decrypted_data)
         return types.Message.model_validate(minimal_message_data(legacy))
 
-    async def _get_fernet_for_chat(self, chat_id: int) -> Fernet:
+    async def _get_fernet_for_chat(self, chat_id: int) -> Fernet | None:
         """Require a configured key and derive a Fernet key using the chat's salt.
 
         Args:
@@ -106,6 +110,9 @@ class MessageService:
 
         Returns:
             Cached or newly derived Fernet instance for the chat.
+
+        Returns:
+            The chat Fernet, or None when the chat is soft-deleted or unavailable.
 
         Raises:
             ValueError: If the message cache encryption key is unavailable.
@@ -116,7 +123,10 @@ class MessageService:
             raise ValueError(msg)
         if (cached_fernet := self._fernet_cache.get(chat_id)) is not None:
             return cached_fernet
-        chat = await self.chat_service.get_or_create_chat(chat_id)
+        try:
+            chat = await self.chat_service.get_or_create_chat(chat_id)
+        except ValueError:
+            return None
         salt = chat.encryption_salt
         if not salt:
             salt = secrets.token_hex(16)

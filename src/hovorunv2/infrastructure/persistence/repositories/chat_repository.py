@@ -101,7 +101,14 @@ class SQLAlchemyChatRepository:
             .order_by(ChatDB.generation.desc())
         )
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+        rows = list(result.scalars().all())
+        if rows:
+            return rows
+        route = await self.session.scalar(select(GroupRouteDB).where(GroupRouteDB.telegram_id == chat_id))
+        if route is None:
+            return []
+        routed = await self.session.get(ChatDB, route.group_id)
+        return [] if routed is None else [routed]
 
     def add(self, chat: ChatDB) -> None:
         """Add a new chat entity to the database session."""

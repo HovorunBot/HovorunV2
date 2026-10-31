@@ -103,6 +103,7 @@ class SQLAlchemyMembershipRepository:
             .where(
                 ChatDB.deleted_at.is_(None),
                 ChatDB.chat_type.in_(("group", "supergroup")),
+                ChatDB.chat_id < 0,
                 or_(
                     GroupMembershipStateDB.group_id.is_(None),
                     GroupMembershipStateDB.deleted_at.is_not(None),

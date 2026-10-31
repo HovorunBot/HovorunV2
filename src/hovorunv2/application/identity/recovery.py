@@ -240,16 +240,16 @@ class RecoveryPreviewService:
             raise PermissionError(msg)
 
     def _latest_deleted_user(self, history: list[UserDB]) -> tuple[UserDB, datetime] | None:
-        for row in reversed(history):
-            if row.deleted_at is not None:
-                return row, row.deleted_at
-        return None
+        deleted = [(row, row.deleted_at) for row in history if row.deleted_at is not None]
+        if not deleted:
+            return None
+        return max(deleted, key=lambda item: item[0].generation)
 
     def _latest_deleted_chat(self, history: list[ChatDB]) -> tuple[ChatDB, datetime] | None:
-        for row in reversed(history):
-            if row.deleted_at is not None:
-                return row, row.deleted_at
-        return None
+        deleted = [(row, row.deleted_at) for row in history if row.deleted_at is not None]
+        if not deleted:
+            return None
+        return max(deleted, key=lambda item: item[0].generation)
 
     def _age(self, deleted_at: datetime) -> float:
         return max(0.0, self._clock.now() - deleted_at.timestamp())

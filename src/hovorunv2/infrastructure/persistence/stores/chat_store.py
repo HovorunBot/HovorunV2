@@ -161,7 +161,12 @@ class SQLAlchemyChatStore(ChatStore):
             chat.status = status
         else:
             await self._check_historical_route(session, chat_id)
-            chat = ChatDB(chat_id=chat_id, platform=Platform(platform), status=status)
+            chat = ChatDB(
+                chat_id=chat_id,
+                platform=Platform(platform),
+                status=status,
+                chat_type="private" if chat_id > 0 else "group",
+            )
             repo.add(chat)
         return old_status
 
@@ -179,7 +184,11 @@ class SQLAlchemyChatStore(ChatStore):
         chat = await repo.get_by_id(chat_id, platform)
         if not chat:
             await self._check_historical_route(session, chat_id)
-            chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
+            chat = ChatDB(
+                chat_id=chat_id,
+                platform=Platform(platform),
+                chat_type="private" if chat_id > 0 else "group",
+            )
             repo.add(chat)
 
         chat.target_lang = target_lang
@@ -198,7 +207,11 @@ class SQLAlchemyChatStore(ChatStore):
         if existing:
             return existing, False
         await self._check_historical_route(session, chat_id)
-        new_chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
+        new_chat = ChatDB(
+            chat_id=chat_id,
+            platform=Platform(platform),
+            chat_type="private" if chat_id > 0 else "group",
+        )
         repo.add(new_chat)
         return new_chat, True
 
@@ -215,7 +228,11 @@ class SQLAlchemyChatStore(ChatStore):
         chat = await repo.get_by_id(chat_id, platform)
         if not chat:
             await self._check_historical_route(session, chat_id)
-            chat = ChatDB(chat_id=chat_id, platform=Platform(platform))
+            chat = ChatDB(
+                chat_id=chat_id,
+                platform=Platform(platform),
+                chat_type="private" if chat_id > 0 else "group",
+            )
             repo.add(chat)
         chat.encryption_salt = salt
 

@@ -14,6 +14,7 @@ from hovorunv2.application.usage.usage_ledger import (
 )
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import TargetKind
+from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.usage_accounting import UsageAccountingEventDB, UsageAggregateDB
 from hovorunv2.domain.user import UserDB
 
@@ -43,7 +44,15 @@ class UsageLedgerRepository:
                 ChatDB.platform == "telegram",
                 ChatDB.chat_type.in_(("group", "supergroup")),
             )
-        if self._session.scalar(statement.limit(1)) is None:
+        known = self._session.scalar(statement.limit(1)) is not None
+        if not known and subject.kind != TargetKind.USER:
+            known = (
+                self._session.scalar(
+                    select(GroupRouteDB.telegram_id).where(GroupRouteDB.telegram_id == subject.telegram_id).limit(1)
+                )
+                is not None
+            )
+        if not known:
             msg = "Accounting subject must be a known current or historical identity."
             raise ValueError(msg)
 

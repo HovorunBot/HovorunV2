@@ -382,6 +382,7 @@ class WorkerOperationsStore:
             .where(
                 ChatDB.deleted_at.is_(None),
                 ChatDB.chat_type.in_(("group", "supergroup")),
+                ChatDB.chat_id < 0,
                 or_(
                     GroupMembershipStateDB.group_id.is_(None),
                     GroupMembershipStateDB.deleted_at.is_not(None),
@@ -657,9 +658,30 @@ class WorkerOperationsStore:
             )
         )
         if user is None and evidence.status == MembershipStatus.ADMIN:
+            tombstone = session.scalar(
+                select(UserDB.id).where(
+                    UserDB.telegram_id == evidence.user_telegram_id,
+                    UserDB.platform == group.platform,
+                    UserDB.deleted_at.is_not(None),
+                )
+            )
+            if tombstone is not None:
+                return False
             user = UserDB(telegram_id=evidence.user_telegram_id, platform=group.platform, role=Role.USER)
             session.add(user)
             session.flush()
+            self._append_audit(
+                session,
+                ActorContext.system("membership ingestion"),
+                "user",
+                str(evidence.user_telegram_id),
+                "create",
+                {
+                    "telegram_id": evidence.user_telegram_id,
+                    "platform": group.platform.value,
+                    "generation": 1,
+                },
+            )
         if user is None or (expected_user_id is not None and user.id != expected_user_id):
             return False
         if not self._is_new_member_evidence(session, group, user, evidence):

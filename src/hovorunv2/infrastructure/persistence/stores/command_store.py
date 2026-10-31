@@ -169,7 +169,12 @@ class SQLAlchemyCommandStore(CommandStore):
         if not chat:
             if await chat_repo.get_deleted_by_chat_id(chat_id, platform) is not None:
                 return False, False, False
-            chat = ChatDB(chat_id=chat_id, platform=Platform(platform), status=ChatStatus.UNAUTHORIZED)
+            chat = ChatDB(
+                chat_id=chat_id,
+                platform=Platform(platform),
+                status=ChatStatus.UNAUTHORIZED,
+                chat_type="private" if chat_id > 0 else "group",
+            )
             session.add(chat)
 
         legacy, first_selection = self._record_explicit_selection(chat)
