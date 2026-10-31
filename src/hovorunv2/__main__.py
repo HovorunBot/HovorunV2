@@ -15,6 +15,7 @@ from hovorunv2.application.features.beta_prompts import BetaPromptService
 from hovorunv2.application.messaging.crypto import verify_encryption_key
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.bootstrap.container import AppProvider
 from hovorunv2.bootstrap.providers.infrastructure import InfrastructureProvider
 from hovorunv2.infrastructure.config import Settings
@@ -46,6 +47,7 @@ async def _build_bot_router(container: AsyncContainer, settings: Settings) -> Ro
     bot_join_handler = await container.get(BotJoinHandler)
     identity_middleware = await container.get(IdentityMiddleware)
     cache = await container.get(CachePort)
+    reminders = await container.get(ChatReminderService)
     return build_router(
         commands=commands,
         message_service=message_service,
@@ -53,6 +55,7 @@ async def _build_bot_router(container: AsyncContainer, settings: Settings) -> Ro
         settings=settings,
         identity_middleware=identity_middleware,
         cache=cache,
+        reminders=reminders,
         bot_join_handler=bot_join_handler,
     )
 

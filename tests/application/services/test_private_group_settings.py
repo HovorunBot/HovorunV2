@@ -35,6 +35,7 @@ from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceService
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.application.settings.settings_session_service import SettingsSessionService
 from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.application.usage.usage_view import UsageViewService
@@ -166,6 +167,7 @@ async def test_untrusted_admin_private_workflow_reuses_group_settings_and_audit(
                 settings,
                 await test_container.get(IdentityMiddleware),
                 await test_container.get(CachePort),
+                await test_container.get(ChatReminderService),
             )
         )
         message = settings_message(chat_id=SECOND, actor_id=SECOND).as_(bot)

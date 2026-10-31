@@ -111,5 +111,10 @@ class BetaPromptCommand(BaseCommand):
         return PermissionTarget("group", chat.id, chat.generation, chat.chat_id)
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
-        """Register the same private/group authority checks for announcement buttons."""
-        router.callback_query.register(self.handle_callback, BetaCallback.filter(), flags=flags)
+        """Register announcement buttons without the operator-only command policy."""
+        callback_policy = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
+        router.callback_query.register(
+            self.handle_callback,
+            BetaCallback.filter(),
+            flags={**flags, "policy": callback_policy},
+        )

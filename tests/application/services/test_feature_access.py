@@ -40,6 +40,7 @@ from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.media.providers.twitter import TwitterService
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.application.translation.service import TranslationService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
@@ -126,7 +127,12 @@ async def test_guessed_execution_and_stale_callbacks_recheck_current_group_suppo
     """The same middleware denies guessed actions and admits a supported selected group feature."""
     service = await feature_runtime(test_container)
     access = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access, await test_container.get(CachePort), await test_container.get(Settings))
+    middleware = AccessMiddleware(
+        access,
+        await test_container.get(CachePort),
+        await test_container.get(Settings),
+        await test_container.get(ChatReminderService),
+    )
     bot = Bot(BOT_CREDENTIAL)
     event = message().as_(bot)
     if callback:
@@ -234,7 +240,12 @@ async def test_private_beta_needs_access_grant_and_explicit_selection(test_conta
     assert (await service.evaluate(key, FIRST, FIRST)).allowed
     assert not (await service.evaluate(key, FIRST, MEMBER)).allowed
     access = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access, await test_container.get(CachePort), await test_container.get(Settings))
+    middleware = AccessMiddleware(
+        access,
+        await test_container.get(CachePort),
+        await test_container.get(Settings),
+        await test_container.get(ChatReminderService),
+    )
     private_message = Message(
         message_id=2,
         date=datetime.now(UTC),

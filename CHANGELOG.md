@@ -51,6 +51,7 @@ encryption configuration before starting against the new database.
 
 ### Fix
 
+- **access**: restore middleware denial prompts and beta feature enforcement
 - **release**: correct handle resolution and log filtering
 - **audit**: close mutation coverage and privacy gaps
 - **features**: clear queued work on emergency disablement

@@ -3,7 +3,7 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from aiogram import BaseMiddleware
+from aiogram import BaseMiddleware, Bot
 from aiogram.dispatcher.flags import get_flag
 from aiogram.dispatcher.middlewares.user_context import EVENT_CONTEXT_KEY, EventContext, UserContextMiddleware
 from aiogram.enums import ChatType
@@ -16,6 +16,7 @@ from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.features.registry import TriggerKind
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger, set_log_context
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
@@ -115,12 +116,19 @@ class MessageCacheMiddleware(BaseMiddleware):
 class AccessMiddleware(BaseMiddleware):
     """Unified middleware to handle all access control via CommandPolicy."""
 
-    def __init__(self, access_service: AccessService, cache: CachePort, settings: AppSettings) -> None:
+    def __init__(
+        self,
+        access_service: AccessService,
+        cache: CachePort,
+        settings: AppSettings,
+        reminders: ChatReminderService,
+    ) -> None:
         """Initialize middleware with dependencies."""
         super().__init__()
         self._access_service = access_service
         self._cache = cache
         self._settings = settings
+        self._reminders = reminders
 
     async def _handle_private_chat(
         self,
@@ -292,8 +300,15 @@ class AccessMiddleware(BaseMiddleware):
 
         feature_allowed = await self._feature_allowed(event, chat_id, user_id, command_name, policy)
         if feature_allowed is False:
-            if isinstance(event, CallbackQuery):
-                await event.answer("Feature unavailable.", show_alert=True)
+            await self._deny_feature(
+                event,
+                data,
+                user_id,
+                chat_id,
+                is_private=is_private,
+                policy=policy,
+                command_name=command_name,
+            )
             return None
         if feature_allowed and not policy.requires_admin and not policy.requires_group_admin:
             return await handler(event, data)
@@ -302,6 +317,83 @@ class AccessMiddleware(BaseMiddleware):
             return await self._handle_private_chat(handler, event, data, user_id, policy, command_name)
 
         return await self._handle_group_chat(handler, event, data, user_id, chat_id, policy, command_name)
+
+    async def _deny_feature(
+        self,
+        event: TelegramObject,
+        data: dict[str, Any],
+        user_id: int | None,
+        chat_id: int,
+        *,
+        is_private: bool,
+        policy: CommandPolicy,
+        command_name: str | None,
+    ) -> None:
+        """Route a denied feature through the correct access prompt or alert without invoking handler."""
+        if is_private:
+            await self._deny_private_feature(event, data, user_id, policy, command_name)
+            return
+        await self._deny_group_feature(event, data, user_id, chat_id, policy, command_name)
+
+    async def _deny_private_feature(
+        self,
+        event: TelegramObject,
+        data: dict[str, Any],
+        user_id: int | None,
+        policy: CommandPolicy,
+        command_name: str | None,
+    ) -> None:
+        """Show the private landing help or a feature alert for a denied feature."""
+        _ = (data, policy, command_name)
+        if user_id is not None and (
+            await self._access_service.is_banned(user_id)
+            or (not await self._access_service.is_admin(user_id) and not await self._access_service.is_trusted(user_id))
+        ):
+            await self._deny_private_chat(event)
+            return
+        if isinstance(event, CallbackQuery):
+            await event.answer("Feature unavailable.", show_alert=True)
+
+    async def _deny_group_feature(
+        self,
+        event: TelegramObject,
+        data: dict[str, Any],
+        user_id: int | None,
+        chat_id: int,
+        policy: CommandPolicy,
+        command_name: str | None,
+    ) -> None:
+        """Show the approval prompt, group denial, ban alert or feature alert."""
+        _ = (policy, command_name)
+        decision = await self._access_service.evaluate_group_access(chat_id)
+        if decision.reason == DecisionReason.NOT_APPROVED:
+            await self._not_approved(event, data, chat_id)
+            return
+        if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
+            await self._group_denied(event, chat_id)
+            return
+        if user_id is not None and await self._access_service.is_banned(user_id):
+            if isinstance(event, CallbackQuery):
+                await event.answer("🚫 You are banned from using bot commands.", show_alert=True)
+            return
+        if isinstance(event, CallbackQuery):
+            await event.answer("Feature unavailable.", show_alert=True)
+
+    async def _not_approved(self, event: TelegramObject, data: dict[str, Any], chat_id: int) -> None:
+        """Send the one-time approval prompt or a callback alert for an unapproved group."""
+        if isinstance(event, CallbackQuery):
+            await event.answer("🚫 This group is not approved yet.", show_alert=True)
+            return
+        bot = data.get("bot")
+        if isinstance(event, Message) and isinstance(bot, Bot):
+            await self._reminders.send_unauthorized_prompt(bot, chat_id, force=False)
+
+    async def _group_denied(self, event: TelegramObject, chat_id: int) -> None:
+        """Send group-ban guidance or a callback denial alert."""
+        if isinstance(event, Message):
+            await self._send_group_denial(event, chat_id)
+        elif isinstance(event, CallbackQuery):
+            await event.answer("🚫 Access denied.", show_alert=True)
 
     async def _feature_allowed(
         self,

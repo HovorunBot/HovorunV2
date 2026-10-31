@@ -17,6 +17,7 @@ from hovorunv2.application.identity.membership import MembershipEvidence, Member
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.config import Settings
@@ -74,7 +75,12 @@ async def test_private_settings_require_selected_target(
     before = await commands.get_allowed_commands(target.chat_id)
     mutation = SettingsMutation(commands)
     access = await test_container.get(AccessService)
-    middleware = AccessMiddleware(access, await test_container.get(CachePort), await test_container.get(Settings))
+    middleware = AccessMiddleware(
+        access,
+        await test_container.get(CachePort),
+        await test_container.get(Settings),
+        await test_container.get(ChatReminderService),
+    )
     message = Message(
         message_id=1,
         date=now,
@@ -131,9 +137,12 @@ async def test_in_group_settings_keep_target_membership_check(test_container: As
             statuses = await test_container.get(ChatStatusService)
             await statuses.approve(-330001)
             assert (
-                await AccessMiddleware(access, await test_container.get(CachePort), await test_container.get(Settings))(
-                    mutation, message, {"bot": bot, "policy": SettingsCommand.POLICY}
-                )
+                await AccessMiddleware(
+                    access,
+                    await test_container.get(CachePort),
+                    await test_container.get(Settings),
+                    await test_container.get(ChatReminderService),
+                )(mutation, message, {"bot": bot, "policy": SettingsCommand.POLICY})
                 == "changed"
             )
     assert mutation.calls == 1

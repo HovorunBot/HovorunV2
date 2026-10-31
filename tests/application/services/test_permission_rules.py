@@ -20,6 +20,7 @@ from hovorunv2.application.access.access_service import AccessService, CommandPo
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import (
     DEFAULT_COMMANDS,
@@ -93,7 +94,10 @@ async def test_access_middleware_private_chat_admin(test_container: AsyncContain
     """Test that admins have access in private chats."""
     access_service = await test_container.get(AccessService)
     middleware = AccessMiddleware(
-        access_service, await test_container.get(CachePort), await test_container.get(Settings)
+        access_service,
+        await test_container.get(CachePort),
+        await test_container.get(Settings),
+        await test_container.get(ChatReminderService),
     )
 
     admin_id = await provision_role(test_container)
@@ -114,7 +118,9 @@ async def test_access_middleware_private_chat_non_admin(test_container: AsyncCon
     """Test that non-admins are blocked in private chats and receive help text."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
+    middleware = AccessMiddleware(
+        access_service, await test_container.get(CachePort), settings, await test_container.get(ChatReminderService)
+    )
 
     user_id = 999
     message = create_message(user_id, user_id, ChatType.PRIVATE).as_(recording_bot)
@@ -136,7 +142,9 @@ async def test_access_middleware_allowed_group(test_container: AsyncContainer, r
     """Test that allowed interaction in group proceeds to handler."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
+    middleware = AccessMiddleware(
+        access_service, await test_container.get(CachePort), settings, await test_container.get(ChatReminderService)
+    )
 
     user_id = 999
     chat_id = 123
@@ -158,7 +166,9 @@ async def test_access_middleware_denied_group(test_container: AsyncContainer, re
     """Test that denied interaction in group is blocked."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
-    middleware = AccessMiddleware(access_service, await test_container.get(CachePort), settings)
+    middleware = AccessMiddleware(
+        access_service, await test_container.get(CachePort), settings, await test_container.get(ChatReminderService)
+    )
 
     user_id = 999
     chat_id = 123

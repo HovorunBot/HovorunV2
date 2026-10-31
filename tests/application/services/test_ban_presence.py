@@ -72,7 +72,9 @@ async def test_group_ban_denies_admin_with_cooldown_safe_explanation(test_contai
     await (await test_container.get(ChatStatusService)).set_status(group, ChatStatus.BANNED)
     settings = await test_container.get(Settings)
     cache = CacheService(settings.valkey_url)
-    middleware = AccessMiddleware(await test_container.get(AccessService), cache, settings)
+    middleware = AccessMiddleware(
+        await test_container.get(AccessService), cache, settings, await test_container.get(ChatReminderService)
+    )
     key = f"access:denial:{group}:group_banned"
     try:
         async with activation_runtime(test_container) as runtime:
