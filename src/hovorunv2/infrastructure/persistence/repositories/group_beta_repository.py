@@ -33,7 +33,15 @@ class SQLAlchemyGroupBetaRepository:
         self._session = session
 
     async def selection(self, group_id: int, feature: str) -> GroupBetaFeatureDB | None:
-        """Read only the current nondeleted selection, including an intentional off state."""
+        """Read only the current nondeleted selection, including an intentional off state.
+
+        Args:
+            group_id: Internal group entity ID.
+            feature: Feature key of the selection.
+
+        Returns:
+            Current selection row, or None if none exists.
+        """
         return await self._session.scalar(
             select(GroupBetaFeatureDB).where(
                 GroupBetaFeatureDB.group_id == group_id,
@@ -43,7 +51,15 @@ class SQLAlchemyGroupBetaRepository:
         )
 
     async def group_granted(self, group_id: int, feature: str) -> bool:
-        """Require an explicit current feature grant; user wildcard grants never substitute."""
+        """Require an explicit current feature grant; user wildcard grants never substitute.
+
+        Args:
+            group_id: Internal group entity ID.
+            feature: Feature key of the grant.
+
+        Returns:
+            True if an explicit current group grant exists.
+        """
         return bool(
             await self._session.scalar(
                 select(
@@ -58,7 +74,16 @@ class SQLAlchemyGroupBetaRepository:
         )
 
     async def is_admin(self, group_id: int, user_id: int, now: datetime) -> bool:
-        """Require current known administrator evidence for exactly this group and user."""
+        """Require current known administrator evidence for exactly this group and user.
+
+        Args:
+            group_id: Internal group entity ID.
+            user_id: Internal user entity ID.
+            now: Evaluation timestamp for freshness bounds.
+
+        Returns:
+            True if current verified administrator evidence exists for the group and user.
+        """
         return bool(
             await self._session.scalar(
                 select(
@@ -77,7 +102,15 @@ class SQLAlchemyGroupBetaRepository:
         )
 
     async def user_eligible(self, user_id: int, feature: str) -> bool:
-        """Read a specific or all-beta user grant without treating trust as eligibility."""
+        """Read a specific or all-beta user grant without treating trust as eligibility.
+
+        Args:
+            user_id: Internal user entity ID.
+            feature: Feature key of the grant.
+
+        Returns:
+            True if the user holds a specific or all-beta current grant.
+        """
         return bool(
             await self._session.scalar(
                 select(
@@ -92,10 +125,20 @@ class SQLAlchemyGroupBetaRepository:
         )
 
     async def _has_support(self, selection: GroupBetaFeatureDB, now: datetime) -> bool:
+        """Return whether the selection has current qualifying support."""
         return await self._session.scalar(group_support(selection, now)) is not None
 
     async def facts(self, target: PermissionTarget, feature: str, now: datetime) -> GroupBetaFacts:
-        """Read current support without caching a prior eligibility or membership result."""
+        """Read current support without caching a prior eligibility or membership result.
+
+        Args:
+            target: Permission target identifying the group and its numeric route.
+            feature: Feature key being evaluated.
+            now: Evaluation timestamp for freshness bounds.
+
+        Returns:
+            Group beta facts reflecting selection, grants and qualifying support.
+        """
         entity = await SQLAlchemyBetaEntitlementRepository(self._session).target(target)
         if not isinstance(entity, ChatDB):
             return GroupBetaFacts(feature=feature, subject_active=False)
@@ -111,7 +154,18 @@ class SQLAlchemyGroupBetaRepository:
     async def set_enabled(
         self, group: ChatDB, feature: str, *, enabled: bool, enabler: UserDB | None, now: datetime
     ) -> GroupBetaMutation:
-        """Retain selected state and revoke supporting intent on an explicit global off decision."""
+        """Retain selected state and revoke supporting intent on an explicit global off decision.
+
+        Args:
+            group: Group whose selection is changed.
+            feature: Feature key of the selection.
+            enabled: Whether the feature is selected.
+            enabler: Optional supporting administrator recorded on enable.
+            now: Timestamp for enabling and revoking support rows.
+
+        Returns:
+            Mutation carrying whether state changed and the explicit audit fields.
+        """
         selection = await self.selection(group.id, feature)
         if selection is None:
             if not enabled:

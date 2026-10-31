@@ -14,14 +14,26 @@ class SQLAlchemySystemRepository:
         self.session = session
 
     async def get_value(self, key: str) -> str | None:
-        """Fetch value for a given key."""
+        """Fetch value for a given key.
+
+        Args:
+            key: System state key.
+
+        Returns:
+            Value stored under the key, or None if absent.
+        """
         stmt = select(SystemStateDB).where(SystemStateDB.key == key)
         result = await self.session.execute(stmt)
         state = result.scalar_one_or_none()
         return state.value if state else None
 
     async def set_value(self, key: str, value: str) -> None:
-        """Set value for a given key."""
+        """Set value for a given key.
+
+        Args:
+            key: System state key.
+            value: Value to store under the key.
+        """
         stmt = select(SystemStateDB).where(SystemStateDB.key == key)
         result = await self.session.execute(stmt)
         state = result.scalar_one_or_none()

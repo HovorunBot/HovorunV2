@@ -23,7 +23,14 @@ class NotificationPreferenceRepository:
         self._session = session
 
     async def preferences(self, target: PermissionTarget) -> tuple[NotificationPreference, ...]:
-        """Return active overrides only for the exact current target generation."""
+        """Return active overrides only for the exact current target generation.
+
+        Args:
+            target: Permission target identifying the subject.
+
+        Returns:
+            Active category overrides for the target.
+        """
         return tuple(
             NotificationPreference(NotificationCategory(row.category), row.enabled) for row in await self._rows(target)
         )
@@ -31,7 +38,19 @@ class NotificationPreferenceRepository:
     async def set(
         self, target: PermissionTarget, category: NotificationCategory, *, enabled: bool
     ) -> tuple[bool, dict[str, object]]:
-        """Write or update one explicit switch; unchanged values are a no-op."""
+        """Write or update one explicit switch; unchanged values are a no-op.
+
+        Args:
+            target: Permission target identifying the subject.
+            category: Notification category being switched.
+            enabled: Whether the category is enabled.
+
+        Returns:
+            A pair of whether the switch changed and the audit changes.
+
+        Raises:
+            ValueError: If the exact active target generation is unavailable.
+        """
         if await self._active_target(target) is None:
             msg = "Notification preferences require the exact active target generation."
             raise ValueError(msg)
@@ -71,5 +90,6 @@ class NotificationPreferenceRepository:
         )
 
     async def _active_target(self, target: PermissionTarget) -> UserDB | ChatDB | None:
+        """Return the exact active target generation, or None."""
         statement = exact_target(target)
         return await self._session.scalar(statement) if statement is not None else None

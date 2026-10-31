@@ -32,19 +32,28 @@ class SQLAlchemyGroupGrantRepository:
         self._session = session
 
     async def _require_group(self, group_id: int) -> None:
+        """Require an active, nondeleted group generation."""
         group = await self._session.get(ChatDB, group_id)
         if group is None or group.deleted_at is not None or group.chat_type not in {"group", "supergroup"}:
             msg = "An active group generation is required"
             raise ValueError(msg)
 
     async def _require_user(self, user_id: int) -> None:
+        """Require an active, nondeleted user generation."""
         user = await self._session.get(UserDB, user_id)
         if user is None or user.deleted_at is not None:
             msg = "An active user generation is required"
             raise ValueError(msg)
 
     async def approvals(self, group_id: int) -> list[GroupApprovalDB]:
-        """Fetch nondeleted/nonrevoked approvals with active parent filtering."""
+        """Fetch nondeleted/nonrevoked approvals with active parent filtering.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            Visible active approvals for the group.
+        """
         query = (
             select(GroupApprovalDB)
             .join(ChatDB, ChatDB.id == GroupApprovalDB.group_id)
@@ -58,7 +67,14 @@ class SQLAlchemyGroupGrantRepository:
         return list((await self._session.scalars(query)).all())
 
     async def has_revoked_approval(self, group_id: int) -> bool:
-        """Check whether any approval for this group was explicitly revoked."""
+        """Check whether any approval for this group was explicitly revoked.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            True if the group has any explicitly revoked approval.
+        """
         query = (
             select(GroupApprovalDB.id)
             .join(ChatDB, ChatDB.id == GroupApprovalDB.group_id)
@@ -73,7 +89,14 @@ class SQLAlchemyGroupGrantRepository:
         return (await self._session.scalar(query)) is not None
 
     async def requests(self, group_id: int) -> list[GroupAccessRequestDB]:
-        """Fetch visible request history with active parents."""
+        """Fetch visible request history with active parents.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            Visible request lifecycle records for the group.
+        """
         query = (
             select(GroupAccessRequestDB)
             .join(ChatDB, ChatDB.id == GroupAccessRequestDB.group_id)
@@ -91,7 +114,14 @@ class SQLAlchemyGroupGrantRepository:
         return list((await self._session.scalars(query)).all())
 
     async def approve(self, group_id: int) -> GrantMutation:
-        """Idempotently record explicit approval."""
+        """Idempotently record explicit approval.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            Mutation carrying the approval result and audit fields.
+        """
         await self._require_group(group_id)
         if any(row.basis == ApprovalBasis.EXPLICIT for row in await self.approvals(group_id)):
             return GrantMutation(0)
@@ -100,7 +130,15 @@ class SQLAlchemyGroupGrantRepository:
         return GrantMutation(1, {"group_id": group_id, "basis": ApprovalBasis.EXPLICIT.value})
 
     async def revoke_approval(self, group_id: int, basis: ApprovalBasis) -> GrantMutation:
-        """Retain revoked approval history."""
+        """Retain revoked approval history.
+
+        Args:
+            group_id: Internal group entity ID.
+            basis: Approval basis to revoke.
+
+        Returns:
+            Mutation carrying the revocation result and audit fields.
+        """
         await self._require_group(group_id)
         row = next((row for row in await self.approvals(group_id) if row.basis == basis), None)
         if row is None:
@@ -109,7 +147,15 @@ class SQLAlchemyGroupGrantRepository:
         return GrantMutation(1, {"group_id": group_id, "basis": basis.value, "revoked": True})
 
     async def request(self, group_id: int, user_id: int) -> GrantMutation:
-        """Return a pending request, or add a new lifecycle after a prior decision."""
+        """Return a pending request, or add a new lifecycle after a prior decision.
+
+        Args:
+            group_id: Internal group entity ID.
+            user_id: Internal user entity ID of the requester.
+
+        Returns:
+            Mutation carrying the request ID and audit fields.
+        """
         await self._require_group(group_id)
         await self._require_user(user_id)
         # A deleted requester must not hide the group's unique pending request.
@@ -131,7 +177,20 @@ class SQLAlchemyGroupGrantRepository:
     async def decide(
         self, request_id: int, status: RequestStatus, actor_id: int | None, reason: str | None
     ) -> GrantMutation:
-        """Decide and add approval together; rejection never changes bans/status."""
+        """Decide and add approval together; rejection never changes bans/status.
+
+        Args:
+            request_id: Internal ID of the pending request.
+            status: Terminal decision status.
+            actor_id: ID of the deciding actor, or None.
+            reason: Decision reason recorded on the request.
+
+        Returns:
+            Mutation carrying the decision result and audit fields.
+
+        Raises:
+            ValueError: If the requested status is still pending.
+        """
         if status == RequestStatus.PENDING:
             msg = "A decision must terminate a pending request"
             raise ValueError(msg)
@@ -158,7 +217,14 @@ class SQLAlchemyGroupGrantRepository:
         )
 
     async def delete_request(self, request_id: int) -> GrantMutation:
-        """Soft-delete a visible request without touching its approval or ban state."""
+        """Soft-delete a visible request without touching its approval or ban state.
+
+        Args:
+            request_id: Internal ID of the request.
+
+        Returns:
+            Mutation carrying the deletion result and audit fields.
+        """
         row = await self._session.get(GroupAccessRequestDB, request_id)
         if row is None or row.deleted_at is not None:
             return GrantMutation(0)

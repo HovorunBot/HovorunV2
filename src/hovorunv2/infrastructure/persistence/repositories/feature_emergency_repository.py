@@ -16,7 +16,14 @@ class FeatureEmergencyRepository:
         self._session = session
 
     async def state(self, feature_key: str) -> FeatureEmergencyState:
-        """Return the current state; absence means enabled at epoch zero."""
+        """Return the current state; absence means enabled at epoch zero.
+
+        Args:
+            feature_key: Feature key whose emergency state is read.
+
+        Returns:
+            Current emergency state, defaulting to enabled at epoch zero when absent.
+        """
         row = await self._row(feature_key)
         if row is None:
             return FeatureEmergencyState(feature_key)
@@ -25,7 +32,17 @@ class FeatureEmergencyRepository:
     async def set_state(
         self, feature_key: str, *, disabled: bool, reason: str, public_reason: str | None
     ) -> tuple[FeatureEmergencyState, dict[str, object]]:
-        """Persist one transition and advance the epoch for stale-work fencing."""
+        """Persist one transition and advance the epoch for stale-work fencing.
+
+        Args:
+            feature_key: Feature key whose emergency state is updated.
+            disabled: Whether the feature is disabled.
+            reason: Internal reason recorded on the state.
+            public_reason: Optional public explanation recorded on the state.
+
+        Returns:
+            The new state and an explicit changes dictionary for auditing.
+        """
         row = await self._row(feature_key)
         before_disabled = row.disabled if row is not None else False
         before_public_reason = row.public_reason if row is not None else None

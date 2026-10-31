@@ -83,6 +83,20 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
         changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None,
         audit_if: Callable[[Any], bool] | None,
     ) -> Any:
+        """Run one atomic attempt with audit logging on the transaction session.
+
+        Args:
+            actor: Actor context recorded on the appended audit event.
+            target_type: Business entity category recorded on the audit event.
+            target_id: Stable identifier of the target subject.
+            action: Action verb recorded on the audit event.
+            operation: Async callback performing entity mutations on the transaction session.
+            changed_fields: Explicit dictionary of changed attributes or callable deriving them from the result.
+            audit_if: Optional predicate deciding whether to append an audit event.
+
+        Returns:
+            Result returned by the operation callback.
+        """
         async with self._session_maker() as session:
             async with session.begin():
                 result = await operation(session)
@@ -102,6 +116,17 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
         changed_fields: dict[str, Any] | Callable[[Any], dict[str, Any] | None] | None,
         result: Any,
     ) -> None:
+        """Validate, sanitize and append the audit event for a committed change.
+
+        Args:
+            session: Transaction session receiving the audit event.
+            actor: Actor context recorded on the audit event.
+            target_type: Business entity category recorded on the audit event.
+            target_id: Stable identifier of the target subject.
+            action: Action verb recorded on the audit event.
+            changed_fields: Explicit dictionary of changed attributes or callable deriving them from the result.
+            result: Operation result supplied to the changed_fields callable.
+        """
         if isinstance(changed_fields, dict):
             raw_changes = changed_fields
         elif callable(changed_fields):

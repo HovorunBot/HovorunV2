@@ -14,7 +14,14 @@ class SQLAlchemyCommandRepository:
         self.session = session
 
     async def get_by_name(self, name: str) -> CommandDB | None:
-        """Fetch command by its unique name."""
+        """Fetch the command by its unique name.
+
+        Args:
+            name: Unique command name.
+
+        Returns:
+            Command matching the name, or None if absent.
+        """
         stmt = select(CommandDB).where(CommandDB.name == name)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

@@ -24,6 +24,7 @@ class SQLAlchemyBanStore(BanStore):
         self._audited_uow = audited_uow
 
     async def _target(self, session: AsyncSession, target: TargetKind, telegram_id: int) -> UserDB | ChatDB | None:
+        """Return the active user or chat matching the target kind and ID, or None."""
         if target == TargetKind.USER:
             return await session.scalar(
                 select(UserDB).where(
@@ -42,7 +43,15 @@ class SQLAlchemyBanStore(BanStore):
         )
 
     async def list_active(self, target: TargetKind, telegram_id: int) -> list[BanDB]:
-        """Filter tombstoned subjects and restriction rows for ordinary reads."""
+        """Filter tombstoned subjects and restriction rows for ordinary reads.
+
+        Args:
+            target: Target kind of the subject.
+            telegram_id: Numeric Telegram ID of the subject.
+
+        Returns:
+            Active restrictions for the subject.
+        """
         async with self._session_maker() as session:
             if await self._target(session, target, telegram_id) is None:
                 return []
@@ -61,7 +70,15 @@ class SQLAlchemyBanStore(BanStore):
             )
 
     async def policy_revision(self, target: TargetKind, telegram_id: int) -> int:
-        """Include all history so revocation/reapplication changes the subject revision."""
+        """Include all history so revocation/reapplication changes the subject revision.
+
+        Args:
+            target: Target kind of the subject.
+            telegram_id: Numeric Telegram ID of the subject.
+
+        Returns:
+            Sum of restriction revisions across the subject's history.
+        """
         async with self._session_maker() as session:
             return int(
                 await session.scalar(
@@ -85,6 +102,7 @@ class SQLAlchemyBanStore(BanStore):
         actor: ActorContext,
         public_explanation: str | None,
     ) -> bool:
+        """Apply one restriction change inside the locked, audited transaction."""
         await lock_async_mutation(
             session,
             MutationLocks(
@@ -172,7 +190,22 @@ class SQLAlchemyBanStore(BanStore):
         actor: ActorContext,
         public_explanation: str | None = None,
     ) -> bool:
-        """Validate and atomically mutate restriction plus privacy-limited audit event."""
+        """Validate and atomically mutate restriction plus privacy-limited audit event.
+
+        Args:
+            target: Target kind of the subject.
+            telegram_id: Numeric Telegram ID of the subject.
+            kind: Restriction kind to apply or revoke.
+            active: Whether to apply or revoke the restriction.
+            actor: Actor context recorded on the audit event.
+            public_explanation: Optional public explanation recorded on the restriction.
+
+        Returns:
+            True if the restriction changed, False for an idempotent no-op.
+
+        Raises:
+            ValueError: If the actor lacks an internal reason or groups request a partial ban.
+        """
         if not actor.reason or not actor.reason.strip():
             msg = "Ban administration requires an internal reason."
             raise ValueError(msg)

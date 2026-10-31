@@ -48,7 +48,14 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
         return key
 
     async def state(self, feature_key: str) -> FeatureEmergencyState:
-        """Read state through an owning session without granting execution."""
+        """Read state through an owning session without granting execution.
+
+        Args:
+            feature_key: Feature key whose emergency state is read.
+
+        Returns:
+            Current emergency state.
+        """
         async with self._session_maker() as session:
             return await FeatureEmergencyRepository(session).state(self._key(feature_key))
 
@@ -63,6 +70,7 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
         actor: ActorContext,
         transport_kind: str | None,
     ) -> tuple[FeatureEmergencyState, dict[str, object]]:
+        """Authorize and persist one transition inside the audited transaction."""
         await require_private_administrator(session, actor, transport_kind, self._policy, message=MESSAGE)
         return await FeatureEmergencyRepository(session).set_state(
             feature_key, disabled=disabled, reason=reason, public_reason=public_reason
@@ -78,7 +86,19 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
         actor: ActorContext,
         transport_kind: str | None,
     ) -> FeatureEmergencyState:
-        """Commit one authoritative transition and its audit event atomically."""
+        """Commit one authoritative transition and its audit event atomically.
+
+        Args:
+            feature_key: Feature key whose emergency state is updated.
+            disabled: Whether the feature is disabled.
+            reason: Internal reason recorded on the state.
+            public_reason: Optional public explanation recorded on the state.
+            actor: Actor context recorded on the audit event.
+            transport_kind: Ingress transport used for administrator authorization.
+
+        Returns:
+            New authoritative emergency state.
+        """
         key = self._key(feature_key)
         result: tuple[FeatureEmergencyState, dict[str, object]] = await self._audited_uow.execute(
             actor=actor,

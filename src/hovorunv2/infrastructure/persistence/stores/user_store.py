@@ -31,19 +31,42 @@ class SQLAlchemyUserStore(UserStore):
         self._policy = policy
 
     async def get_by_id(self, user_id: int) -> UserDB | None:
-        """Fetch active user by internal entity ID."""
+        """Fetch active user by internal entity ID.
+
+        Args:
+            user_id: Internal entity ID of the user.
+
+        Returns:
+            Active user matching the ID, or None if absent or soft-deleted.
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyUserRepository(session)
             return await repo.get_by_id(user_id)
 
     async def get_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> UserDB | None:
-        """Fetch active user by platform and numeric Telegram ID."""
+        """Fetch active user by platform and numeric Telegram ID.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+
+        Returns:
+            Active user matching the platform and ID, or None if absent or soft-deleted.
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyUserRepository(session)
             return await repo.get_by_telegram_id(telegram_id, platform)
 
     async def get_historical_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> list[UserDB]:
-        """Fetch all generations of user identity for explicit recovery workflows."""
+        """Fetch all generations of user identity for explicit recovery workflows.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+
+        Returns:
+            All generations ordered by descending generation.
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyUserRepository(session)
             return await repo.get_historical_by_telegram_id(telegram_id, platform)
@@ -112,7 +135,16 @@ class SQLAlchemyUserStore(UserStore):
     async def ingest_user(
         self, telegram_id: int, platform: str = "telegram", actor: ActorContext | None = None
     ) -> UserDB | None:
-        """Ingest user from incoming evidence without resurrecting deleted identities."""
+        """Ingest user from incoming evidence without resurrecting deleted identities.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            Active or newly ingested user, or None if tombstoned.
+        """
         existing_active = await self.get_by_telegram_id(telegram_id, platform)
         if existing_active:
             return existing_active
@@ -143,7 +175,17 @@ class SQLAlchemyUserStore(UserStore):
     async def soft_delete_user(
         self, telegram_id: int, actor: ActorContext, reason: str, platform: str = "telegram"
     ) -> bool:
-        """Soft-delete an active user identity recording actor and deletion reason."""
+        """Soft-delete an active user identity recording actor and deletion reason.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            actor: Actor context recorded on the audit event.
+            reason: Deletion reason recorded on the tombstone.
+            platform: Platform of the user identity.
+
+        Returns:
+            True if an active user was soft-deleted, False if none was found.
+        """
         now = datetime.now(UTC)
         operation = partial(
             self._execute_soft_delete,
@@ -167,7 +209,17 @@ class SQLAlchemyUserStore(UserStore):
     async def set_trust(
         self, telegram_id: int, *, is_trusted: bool, actor: ActorContext | None = None, platform: str = "telegram"
     ) -> bool:
-        """Update trust flag for an active user identity."""
+        """Update trust flag for an active user identity.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            is_trusted: New trust flag.
+            actor: Optional actor context recorded on the audit event.
+            platform: Platform of the user identity.
+
+        Returns:
+            True if trust changed.
+        """
         operation = partial(
             self._execute_set_trust,
             telegram_id=telegram_id,

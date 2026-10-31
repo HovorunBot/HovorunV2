@@ -15,7 +15,15 @@ class SQLAlchemyRoleRepository:
         self.session = session
 
     async def get_role_by_telegram_id(self, telegram_id: int, platform: Platform = Platform.TELEGRAM) -> Role | None:
-        """Fetch single active authority role directly from active user record."""
+        """Fetch single active authority role directly from active user record.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+
+        Returns:
+            Authority role of the active user, or None if absent.
+        """
         stmt = select(UserDB.role).where(
             UserDB.platform == platform,
             UserDB.telegram_id == telegram_id,
@@ -25,7 +33,15 @@ class SQLAlchemyRoleRepository:
         return result.scalar_one_or_none()
 
     async def get_all_by_role(self, role: Role | None = None, platform: Platform = Platform.TELEGRAM) -> list[UserDB]:
-        """Fetch all active users with a specific role."""
+        """Fetch all active users with a specific role.
+
+        Args:
+            role: Exact role to filter on, or None for any administrator-or-higher role.
+            platform: Platform of the user identities.
+
+        Returns:
+            Active users matching the role, ordered by Telegram ID.
+        """
         stmt = select(UserDB).where(
             UserDB.platform == platform,
             UserDB.role == role if role is not None else UserDB.role >= Role.ADMIN,

@@ -76,7 +76,15 @@ class SQLAlchemyCommandStore(CommandStore):
             raise PermissionError(msg)
 
     async def legacy_capture_allowed(self, chat_id: int, platform: str = "telegram") -> bool:
-        """Read compatibility only for an active migrated empty configuration."""
+        """Read compatibility only for an active migrated empty configuration.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+            platform: Platform of the chat identity.
+
+        Returns:
+            True if the chat has legacy empty capture and no configured commands.
+        """
         async with self._session_maker() as session:
             chat = await SQLAlchemyChatRepository(session).get_by_id(chat_id, platform)
             return chat is not None and chat.legacy_empty_capture and not chat.commands
@@ -84,6 +92,7 @@ class SQLAlchemyCommandStore(CommandStore):
     async def _initialize_defaults(
         self, session: AsyncSession, chat_id: int, commands: tuple[str, ...], platform: str
     ) -> bool:
+        """Apply first-configuration defaults inside the locked transaction."""
         await lock_async_mutation(session, MutationLocks(chats=(chat_id,), platform=platform))
         repository = SQLAlchemyChatRepository(session)
         chat = await repository.get_by_id(chat_id, platform)
@@ -98,7 +107,13 @@ class SQLAlchemyCommandStore(CommandStore):
         return True
 
     async def initialize_defaults(self, chat_id: int, commands: tuple[str, ...], platform: str = "telegram") -> None:
-        """Apply first-configuration defaults atomically and preserve deliberate empty state."""
+        """Apply first-configuration defaults atomically and preserve deliberate empty state.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+            commands: Command names to apply as defaults.
+            platform: Platform of the chat identity.
+        """
         await self._audited_uow.execute(
             actor=ActorContext.system("initialize_defaults"),
             target_type="command_selection",
@@ -110,7 +125,15 @@ class SQLAlchemyCommandStore(CommandStore):
         )
 
     async def get_allowed_commands(self, chat_id: int, platform: str = "telegram") -> list[str]:
-        """Fetch allowed commands for a chat."""
+        """Fetch allowed commands for a chat.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+            platform: Platform of the chat identity.
+
+        Returns:
+            Names of commands associated with the chat, or an empty list if absent.
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
             chat = await repo.get_by_id(chat_id, platform)
@@ -199,7 +222,17 @@ class SQLAlchemyCommandStore(CommandStore):
     async def enable_command(
         self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None
     ) -> bool:
-        """Associate a command with a chat."""
+        """Associate a command with a chat.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+            command_name: Name of the command to enable.
+            platform: Platform of the chat identity.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            True if the command is now associated with the chat.
+        """
         operation = partial(
             self._execute_enable_command,
             actor=actor or ActorContext.system("enable_command"),
@@ -225,7 +258,17 @@ class SQLAlchemyCommandStore(CommandStore):
     async def disable_command(
         self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None
     ) -> bool:
-        """Remove association of a command from a chat."""
+        """Remove association of a command from a chat.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+            command_name: Name of the command to disable.
+            platform: Platform of the chat identity.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            True if the command association was removed.
+        """
         operation = partial(
             self._execute_disable_command,
             actor=actor or ActorContext.system("disable_command"),

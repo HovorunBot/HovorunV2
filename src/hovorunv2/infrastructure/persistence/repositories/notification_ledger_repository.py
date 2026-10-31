@@ -24,11 +24,25 @@ class NotificationLedgerRepository:
         self._session = session
 
     async def event(self, event_key: str) -> NotificationEventDB | None:
-        """Read the immutable event by key without provisioning a duplicate."""
+        """Read the immutable event by key without provisioning a duplicate.
+
+        Args:
+            event_key: Immutable event key.
+
+        Returns:
+            Event matching the key, or None if absent.
+        """
         return await self._session.scalar(select(NotificationEventDB).where(NotificationEventDB.event_key == event_key))
 
     async def ensure_event(self, event: NotificationEvent) -> tuple[bool, dict[str, object]]:
-        """Create the event once; an existing key is an idempotent no-op."""
+        """Create the event once; an existing key is an idempotent no-op.
+
+        Args:
+            event: Notification event to persist.
+
+        Returns:
+            A pair of whether the event was created and the audit changes.
+        """
         existing = await self.event(event.event_key)
         if existing is not None:
             return False, {}
@@ -46,7 +60,15 @@ class NotificationLedgerRepository:
         return True, {"event_key": event.event_key, "category": event.category.value}
 
     async def receipt(self, event_key: str, target: PermissionTarget) -> NotificationReceipt | None:
-        """Read one recipient receipt only for the exact active subject generation."""
+        """Read one recipient receipt only for the exact active subject generation.
+
+        Args:
+            event_key: Immutable event key.
+            target: Permission target identifying the recipient.
+
+        Returns:
+            Recipient receipt, or None if the event or active target is absent.
+        """
         event = await self.event(event_key)
         if event is None or await self._active_target(target) is None:
             return None
@@ -70,7 +92,21 @@ class NotificationLedgerRepository:
         attempts: int,
         telegram_message_id: int | None,
     ) -> tuple[bool, dict[str, object]]:
-        """Upsert one recipient receipt without touching any other recipient."""
+        """Upsert one recipient receipt without touching any other recipient.
+
+        Args:
+            event_key: Immutable event key.
+            target: Permission target identifying the recipient.
+            outcome: Delivery outcome recorded on the receipt.
+            attempts: Number of delivery attempts recorded on the receipt.
+            telegram_message_id: Optional delivered Telegram message ID.
+
+        Returns:
+            A pair of whether the receipt changed and the audit changes.
+
+        Raises:
+            ValueError: If the event or the exact active target generation is unavailable.
+        """
         event = await self.event(event_key)
         if event is None:
             msg = "Notification receipt requires an existing immutable event."
@@ -105,7 +141,15 @@ class NotificationLedgerRepository:
         }
 
     async def pending(self, event_key: str, limit: int) -> tuple[NotificationReceipt, ...]:
-        """Return a bounded pending/retry page with current subject routing."""
+        """Return a bounded pending/retry page with current subject routing.
+
+        Args:
+            event_key: Immutable event key.
+            limit: Maximum number of receipts to return.
+
+        Returns:
+            Pending or retry receipts with current subject routing.
+        """
         event = await self.event(event_key)
         if event is None or limit < 1:
             return ()
@@ -127,6 +171,7 @@ class NotificationLedgerRepository:
         return tuple(self._to_receipt(event_key, receipt, user, chat) for receipt, user, chat in rows)
 
     async def _receipt_row(self, event_id: int, target: PermissionTarget) -> NotificationReceiptDB | None:
+        """Return the receipt row for the exact event and subject, or None."""
         subject = NotificationReceiptDB.user_id if target.kind == "user" else NotificationReceiptDB.group_id
         return await self._session.scalar(
             select(NotificationReceiptDB).where(
@@ -136,12 +181,14 @@ class NotificationLedgerRepository:
         )
 
     async def _active_target(self, target: PermissionTarget) -> UserDB | ChatDB | None:
+        """Return the exact active target generation, or None."""
         statement = exact_target(target)
         return await self._session.scalar(statement) if statement is not None else None
 
     def _to_receipt(
         self, event_key: str, row: NotificationReceiptDB, user: UserDB | None, chat: ChatDB | None
     ) -> NotificationReceipt:
+        """Build a receipt from its row and current subject routing."""
         if user is not None:
             target = PermissionTarget("user", user.id, user.generation, user.telegram_id)
         elif chat is not None:

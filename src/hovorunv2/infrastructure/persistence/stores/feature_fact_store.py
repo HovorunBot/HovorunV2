@@ -31,6 +31,7 @@ class SQLAlchemyFeatureFactStore(FeatureFactStore):
         configure: bool,
         now: datetime,
     ) -> FeatureFacts:
+        """Read feature facts through the shared session-bound reader."""
         return PolicyFactReader(session, self._policy).feature_facts(
             definition,
             chat_id,
@@ -50,7 +51,19 @@ class SQLAlchemyFeatureFactStore(FeatureFactStore):
         configure: bool,
         now: datetime,
     ) -> FeatureFacts:
-        """Use a fresh session for every decision, with no detached lazy-loaded entities."""
+        """Use a fresh session for every decision, with no detached lazy-loaded entities.
+
+        Args:
+            definition: Feature definition being evaluated.
+            chat_id: Numeric chat ID of the target.
+            actor_id: Optional numeric Telegram ID of the actor.
+            trigger: Trigger kind of the evaluation.
+            configure: Whether this is a configuration action.
+            now: Evaluation timestamp.
+
+        Returns:
+            Feature facts for the private or group scope.
+        """
         async with self._sessions() as session:
             return await session.run_sync(
                 partial(

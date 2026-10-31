@@ -14,11 +14,19 @@ class SQLAlchemyAuditRepository:
         self.session = session
 
     async def add(self, event: AuditEventDB) -> None:
-        """Add audit event to session (does not commit)."""
+        """Add the audit event to the session without committing."""
         self.session.add(event)
 
     async def get_by_target(self, target_type: str, target_id: str) -> list[AuditEventDB]:
-        """Fetch audit events for a target ordered by ID ascending."""
+        """Fetch audit events for a target ordered by ID ascending.
+
+        Args:
+            target_type: Business entity category to filter on.
+            target_id: Stable identifier of the target subject.
+
+        Returns:
+            Audit events for the target in ascending ID order.
+        """
         stmt = (
             select(AuditEventDB)
             .where(AuditEventDB.target_type == target_type, AuditEventDB.target_id == str(target_id))

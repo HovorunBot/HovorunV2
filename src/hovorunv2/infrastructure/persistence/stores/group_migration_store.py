@@ -25,13 +25,31 @@ class SQLAlchemyGroupMigrationStore:
         self._audit = audited_uow
 
     async def canonical_id(self, telegram_id: int) -> int | None:
-        """Resolve aliases through an active group; deleted generations remain unavailable."""
+        """Resolve aliases through an active group; deleted generations remain unavailable.
+
+        Args:
+            telegram_id: Numeric Telegram ID or route alias.
+
+        Returns:
+            Canonical numeric ID of the active group, or None if absent.
+        """
         async with self._sessions() as session:
             group = await SQLAlchemyChatRepository(session).get_by_id(telegram_id)
             return group.chat_id if group is not None and group.chat_type in {"group", "supergroup"} else None
 
     async def migrate(self, old_id: int, new_id: int) -> bool:
-        """Retain every internal association and reject conflicting target identities."""
+        """Retain every internal association and reject conflicting target identities.
+
+        Args:
+            old_id: Numeric Telegram ID being migrated from.
+            new_id: Numeric Telegram ID being migrated to.
+
+        Returns:
+            True if the route was migrated.
+
+        Raises:
+            ValueError: If the IDs are not two distinct negative Telegram IDs.
+        """
         if old_id >= 0 or new_id >= 0 or old_id == new_id:
             msg = "Group migration requires two distinct negative Telegram IDs."
             raise ValueError(msg)
@@ -47,6 +65,7 @@ class SQLAlchemyGroupMigrationStore:
         return result[0]
 
     async def _migrate(self, session: AsyncSession, old_id: int, new_id: int) -> tuple[bool, int]:
+        """Perform the route migration inside the locked, audited transaction."""
         await lock_async_mutation(session, MutationLocks(chats=(old_id, new_id)))
         repository = SQLAlchemyChatRepository(session)
         group = await repository.get_by_id(old_id)
@@ -64,6 +83,7 @@ class SQLAlchemyGroupMigrationStore:
         return True, group.id
 
     async def _validate_target(self, session: AsyncSession, new_id: int) -> None:
+        """Reject migration targets that conflict with existing identities or handles."""
         conflict = await session.scalar(select(ChatDB.id).where(ChatDB.chat_id == new_id))
         route = await session.get(GroupRouteDB, new_id)
         if conflict is not None or route is not None:
@@ -80,6 +100,7 @@ class SQLAlchemyGroupMigrationStore:
             raise ValueError(msg)
 
     async def _move_route(self, session: AsyncSession, group: ChatDB, old_id: int, new_id: int) -> None:
+        """Move chat, ban and handle routing to the new canonical ID."""
         session.add(GroupRouteDB(telegram_id=old_id, group_id=group.id))
         group.chat_id = new_id
         group.chat_type = "supergroup"

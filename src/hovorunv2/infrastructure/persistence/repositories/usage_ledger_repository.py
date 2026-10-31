@@ -18,7 +18,11 @@ class SQLAlchemyUsageLedgerRepository:
         self._session = session
 
     async def require_known_subject(self, subject: AccountingSubject) -> None:
-        """Require a retained current or historical identity."""
+        """Require a retained current or historical identity.
+
+        Args:
+            subject: Accounting subject whose identity must exist.
+        """
         await self._session.run_sync(partial(_require_known_subject, subject=subject))
 
     async def aggregate(
@@ -29,7 +33,18 @@ class SQLAlchemyUsageLedgerRepository:
         window: UsageWindow,
         timestamp: int,
     ) -> UsageAggregateDB | None:
-        """Read one stable accounting window through the async driver."""
+        """Read one stable accounting window through the async driver.
+
+        Args:
+            subject: Accounting subject.
+            bucket: Accounting bucket.
+            unit: Usage unit.
+            window: Usage window.
+            timestamp: Occurrence timestamp used to compute the window start.
+
+        Returns:
+            Matching aggregate row, or None if none exists.
+        """
         return await self._session.run_sync(
             partial(
                 _aggregate,
@@ -42,11 +57,19 @@ class SQLAlchemyUsageLedgerRepository:
         )
 
     async def apply(self, events: tuple[UsageEvent, ...]) -> AppliedUsage:
-        """Run shared accounting in the caller's audit transaction."""
+        """Run shared accounting in the caller's audit transaction.
+
+        Args:
+            events: Usage events to account in event ID order.
+
+        Returns:
+            Applied usage summarizing events applied, aggregates touched and units charged.
+        """
         return await self._session.run_sync(partial(_apply, events=events))
 
 
 def _require_known_subject(session: Session, subject: AccountingSubject) -> None:
+    """Delegate the subject existence check to the synchronous repository."""
     UsageLedgerRepository(session).require_known_subject(subject)
 
 
@@ -58,8 +81,10 @@ def _aggregate(
     window: UsageWindow,
     timestamp: int,
 ) -> UsageAggregateDB | None:
+    """Delegate aggregate lookup to the synchronous repository."""
     return UsageLedgerRepository(session).aggregate(subject, bucket, unit, window, timestamp)
 
 
 def _apply(session: Session, events: tuple[UsageEvent, ...]) -> AppliedUsage:
+    """Delegate batch accounting to the synchronous repository."""
     return UsageLedgerRepository(session).apply(events)

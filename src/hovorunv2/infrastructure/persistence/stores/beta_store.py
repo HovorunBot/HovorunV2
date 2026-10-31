@@ -28,11 +28,20 @@ class SQLAlchemyBetaEntitlementStore(BetaEntitlementStore):
         self._policy = policy
 
     async def facts(self, target: PermissionTarget, feature: str) -> BetaEligibilityFacts:
-        """Read every effective grant fresh; revocation requires no cache invalidation."""
+        """Read every effective grant fresh; revocation requires no cache invalidation.
+
+        Args:
+            target: Permission target identifying the subject.
+            feature: Feature key whose entitlement is read.
+
+        Returns:
+            Eligibility facts reflecting subject activity and current grants.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyBetaEntitlementRepository(session).facts(target, feature)
 
     async def _authorize(self, session: AsyncSession, actor: ActorContext, transport_kind: str | None) -> None:
+        """Require CLI or current private bot administrator authority."""
         if actor.origin == ActorOrigin.CLI:
             return
         user = await session.scalar(
@@ -59,6 +68,7 @@ class SQLAlchemyBetaEntitlementStore(BetaEntitlementStore):
         actor: ActorContext,
         transport_kind: str | None,
     ) -> bool:
+        """Apply the entitlement change inside the locked, audited transaction."""
         # The audited transaction serializes current authority and lifecycle reads.
         await lock_async_mutation(
             session,
@@ -85,7 +95,21 @@ class SQLAlchemyBetaEntitlementStore(BetaEntitlementStore):
         actor: ActorContext,
         transport_kind: str | None = None,
     ) -> bool:
-        """Persist an entitlement and minimal audit event in one transaction."""
+        """Persist an entitlement and minimal audit event in one transaction.
+
+        Args:
+            target: Permission target identifying the subject.
+            feature: Feature key of the entitlement.
+            granted: Whether to grant or revoke the entitlement.
+            actor: Actor context recorded on the audit event.
+            transport_kind: Ingress transport used for administrator authorization.
+
+        Returns:
+            True if the entitlement changed, False for an idempotent no-op.
+
+        Raises:
+            ValueError: If the subject, feature or group all-beta combination is invalid.
+        """
         if target.kind not in {"user", "group"} or not feature or (target.kind == "group" and feature == ALL_BETA):
             msg = "Invalid beta entitlement subject or feature."
             raise ValueError(msg)

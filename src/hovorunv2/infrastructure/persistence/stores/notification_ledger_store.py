@@ -27,10 +27,19 @@ class SQLAlchemyNotificationLedgerStore(NotificationEventStore):
         self._audited_uow = audited_uow
 
     async def _ensure(self, session: AsyncSession, event: NotificationEvent) -> tuple[bool, dict[str, object]]:
+        """Create the event once through the session-bound repository."""
         return await NotificationLedgerRepository(session).ensure_event(event)
 
     async def ensure_event(self, event: NotificationEvent, *, actor: ActorContext) -> bool:
-        """Create the event once and audit the creation atomically."""
+        """Create the event once and audit the creation atomically.
+
+        Args:
+            event: Notification event to persist.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            True if the event was created.
+        """
         result: tuple[bool, dict[str, object]] = await self._audited_uow.execute(
             actor=actor,
             target_type="notification_event",
@@ -43,7 +52,15 @@ class SQLAlchemyNotificationLedgerStore(NotificationEventStore):
         return result[0]
 
     async def receipt(self, event_key: str, target: PermissionTarget) -> NotificationReceipt | None:
-        """Read one recipient receipt through an owning session."""
+        """Read one recipient receipt through an owning session.
+
+        Args:
+            event_key: Immutable event key.
+            target: Permission target identifying the recipient.
+
+        Returns:
+            Recipient receipt, or None if the event or active target is absent.
+        """
         async with self._session_maker() as session:
             return await NotificationLedgerRepository(session).receipt(event_key, target)
 
@@ -57,6 +74,7 @@ class SQLAlchemyNotificationLedgerStore(NotificationEventStore):
         attempts: int,
         telegram_message_id: int | None,
     ) -> tuple[bool, dict[str, object]]:
+        """Upsert one receipt through the session-bound repository."""
         return await NotificationLedgerRepository(session).record(
             event_key,
             target,
@@ -75,7 +93,19 @@ class SQLAlchemyNotificationLedgerStore(NotificationEventStore):
         telegram_message_id: int | None,
         actor: ActorContext,
     ) -> bool:
-        """Upsert one recipient receipt and its audit event atomically."""
+        """Upsert one recipient receipt and its audit event atomically.
+
+        Args:
+            event_key: Immutable event key.
+            target: Permission target identifying the recipient.
+            outcome: Delivery outcome recorded on the receipt.
+            attempts: Number of delivery attempts recorded on the receipt.
+            telegram_message_id: Optional delivered Telegram message ID.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            True if the receipt changed.
+        """
         result: tuple[bool, dict[str, object]] = await self._audited_uow.execute(
             actor=actor,
             target_type="notification_receipt",
@@ -95,6 +125,14 @@ class SQLAlchemyNotificationLedgerStore(NotificationEventStore):
         return result[0]
 
     async def pending(self, event_key: str, limit: int = DEFAULT_PENDING_LIMIT) -> tuple[NotificationReceipt, ...]:
-        """Return pending/retry recipients for later bounded delivery."""
+        """Return pending/retry recipients for later bounded delivery.
+
+        Args:
+            event_key: Immutable event key.
+            limit: Maximum number of receipts to return.
+
+        Returns:
+            Pending or retry receipts with current subject routing.
+        """
         async with self._session_maker() as session:
             return await NotificationLedgerRepository(session).pending(event_key, limit)

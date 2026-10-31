@@ -41,6 +41,10 @@ def lock_mutation(session: Session, locks: MutationLocks) -> None:
     Scoped advisory locks cover keys without a row (ingestion, aliases, handles and settings).
     They are not a global writer lock. Existing parents additionally use PostgreSQL row locks.
     Resolve only immutable identity/parent columns before locking, then consumers load fresh facts.
+
+    Args:
+        session: Synchronous database session executing the lock and lookup statements.
+        locks: Declared mutation locks for users, chats, groups, actors and advisory keys.
     """
     users, actors, chats, group_ids, keys = _prepare_lock_keys(session, locks)
     schema = session.scalar(select(func.current_schema()))
@@ -69,7 +73,15 @@ def lock_mutation(session: Session, locks: MutationLocks) -> None:
 def _prepare_lock_keys(
     session: Session, locks: MutationLocks
 ) -> tuple[set[int], set[int], set[int], set[int], dict[str, bool]]:
-    """Resolve immutable parent identifiers and advisory lock modes."""
+    """Resolve immutable parent identifiers and advisory lock modes.
+
+    Args:
+        session: Synchronous database session for identity lookups.
+        locks: Declared mutation locks specifying users, chats, groups and keys.
+
+    Returns:
+        Resolved user, actor, chat and group identifier sets together with the advisory lock mode map.
+    """
     user_ids = set(locks.user_ids)
     shared_ids = set(locks.read_user_ids)
     group_ids = set(locks.group_ids)

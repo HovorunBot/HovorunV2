@@ -19,13 +19,30 @@ class SQLAlchemyChatRepository:
         self.session = session
 
     async def get_by_id(self, chat_id: int, platform: str = "telegram") -> ChatDB | None:
-        """Fetch active chat from database."""
+        """Fetch the active chat from the database.
+
+        Args:
+            chat_id: Numeric chat ID or canonical route to resolve.
+            platform: Platform of the chat identity.
+
+        Returns:
+            Active chat matching the ID and platform, or None if absent or soft-deleted.
+        """
         stmt = active_chat(chat_id, platform)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list_groups(self, after_id: int, limit: int, *, present_only: bool) -> list[ChatDB]:
-        """Bound candidate discovery and exclude private/deleted identities and route aliases."""
+        """Bound candidate discovery and exclude private/deleted identities and route aliases.
+
+        Args:
+            after_id: Exclusive lower bound for keyset pagination.
+            limit: Maximum number of groups to return.
+            present_only: Whether to require bot presence on the returned groups.
+
+        Returns:
+            Active canonical group candidates ordered by ID.
+        """
         if limit < 1:
             return []
         query = select(ChatDB).where(
@@ -41,7 +58,15 @@ class SQLAlchemyChatRepository:
         return list(rows.all())
 
     async def get_deleted_by_chat_id(self, chat_id: int, platform: str = "telegram") -> ChatDB | None:
-        """Fetch latest soft-deleted chat tombstone."""
+        """Fetch the latest soft-deleted chat tombstone.
+
+        Args:
+            chat_id: Numeric chat ID or route alias of the chat.
+            platform: Platform of the chat identity.
+
+        Returns:
+            Most recent deleted generation, or None if no tombstone exists.
+        """
         stmt = (
             select(ChatDB)
             .where(
@@ -58,7 +83,15 @@ class SQLAlchemyChatRepository:
         return result.scalars().first()
 
     async def get_historical_by_chat_id(self, chat_id: int, platform: str = "telegram") -> list[ChatDB]:
-        """Fetch all chat generations (active and deleted) for recovery workflows."""
+        """Fetch all chat generations (active and deleted) for recovery workflows.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+            platform: Platform of the chat identity.
+
+        Returns:
+            All generations ordered by descending generation.
+        """
         stmt = (
             select(ChatDB)
             .where(
@@ -75,7 +108,15 @@ class SQLAlchemyChatRepository:
         self.session.add(chat)
 
     async def get_all_by_status(self, status: ChatStatus, platform: str = "telegram") -> list[ChatDB]:
-        """Fetch all active chats with a specific status for a given platform."""
+        """Fetch all active chats with a specific status for a given platform.
+
+        Args:
+            status: Lifecycle status to filter on.
+            platform: Platform of the chat identities.
+
+        Returns:
+            Active chats matching the status.
+        """
         stmt = select(ChatDB).where(
             ChatDB.status == status,
             ChatDB.platform == Platform(platform),
@@ -92,7 +133,18 @@ class SQLAlchemyChatRepository:
         platform: str = "telegram",
         deleted_at: datetime | None = None,
     ) -> bool:
-        """Soft-delete an active chat identity."""
+        """Soft-delete an active chat identity.
+
+        Args:
+            chat_id: Numeric chat ID of the chat to delete.
+            actor_id: ID of the acting actor recorded on the tombstone.
+            reason: Deletion reason recorded on the tombstone.
+            platform: Platform of the chat identity.
+            deleted_at: Explicit deletion timestamp, or now when omitted.
+
+        Returns:
+            True if an active chat was soft-deleted, False if none was found.
+        """
         chat = await self.get_by_id(chat_id, platform)
         if not chat:
             return False

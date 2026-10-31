@@ -20,7 +20,17 @@ from hovorunv2.infrastructure.persistence.repositories.user_repository import SQ
 
 
 def evidence_time(value: datetime) -> datetime:
-    """Validate aware PostgreSQL facts and normalize their UTC representation."""
+    """Validate aware PostgreSQL facts and normalize their UTC representation.
+
+    Args:
+        value: Timestamp read from PostgreSQL membership facts.
+
+    Returns:
+        The timestamp normalized to UTC.
+
+    Raises:
+        ValueError: If the timestamp lacks a timezone offset.
+    """
     if value.utcoffset() is None:
         msg = "Membership facts require a timezone-aware timestamp."
         raise ValueError(msg)
@@ -28,7 +38,15 @@ def evidence_time(value: datetime) -> datetime:
 
 
 def validate_evidence_time(verified_at: datetime, expires_at: datetime) -> None:
-    """Reject ambiguous or inverted evidence before durable state changes."""
+    """Reject ambiguous or inverted evidence before durable state changes.
+
+    Args:
+        verified_at: Verification timestamp of the evidence.
+        expires_at: Expiry timestamp of the evidence.
+
+    Raises:
+        ValueError: If either timestamp is naive or expiry precedes verification.
+    """
     if verified_at.tzinfo is None or expires_at.tzinfo is None or expires_at < verified_at:
         msg = "Evidence requires aware timestamps and expiry at or after verification"
         raise ValueError(msg)
@@ -50,7 +68,15 @@ class SQLAlchemyMembershipRepository:
         self._session = session
 
     async def due_groups(self, now: datetime, limit: int) -> list[ChatDB]:
-        """Bound all work in SQL; unknown evidence retries on its expiry."""
+        """Bound all work in SQL; unknown evidence retries on its expiry.
+
+        Args:
+            now: Evaluation timestamp for freshness bounds.
+            limit: Maximum number of groups to return.
+
+        Returns:
+            Groups with missing or expired bot, admin or relevant-user evidence.
+        """
         if limit < 1:
             return []
         relevant_expired = exists(
@@ -93,7 +119,15 @@ class SQLAlchemyMembershipRepository:
         return list((await self._session.scalars(query)).all())
 
     async def relevant_users(self, group_id: int, limit: int) -> list[UserDB]:
-        """Bound current/pending administrator candidates, prioritizing expired records."""
+        """Bound current/pending administrator candidates, prioritizing expired records.
+
+        Args:
+            group_id: Internal group entity ID.
+            limit: Maximum number of users to return.
+
+        Returns:
+            Current and unresolved administrator candidates ordered by expiry.
+        """
         if limit < 1:
             return []
         query = (
@@ -118,7 +152,15 @@ class SQLAlchemyMembershipRepository:
         return list((await self._session.scalars(query)).all())
 
     async def full_banned_admin_status(self, group_id: int, now: datetime) -> MembershipStatus | None:
-        """Use existence queries so an authorization decision never truncates candidates."""
+        """Use existence queries so an authorization decision never truncates candidates.
+
+        Args:
+            group_id: Internal group entity ID.
+            now: Evaluation timestamp for freshness bounds.
+
+        Returns:
+            Admin status of the current banned-admin candidates, or None if absent.
+        """
         verified, unknown = banned_admin_queries(group_id, now)
         if await self._session.scalar(verified) is not None:
             return MembershipStatus.ADMIN
@@ -127,6 +169,7 @@ class SQLAlchemyMembershipRepository:
         return None
 
     async def _group(self, group_id: int, telegram_id: int) -> ChatDB | None:
+        """Return the active group generation matching the numeric route, or None."""
         group = await self._session.get(ChatDB, group_id)
         if group is None or group.deleted_at is not None or group.chat_type not in {"group", "supergroup"}:
             return None
@@ -136,6 +179,7 @@ class SQLAlchemyMembershipRepository:
         return group
 
     async def _state(self, group_id: int) -> GroupMembershipStateDB:
+        """Return the current membership state row, provisioning it when absent."""
         state = await self._session.get(GroupMembershipStateDB, group_id)
         if state is None:
             state = GroupMembershipStateDB(group_id=group_id, policy_revision=0)
@@ -143,7 +187,14 @@ class SQLAlchemyMembershipRepository:
         return state
 
     async def get_state(self, group_id: int) -> GroupMembershipStateDB | None:
-        """Read active-generation freshness and revision state."""
+        """Read active-generation freshness and revision state.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            Current active membership state row, or None if absent.
+        """
         return await self._session.scalar(
             select(GroupMembershipStateDB)
             .join(
@@ -158,7 +209,15 @@ class SQLAlchemyMembershipRepository:
         )
 
     async def is_admin_any(self, user_telegram_id: int, now: datetime) -> bool:
-        """Check if user is verified administrator in any active group."""
+        """Check if user is verified administrator in any active group.
+
+        Args:
+            user_telegram_id: Numeric Telegram ID of the user.
+            now: Evaluation timestamp for freshness bounds.
+
+        Returns:
+            True if the user is a verified administrator of any active group.
+        """
         user = await self._session.scalar(
             select(UserDB).where(UserDB.telegram_id == user_telegram_id, UserDB.deleted_at.is_(None))
         )
@@ -179,6 +238,7 @@ class SQLAlchemyMembershipRepository:
         return (await self._session.scalar(query)) is not None
 
     async def _record(self, group_id: int, user_id: int) -> MemberEvidenceDB | None:
+        """Return the current nondeleted member evidence row, or None."""
         return await self._session.scalar(
             select(MemberEvidenceDB).where(
                 MemberEvidenceDB.group_id == group_id,
@@ -188,7 +248,15 @@ class SQLAlchemyMembershipRepository:
         )
 
     async def get_member(self, group_id: int, user_id: int) -> MembershipEvidence | None:
-        """Read evidence only when both identity generations remain active."""
+        """Read evidence only when both identity generations remain active.
+
+        Args:
+            group_id: Internal group entity ID.
+            user_id: Internal user entity ID.
+
+        Returns:
+            Membership evidence with explicit verification and expiry times, or None.
+        """
         row = await self._record(group_id, user_id)
         group = await self._session.get(ChatDB, group_id)
         user = await self._session.get(UserDB, user_id)
@@ -210,6 +278,7 @@ class SQLAlchemyMembershipRepository:
         evidence: MembershipEvidence,
         expected_user_id: int | None = None,
     ) -> bool:
+        """Persist newer member evidence through the shared user repository."""
         user_repo = SQLAlchemyUserRepository(self._session)
         user = await user_repo.get_by_telegram_id(evidence.user_telegram_id, str(group.platform))
         if user is None and evidence.status == MembershipStatus.ADMIN:
@@ -269,7 +338,16 @@ class SQLAlchemyMembershipRepository:
         evidence: MembershipEvidence,
         expected_user_id: int | None = None,
     ) -> MembershipMutation:
-        """Persist a relevant event/API check only if newer than the current evidence."""
+        """Persist a relevant event/API check only if newer than the current evidence.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Membership evidence to persist.
+            expected_user_id: Optional internal user ID the evidence must match.
+
+        Returns:
+            Mutation carrying whether state changed and the audit fields.
+        """
         validate_evidence_time(evidence.verified_at, evidence.expires_at)
         group = await self._group(group_id, evidence.group_telegram_id)
         if group is None or not await self._save_member(group, evidence, expected_user_id):
@@ -287,7 +365,15 @@ class SQLAlchemyMembershipRepository:
         )
 
     async def save_bot(self, group_id: int, evidence: BotCapabilityEvidence) -> MembershipMutation:
-        """Presence and per-capability evidence never overwrite ChatStatus or access bases."""
+        """Presence and per-capability evidence never overwrite ChatStatus or access bases.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Bot capability evidence to persist.
+
+        Returns:
+            Mutation carrying whether state changed and the audit fields.
+        """
         member = evidence.membership
         validate_evidence_time(member.verified_at, member.expires_at)
         group = await self._group(group_id, member.group_telegram_id)
@@ -314,7 +400,15 @@ class SQLAlchemyMembershipRepository:
         )
 
     async def save_admins(self, group_id: int, evidence: AdministratorEvidence) -> MembershipMutation:
-        """Reconcile only admins; failed listings mark retained candidates UNKNOWN, never LEFT."""
+        """Reconcile only admins; failed listings mark retained candidates UNKNOWN, never LEFT.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Administrator snapshot evidence to persist.
+
+        Returns:
+            Mutation carrying whether state changed and the audit fields.
+        """
         validate_evidence_time(evidence.verified_at, evidence.expires_at)
         group = await self._group(group_id, evidence.group_telegram_id)
         if group is None:

@@ -31,12 +31,26 @@ class SQLAlchemyUsagePolicyRepository:
         self._session = session
 
     async def target(self, target: PermissionTarget) -> UserDB | ChatDB | None:
-        """Require the exact current active lifecycle and canonical numeric route."""
+        """Require the exact current active lifecycle and canonical numeric route.
+
+        Args:
+            target: Permission target identifying kind, entity, generation and numeric route.
+
+        Returns:
+            Active user or chat matching the target, or None if absent or inactive.
+        """
         statement = exact_target(target)
         return await self._session.scalar(statement) if statement is not None else None
 
     async def rows(self, target: PermissionTarget) -> list[UsageOverrideDB]:
-        """Never expose overrides whose subject generation is no longer active."""
+        """Never expose overrides whose subject generation is no longer active.
+
+        Args:
+            target: Permission target identifying the subject.
+
+        Returns:
+            Active override rows for the target, ordered by ID.
+        """
         if await self.target(target) is None:
             return []
         subject = UsageOverrideDB.user_id if target.kind == "user" else UsageOverrideDB.group_id
@@ -51,7 +65,14 @@ class SQLAlchemyUsagePolicyRepository:
         )
 
     async def policies(self, target: PermissionTarget) -> tuple[UsagePolicy, ...]:
-        """Convert valid durable rows to typed application policy values."""
+        """Convert valid durable rows to typed application policy values.
+
+        Args:
+            target: Permission target identifying the subject.
+
+        Returns:
+            Active usage policies for the target.
+        """
         return tuple(
             UsagePolicy(
                 row.bucket,
@@ -66,7 +87,19 @@ class SQLAlchemyUsagePolicyRepository:
         )
 
     async def set_policy(self, target: PermissionTarget, policy: UsagePolicy, *, remove: bool) -> UsagePolicyMutation:
-        """Keep retired rows for recovery; active uniqueness is per bucket/unit/window."""
+        """Keep retired rows for recovery; active uniqueness is per bucket/unit/window.
+
+        Args:
+            target: Permission target identifying the subject.
+            policy: Usage policy to apply or remove.
+            remove: Whether to remove the matching override.
+
+        Returns:
+            Mutation carrying whether state changed and the audit fields.
+
+        Raises:
+            ValueError: If the exact active target generation is unavailable.
+        """
         if await self.target(target) is None:
             msg = "Usage override requires the exact active target generation."
             raise ValueError(msg)

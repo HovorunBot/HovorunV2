@@ -20,12 +20,27 @@ class SQLAlchemyBetaEntitlementRepository:
         self._session = session
 
     async def target(self, target: PermissionTarget) -> UserDB | ChatDB | None:
-        """Require the exact current active lifecycle and canonical numeric route."""
+        """Require the exact current active lifecycle and canonical numeric route.
+
+        Args:
+            target: Permission target identifying kind, entity, generation and numeric route.
+
+        Returns:
+            Active user or chat matching the target, or None if absent or inactive.
+        """
         statement = exact_target(target)
         return await self._session.scalar(statement) if statement is not None else None
 
     async def facts(self, target: PermissionTarget, feature: str) -> BetaEligibilityFacts:
-        """Read current effective entitlements and filter deleted lifecycle subjects."""
+        """Read current effective entitlements and filter deleted lifecycle subjects.
+
+        Args:
+            target: Permission target identifying kind, entity, generation and numeric route.
+            feature: Feature key whose specific or all-beta entitlement is read.
+
+        Returns:
+            Eligibility facts reflecting subject activity and current grants.
+        """
         entity = await self.target(target)
         if entity is None:
             return BetaEligibilityFacts(feature=feature, subject_active=False)
@@ -47,7 +62,16 @@ class SQLAlchemyBetaEntitlementRepository:
         )
 
     async def set_grant(self, entity: UserDB | ChatDB, feature: str, *, granted: bool) -> bool:
-        """Apply a grant or preserve its revocation history; never alter feature selections."""
+        """Apply a grant or preserve its revocation history without altering feature selections.
+
+        Args:
+            entity: Active user or chat receiving the entitlement change.
+            feature: Feature key of the entitlement.
+            granted: Whether to grant or revoke the entitlement.
+
+        Returns:
+            True if the entitlement changed, False if it was already in the requested state.
+        """
         subject = BetaEntitlementDB.user_id if isinstance(entity, UserDB) else BetaEntitlementDB.group_id
         current = await self._session.scalar(
             select(BetaEntitlementDB).where(

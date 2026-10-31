@@ -34,32 +34,79 @@ class SQLAlchemyMembershipStore(MembershipStore):
         self._audited_uow = audited_uow
 
     async def due_groups(self, now: datetime, limit: int = 50) -> list[ChatDB]:
-        """List a bounded batch of missing/expired evidence subjects."""
+        """List a bounded batch of missing/expired evidence subjects.
+
+        Args:
+            now: Evaluation timestamp for freshness bounds.
+            limit: Maximum number of groups to return.
+
+        Returns:
+            Groups with missing or expired bot, admin or relevant-user evidence.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).due_groups(now, limit)
 
     async def relevant_users(self, group_id: int, limit: int = 50) -> list[UserDB]:
-        """List only active administrator candidates with a SQL bound."""
+        """List only active administrator candidates with a SQL bound.
+
+        Args:
+            group_id: Internal group entity ID.
+            limit: Maximum number of users to return.
+
+        Returns:
+            Current and unresolved administrator candidates ordered by expiry.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).relevant_users(group_id, limit)
 
     async def full_banned_admin_status(self, group_id: int, now: datetime) -> MembershipStatus | None:
-        """Query complete current-generation blockers independently of maintenance batch sizes."""
+        """Query complete current-generation blockers independently of maintenance batch sizes.
+
+        Args:
+            group_id: Internal group entity ID.
+            now: Evaluation timestamp for freshness bounds.
+
+        Returns:
+            Admin status of the current banned-admin candidates, or None if absent.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).full_banned_admin_status(group_id, now)
 
     async def get_member(self, group_id: int, user_id: int) -> MembershipEvidence | None:
-        """Read evidence with explicit verification and expiry times."""
+        """Read evidence with explicit verification and expiry times.
+
+        Args:
+            group_id: Internal group entity ID.
+            user_id: Internal user entity ID.
+
+        Returns:
+            Membership evidence with explicit verification and expiry times, or None.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).get_member(group_id, user_id)
 
     async def get_state(self, group_id: int) -> GroupMembershipStateDB | None:
-        """Read generation-bound policy revision and bot/admin freshness."""
+        """Read generation-bound policy revision and bot/admin freshness.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            Current active membership state row, or None if absent.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).get_state(group_id)
 
     async def is_admin_any(self, user_telegram_id: int, now: datetime) -> bool:
-        """Check if user is verified administrator in any active group."""
+        """Check if user is verified administrator in any active group.
+
+        Args:
+            user_telegram_id: Numeric Telegram ID of the user.
+            now: Evaluation timestamp for freshness bounds.
+
+        Returns:
+            True if the user is a verified administrator of any active group.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyMembershipRepository(session).is_admin_any(user_telegram_id, now)
 
@@ -69,6 +116,7 @@ class SQLAlchemyMembershipStore(MembershipStore):
         operation: Callable[[SQLAlchemyMembershipRepository], Awaitable[MembershipMutation]],
         locks: MutationLocks,
     ) -> MembershipMutation:
+        """Run one repository operation under the declared locks."""
         await lock_async_mutation(session, locks)
         return await operation(SQLAlchemyMembershipRepository(session))
 
@@ -80,6 +128,7 @@ class SQLAlchemyMembershipStore(MembershipStore):
         actor: ActorContext | None,
         users: tuple[int, ...] = (),
     ) -> bool:
+        """Run one audited membership mutation and report whether state changed."""
         result: MembershipMutation = await self._audited_uow.execute(
             actor=actor or ActorContext.system("membership verification"),
             target_type="membership",
@@ -101,7 +150,17 @@ class SQLAlchemyMembershipStore(MembershipStore):
         *,
         expected_user_id: int | None = None,
     ) -> bool:
-        """Save relevant newer member evidence and invalidate policy snapshots."""
+        """Save relevant newer member evidence and invalidate policy snapshots.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Membership evidence to persist.
+            actor: Optional actor context recorded on the audit event.
+            expected_user_id: Optional internal user ID the evidence must match.
+
+        Returns:
+            True if the evidence changed durable state.
+        """
         return await self._mutate(
             group_id,
             "verify_member",
@@ -116,7 +175,16 @@ class SQLAlchemyMembershipStore(MembershipStore):
         )
 
     async def save_bot(self, group_id: int, evidence: BotCapabilityEvidence, actor: ActorContext | None = None) -> bool:
-        """Save per-capability verification separately from physical presence and grants."""
+        """Save per-capability verification separately from physical presence and grants.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Bot capability evidence to persist.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            True if the evidence changed durable state.
+        """
         return await self._mutate(
             group_id,
             "verify_bot",
@@ -127,7 +195,16 @@ class SQLAlchemyMembershipStore(MembershipStore):
     async def save_admins(
         self, group_id: int, evidence: AdministratorEvidence, actor: ActorContext | None = None
     ) -> bool:
-        """Save an administrator snapshot without treating uncertainty as absence."""
+        """Save an administrator snapshot without treating uncertainty as absence.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Administrator snapshot evidence to persist.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            True if the evidence changed durable state.
+        """
         return await self._mutate(
             group_id,
             "verify_admins",

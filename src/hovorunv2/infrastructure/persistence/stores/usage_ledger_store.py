@@ -31,10 +31,19 @@ class SQLAlchemyUsageLedgerStore(UsageLedgerStore):
         self._registry = registry
 
     async def _apply(self, session: AsyncSession, events: tuple[UsageEvent, ...]) -> AppliedUsage:
+        """Run shared accounting through the async repository."""
         return await SQLAlchemyUsageLedgerRepository(session).apply(events)
 
     async def apply_batch(self, events: tuple[UsageEvent, ...], *, actor: ActorContext) -> AppliedUsage:
-        """Commit receipts, counters and one payload-free audit summary or roll back all three."""
+        """Commit receipts, counters and one payload-free audit summary or roll back all three.
+
+        Args:
+            events: Usage events to account in event ID order.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            Applied usage summarizing events applied, aggregates touched and units charged.
+        """
         validate_usage_batch(self._registry, events, actor)
         batch_id = usage_batch_id(events)
         return await self._audited_uow.execute(
@@ -55,7 +64,18 @@ class SQLAlchemyUsageLedgerStore(UsageLedgerStore):
         window: UsageWindow,
         timestamp: int,
     ) -> int:
-        """Read accounting for active or historical subjects without granting execution access."""
+        """Read accounting for active or historical subjects without granting execution access.
+
+        Args:
+            subject: Accounting subject.
+            bucket: Accounting bucket.
+            unit: Usage unit.
+            window: Usage window.
+            timestamp: Occurrence timestamp used to compute the window start.
+
+        Returns:
+            Current aggregate amount, or 0 if none exists.
+        """
         async with self._session_maker() as session:
             repository = SQLAlchemyUsageLedgerRepository(session)
             await repository.require_known_subject(subject)

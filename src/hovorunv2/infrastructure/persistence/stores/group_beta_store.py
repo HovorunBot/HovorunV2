@@ -35,7 +35,19 @@ class SQLAlchemyGroupBetaStore(GroupBetaStore):
         self._policy = policy
 
     async def facts(self, target: PermissionTarget, feature: str, now: datetime) -> GroupBetaFacts:
-        """Read effective support from current database state; no ordinary-member identity is needed."""
+        """Read effective support from current database state; no ordinary-member identity is needed.
+
+        Args:
+            target: Permission target identifying the group and its numeric route.
+            feature: Feature key being evaluated.
+            now: Evaluation timestamp for freshness bounds.
+
+        Returns:
+            Group beta facts reflecting selection, grants and qualifying support.
+
+        Raises:
+            ValueError: If the evaluation timestamp is naive.
+        """
         if now.utcoffset() is None:
             msg = "Beta evaluation requires an aware timestamp."
             raise ValueError(msg)
@@ -43,6 +55,7 @@ class SQLAlchemyGroupBetaStore(GroupBetaStore):
             return await SQLAlchemyGroupBetaRepository(session).facts(target, feature, now)
 
     async def _banned(self, session: AsyncSession, kind: TargetKind, telegram_id: int) -> bool:
+        """Return whether the subject has an active ban of the given kind."""
         return (
             await session.scalar(
                 select(BanDB.id)
@@ -67,6 +80,7 @@ class SQLAlchemyGroupBetaStore(GroupBetaStore):
         transport_kind: str | None,
         now: datetime,
     ) -> tuple[UserDB | None, bool, bool]:
+        """Authorize the acting human administrator and return their identity and flags."""
         if actor.origin == ActorOrigin.CLI:
             return None, True, False
         user = await SQLAlchemyUserRepository(session).get_by_telegram_id(actor.actor_id or 0)
@@ -95,6 +109,7 @@ class SQLAlchemyGroupBetaStore(GroupBetaStore):
         actor: ActorContext,
         transport_kind: str | None,
     ) -> GroupBetaMutation:
+        """Apply one selection change inside the locked, audited transaction."""
         await lock_async_mutation(
             session,
             MutationLocks(
@@ -138,7 +153,21 @@ class SQLAlchemyGroupBetaStore(GroupBetaStore):
         actor: ActorContext,
         transport_kind: str | None,
     ) -> bool:
-        """Mutate selection and supporting intent with one minimal business audit event."""
+        """Mutate selection and supporting intent with one minimal business audit event.
+
+        Args:
+            target: Permission target identifying the group.
+            feature: Feature key of the selection.
+            enabled: Whether the feature is selected.
+            actor: Actor context recorded on the audit event.
+            transport_kind: Ingress transport used for settings authorization.
+
+        Returns:
+            True if the selection changed.
+
+        Raises:
+            ValueError: If the target is not a group, the feature is empty, or it is the all-beta wildcard.
+        """
         if target.kind != "group" or not feature or feature == ALL_BETA:
             msg = "Group beta activation requires one group and one specific feature."
             raise ValueError(msg)

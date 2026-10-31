@@ -24,15 +24,31 @@ class SQLAlchemySystemStore(SystemStore):
         self._audited_uow = audited_uow
 
     async def get_last_notified_version(self) -> str | None:
-        """Fetch last notified version from database."""
+        """Fetch last notified version from database.
+
+        Returns:
+            Last notified version string, or None if absent.
+        """
         return await self.get_value("last_notified_version")
 
     async def set_last_notified_version(self, version: str, actor: ActorContext | None = None) -> None:
-        """Update last notified version in database."""
+        """Update last notified version in database.
+
+        Args:
+            version: New last notified version.
+            actor: Optional actor context recorded on the audit event.
+        """
         await self.set_value("last_notified_version", version, actor=actor)
 
     async def get_value(self, key: str) -> str | None:
-        """Fetch arbitrary value from system repository."""
+        """Fetch arbitrary value from system repository.
+
+        Args:
+            key: System state key.
+
+        Returns:
+            Value stored under the key, or None if absent.
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemySystemRepository(session)
             return await repo.get_value(key)
@@ -44,7 +60,13 @@ class SQLAlchemySystemStore(SystemStore):
         await repo.set_value(key, value)
 
     async def set_value(self, key: str, value: str, actor: ActorContext | None = None) -> None:
-        """Store arbitrary value in system repository."""
+        """Store arbitrary value in system repository.
+
+        Args:
+            key: System state key.
+            value: Value to store under the key.
+            actor: Optional actor context recorded on the audit event.
+        """
         operation = partial(self._execute_set_value, key=key, value=value)
 
         await self._audited_uow.execute(

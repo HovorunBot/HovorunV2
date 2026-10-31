@@ -37,11 +37,19 @@ class SQLAlchemyUsagePolicyStore(UsagePolicyStore):
         self._registry = registry
 
     async def list_overrides(self, target: PermissionTarget) -> tuple[UsagePolicy, ...]:
-        """Filter parent lifecycle and deleted override rows centrally."""
+        """Filter parent lifecycle and deleted override rows centrally.
+
+        Args:
+            target: Permission target identifying the subject.
+
+        Returns:
+            Active usage policies for the target.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyUsagePolicyRepository(session).policies(target)
 
     async def _authorize(self, session: AsyncSession, actor: ActorContext, transport_kind: str | None) -> None:
+        """Require CLI or current unrestricted private bot administrator authority."""
         if actor.origin == ActorOrigin.CLI:
             return
         user = await session.scalar(
@@ -71,6 +79,7 @@ class SQLAlchemyUsagePolicyStore(UsagePolicyStore):
             raise PermissionError(msg)
 
     def _validate_policy(self, policy: UsagePolicy) -> None:
+        """Reject unknown usage families or unsupported feature units."""
         scope, _, key = policy.bucket.partition(":")
         definitions = (
             (self._registry.require(key),)
@@ -91,6 +100,7 @@ class SQLAlchemyUsagePolicyStore(UsagePolicyStore):
         *,
         remove: bool,
     ) -> UsagePolicyMutation:
+        """Apply one override inside the locked, audited transaction."""
         await lock_async_mutation(
             session,
             MutationLocks(
@@ -111,7 +121,18 @@ class SQLAlchemyUsagePolicyStore(UsagePolicyStore):
         transport_kind: str | None = None,
         remove: bool = False,
     ) -> bool:
-        """Commit one mutation and explicit before/after audit atomically."""
+        """Commit one mutation and explicit before/after audit atomically.
+
+        Args:
+            target: Permission target identifying the subject.
+            policy: Usage policy to apply or remove.
+            actor: Actor context recorded on the audit event.
+            transport_kind: Ingress transport used for administrator authorization.
+            remove: Whether to remove the matching override.
+
+        Returns:
+            True if the override changed.
+        """
         self._validate_policy(policy)
         result: UsagePolicyMutation = await self._audited_uow.execute(
             actor=actor,

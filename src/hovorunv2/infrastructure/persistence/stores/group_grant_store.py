@@ -30,17 +30,38 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         self._audited_uow = audited_uow
 
     async def approvals(self, group_id: int) -> list[GroupApprovalDB]:
-        """List visible active approvals."""
+        """List visible active approvals.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            Visible active approvals for the group.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyGroupGrantRepository(session).approvals(group_id)
 
     async def has_revoked_approval(self, group_id: int) -> bool:
-        """Check if group has any revoked approvals."""
+        """Check if group has any revoked approvals.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            True if the group has any explicitly revoked approval.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyGroupGrantRepository(session).has_revoked_approval(group_id)
 
     async def requests(self, group_id: int) -> list[GroupAccessRequestDB]:
-        """List visible request lifecycle records."""
+        """List visible request lifecycle records.
+
+        Args:
+            group_id: Internal group entity ID.
+
+        Returns:
+            Visible request lifecycle records for the group.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyGroupGrantRepository(session).requests(group_id)
 
@@ -50,6 +71,7 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         operation: Callable[[SQLAlchemyGroupGrantRepository], Awaitable[GrantMutation]],
         locks: MutationLocks,
     ) -> GrantMutation:
+        """Run one repository operation under the declared locks."""
         await lock_async_mutation(session, locks)
         return await operation(SQLAlchemyGroupGrantRepository(session))
 
@@ -61,6 +83,7 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         operation: Callable[[SQLAlchemyGroupGrantRepository], Awaitable[GrantMutation]],
         locks: MutationLocks,
     ) -> int:
+        """Run one audited grant mutation and return its result ID."""
         result: GrantMutation = await self._audited_uow.execute(
             actor=actor,
             target_type="group_grant",
@@ -73,7 +96,15 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         return result.result
 
     async def approve(self, group_id: int, actor: ActorContext) -> bool:
-        """Idempotently grant independent explicit approval."""
+        """Idempotently grant independent explicit approval.
+
+        Args:
+            group_id: Internal group entity ID.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            True if approval was added.
+        """
         return bool(
             await self._mutate(
                 group_id,
@@ -85,7 +116,16 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         )
 
     async def revoke_approval(self, group_id: int, basis: ApprovalBasis, actor: ActorContext) -> bool:
-        """Revoke approval without destroying history."""
+        """Revoke approval without destroying history.
+
+        Args:
+            group_id: Internal group entity ID.
+            basis: Approval basis to revoke.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            True if the approval was revoked.
+        """
         return bool(
             await self._mutate(
                 group_id,
@@ -97,7 +137,16 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         )
 
     async def request(self, group_id: int, user_id: int, actor: ActorContext) -> int:
-        """Create or return a pending request without changing runtime state."""
+        """Create or return a pending request without changing runtime state.
+
+        Args:
+            group_id: Internal group entity ID.
+            user_id: Internal user entity ID of the requester.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            ID of the pending request.
+        """
         return await self._mutate(
             group_id,
             "request",
@@ -111,7 +160,16 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         )
 
     async def decide(self, request_id: int, status: RequestStatus, actor: ActorContext) -> bool:
-        """Commit the decision and optional approval in one audited transaction."""
+        """Commit the decision and optional approval in one audited transaction.
+
+        Args:
+            request_id: Internal ID of the pending request.
+            status: Terminal decision status.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            True if the decision changed state.
+        """
         return bool(
             await self._mutate(
                 request_id,
@@ -131,7 +189,15 @@ class SQLAlchemyGroupGrantStore(GroupGrantStore):
         )
 
     async def delete_request(self, request_id: int, actor: ActorContext) -> bool:
-        """Soft-delete a request preserving decisions and access bases."""
+        """Soft-delete a request preserving decisions and access bases.
+
+        Args:
+            request_id: Internal ID of the request.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            True if the request was soft-deleted.
+        """
         return bool(
             await self._mutate(
                 request_id,

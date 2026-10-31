@@ -38,6 +38,7 @@ class SQLAlchemyActivationStore(ActivationStore):
         self._policy = policy
 
     async def _banned(self, session: AsyncSession, kind: TargetKind, telegram_id: int) -> bool:
+        """Return whether the subject has an active ban of the given kind."""
         return (
             await session.scalar(
                 select(BanDB.id)
@@ -62,6 +63,7 @@ class SQLAlchemyActivationStore(ActivationStore):
         *,
         administrator: bool,
     ) -> ActivationMutation:
+        """Dispatch an enable request to approval or request based on actor authority."""
         if request.transport_kind not in {"group", "supergroup"}:
             return ActivationMutation(ActivationResult(ActivationOutcome.DENIED))
         if administrator or actor.is_trusted:
@@ -147,7 +149,14 @@ class SQLAlchemyActivationStore(ActivationStore):
         return ActivationMutation(ActivationResult(ActivationOutcome.DENIED))
 
     async def execute(self, request: ActivationRequest) -> ActivationResult:
-        """Validate current facts inside the same transaction as all activation effects."""
+        """Validate current facts inside the same transaction as all activation effects.
+
+        Args:
+            request: Activation request carrying action, target and actor provenance.
+
+        Returns:
+            Activation result produced by the audited transaction.
+        """
         mutation: ActivationMutation = await self._audited_uow.execute(
             actor=request.administrator_actor or ActorContext.telegram(request.actor_id, reason="group_activation"),
             target_type="group_activation",

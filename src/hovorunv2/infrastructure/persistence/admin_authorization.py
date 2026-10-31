@@ -19,7 +19,18 @@ async def require_private_administrator(
     *,
     message: str,
 ) -> None:
-    """Require CLI origin or a current, unbanned, private bot administrator."""
+    """Require CLI origin or a current, unbanned, private bot administrator.
+
+    Args:
+        session: Database session for the current user and ban lookups.
+        actor: Actor context identifying origin and Telegram identity.
+        transport_kind: Ingress transport; only private transport authorizes a bot administrator.
+        policy: Authorization policy deciding bot-administration authority.
+        message: Permission error message reused for every rejection.
+
+    Raises:
+        PermissionError: If the actor is not CLI origin or a current, unbanned, private bot administrator.
+    """
     if actor.origin == ActorOrigin.CLI:
         return
     if actor.origin != ActorOrigin.TELEGRAM or transport_kind != "private":

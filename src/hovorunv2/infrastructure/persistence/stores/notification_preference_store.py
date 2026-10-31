@@ -25,7 +25,14 @@ class SQLAlchemyNotificationPreferenceStore(NotificationPreferenceStore):
         self._audited_uow = audited_uow
 
     async def list(self, target: PermissionTarget) -> tuple[NotificationPreference, ...]:
-        """Read active overrides through an owning session."""
+        """Read active overrides through an owning session.
+
+        Args:
+            target: Permission target identifying the subject.
+
+        Returns:
+            Active category overrides for the target.
+        """
         async with self._session_maker() as session:
             return await NotificationPreferenceRepository(session).preferences(target)
 
@@ -37,6 +44,7 @@ class SQLAlchemyNotificationPreferenceStore(NotificationPreferenceStore):
         *,
         enabled: bool,
     ) -> tuple[bool, dict[str, object]]:
+        """Apply one switch through the session-bound repository."""
         return await NotificationPreferenceRepository(session).set(target, category, enabled=enabled)
 
     async def set(
@@ -47,7 +55,17 @@ class SQLAlchemyNotificationPreferenceStore(NotificationPreferenceStore):
         enabled: bool,
         actor: ActorContext,
     ) -> bool:
-        """Commit one explicit switch and its audit event atomically."""
+        """Commit one explicit switch and its audit event atomically.
+
+        Args:
+            target: Permission target identifying the subject.
+            category: Notification category being switched.
+            enabled: Whether the category is enabled.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            True if the switch changed.
+        """
         result: tuple[bool, dict[str, object]] = await self._audited_uow.execute(
             actor=actor,
             target_type="notification_preference",

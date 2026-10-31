@@ -8,13 +8,32 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 
 def migration_tables(connection: Connection, *names: str) -> tuple[Table, ...]:
-    """Reflect the schema at this revision, never import evolving runtime models."""
+    """Reflect the schema at this revision, never import evolving runtime models.
+
+    Args:
+        connection: Database connection used to reflect the current schema.
+        *names: Names of tables to reflect at this migration revision.
+
+    Returns:
+        Reflected table objects in the requested order.
+    """
     metadata = MetaData()
     return tuple(Table(name, metadata, autoload_with=connection) for name in names)
 
 
 def insert_ignore(connection: Connection, table: Table) -> PostgreSQLInsert | SQLiteInsert:
-    """Use backend conflict APIs for the supported target and historical source."""
+    """Use backend conflict APIs for the supported target and historical source.
+
+    Args:
+        connection: Database connection selecting the dialect-specific insert.
+        table: Reflected table receiving the conflict-tolerant insert.
+
+    Returns:
+        Dialect-specific insert statement that ignores conflicts.
+
+    Raises:
+        ValueError: If the connection dialect is neither PostgreSQL nor SQLite.
+    """
     if connection.dialect.name == "postgresql":
         return postgres_insert(table).on_conflict_do_nothing()
     if connection.dialect.name == "sqlite":

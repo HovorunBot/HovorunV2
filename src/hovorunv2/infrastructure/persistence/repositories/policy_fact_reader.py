@@ -48,7 +48,16 @@ class PolicyFactReader:
         self.policy = policy
 
     def banned(self, kind: TargetKind, telegram_id: int, *, full: bool = False) -> bool:
-        """Personal restrictions affect direct actors; group blockers require full bans."""
+        """Personal restrictions affect direct actors; group blockers require full bans.
+
+        Args:
+            kind: Target kind of the subject.
+            telegram_id: Numeric Telegram ID of the subject.
+            full: Whether to require a full ban.
+
+        Returns:
+            True if an active, matching ban exists.
+        """
         statement = select(BanDB.id).where(
             BanDB.platform == "telegram",
             BanDB.target_kind == kind,
@@ -61,7 +70,15 @@ class PolicyFactReader:
         return self.session.scalar(statement.limit(1)) is not None
 
     def permission(self, request: PermissionRequest, now: datetime) -> AccessDecision:
-        """Revalidate exact group identity and generation before applying shared authority rules."""
+        """Revalidate exact group identity and generation before applying shared authority rules.
+
+        Args:
+            request: Permission request being evaluated.
+            now: Evaluation timestamp.
+
+        Returns:
+            Access decision computed from current facts.
+        """
         user = self.session.scalar(active_user(request.actor_id, request.platform.value))
         target_active, group_banned = True, False
         if request.target.kind == "group":
@@ -84,6 +101,7 @@ class PolicyFactReader:
         )
 
     def _eligible(self, entity: UserDB | ChatDB, definition: FeatureDefinition) -> bool:
+        """Return whether the entity holds a permitting beta entitlement."""
         subject = BetaEntitlementDB.user_id if isinstance(entity, UserDB) else BetaEntitlementDB.group_id
         grants = set(
             self.session.scalars(
@@ -103,6 +121,7 @@ class PolicyFactReader:
         ).permits(definition)
 
     def _selected(self, definition: FeatureDefinition, chat_id: int) -> bool:
+        """Return whether the feature is selected for the chat, including legacy capture."""
         chat = self.session.scalar(active_chat(chat_id))
         if chat is None:
             return False
@@ -116,6 +135,7 @@ class PolicyFactReader:
         )
 
     def _manager(self, actor_id: int | None, chat: ChatDB, now: datetime) -> bool:
+        """Return whether the actor holds current group settings authority."""
         if actor_id is None:
             return False
         user = self.session.scalar(active_user(actor_id))
@@ -144,7 +164,15 @@ class PolicyFactReader:
         )
 
     def group_access(self, chat: ChatDB, now: datetime) -> AccessDecision:
-        """Read full current candidates and approvals; no bounded maintenance-page shortcut."""
+        """Read full current candidates and approvals; no bounded maintenance-page shortcut.
+
+        Args:
+            chat: Group whose access is evaluated.
+            now: Evaluation timestamp.
+
+        Returns:
+            Access decision reflecting current candidates and approvals.
+        """
         active, unknown = banned_admin_queries(chat.id, now)
         approvals = list(
             self.session.scalars(
@@ -169,6 +197,7 @@ class PolicyFactReader:
         )
 
     def _capable(self, chat: ChatDB, required: frozenset[str], now: datetime) -> bool:
+        """Return whether the chat's bot state satisfies every required capability."""
         if not required:
             return True
         state = self.session.scalar(
@@ -202,7 +231,19 @@ class PolicyFactReader:
         configure: bool,
         now: datetime,
     ) -> FeatureFacts:
-        """Keep automatic group authority independent of optional human attribution."""
+        """Keep automatic group authority independent of optional human attribution.
+
+        Args:
+            definition: Feature definition being evaluated.
+            chat_id: Numeric chat ID of the target.
+            actor_id: Optional numeric Telegram ID of the actor.
+            trigger: Trigger kind of the evaluation.
+            configure: Whether this is a configuration action.
+            now: Evaluation timestamp.
+
+        Returns:
+            Feature facts for the private or group scope.
+        """
         scope = FeatureScope.GROUP if chat_id < 0 else FeatureScope.PRIVATE
         actor = self.session.scalar(active_user(actor_id)) if actor_id is not None else None
         automatic = scope == FeatureScope.GROUP and trigger == TriggerKind.AUTOMATIC and not configure
@@ -280,6 +321,7 @@ class PolicyFactReader:
     def _group_beta(
         self, chat: ChatDB, definition: FeatureDefinition, chat_id: int, now: datetime
     ) -> tuple[bool, bool]:
+        """Return group beta selection and support facts for the canonical route."""
         # Entitlements require the canonical numeric route; aliases do not copy group grants.
         if chat.chat_id != chat_id or chat.chat_type not in {"group", "supergroup"}:
             return False, False
@@ -307,7 +349,14 @@ class PolicyFactReader:
         )
 
     def chat_translation_settings(self, chat_id: int) -> tuple[str | None, tuple[str, ...] | None] | None:
-        """Read current canonical preferences without copying profiles or writing any state."""
+        """Read current canonical preferences without copying profiles or writing any state.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+
+        Returns:
+            A pair of target language and ignored languages, or None if absent or noncanonical.
+        """
         chat = self.session.scalar(active_chat(chat_id))
         if chat is None or chat.chat_id != chat_id:
             return None
@@ -317,7 +366,19 @@ class PolicyFactReader:
     def usage_subject(
         self, actor_id: int | None, group_id: int | None, trigger: TriggerKind
     ) -> tuple[UsageSubject, bool, bool]:
-        """Resolve charged identity separately from the execution target and optional actor."""
+        """Resolve charged identity separately from the execution target and optional actor.
+
+        Args:
+            actor_id: Optional numeric Telegram ID of the direct actor.
+            group_id: Optional numeric group ID for automatic triggers.
+            trigger: Trigger kind of the usage.
+
+        Returns:
+            A triple of the charged subject, trust flag and bypass flag.
+
+        Raises:
+            ValueError: If the automatic group or direct user is unavailable.
+        """
         if trigger == TriggerKind.AUTOMATIC:
             chat = self.session.scalar(active_chat(group_id or 0))
             if chat is None or chat.chat_id != group_id or chat.chat_type not in {"group", "supergroup"}:
@@ -338,7 +399,14 @@ class PolicyFactReader:
         )
 
     def usage_overrides(self, subject: UsageSubject) -> tuple[UsagePolicy, ...]:
-        """Read only overrides belonging to the just-resolved active lifecycle."""
+        """Read only overrides belonging to the just-resolved active lifecycle.
+
+        Args:
+            subject: Charged usage subject.
+
+        Returns:
+            Active usage overrides for the subject.
+        """
         column = UsageOverrideDB.user_id if subject.kind == TargetKind.USER else UsageOverrideDB.group_id
         return tuple(
             UsagePolicy(

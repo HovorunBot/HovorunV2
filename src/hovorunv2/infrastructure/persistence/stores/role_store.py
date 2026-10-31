@@ -28,13 +28,28 @@ class SQLAlchemyRoleStore(RoleStore):
         self._audited_uow = audited_uow
 
     async def get_role(self, telegram_id: int, platform: Platform = Platform.TELEGRAM) -> Role | None:
-        """Fetch active user's single authority role."""
+        """Fetch active user's single authority role.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+
+        Returns:
+            Authority role of the active user, or None if absent.
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyRoleRepository(session)
             return await repo.get_role_by_telegram_id(telegram_id, platform)
 
     async def list_roles(self, role: Role | None = None) -> list[UserDB]:
-        """List current authority from active user records."""
+        """List current authority from active user records.
+
+        Args:
+            role: Exact role to filter on, or None for any administrator-or-higher role.
+
+        Returns:
+            Active users matching the role.
+        """
         async with self._session_maker() as session:
             return await SQLAlchemyRoleRepository(session).get_all_by_role(role)
 
@@ -72,7 +87,20 @@ class SQLAlchemyRoleStore(RoleStore):
         actor: ActorContext,
         platform: Platform = Platform.TELEGRAM,
     ) -> bool:
-        """Set user's single authority role with audit."""
+        """Set user's single authority role with audit.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            role: New authority role.
+            actor: Actor context recorded on the audit event.
+            platform: Platform of the user identity.
+
+        Returns:
+            True if the role changed.
+
+        Raises:
+            PermissionError: If the actor origin is not CLI.
+        """
         if actor.origin != ActorOrigin.CLI:
             msg = "Role assignment is strictly restricted to CLI origin."
             raise PermissionError(msg)

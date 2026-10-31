@@ -25,7 +25,14 @@ class UsageLedgerRepository:
         self._session = session
 
     def require_known_subject(self, subject: AccountingSubject) -> None:
-        """Allow delayed accounting for deleted generations; never fabricate unknown identities."""
+        """Allow delayed accounting for deleted generations; never fabricate unknown identities.
+
+        Args:
+            subject: Accounting subject whose identity must exist.
+
+        Raises:
+            ValueError: If the subject is not a known current or historical identity.
+        """
         if subject.kind == TargetKind.USER:
             statement = select(UserDB.id).where(
                 UserDB.telegram_id == subject.telegram_id, UserDB.platform == "telegram"
@@ -48,7 +55,18 @@ class UsageLedgerRepository:
         window: UsageWindow,
         timestamp: int,
     ) -> UsageAggregateDB | None:
-        """Use stable Telegram identity, never a lifecycle primary key, for the aggregate key."""
+        """Use stable Telegram identity, never a lifecycle primary key, for the aggregate key.
+
+        Args:
+            subject: Accounting subject.
+            bucket: Accounting bucket.
+            unit: Usage unit.
+            window: Usage window.
+            timestamp: Occurrence timestamp used to compute the window start.
+
+        Returns:
+            Matching aggregate row, or None if none exists.
+        """
         return self._session.scalar(
             select(UsageAggregateDB).where(
                 UsageAggregateDB.platform == "telegram",
@@ -62,6 +80,7 @@ class UsageLedgerRepository:
         )
 
     def _charge(self, event: UsageEvent, charge: UsageCharge) -> int:
+        """Charge one aggregate and return its row ID, aborting on capacity overflow."""
         statement = insert(UsageAggregateDB).values(
             subject_kind=event.subject.kind.value,
             telegram_id=event.subject.telegram_id,
@@ -84,7 +103,14 @@ class UsageLedgerRepository:
         return row_id
 
     def apply(self, events: tuple[UsageEvent, ...]) -> AppliedUsage:
-        """Abort the whole batch on a conflicting replay, including earlier aggregate changes."""
+        """Abort the whole batch on a conflicting replay, including earlier aggregate changes.
+
+        Args:
+            events: Usage events to account in event ID order.
+
+        Returns:
+            Applied usage summarizing events applied, aggregates touched and units charged.
+        """
         applied, units = 0, 0
         aggregates: set[int] = set()
         for event in sorted(events, key=lambda item: item.event_id):
@@ -98,6 +124,7 @@ class UsageLedgerRepository:
         return AppliedUsage(applied, len(aggregates), units)
 
     def _claim_event(self, event: UsageEvent) -> bool:
+        """Claim one event, rejecting a conflicting replay fingerprint."""
         inserted = self._session.scalar(
             insert(UsageAccountingEventDB)
             .values(event_id=event.event_id, fingerprint=event.fingerprint)

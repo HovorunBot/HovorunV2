@@ -31,7 +31,14 @@ class WorkerNotificationStore:
         self._require_owner = require_owner
 
     def pending(self, limit: int = DEFAULT_PENDING_LIMIT) -> tuple[NotificationReceipt, ...]:
-        """Return a bounded page of pending/retry receipts with current routing."""
+        """Return a bounded page of pending/retry receipts with current routing.
+
+        Args:
+            limit: Maximum number of receipts to return.
+
+        Returns:
+            Pending or retry receipts with current subject routing.
+        """
         self._require_owner()
         if limit < 1:
             return ()
@@ -52,7 +59,15 @@ class WorkerNotificationStore:
             return tuple(self._receipt(event, receipt, user, chat) for receipt, event, user, chat in rows)
 
     def preference_enabled(self, target: PermissionTarget, category: NotificationCategory) -> bool:
-        """Return the active category switch; absence means enabled."""
+        """Return the active category switch; absence means enabled.
+
+        Args:
+            target: Permission target identifying the subject.
+            category: Notification category being queried.
+
+        Returns:
+            True if the category is enabled or has no override.
+        """
         self._require_owner()
         with self._sessions() as session:
             subject = NotificationPreferenceDB.user_id if target.kind == "user" else NotificationPreferenceDB.group_id
@@ -66,7 +81,14 @@ class WorkerNotificationStore:
             return True if row is None else row.enabled
 
     def reachable(self, target: PermissionTarget) -> bool:
-        """Require a current active subject and no active personal ban for users."""
+        """Require a current active subject and no active personal ban for users.
+
+        Args:
+            target: Permission target identifying the subject.
+
+        Returns:
+            True if the subject is currently reachable.
+        """
         self._require_owner()
         with self._sessions() as session:
             if target.kind == "user":
@@ -83,7 +105,22 @@ class WorkerNotificationStore:
         telegram_message_id: int | None,
         actor: ActorContext,
     ) -> bool:
-        """Upsert one receipt and append its audit event in one transaction."""
+        """Upsert one receipt and append its audit event in one transaction.
+
+        Args:
+            event_key: Immutable event key.
+            target: Permission target identifying the recipient.
+            outcome: Delivery outcome recorded on the receipt.
+            attempts: Number of delivery attempts recorded on the receipt.
+            telegram_message_id: Optional delivered Telegram message ID.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            True once the receipt is recorded.
+
+        Raises:
+            ValueError: If the immutable event is absent.
+        """
         self._require_owner()
         with self._sessions.begin() as session:
             event = session.scalar(select(NotificationEventDB).where(NotificationEventDB.event_key == event_key))
@@ -137,6 +174,7 @@ class WorkerNotificationStore:
         return True
 
     def _user_reachable(self, session: Session, target: PermissionTarget) -> bool:
+        """Return whether the user target is active and unbanned."""
         user = session.scalar(
             select(UserDB).where(
                 UserDB.telegram_id == target.telegram_id,
@@ -160,6 +198,7 @@ class WorkerNotificationStore:
         return banned is None
 
     def _group_reachable(self, session: Session, target: PermissionTarget) -> bool:
+        """Return whether the group target is active, approved and canonical."""
         chat = session.scalar(
             select(ChatDB).where(
                 ChatDB.chat_id == target.telegram_id,
@@ -182,6 +221,7 @@ class WorkerNotificationStore:
         user: UserDB | None,
         chat: ChatDB | None,
     ) -> NotificationReceipt:
+        """Build a receipt from its row and current subject routing."""
         if user is not None:
             target = PermissionTarget("user", user.id, user.generation, user.telegram_id)
         elif chat is not None:

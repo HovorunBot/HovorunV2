@@ -18,19 +18,42 @@ class SQLAlchemyUserRepository:
         self._session = session
 
     async def get_by_id(self, user_id: int) -> UserDB | None:
-        """Fetch active user by internal entity ID."""
+        """Fetch the active user by internal entity ID.
+
+        Args:
+            user_id: Internal entity ID of the user.
+
+        Returns:
+            Active user matching the ID, or None if absent or soft-deleted.
+        """
         stmt = select(UserDB).where(UserDB.id == user_id, UserDB.deleted_at.is_(None))
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> UserDB | None:
-        """Fetch active user by platform and numeric Telegram ID."""
+        """Fetch the active user by platform and numeric Telegram ID.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+
+        Returns:
+            Active user matching the platform and ID, or None if absent or soft-deleted.
+        """
         stmt = active_user(telegram_id, platform)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_deleted_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> UserDB | None:
-        """Fetch latest soft-deleted user tombstone by platform and numeric Telegram ID."""
+        """Fetch the latest soft-deleted user tombstone by platform and numeric Telegram ID.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+
+        Returns:
+            Most recent deleted generation, or None if no tombstone exists.
+        """
         stmt = (
             select(UserDB)
             .where(
@@ -44,7 +67,15 @@ class SQLAlchemyUserRepository:
         return result.scalars().first()
 
     async def get_historical_by_telegram_id(self, telegram_id: int, platform: str = "telegram") -> list[UserDB]:
-        """Fetch all generations (active and deleted) for explicit recovery workflows."""
+        """Fetch all generations (active and deleted) for explicit recovery workflows.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+
+        Returns:
+            All generations ordered by descending generation.
+        """
         stmt = (
             select(UserDB)
             .where(
@@ -61,7 +92,15 @@ class SQLAlchemyUserRepository:
         self._session.add(user)
 
     async def ingest(self, telegram_id: int, platform: str = "telegram") -> tuple[UserDB | None, bool]:
-        """Ingest user if not active and not tombstoned."""
+        """Ingest user if not active and not tombstoned.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            platform: Platform of the user identity.
+
+        Returns:
+            A pair of the ingested user (or None if tombstoned) and whether ingestion occurred.
+        """
         active = await self.get_by_telegram_id(telegram_id, platform)
         if active:
             return active, False
@@ -86,7 +125,18 @@ class SQLAlchemyUserRepository:
         platform: str = "telegram",
         deleted_at: datetime | None = None,
     ) -> bool:
-        """Soft-delete an active user identity."""
+        """Soft-delete an active user identity.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            actor_id: ID of the acting actor recorded on the tombstone.
+            reason: Deletion reason recorded on the tombstone.
+            platform: Platform of the user identity.
+            deleted_at: Explicit deletion timestamp, or now when omitted.
+
+        Returns:
+            True if an active user was soft-deleted, False if none was found.
+        """
         user = await self.get_by_telegram_id(telegram_id, platform)
         if not user:
             return False
@@ -102,7 +152,16 @@ class SQLAlchemyUserRepository:
         is_trusted: bool,
         platform: str = "telegram",
     ) -> tuple[bool, bool, int | None]:
-        """Atomically change trust and advance its durable reconciliation revision."""
+        """Atomically change trust and advance its durable reconciliation revision.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            is_trusted: New trust flag.
+            platform: Platform of the user identity.
+
+        Returns:
+            A triple of whether the user exists, whether trust changed, and the new revision.
+        """
         revision = await self._session.scalar(
             update(UserDB)
             .where(

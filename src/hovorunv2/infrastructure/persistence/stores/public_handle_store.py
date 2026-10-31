@@ -34,7 +34,15 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         self._audited_uow = audited_uow
 
     async def resolve_handle(self, handle: str, platform: Platform = Platform.TELEGRAM) -> ResolvedTarget | None:
-        """Resolve public @username to stable numeric target (active only)."""
+        """Resolve public @username to stable numeric target (active only).
+
+        Args:
+            handle: Raw public handle to normalize and resolve.
+            platform: Platform of the handle mapping.
+
+        Returns:
+            Resolved target, or None if the handle or target is inactive.
+        """
         norm = normalize_handle(handle)
         if not norm:
             return None
@@ -61,7 +69,16 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
     async def get_handle_by_target(
         self, target_kind: TargetKind, target_id: int, platform: Platform = Platform.TELEGRAM
     ) -> ResolvedTarget | None:
-        """Get current public handle for a numeric target entity."""
+        """Get current public handle for a numeric target entity.
+
+        Args:
+            target_kind: Target kind of the entity.
+            target_id: Internal numeric ID of the entity.
+            platform: Platform of the handle mapping.
+
+        Returns:
+            Resolved target carrying the current handle, or None if absent.
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyPublicHandleRepository(session)
             row = await repo.get_by_target(target_kind, target_id, platform)
@@ -104,6 +121,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
     async def _remove_target_handle(
         self, repo: SQLAlchemyPublicHandleRepository, existing: PublicHandleDB | None
     ) -> tuple[None, dict[str, Any] | None]:
+        """Delete the existing handle and return its removal changes."""
         if existing is None:
             return None, None
         old_norm = existing.handle_normalized
@@ -119,6 +137,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         target_id: int,
         platform: Platform,
     ) -> None:
+        """Delete a competing handle owned by a different target."""
         competing = await repo.get_by_handle(norm, platform)
         if competing and (competing.target_kind != target_kind or competing.target_id != target_id):
             await repo.delete(competing)
@@ -134,6 +153,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         display: str,
         platform: Platform,
     ) -> tuple[ResolvedTarget, dict[str, Any] | None]:
+        """Create or update the target's handle and return the resolved target."""
         if existing:
             old_norm = existing.handle_normalized
             old_display = existing.handle_display
@@ -154,6 +174,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         return self._resolved_target(new_handle), {"handle": [None, norm], "display": [None, display]}
 
     def _resolved_target(self, row: PublicHandleDB) -> ResolvedTarget:
+        """Build a resolved target from a handle row."""
         return ResolvedTarget(
             target_kind=row.target_kind,
             target_id=row.target_id,
@@ -170,7 +191,18 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         actor: ActorContext,
         platform: Platform = Platform.TELEGRAM,
     ) -> ResolvedTarget | None:
-        """Synchronize public handle from verified Telegram evidence with audit."""
+        """Synchronize public handle from verified Telegram evidence with audit.
+
+        Args:
+            target_kind: Target kind of the entity.
+            target_id: Internal numeric ID of the entity.
+            raw_handle: Raw handle evidence to synchronize.
+            actor: Actor context recorded on the audit event.
+            platform: Platform of the handle mapping.
+
+        Returns:
+            Resolved target after synchronization, or None if the handle was removed.
+        """
         op = partial(
             self._execute_sync_handle,
             target_kind=target_kind,
@@ -220,7 +252,17 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
         actor: ActorContext,
         platform: Platform = Platform.TELEGRAM,
     ) -> bool:
-        """Release public handle on target soft-deletion or removal with audit."""
+        """Release public handle on target soft-deletion or removal with audit.
+
+        Args:
+            target_kind: Target kind of the entity.
+            target_id: Internal numeric ID of the entity.
+            actor: Actor context recorded on the audit event.
+            platform: Platform of the handle mapping.
+
+        Returns:
+            True if a handle was released.
+        """
         op = partial(
             self._execute_release_handle,
             target_kind=target_kind,

@@ -36,11 +36,13 @@ class SQLAlchemyActivationRepository:
         self._grants = SQLAlchemyGroupGrantRepository(session)
 
     async def _approved(self, chat: ChatDB) -> bool:
+        """Return whether the chat holds an active explicit approval."""
         return bool(await self._grants.approvals(chat.id)) or (
             chat.status == ChatStatus.APPROVED and not await self._grants.has_revoked_approval(chat.id)
         )
 
     async def _pending(self, group_id: int) -> GroupAccessRequestDB | None:
+        """Return the single active pending request for a group, if any."""
         return await self._session.scalar(
             select(GroupAccessRequestDB).where(
                 GroupAccessRequestDB.group_id == group_id,
@@ -50,6 +52,7 @@ class SQLAlchemyActivationRepository:
         )
 
     async def _add_defaults(self, chat: ChatDB) -> list[str]:
+        """Apply first-activation default commands to a chat with no configuration history."""
         history = await self._session.scalar(
             select(GroupApprovalDB.id).where(GroupApprovalDB.group_id == chat.id).limit(1)
         )
@@ -65,13 +68,23 @@ class SQLAlchemyActivationRepository:
         return sorted(names)
 
     def _close_request(self, pending: GroupAccessRequestDB, status: RequestStatus, actor_id: int | None) -> None:
+        """Finalize a pending request with a decision, actor and timestamp."""
         pending.status = status
         pending.decided_at = datetime.now(UTC)
         pending.decision_actor_id = actor_id
         pending.decision_reason = "group_activation"
 
     async def approve(self, chat: ChatDB, actor: UserDB | None, basis: str) -> ActivationMutation:
-        """Persist approval, first-activation defaults and any pending request decision together."""
+        """Persist approval, first-activation defaults and any pending request decision together.
+
+        Args:
+            chat: Group being approved.
+            actor: Acting user, or None for a CLI/system decision.
+            basis: Activation basis recorded in the audit changes.
+
+        Returns:
+            Mutation carrying the activation result and explicit audit fields.
+        """
         approved = await self._approved(chat)
         pending = await self._pending(chat.id)
         if approved and pending is None:
@@ -94,7 +107,15 @@ class SQLAlchemyActivationRepository:
         return ActivationMutation(ActivationResult(ActivationOutcome.APPROVED), changes)
 
     async def request(self, chat: ChatDB, actor: UserDB) -> ActivationMutation:
-        """Create one pending request for an inactive group without changing existing selections."""
+        """Create one pending request for an inactive group without changing existing selections.
+
+        Args:
+            chat: Group requesting activation.
+            actor: User submitting the request.
+
+        Returns:
+            Mutation carrying the request result and explicit audit fields.
+        """
         if await self._approved(chat):
             return ActivationMutation(ActivationResult(ActivationOutcome.ALREADY_APPROVED))
         mutation = await self._grants.request(chat.id, actor.id)
@@ -113,7 +134,16 @@ class SQLAlchemyActivationRepository:
         )
 
     async def decide(self, request: ActivationRequest, chat: ChatDB, actor: UserDB | None) -> ActivationMutation:
-        """Persist a decision only for the selected active pending request and requester."""
+        """Persist a decision only for the selected active pending request and requester.
+
+        Args:
+            request: Request carrying the decision action and request identity.
+            chat: Group the pending request belongs to.
+            actor: Acting user, or None for a CLI/system decision.
+
+        Returns:
+            Mutation carrying the decision result and explicit audit fields.
+        """
         pending = await self._pending(chat.id)
         if pending is None or pending.id != request.request_id:
             return ActivationMutation(ActivationResult(ActivationOutcome.STALE_REQUEST))

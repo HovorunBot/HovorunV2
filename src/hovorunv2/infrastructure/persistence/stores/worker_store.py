@@ -75,7 +75,18 @@ class WorkerPolicyStore:
         trigger: TriggerKind = TriggerKind.DIRECT,
         configure: bool = False,
     ) -> FeatureDecision:
-        """Apply the bot's exact evaluator and database facts without an event loop."""
+        """Apply the bot's exact evaluator and database facts without an event loop.
+
+        Args:
+            feature: Feature key being evaluated.
+            chat_id: Numeric chat ID of the target.
+            actor_id: Optional numeric Telegram ID of the actor.
+            trigger: Trigger kind of the evaluation.
+            configure: Whether this is a configuration action.
+
+        Returns:
+            Feature decision computed from current facts.
+        """
         self._require_owner()
         definition = self._registry.get(feature)
         if definition is None:
@@ -92,7 +103,14 @@ class WorkerPolicyStore:
             return evaluate_feature(definition, facts, trigger=trigger, configure=configure)
 
     def emergency_state(self, feature: str) -> FeatureEmergencyState:
-        """Read the current authoritative emergency state for stale-envelope fencing."""
+        """Read the current authoritative emergency state for stale-envelope fencing.
+
+        Args:
+            feature: Feature key whose emergency state is read.
+
+        Returns:
+            Current emergency state, defaulting to enabled at epoch zero when absent.
+        """
         self._require_owner()
         key = resolve_emergency_key(feature)
         with self._sessions() as session:
@@ -102,7 +120,11 @@ class WorkerPolicyStore:
             return FeatureEmergencyState(row.feature_key, row.disabled, row.reason, row.public_reason, row.epoch)
 
     def disabled_features(self) -> tuple[FeatureEmergencyState, ...]:
-        """Return durably disabled features for bounded cleanup retries."""
+        """Return durably disabled features for bounded cleanup retries.
+
+        Returns:
+            Emergency states of currently disabled features.
+        """
         self._require_owner()
         with self._sessions() as session:
             rows = session.scalars(select(FeatureEmergencyDB).where(FeatureEmergencyDB.disabled.is_(True))).all()
@@ -112,7 +134,14 @@ class WorkerPolicyStore:
             )
 
     def active_target(self, target: PermissionTarget) -> bool:
-        """Validate a queued reference without converting a prior decision into an access grant."""
+        """Validate a queued reference without converting a prior decision into an access grant.
+
+        Args:
+            target: Permission target to validate.
+
+        Returns:
+            True if the target matches the exact current active generation.
+        """
         self._require_owner()
         statement = exact_target(target)
         if statement is None:
@@ -121,13 +150,27 @@ class WorkerPolicyStore:
             return session.scalar(statement) is not None
 
     def permission(self, request: PermissionRequest) -> AccessDecision:
-        """Check current active authority and exact target generation."""
+        """Check current active authority and exact target generation.
+
+        Args:
+            request: Permission request being evaluated.
+
+        Returns:
+            Access decision computed from current facts.
+        """
         self._require_owner()
         with self._sessions() as session:
             return PolicyFactReader(session, self._policy).permission(request, datetime.now(UTC))
 
     def chat_translation_settings(self, chat_id: int) -> tuple[str | None, tuple[str, ...] | None] | None:
-        """Load fresh translation settings through the same child-owned session boundary as policy reads."""
+        """Load fresh translation settings through the same child-owned session boundary as policy reads.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+
+        Returns:
+            A pair of target language and ignored languages, or None if absent or noncanonical.
+        """
         self._require_owner()
         with self._sessions() as session:
             return PolicyFactReader(session, self._policy).chat_translation_settings(chat_id)
@@ -141,7 +184,21 @@ class WorkerPolicyStore:
         group_id: int | None = None,
         unit: UsageUnit = UsageUnit.REQUESTS,
     ) -> ResolvedUsage:
-        """Resolve charged subject and intersect restrictions using the shared pure rule."""
+        """Resolve charged subject and intersect restrictions using the shared pure rule.
+
+        Args:
+            feature: Feature key being resolved.
+            trigger: Trigger kind of the usage.
+            actor_id: Optional numeric Telegram ID of the direct actor.
+            group_id: Optional numeric group ID for automatic triggers.
+            unit: Usage unit to resolve.
+
+        Returns:
+            Resolved usage for the charged subject.
+
+        Raises:
+            ValueError: If the feature does not support the trigger or unit.
+        """
         self._require_owner()
         definition = self._registry.require(feature)
         if trigger not in definition.triggers or unit not in definition.units:
@@ -175,7 +232,19 @@ class WorkerUsageLedgerStore:
         self._require_owner = require_owner
 
     def apply_batch(self, events: tuple[UsageEvent, ...], *, actor: ActorContext) -> AppliedUsage:
-        """Commit receipts, guarded upserts and payload-free audit together, with bounded DB retries."""
+        """Commit receipts, guarded upserts and payload-free audit together, with bounded DB retries.
+
+        Args:
+            events: Usage events to account in event ID order.
+            actor: Actor context recorded on the audit event.
+
+        Returns:
+            Applied usage summarizing events applied, aggregates touched and units charged.
+
+        Raises:
+            ValueError: If the retry loop is exhausted without re-raising a database error.
+            DBAPIError: If a non-retryable database error occurs or retries are exhausted.
+        """
         self._require_owner()
         validate_usage_batch(self._registry, events, actor)
         validate_audit_reason(actor.reason)
@@ -192,6 +261,7 @@ class WorkerUsageLedgerStore:
         raise ValueError(msg)
 
     def _apply_usage_attempt(self, events: tuple[UsageEvent, ...], actor: ActorContext) -> AppliedUsage:
+        """Run one accounting attempt and append the audit event inside the transaction."""
         with self._sessions.begin() as session:
             result = UsageLedgerRepository(session).apply(events)
             if result.events_applied:
@@ -201,6 +271,7 @@ class WorkerUsageLedgerStore:
     def _append_audit_event(
         self, session: Session, events: tuple[UsageEvent, ...], actor: ActorContext, result: AppliedUsage
     ) -> None:
+        """Validate and append one usage batch audit event."""
         changes = usage_audit_changes(result)
         validate_audit_changes("usage_batch", "apply", changes)
         session.add(
@@ -224,7 +295,18 @@ class WorkerUsageLedgerStore:
         window: UsageWindow,
         timestamp: int,
     ) -> int:
-        """Account retained historical subjects without granting execution rights."""
+        """Account retained historical subjects without granting execution rights.
+
+        Args:
+            subject: Accounting subject.
+            bucket: Accounting bucket.
+            unit: Usage unit.
+            window: Usage window.
+            timestamp: Occurrence timestamp used to compute the window start.
+
+        Returns:
+            Current aggregate amount, or 0 if none exists.
+        """
         self._require_owner()
         with self._sessions() as session:
             repository = UsageLedgerRepository(session)
@@ -241,7 +323,15 @@ class WorkerOperationsStore:
         self._require_owner = require_owner
 
     def due_groups(self, now: datetime, limit: int = 10) -> list[ChatDB]:
-        """Bounded active groups with missing/expired bot, admin or relevant user evidence."""
+        """Bounded active groups with missing/expired bot, admin or relevant user evidence.
+
+        Args:
+            now: Evaluation timestamp for freshness bounds.
+            limit: Maximum number of groups to return.
+
+        Returns:
+            Groups with missing or expired bot, admin or relevant-user evidence.
+        """
         self._require_owner()
         if limit < 1:
             return []
@@ -286,7 +376,15 @@ class WorkerOperationsStore:
             return list(session.scalars(query).all())
 
     def relevant_users(self, group_id: int, limit: int = 50) -> list[UserDB]:
-        """Return current and unresolved former administrators, missing/stale evidence first."""
+        """Return current and unresolved former administrators, missing/stale evidence first.
+
+        Args:
+            group_id: Internal group entity ID.
+            limit: Maximum number of users to return.
+
+        Returns:
+            Current and unresolved administrator candidates ordered by expiry.
+        """
         self._require_owner()
         if limit < 1:
             return []
@@ -318,7 +416,19 @@ class WorkerOperationsStore:
         evidence: BotCapabilityEvidence,
         actor: ActorContext | None = None,
     ) -> bool:
-        """Persist bot presence and capabilities with audited state mutation."""
+        """Persist bot presence and capabilities with audited state mutation.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Bot capability evidence to persist.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            True if the evidence changed durable state.
+
+        Raises:
+            ValueError: If the evidence does not match the group identity generation.
+        """
         self._require_owner()
         member = evidence.membership
         validate_evidence_time(member.verified_at, member.expires_at)
@@ -348,6 +458,7 @@ class WorkerOperationsStore:
             return True
 
     def _apply_bot_state(self, group: ChatDB, state: GroupMembershipStateDB, evidence: BotCapabilityEvidence) -> None:
+        """Apply bot presence and capability state to the group and state rows."""
         member = evidence.membership
         state.bot_status = member.status.value
         state.bot_telegram_id = member.user_telegram_id
@@ -368,7 +479,19 @@ class WorkerOperationsStore:
         evidence: AdministratorEvidence,
         actor: ActorContext | None = None,
     ) -> bool:
-        """Persist administrator snapshot and tombstone departed members with audit."""
+        """Persist administrator snapshot and tombstone departed members with audit.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Administrator snapshot evidence to persist.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            True if the evidence changed durable state.
+
+        Raises:
+            ValueError: If the evidence does not match the group identity generation.
+        """
         self._require_owner()
         validate_evidence_time(evidence.verified_at, evidence.expires_at)
         with self._sessions.begin() as session:
@@ -409,6 +532,7 @@ class WorkerOperationsStore:
             return True
 
     def _validate_admin_snapshot(self, group: ChatDB, evidence: AdministratorEvidence) -> None:
+        """Reject snapshot members that do not belong to this group as administrators."""
         for member in evidence.members:
             validate_evidence_time(member.verified_at, member.expires_at)
             if member.group_telegram_id != group.chat_id or member.status != MembershipStatus.ADMIN:
@@ -416,6 +540,7 @@ class WorkerOperationsStore:
                 raise ValueError(msg)
 
     def _replace_admin_candidates(self, session: Session, group_id: int, evidence: AdministratorEvidence) -> set[int]:
+        """Invalidate absent or uncertain candidates without overwriting newer facts."""
         prior = list(
             session.scalars(
                 select(MemberEvidenceDB).where(
@@ -447,7 +572,20 @@ class WorkerOperationsStore:
         *,
         expected_user_id: int | None = None,
     ) -> bool:
-        """Persist a single user's membership evidence with audited state mutation."""
+        """Persist a single user's membership evidence with audited state mutation.
+
+        Args:
+            group_id: Internal group entity ID.
+            evidence: Membership evidence to persist.
+            actor: Optional actor context recorded on the audit event.
+            expected_user_id: Optional internal user ID the evidence must match.
+
+        Returns:
+            True if the evidence changed durable state.
+
+        Raises:
+            ValueError: If the evidence does not match the group identity generation.
+        """
         self._require_owner()
         validate_evidence_time(evidence.verified_at, evidence.expires_at)
         with self._sessions.begin() as session:
@@ -487,6 +625,7 @@ class WorkerOperationsStore:
         evidence: MembershipEvidence,
         expected_user_id: int | None = None,
     ) -> bool:
+        """Persist newer member evidence and return whether it changed state."""
         user = session.scalar(
             select(UserDB).where(
                 UserDB.telegram_id == evidence.user_telegram_id,
@@ -519,6 +658,7 @@ class WorkerOperationsStore:
     def _is_new_member_evidence(
         self, session: Session, group: ChatDB, user: UserDB, evidence: MembershipEvidence
     ) -> bool:
+        """Return whether the evidence is newer than prior records and generation."""
         latest = session.scalar(
             select(MemberEvidenceDB)
             .where(MemberEvidenceDB.group_id == group.id, MemberEvidenceDB.user_id == user.id)
@@ -537,6 +677,7 @@ class WorkerOperationsStore:
         row: MemberEvidenceDB | None,
         evidence: MembershipEvidence,
     ) -> None:
+        """Apply a validated member fact and tombstone nonadministrators."""
         if row is None:
             row = MemberEvidenceDB(
                 group_id=group.id,
@@ -564,6 +705,7 @@ class WorkerOperationsStore:
         action: str,
         changes: dict[str, object],
     ) -> None:
+        """Validate and append one audit event to the session."""
         validate_audit_changes(target_type, action, changes)
         session.add(
             AuditEventDB(
@@ -579,7 +721,11 @@ class WorkerOperationsStore:
         )
 
     def unauthorized_group_chats(self) -> list[ChatDB]:
-        """Fetch active unauthorized group/supergroup chats."""
+        """Fetch active unauthorized group/supergroup chats.
+
+        Returns:
+            Active unauthorized group chats ordered by ID.
+        """
         self._require_owner()
         stmt = (
             select(ChatDB)
@@ -594,7 +740,11 @@ class WorkerOperationsStore:
             return list(session.scalars(stmt).all())
 
     def pending_chats(self) -> list[ChatDB]:
-        """Fetch active pending approval chats."""
+        """Fetch active pending approval chats.
+
+        Returns:
+            Active pending chats ordered by ID.
+        """
         self._require_owner()
         stmt = (
             select(ChatDB)
@@ -608,7 +758,11 @@ class WorkerOperationsStore:
             return list(session.scalars(stmt).all())
 
     def list_owners(self) -> list[UserDB]:
-        """Fetch active owner accounts for operator notifications."""
+        """Fetch active owner accounts for operator notifications.
+
+        Returns:
+            Active owner accounts ordered by Telegram ID.
+        """
         self._require_owner()
         stmt = (
             select(UserDB)
@@ -623,14 +777,23 @@ class WorkerOperationsStore:
             return list(session.scalars(stmt).all())
 
     def get_last_notified_version(self) -> str | None:
-        """Read last notified version from system state."""
+        """Read last notified version from system state.
+
+        Returns:
+            Last notified version string, or None if absent.
+        """
         self._require_owner()
         stmt = select(SystemStateDB.value).where(SystemStateDB.key == "last_notified_version")
         with self._sessions() as session:
             return session.scalar(stmt)
 
     def set_last_notified_version(self, version: str, actor: ActorContext | None = None) -> None:
-        """Update last notified version in system state with audit event."""
+        """Update last notified version in system state with audit event.
+
+        Args:
+            version: New last notified version.
+            actor: Optional actor context recorded on the audit event.
+        """
         self._require_owner()
         with self._sessions.begin() as session:
             stmt = select(SystemStateDB).where(SystemStateDB.key == "last_notified_version")
@@ -650,7 +813,11 @@ class WorkerOperationsStore:
             )
 
     def approved_group_chats(self) -> list[ChatDB]:
-        """Fetch active approved Telegram group/supergroup chats."""
+        """Fetch active approved Telegram group/supergroup chats.
+
+        Returns:
+            Active approved group chats ordered by ID.
+        """
         self._require_owner()
         stmt = (
             select(ChatDB)
@@ -666,7 +833,14 @@ class WorkerOperationsStore:
             return list(session.scalars(stmt).all())
 
     def get_chat(self, chat_id: int) -> ChatDB | None:
-        """Fetch an active Telegram chat by its chat_id."""
+        """Fetch an active Telegram chat by its chat_id.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+
+        Returns:
+            Active chat matching the ID, or None if absent.
+        """
         self._require_owner()
         stmt = select(ChatDB).where(
             ChatDB.chat_id == chat_id,

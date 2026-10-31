@@ -19,7 +19,16 @@ class SQLAlchemyGroupIdentityStore:
         self._audit = audited_uow
 
     async def ingest_group(self, telegram_id: int, title: str | None, chat_type: str) -> ChatDB | None:
-        """Persist only current public group metadata, respecting tombstones."""
+        """Persist only current public group metadata, respecting tombstones.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the group.
+            title: Current public title of the group.
+            chat_type: Current chat type of the group.
+
+        Returns:
+            Observed or created group, or None if a tombstone exists.
+        """
         result = await self._audit.execute(
             actor=ActorContext.system("telegram_identity_evidence"),
             target_type="chat",
@@ -34,6 +43,7 @@ class SQLAlchemyGroupIdentityStore:
     async def _observe(
         self, session: AsyncSession, telegram_id: int, title: str | None, chat_type: str
     ) -> tuple[ChatDB | None, dict[str, object] | None]:
+        """Observe and persist current group metadata inside the transaction."""
         await lock_async_mutation(session, MutationLocks(chats=(telegram_id,)))
         repo = SQLAlchemyChatRepository(session)
         chat = await repo.get_by_id(telegram_id)
