@@ -98,6 +98,10 @@ Chat command associations are explicit selected activation for private and group
 PostgreSQL and Valkey run independently of application processes with named data volumes. Every application process owns its connection pools. Audited mutations use scoped parent/row locks and conflict-safe PostgreSQL writes. Shared actor locks permit independent target mutations to progress concurrently. Missing-key gates protect ingestion and other absent rows; no application-wide writer lock remains. See the [complete writer lock matrix](postgresql-concurrency.md). See [database setup and transfer](postgresql-migration.md).
 
 
+## Package layout baseline
+
+The pre-reorganization tree contains 85 application, 59 infrastructure, 24 interface, 8 bootstrap, and 20 domain Python files, plus 106 architecture-layer test modules. The five layers remain fixed and import-linter enforced. The approved relocation campaign moves modules by existing ownership only; it does not change class names, signatures, transaction boundaries, task identifiers, wire contracts, or behavior. Root `hovorunv2/utils/` will own reusable technical helpers that may be imported by every layer and must not import a layer. Concrete I/O relocations that would require new protocols or implementation refactoring are deferred and documented rather than forced.
+
 ## Worker redesign contracts
 
 The following process ownership is the implemented production architecture. Media, browser, operations, and lifecycle recovery run in native synchronous Celery workers; Beat owns periodic operations; the bot owns only Telegram ingress, interactive behavior, admission, and publication.
