@@ -8,7 +8,7 @@ from io import StringIO
 from casbin import Enforcer, Model
 from casbin.persist.adapters import StringAdapter
 
-from hovorunv2.application.permissions import PermissionFacts, PermissionTarget
+from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
 from hovorunv2.domain.enums import Role
 
 POLICY_FIELDS = 5

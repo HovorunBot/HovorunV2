@@ -10,10 +10,10 @@ from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObject, Update
 
+from hovorunv2.application.access.access_service import AccessService, CommandPolicy
+from hovorunv2.application.access.permissions import DecisionReason
 from hovorunv2.application.features import TriggerKind
-from hovorunv2.application.permissions import DecisionReason
 from hovorunv2.application.ports import AppSettings, CachePort
-from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger, set_log_context

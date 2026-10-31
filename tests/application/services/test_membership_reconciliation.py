@@ -9,12 +9,12 @@ from aiogram import Bot
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
-from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
-from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.identity import membership_reconciliation as reconciliation
+from hovorunv2.application.identity.membership import MembershipEvidence, MembershipStatus
+from hovorunv2.application.identity.membership_reconciliation import GROUP_BATCH_SIZE, MembershipReconciliationService
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services import membership_reconciliation as reconciliation
-from hovorunv2.application.services.membership_reconciliation import GROUP_BATCH_SIZE, MembershipReconciliationService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.interface.telegram.membership import TelegramMembershipAdapter
 from tests.utils.telegram import API, BOT_CREDENTIAL, GROUP_ID, USER_ID, RecordedResponse, member_payload

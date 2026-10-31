@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from hovorunv2.application.permissions import AccessDecision, DecisionReason
+from hovorunv2.application.access.permissions import AccessDecision, DecisionReason
 
 
 @dataclass(frozen=True, slots=True)

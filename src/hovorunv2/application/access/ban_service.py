@@ -1,7 +1,7 @@
 """Audited access restriction administration, separate from runtime evaluation."""
 
-from hovorunv2.application.ban_ports import BanStore
-from hovorunv2.application.services.permission_service import PermissionService
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.enums import ActorOrigin, TargetKind

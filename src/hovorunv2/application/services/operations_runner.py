@@ -9,7 +9,7 @@ import redis
 
 from hovorunv2.application.budgets import Clock, RuntimeNamespace
 from hovorunv2.application.changelog import get_changelog_updates, get_current_version, parse_version
-from hovorunv2.application.membership import (
+from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
     MembershipEvidence,

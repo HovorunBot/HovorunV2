@@ -11,7 +11,7 @@ from dishka import make_async_container
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from hovorunv2.application.group_grants import GroupGrantStore
+from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
 from hovorunv2.bootstrap.admin import AdminProvider, main, run_admin
 from hovorunv2.domain.audit import ActorContext, AuditEventDB

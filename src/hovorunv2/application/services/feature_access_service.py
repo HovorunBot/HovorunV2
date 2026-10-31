@@ -3,17 +3,22 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from hovorunv2.application.ban_ports import BanStore
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.permission_service import PermissionService
+from hovorunv2.application.access.permissions import (
+    DecisionReason,
+    GroupAdminEvidence,
+    PermissionRequest,
+    PermissionTarget,
+)
 from hovorunv2.application.feature_policy import FeatureDecision, evaluate_feature
 from hovorunv2.application.features import FeatureChannel, FeatureRegistry, FeatureScope, TriggerKind
 from hovorunv2.application.group_beta import GroupBetaStore
-from hovorunv2.application.membership import MembershipStatus
-from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.permissions import DecisionReason, GroupAdminEvidence, PermissionRequest, PermissionTarget
+from hovorunv2.application.groups.chat_status_service import ChatStatusService, evidence_time
+from hovorunv2.application.identity.membership import MembershipStatus
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.policy_facts import FeatureFactStore
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.chat_status_service import ChatStatusService, evidence_time
-from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.domain.membership import GroupMembershipStateDB

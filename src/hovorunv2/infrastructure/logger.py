@@ -15,7 +15,7 @@ from hovorunv2.domain.enums import ChatStatus, CommandName, Role
 if TYPE_CHECKING:
     from aiogram import Bot
 
-    from hovorunv2.application.services.role_service import RoleService
+    from hovorunv2.application.access.role_service import RoleService
 
 LOG_FORMAT: Final = "%(asctime)s - %(name)s - %(levelname)s - [user=%(user_id)s chat=%(chat_id)s] - %(message)s"
 

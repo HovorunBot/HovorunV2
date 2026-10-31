@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.features import FeatureChannel, FeatureDefinition
-from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.domain.audit import ActorContext
 
 

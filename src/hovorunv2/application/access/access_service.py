@@ -4,14 +4,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from hovorunv2.application.ban_ports import BanStore
-from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.permissions import AccessDecision, DecisionReason, PermissionRequest
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.permission_service import PermissionService
+from hovorunv2.application.access.permissions import AccessDecision, DecisionReason, PermissionRequest
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import UserStore
-from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
-from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.domain.enums import TargetKind
 
 if TYPE_CHECKING:

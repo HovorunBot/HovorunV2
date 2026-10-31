@@ -5,6 +5,7 @@ import secrets
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
+from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.admission import (
     AdmissionConflictError,
     JobStage,
@@ -45,7 +46,6 @@ from hovorunv2.application.media.errors import (
 )
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.finalization import append_translation, prepare_caption_text
-from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.native_translation import NativeTranslationService
 from hovorunv2.application.services.worker_lifecycle_service import WorkerLifecycleService

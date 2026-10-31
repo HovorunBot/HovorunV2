@@ -6,7 +6,7 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.clients.reddit import RedditService
 from hovorunv2.application.feature_jobs import JobOutcome
-from hovorunv2.application.services.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand

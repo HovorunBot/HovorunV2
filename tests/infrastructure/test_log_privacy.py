@@ -10,11 +10,11 @@ import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
+from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.clients.instagram import PrivateInstaloaderContext
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.media.downloader import MediaDownloader
 from hovorunv2.application.media.errors import MediaDownloadError
-from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.enums import Role
 from hovorunv2.infrastructure.logger import (
     LOG_FORMAT,

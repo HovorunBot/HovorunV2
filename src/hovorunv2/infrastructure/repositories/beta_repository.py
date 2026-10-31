@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.beta import BetaEligibilityFacts
-from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.user import UserDB

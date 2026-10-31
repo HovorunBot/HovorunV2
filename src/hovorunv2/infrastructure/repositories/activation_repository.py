@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hovorunv2.application.activation import ActivationAction, ActivationOutcome, ActivationRequest, ActivationResult
+from hovorunv2.application.groups.activation import (
+    ActivationAction,
+    ActivationOutcome,
+    ActivationRequest,
+    ActivationResult,
+)
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, ChatStatus

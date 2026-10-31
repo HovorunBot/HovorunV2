@@ -1,14 +1,14 @@
 """Current private/CLI authority and shared audited access administration."""
 
-from hovorunv2.application.activation import ActivationAction, ActivationRequest, ActivationStore
-from hovorunv2.application.administration import AdminAction, AdminRequest, AdminTarget
-from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.permissions import PermissionTarget
+from hovorunv2.application.access.administration import AdminAction, AdminRequest, AdminTarget
+from hovorunv2.application.access.ban_service import BanService
+from hovorunv2.application.access.permission_service import PermissionService
+from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.access.trust_service import TrustService
+from hovorunv2.application.groups.activation import ActivationAction, ActivationRequest, ActivationStore
+from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
-from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.beta_service import BetaEligibilityService
-from hovorunv2.application.services.permission_service import PermissionService
-from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ActorOrigin, TargetKind

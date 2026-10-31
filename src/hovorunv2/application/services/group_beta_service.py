@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime
 
+from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.features import FeatureChannel, FeatureRegistry, FeatureScope
 from hovorunv2.application.group_beta import GroupBetaFacts, GroupBetaStore
-from hovorunv2.application.permissions import PermissionTarget
-from hovorunv2.application.services.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.domain.audit import ActorContext
 
 

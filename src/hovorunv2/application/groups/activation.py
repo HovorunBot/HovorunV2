@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from hovorunv2.application.permissions import GroupAdminEvidence, PermissionTarget
+from hovorunv2.application.access.permissions import GroupAdminEvidence, PermissionTarget
 from hovorunv2.domain.audit import ActorContext
 
 

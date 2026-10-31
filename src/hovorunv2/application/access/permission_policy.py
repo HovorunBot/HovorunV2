@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from hovorunv2.application.permissions import (
+from hovorunv2.application.access.permissions import (
     AccessDecision,
     DecisionReason,
     PermissionFacts,

@@ -11,12 +11,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from alembic import command
+from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.beta import BetaEntitlementStore
 from hovorunv2.application.features import FEATURE_REGISTRY, FeatureChannel, FeatureDefinition, FeatureRegistry
-from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.application.ports import ChatStore, CommandStore, UserStore
 from hovorunv2.application.services.beta_service import BetaEligibilityService
-from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB, chat_commands

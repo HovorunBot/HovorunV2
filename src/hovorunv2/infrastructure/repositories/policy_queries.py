@@ -6,8 +6,8 @@ from sqlalchemy import Select, exists, or_, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.selectable import Exists
 
-from hovorunv2.application.membership import MembershipStatus
-from hovorunv2.application.permissions import PermissionTarget
+from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.identity.membership import MembershipStatus
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB

@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.ports import PublicHandleStore, UserStore
-from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.bootstrap.admin import run_admin
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import Role, TargetKind

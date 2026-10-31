@@ -8,8 +8,8 @@ from aiogram.types import CallbackQuery, Chat, ChatMemberLeft, ChatMemberMember,
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.domain.enums import ChatStatus

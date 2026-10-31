@@ -9,16 +9,16 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.activation import ActivationAction, ActivationOutcome
-from hovorunv2.application.ban_ports import BanStore
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.crypto import decrypt_payload, encrypt_payload, get_fernet_for_chat
-from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.group_migration import GroupMigrationStore
-from hovorunv2.application.identity import GroupIdentityStore
-from hovorunv2.application.permissions import PermissionTarget
+from hovorunv2.application.groups.activation import ActivationAction, ActivationOutcome
+from hovorunv2.application.groups.activation_service import GroupActivationService
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.groups.group_migration import GroupMigrationStore
+from hovorunv2.application.identity.identity import GroupIdentityStore
 from hovorunv2.application.ports import ChatStore, PublicHandleStore, UserStore
-from hovorunv2.application.services.activation_service import GroupActivationService
-from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.chat import ChatDB

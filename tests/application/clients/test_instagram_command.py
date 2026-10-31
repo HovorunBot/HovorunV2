@@ -10,9 +10,9 @@ from dishka import AsyncContainer
 from hovorunv2.application.clients.instagram import InstagramService
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
 from hovorunv2.application.feature_jobs import JobOutcome
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.native_browser import NativeBrowserService
 from hovorunv2.infrastructure.native_http import NativeHTTPClient

@@ -7,9 +7,9 @@ import pytest
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
+from hovorunv2.application.access.access_service import AccessService, CommandPolicy
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.ports import ChatStore
-from hovorunv2.application.services.access_service import AccessService, CommandPolicy
-from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.domain.enums import ChatStatus

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Protocol
 
-from hovorunv2.application.membership import (
+from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
     MembershipEvidence,

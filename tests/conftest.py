@@ -21,11 +21,11 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 import hovorunv2.domain  # noqa: F401
-from hovorunv2.application.membership import AdministratorEvidence
-from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.access.trust_service import TrustService
+from hovorunv2.application.identity.membership import AdministratorEvidence
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.role_service import RoleService
-from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.base import Base

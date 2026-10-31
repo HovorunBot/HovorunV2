@@ -6,8 +6,8 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.ports import RoleStore, UserStore
-from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.enums import ActorOrigin, Role
 from hovorunv2.domain.role import UserRoleDB

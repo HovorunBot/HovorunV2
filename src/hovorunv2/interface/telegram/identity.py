@@ -7,8 +7,8 @@ from aiogram import BaseMiddleware
 from aiogram.enums import ChatType
 from aiogram.types import CallbackQuery, Chat, ChatMemberUpdated, Message, TelegramObject, User
 
-from hovorunv2.application.group_migration import GroupMigrationStore
-from hovorunv2.application.identity import GroupIdentityStore
+from hovorunv2.application.groups.group_migration import GroupMigrationStore
+from hovorunv2.application.identity.identity import GroupIdentityStore
 from hovorunv2.application.ports import PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind

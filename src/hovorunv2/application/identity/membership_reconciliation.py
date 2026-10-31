@@ -3,8 +3,8 @@
 import asyncio
 from datetime import UTC, datetime
 
-from hovorunv2.application.membership import MembershipPort
-from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.identity.membership import MembershipPort
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.domain.chat import ChatDB
 
 RECONCILIATION_CRON = "* * * * *"

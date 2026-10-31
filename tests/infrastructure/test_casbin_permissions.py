@@ -8,17 +8,17 @@ from importlib.resources import files
 import pytest
 from dishka import AsyncContainer
 
-from hovorunv2.application.permissions import (
+from hovorunv2.application.access.access_service import AccessService, CommandPolicy
+from hovorunv2.application.access.permissions import (
     DecisionReason,
     GroupAdminEvidence,
     PermissionFacts,
     PermissionRequest,
     PermissionTarget,
 )
+from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
-from hovorunv2.application.services.access_service import AccessService, CommandPolicy
-from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, Role
 from hovorunv2.infrastructure.authorization.casbin_policy import CasbinAuthorizationPolicy, load_authorization_policy

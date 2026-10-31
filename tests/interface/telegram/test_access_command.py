@@ -10,9 +10,9 @@ from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.activation import ActivationOutcome, ActivationRequest, ActivationStore
+from hovorunv2.application.access.access_service import AccessService
+from hovorunv2.application.groups.activation import ActivationOutcome, ActivationRequest, ActivationStore
 from hovorunv2.application.ports import CachePort
-from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.domain.audit import AuditEventDB

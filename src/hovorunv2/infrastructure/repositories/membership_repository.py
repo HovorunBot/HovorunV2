@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hovorunv2.application.membership import (
+from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
     MembershipEvidence,

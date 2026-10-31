@@ -3,7 +3,7 @@
 import argparse
 from typing import Never
 
-from hovorunv2.application.administration import AdminAction, AdminRequest
+from hovorunv2.application.access.administration import AdminAction, AdminRequest
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import TargetKind
 

@@ -6,25 +6,25 @@ import pytest
 from dishka import AsyncContainer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.membership import (
+from hovorunv2.application.access.access_service import AccessService, CommandPolicy
+from hovorunv2.application.access.ban_service import BanService
+from hovorunv2.application.access.permissions import (
+    DecisionReason,
+    PermissionRequest,
+    PermissionTarget,
+)
+from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.access.trust_service import TrustService
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
     MembershipEvidence,
     MembershipStatus,
 )
-from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.permissions import (
-    DecisionReason,
-    PermissionRequest,
-    PermissionTarget,
-)
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.access_service import AccessService, CommandPolicy
-from hovorunv2.application.services.ban_service import BanService
-from hovorunv2.application.services.chat_status_service import ChatStatusService
-from hovorunv2.application.services.role_service import RoleService
-from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ChatStatus, Role, TargetKind

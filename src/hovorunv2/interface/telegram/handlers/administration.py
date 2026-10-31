@@ -10,10 +10,10 @@ from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from hovorunv2.application.administration import AdminAction
-from hovorunv2.application.services.access_service import CommandPolicy
-from hovorunv2.application.services.admin_session_service import AdminSessionService
-from hovorunv2.application.services.administration_service import AdministrationService
+from hovorunv2.application.access.access_service import CommandPolicy
+from hovorunv2.application.access.administration import AdminAction
+from hovorunv2.application.access.administration_service import AdministrationService
+from hovorunv2.application.settings.admin_session_service import AdminSessionService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.access_arguments import parse_access

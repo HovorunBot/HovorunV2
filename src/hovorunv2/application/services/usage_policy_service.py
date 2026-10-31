@@ -2,9 +2,9 @@
 
 from dataclasses import replace
 
+from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.features import FeatureRegistry, TriggerKind
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.application.usage import (
     MEDIA_BUCKET,
     ResolvedUsage,

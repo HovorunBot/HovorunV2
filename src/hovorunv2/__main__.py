@@ -9,11 +9,11 @@ from dishka import AsyncContainer, make_async_container
 from dishka.integrations.aiogram import setup_dishka
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.access.access_service import AccessService
+from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.crypto import verify_encryption_key
 from hovorunv2.application.ports import CachePort
-from hovorunv2.application.services.access_service import AccessService
 from hovorunv2.application.services.message_service import MessageService
-from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures

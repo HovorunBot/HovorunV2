@@ -10,10 +10,10 @@ from aiogram.types import Chat, Message, User
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
-from hovorunv2.application.activation import ActivationStore
-from hovorunv2.application.permissions import PermissionTarget
+from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.groups.activation import ActivationStore
+from hovorunv2.application.groups.activation_service import GroupActivationService
 from hovorunv2.application.ports import AuthorizationPolicy, ChatStore, UserStore
-from hovorunv2.application.services.activation_service import GroupActivationService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.interface.telegram.handlers.access import AccessCommand

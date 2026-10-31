@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.group_grants import GroupGrantStore
+from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus

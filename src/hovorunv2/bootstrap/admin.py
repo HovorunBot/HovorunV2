@@ -6,12 +6,17 @@ import sys
 from dishka import AsyncContainer, Scope, alias, make_async_container, provide
 from sqlalchemy.exc import SQLAlchemyError
 
-from hovorunv2.application.activation import ActivationStore
-from hovorunv2.application.administration import AdminRequest
-from hovorunv2.application.ban_ports import BanStore
+from hovorunv2.application.access.administration import AdminRequest
+from hovorunv2.application.access.administration_service import AdministrationService
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.ban_service import BanService
+from hovorunv2.application.access.permission_service import PermissionService
+from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.beta import BetaEntitlementStore
 from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry
-from hovorunv2.application.group_grants import GroupGrantStore
+from hovorunv2.application.groups.activation import ActivationStore
+from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.ports import (
     AuditedUnitOfWork,
     AuthorizationPolicy,
@@ -20,12 +25,7 @@ from hovorunv2.application.ports import (
     RoleStore,
     UserStore,
 )
-from hovorunv2.application.services.administration_service import AdministrationService
-from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.beta_service import BetaEligibilityService
-from hovorunv2.application.services.permission_service import PermissionService
-from hovorunv2.application.services.role_service import RoleService
-from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy

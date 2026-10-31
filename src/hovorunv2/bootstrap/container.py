@@ -7,20 +7,30 @@ import aiohttp
 from aiogram import Bot
 from dishka import Provider, Scope, alias, provide
 
-from hovorunv2.application.activation import ActivationStore
+from hovorunv2.application.access.access_service import AccessService
+from hovorunv2.application.access.administration_service import AdministrationService
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.ban_service import BanService
+from hovorunv2.application.access.permission_service import PermissionService
+from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.admission import AdmissionPort
-from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.beta import BetaEntitlementStore
 from hovorunv2.application.budgets import BudgetPort, Clock, RuntimeNamespace, WallClock
 from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.feature_jobs import FeatureQueuePort, PayloadPort
 from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry
 from hovorunv2.application.group_beta import GroupBetaStore
-from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.group_migration import GroupMigrationStore
-from hovorunv2.application.identity import GroupIdentityStore
-from hovorunv2.application.membership import MembershipPort
-from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.groups.activation import ActivationStore
+from hovorunv2.application.groups.activation_service import GroupActivationService
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.groups.group_management_service import GroupManagementService
+from hovorunv2.application.groups.group_migration import GroupMigrationStore
+from hovorunv2.application.identity.identity import GroupIdentityStore
+from hovorunv2.application.identity.membership import MembershipPort
+from hovorunv2.application.identity.membership_reconciliation import MembershipReconciliationService
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.policy_facts import FeatureFactStore
 from hovorunv2.application.ports import (
     AppSettings,
@@ -35,38 +45,28 @@ from hovorunv2.application.ports import (
     UnauthorizedPromptSender,
     UserStore,
 )
-from hovorunv2.application.services.access_service import AccessService
-from hovorunv2.application.services.activation_service import GroupActivationService
-from hovorunv2.application.services.admin_session_service import AdminSessionService
-from hovorunv2.application.services.administration_service import AdministrationService
 from hovorunv2.application.services.admission_service import AdmissionService
-from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.beta_service import BetaEligibilityService
 from hovorunv2.application.services.budget_service import BudgetService
-from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
 from hovorunv2.application.services.feature_job_runner import default_media_clients
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.group_beta_service import GroupBetaService
-from hovorunv2.application.services.group_management_service import GroupManagementService
 from hovorunv2.application.services.language_service import LanguageService
-from hovorunv2.application.services.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.services.message_service import MessageService
 from hovorunv2.application.services.notification_service import NotificationService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
-from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.application.services.reminder_service import ChatReminderService
-from hovorunv2.application.services.role_service import RoleService
-from hovorunv2.application.services.settings_session_service import SettingsSessionService
 from hovorunv2.application.services.translation_providers import (
     BaseTranslationService,
     GoogleTranslationService,
 )
 from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.application.services.usage_policy_service import UsagePolicyService
+from hovorunv2.application.settings.admin_session_service import AdminSessionService
+from hovorunv2.application.settings.settings_session_service import SettingsSessionService
 from hovorunv2.application.usage import UsagePolicyStore, UsageSafetyCaps
 from hovorunv2.application.usage_ledger import UsageLedgerStore
 from hovorunv2.bootstrap.database import DatabaseProvider

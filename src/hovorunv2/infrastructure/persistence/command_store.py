@@ -6,7 +6,7 @@ from functools import partial
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.permissions import PermissionFacts, PermissionTarget
+from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
 from hovorunv2.application.ports import AuditedUnitOfWork, AuthorizationPolicy, CommandStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanDB

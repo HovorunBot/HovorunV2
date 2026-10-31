@@ -11,16 +11,16 @@ from dishka import AsyncContainer
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.ban_ports import BanStore
-from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
-from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.permissions import DecisionReason
+from hovorunv2.application.access.access_service import AccessService, CommandPolicy
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.ban_service import BanService
+from hovorunv2.application.access.permissions import DecisionReason
+from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.identity.membership import MembershipEvidence, MembershipStatus
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import AppSettings, CachePort, ChatStore, RoleStore, UserStore
-from hovorunv2.application.services.access_service import AccessService, CommandPolicy
-from hovorunv2.application.services.ban_service import BanService
 from hovorunv2.application.services.command_service import CommandService
-from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.chat import ChatDB

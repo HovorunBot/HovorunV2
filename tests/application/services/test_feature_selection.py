@@ -8,8 +8,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from hovorunv2.application.activation import ActivationOutcome, ActivationRequest, ActivationStore
-from hovorunv2.application.group_migration import GroupMigrationStore
+from hovorunv2.application.groups.activation import ActivationOutcome, ActivationRequest, ActivationStore
+from hovorunv2.application.groups.group_migration import GroupMigrationStore
 from hovorunv2.application.ports import ChatStore
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.audit import AuditEventDB

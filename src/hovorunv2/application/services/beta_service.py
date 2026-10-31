@@ -1,8 +1,8 @@
 """Admin-controlled beta eligibility; trust and selected features remain independent."""
 
+from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.beta import BetaEligibilityFacts, BetaEntitlementStore
 from hovorunv2.application.features import FeatureChannel, FeatureRegistry, FeatureScope
-from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.beta import ALL_BETA
 

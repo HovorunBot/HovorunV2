@@ -6,10 +6,10 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.ban_ports import BanStore
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.ban_service import BanService
+from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.ports import UserStore
-from hovorunv2.application.services.ban_service import BanService
-from hovorunv2.application.services.role_service import RoleService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.chat import ChatDB

@@ -10,14 +10,14 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.group_grants import GroupGrantStore
-from hovorunv2.application.membership import (
+from hovorunv2.application.groups.group_grants import GroupGrantStore
+from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
     MembershipEvidence,
     MembershipStatus,
 )
-from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import UserStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.chat import ChatDB

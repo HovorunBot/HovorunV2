@@ -12,10 +12,10 @@ from typing import Any, Protocol, runtime_checkable
 
 from aiogram import Bot
 
+from hovorunv2.application.access.permissions import PermissionFacts
 from hovorunv2.application.browser import BrowserTab
+from hovorunv2.application.identity.membership import AdministratorEvidence, BotCapabilityEvidence, MembershipEvidence
 from hovorunv2.application.media.errors import MediaFailure
-from hovorunv2.application.membership import AdministratorEvidence, BotCapabilityEvidence, MembershipEvidence
-from hovorunv2.application.permissions import PermissionFacts
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform, Role, TargetKind

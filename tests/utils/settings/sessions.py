@@ -3,7 +3,7 @@
 from aiogram.types import Message
 from dishka import AsyncContainer
 
-from hovorunv2.application.services.settings_session_service import SettingsSessionService
+from hovorunv2.application.settings.settings_session_service import SettingsSessionService
 from hovorunv2.interface.telegram.callbacks import SettingsCallback
 
 

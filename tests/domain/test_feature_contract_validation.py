@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 from pydantic import ValidationError
 
-from hovorunv2.application.administration import AdminAction, AdminRequest
+from hovorunv2.application.access.administration import AdminAction, AdminRequest
 from hovorunv2.application.feature_jobs import MAX_JOB_LIFETIME_SECONDS, JobEnvelope, JobTarget
 from hovorunv2.application.features import FeatureChannel, FeatureDefinition, TriggerKind
 from hovorunv2.domain.enums import TargetKind

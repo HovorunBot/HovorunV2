@@ -6,7 +6,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
-from hovorunv2.application.services.role_service import RoleService
+from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.domain.enums import Role
 
 logger = logging.getLogger(__name__)

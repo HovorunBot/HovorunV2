@@ -2,9 +2,9 @@
 
 from datetime import UTC, datetime
 
-from hovorunv2.application.ban_ports import BanStore
-from hovorunv2.application.permission_policy import authority_allowed, permission_decision
-from hovorunv2.application.permissions import (
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.permission_policy import authority_allowed, permission_decision
+from hovorunv2.application.access.permissions import (
     AccessDecision,
     DecisionReason,
     PermissionRequest,

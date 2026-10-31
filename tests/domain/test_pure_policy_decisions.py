@@ -5,12 +5,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from hovorunv2.application.access.permissions import DecisionReason, GroupAdminEvidence, PermissionTarget
 from hovorunv2.application.beta import BetaEligibilityFacts
 from hovorunv2.application.feature_policy import FeatureDecision, FeatureFacts, evaluate_feature, feature_entry_allowed
 from hovorunv2.application.features import FeatureChannel, FeatureDefinition, FeatureScope, TriggerKind
 from hovorunv2.application.group_beta import GroupBetaFacts
-from hovorunv2.application.group_policy import GroupAccessFacts, group_access
-from hovorunv2.application.permissions import DecisionReason, GroupAdminEvidence, PermissionTarget
+from hovorunv2.application.groups.group_policy import GroupAccessFacts, group_access
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 TARGET = PermissionTarget("group", 2, 3, -101)

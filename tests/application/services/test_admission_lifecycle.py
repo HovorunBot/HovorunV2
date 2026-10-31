@@ -15,7 +15,7 @@ from hovorunv2.application.admission import AdmissionLimits, AdmissionState, Job
 from hovorunv2.application.budgets import BudgetRequest, ReservationState, RuntimeNamespace, UnitAmount, WallClock
 from hovorunv2.application.feature_jobs import EnqueueState, JobOutcome, JobTarget, PayloadState
 from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
-from hovorunv2.application.group_grants import GroupGrantStore
+from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.ports import CommandStore, UserStore
 from hovorunv2.application.services.usage_policy_service import UsagePolicyService
 from hovorunv2.application.usage import MEDIA_BUCKET, UsagePolicy, UsagePolicyStore, UsageSafetyCaps, UsageUnit

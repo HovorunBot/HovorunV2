@@ -14,7 +14,7 @@ from aiogram.types import (
     ChatMemberUnion,
 )
 
-from hovorunv2.application.membership import (
+from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
     MembershipEvidence,

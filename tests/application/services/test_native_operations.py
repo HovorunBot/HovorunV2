@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from hovorunv2.__main__ import _build_bot_router, _configure_dispatcher, _teardown_services
 from hovorunv2.application.budgets import RuntimeNamespace
 from hovorunv2.application.changelog import get_current_version
-from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
-from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.identity.membership import MembershipEvidence, MembershipStatus
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.operations_runner import WorkerOperationsRunner
 from hovorunv2.application.worker_io import HTTPFiles, HTTPForm, HTTPHeaders, HTTPQuery, SyncHTTPPort
 from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider

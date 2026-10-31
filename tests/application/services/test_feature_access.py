@@ -16,7 +16,10 @@ from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.ban_ports import BanStore
+from hovorunv2.application.access.access_service import AccessService, CommandPolicy
+from hovorunv2.application.access.ban_ports import BanStore
+from hovorunv2.application.access.permission_service import PermissionService
+from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.clients.twitter import TwitterService
 from hovorunv2.application.features import (
     FeatureChannel,
@@ -25,18 +28,15 @@ from hovorunv2.application.features import (
     TriggerKind,
 )
 from hovorunv2.application.group_beta import GroupBetaStore
+from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.identity.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
-from hovorunv2.application.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
-from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.policy_facts import FeatureFactStore
 from hovorunv2.application.ports import BrowserPort, CachePort, ChatStore, CommandStore, UserStore
-from hovorunv2.application.services.access_service import AccessService, CommandPolicy
-from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
-from hovorunv2.application.services.permission_service import PermissionService
 from hovorunv2.application.services.translation_service import TranslationService
-from hovorunv2.application.services.trust_service import TrustService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.beta import ALL_BETA

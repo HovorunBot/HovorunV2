@@ -6,13 +6,13 @@ from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.membership import (
+from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
     MembershipEvidence,
     MembershipStatus,
 )
-from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import AuditedUnitOfWork
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB

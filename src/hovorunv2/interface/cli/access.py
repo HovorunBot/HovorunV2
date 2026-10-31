@@ -2,8 +2,8 @@
 
 import json
 
-from hovorunv2.application.administration import AdminRequest
-from hovorunv2.application.services.administration_service import AdministrationService
+from hovorunv2.application.access.administration import AdminRequest
+from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.domain.audit import ActorContext
 
 

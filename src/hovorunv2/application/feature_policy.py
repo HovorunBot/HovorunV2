@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from hovorunv2.application.access.permissions import DecisionReason, PermissionTarget
 from hovorunv2.application.features import FeatureDefinition, FeatureScope, TriggerKind
-from hovorunv2.application.permissions import DecisionReason, PermissionTarget
 from hovorunv2.application.usage import ResolvedUsage, UsageUnit
 
 

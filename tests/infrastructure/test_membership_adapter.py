@@ -12,7 +12,7 @@ from aioresponses import CallbackResult, aioresponses
 from dishka import AsyncContainer
 from yarl import URL
 
-from hovorunv2.application.membership import MembershipPort, MembershipStatus
+from hovorunv2.application.identity.membership import MembershipPort, MembershipStatus
 from hovorunv2.interface.telegram.membership import MEMBERSHIP_FRESHNESS, TelegramMembershipAdapter
 
 BOT_CREDENTIAL = "123456:synthetic-membership-token"

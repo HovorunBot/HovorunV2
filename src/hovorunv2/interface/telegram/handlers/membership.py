@@ -4,9 +4,9 @@ from aiogram import Bot, Router
 from aiogram.enums import ChatType
 from aiogram.types import ChatMemberAdministrator, ChatMemberOwner, ChatMemberUpdated
 
-from hovorunv2.application.identity import GroupIdentityStore
-from hovorunv2.application.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
-from hovorunv2.application.membership_store import MembershipStore
+from hovorunv2.application.identity.identity import GroupIdentityStore
+from hovorunv2.application.identity.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
+from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.interface.telegram.membership import MEMBERSHIP_FRESHNESS, membership_status
 

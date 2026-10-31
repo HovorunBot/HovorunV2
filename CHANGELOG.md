@@ -57,6 +57,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **application**: group access and identity application code
 - **deploy**: separate worker and database services
 - **queue**: remove unused module-level Celery app
 - **media**: route work through native worker stages

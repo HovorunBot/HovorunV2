@@ -5,7 +5,7 @@ from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from hovorunv2.application.permissions import PermissionFacts, PermissionTarget
+from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
 from hovorunv2.application.ports import AuditedUnitOfWork, AuthorizationPolicy, UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, Role

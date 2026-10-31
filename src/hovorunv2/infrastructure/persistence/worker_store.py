@@ -7,15 +7,15 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
+from hovorunv2.application.access.permissions import AccessDecision, PermissionRequest, PermissionTarget
 from hovorunv2.application.feature_policy import FeatureDecision, evaluate_feature
 from hovorunv2.application.features import FeatureRegistry, TriggerKind
-from hovorunv2.application.membership import (
+from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
     BotCapabilityEvidence,
     MembershipEvidence,
     MembershipStatus,
 )
-from hovorunv2.application.permissions import AccessDecision, PermissionRequest, PermissionTarget
 from hovorunv2.application.ports import AuthorizationPolicy
 from hovorunv2.application.usage import ResolvedUsage, UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage_ledger import (
