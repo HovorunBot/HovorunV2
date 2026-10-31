@@ -9,18 +9,27 @@ from hovorunv2.application.operations.changelog import get_changelog_updates, ge
 from hovorunv2.application.operations.notification_delivery import NotificationLedgerPort
 from hovorunv2.application.operations.notification_ledger import NotificationEvent, NotificationOutcome
 from hovorunv2.application.operations.notification_preferences import NotificationCategory
+from hovorunv2.application.operations.notifications import NOTIFICATION_BODY_TTL_SECONDS
 from hovorunv2.application.operations.ports import WorkerOperationsPort
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.audit import ActorContext
 
-BODY_TTL_SECONDS = 300
+BODY_TTL_SECONDS = NOTIFICATION_BODY_TTL_SECONDS
 RELEASE_ACTOR = ActorContext.system("release notification")
 
 
 class NotificationBodyPort(Protocol):
     """Synchronous encrypted body preparation for notification events."""
 
-    def seal(self, job_id: str, data: bytes, deadline: float, *, sender_label: str | None = None) -> SealedPayload:
+    def seal(
+        self,
+        job_id: str,
+        data: bytes,
+        deadline: float,
+        *,
+        sender_label: str | None = None,
+        retention_seconds: int | None = None,
+    ) -> SealedPayload:
         """Encrypt a body without persisting it."""
         ...
 
@@ -61,7 +70,10 @@ class ReleaseUpdateService:
             return 0
         event_key = f"release.{current.lstrip('v')}"
         sealed = self._bodies.seal(
-            event_key, self._message(current, updates).encode(), self._clock.now() + BODY_TTL_SECONDS
+            event_key,
+            self._message(current, updates).encode(),
+            self._clock.now() + BODY_TTL_SECONDS,
+            retention_seconds=NOTIFICATION_BODY_TTL_SECONDS,
         )
         if self._bodies.put(sealed) != PayloadState.READY:
             return 0

@@ -113,10 +113,10 @@ class NotificationLedgerRepository:
         if event is None:
             msg = "Notification receipt requires an existing immutable event."
             raise ValueError(msg)
-        if await self._active_target(target) is None:
+        row = await self._receipt_row(event.id, target)
+        if row is None and await self._active_target(target) is None:
             msg = "Notification receipt requires the exact active target generation."
             raise ValueError(msg)
-        row = await self._receipt_row(event.id, target)
         before = row.status if row is not None else None
         if row is None:
             row = NotificationReceiptDB(

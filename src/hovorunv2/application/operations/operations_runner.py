@@ -265,7 +265,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         return count
 
     def _remind_pending_chat(self, chat_id: int, owners: Sequence[UserDB]) -> int:
-        key = f"{PENDING_PING_PREFIX}:{chat_id}"
+        key = f"{self._namespace.value}{PENDING_PING_PREFIX}:{chat_id}"
         if self._client.get(key):
             return 0
         text = (
@@ -293,7 +293,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         Returns:
             True when the prompt was sent, False otherwise.
         """
-        key = f"{UNAUTHORIZED_PROMPT_PREFIX}:{chat_id}"
+        key = f"{self._namespace.value}{UNAUTHORIZED_PROMPT_PREFIX}:{chat_id}"
         if not force and self._client.get(key):
             return False
         chat = self._ops.get_chat(chat_id)
@@ -323,7 +323,8 @@ class WorkerOperationsRunner(OperationsRunnerPort):
 
     def _execute_cleanup_sweep(self, now: float | None) -> int:
         current_ts = now if now is not None else datetime.now(UTC).timestamp()
-        raw_expired = self._client.zrangebyscore(CLEANUP_INDEX, 0, current_ts)
+        cleanup_index = f"{self._namespace.value}{CLEANUP_INDEX}"
+        raw_expired = self._client.zrangebyscore(cleanup_index, 0, current_ts)
         expired_list: list[str | bytes] = (
             [raw_expired]
             if isinstance(raw_expired, str | bytes)
@@ -334,15 +335,19 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         if not expired_list:
             return 0
         deleted = 0
+        removed: list[str | bytes] = []
         for raw_member in expired_list:
             member = raw_member.decode() if isinstance(raw_member, bytes) else raw_member
             if ":" not in member:
                 continue
             parts = member.split(":")
             chat_id, message_id = int(parts[0]), int(parts[1])
-            if self._api.delete_message(chat_id, message_id):
-                deleted += 1
-        self._client.zrem(CLEANUP_INDEX, *expired_list)
+            if not self._api.delete_message(chat_id, message_id):
+                continue
+            deleted += 1
+            removed.append(raw_member)
+        if removed:
+            self._client.zrem(cleanup_index, *removed)
         return deleted
 
     def broadcast_release_notifications(self) -> int:

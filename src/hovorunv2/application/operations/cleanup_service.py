@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -19,9 +20,11 @@ class CleanupService:
     CLEANUP_INDEX = "cleanup:index"
     CLEANUP_SINGLETON_PREFIX = "cleanup:singleton"
 
-    def __init__(self, cache_service: CachePort) -> None:
-        """Initialize service with cache dependency."""
+    def __init__(self, cache_service: CachePort, namespace: RuntimeNamespace) -> None:
+        """Initialize service with cache dependency and runtime namespace."""
         self._cache = cache_service
+        self._cleanup_index = f"{namespace.value}{self.CLEANUP_INDEX}"
+        self._singleton_prefix = f"{namespace.value}{self.CLEANUP_SINGLETON_PREFIX}"
 
     def _make_member(self, chat_id: int, message_id: int) -> str:
         """Format ZSET member string."""
@@ -34,7 +37,7 @@ class CleanupService:
 
     def _make_singleton_key(self, chat_id: int, cleanup_type: str) -> str:
         """Format singleton key."""
-        return f"{self.CLEANUP_SINGLETON_PREFIX}:{chat_id}:{cleanup_type}"
+        return f"{self._singleton_prefix}:{chat_id}:{cleanup_type}"
 
     async def register_window(self, chat_id: int, message_id: int, ttl: int, cleanup_type: str | None = None) -> None:
         """Register a message for self-destruction after inactivity.
@@ -48,7 +51,7 @@ class CleanupService:
         expires_at = datetime.now(UTC).timestamp() + ttl
         member = self._make_member(chat_id, message_id)
 
-        await self._cache.zadd(self.CLEANUP_INDEX, {member: expires_at})
+        await self._cache.zadd(self._cleanup_index, {member: expires_at})
 
         if cleanup_type:
             singleton_key = self._make_singleton_key(chat_id, cleanup_type)
@@ -66,7 +69,7 @@ class CleanupService:
             message_id: Telegram ID of the message.
         """
         member = self._make_member(chat_id, message_id)
-        await self._cache.zrem(self.CLEANUP_INDEX, member)
+        await self._cache.zrem(self._cleanup_index, member)
 
     async def replace_singleton_window(
         self, bot: Bot, chat_id: int, message_id: int, ttl: int, cleanup_type: str
@@ -101,13 +104,13 @@ class CleanupService:
             Number of messages successfully deleted.
         """
         current_time = now if now is not None else datetime.now(UTC).timestamp()
-        expired_members = await self._cache.zrangebyscore(self.CLEANUP_INDEX, 0, current_time)
+        expired_members = await self._cache.zrangebyscore(self._cleanup_index, 0, current_time)
         deleted_count = 0
         for member in expired_members:
             if await self._delete_single_expired(bot, member):
                 deleted_count += 1
         if expired_members:
-            await self._cache.zrem(self.CLEANUP_INDEX, *expired_members)
+            await self._cache.zrem(self._cleanup_index, *expired_members)
         return deleted_count
 
     async def _delete_single_expired(self, bot: Bot, member: str) -> bool:

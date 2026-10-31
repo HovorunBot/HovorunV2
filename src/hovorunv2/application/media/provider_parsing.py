@@ -63,7 +63,7 @@ class MediaParser:
             author_name=b_cfg.default_author,
             author_handle=b_cfg.author_handle,
             author_url=b_cfg.author_url,
-            content=f"<b>{title}</b>\n\n{description}".strip(),
+            content=f"{title}\n\n{description}".strip(),
             footer_text=footer,
             original_url=url,
             media_items=[media],

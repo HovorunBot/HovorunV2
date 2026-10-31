@@ -6,7 +6,7 @@ import math
 import re
 import secrets
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import redis
 from cryptography.fernet import Fernet, InvalidToken
@@ -153,15 +153,24 @@ class ValkeyPayloadStore(PayloadPort):
         self._safety = safety
 
     async def seal(
-        self, job_id: str, data: bytes, deadline: float, *, sender_label: str | None = None
+        self,
+        job_id: str,
+        data: bytes,
+        deadline: float,
+        *,
+        sender_label: str | None = None,
+        retention_seconds: int | None = None,
     ) -> SealedPayload:
         """Encrypt before writing anything; reject actual stored size above the request byte bound."""
         master = self._settings.cache_encryption_key
         now = self._clock.now()
-        master = _require_sealable_input(master, job_id, data, deadline, now, self._safety, sender_label)
+        safety = self._safety
+        if retention_seconds is not None:
+            safety = replace(safety, deadline_seconds=retention_seconds)
+        master = _require_sealable_input(master, job_id, data, deadline, now, safety, sender_label)
         reference, salt = secrets.token_hex(16), secrets.token_hex(16)
         fernet = await asyncio.to_thread(get_fernet_for_chat, master, salt)
-        return _seal_payload(reference, salt, job_id, deadline, data, sender_label, fernet, self._safety)
+        return _seal_payload(reference, salt, job_id, deadline, data, sender_label, fernet, safety)
 
     async def put(self, payload: SealedPayload) -> PayloadState:
         """Do not renew retention when the same prepared payload is written again."""
@@ -222,15 +231,26 @@ class WorkerPayloadClient:
         self._safety = safety
         self._require_owner = require_owner
 
-    def seal(self, job_id: str, data: bytes, deadline: float, *, sender_label: str | None = None) -> SealedPayload:
+    def seal(
+        self,
+        job_id: str,
+        data: bytes,
+        deadline: float,
+        *,
+        sender_label: str | None = None,
+        retention_seconds: int | None = None,
+    ) -> SealedPayload:
         """Encrypt input data and optional sender label synchronously."""
         self._require_owner()
         master = self._settings.cache_encryption_key
         now = self._clock.now()
-        master = _require_sealable_input(master, job_id, data, deadline, now, self._safety, sender_label)
+        safety = self._safety
+        if retention_seconds is not None:
+            safety = replace(safety, deadline_seconds=retention_seconds)
+        master = _require_sealable_input(master, job_id, data, deadline, now, safety, sender_label)
         reference, salt = secrets.token_hex(16), secrets.token_hex(16)
         fernet = get_fernet_for_chat(master, salt)
-        return _seal_payload(reference, salt, job_id, deadline, data, sender_label, fernet, self._safety)
+        return _seal_payload(reference, salt, job_id, deadline, data, sender_label, fernet, safety)
 
     def put(self, payload: SealedPayload) -> PayloadState:
         """Store prepared ciphertext synchronously."""

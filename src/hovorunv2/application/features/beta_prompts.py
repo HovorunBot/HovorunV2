@@ -19,11 +19,12 @@ from hovorunv2.application.operations.notification_ledger import (
     NotificationOutcome,
 )
 from hovorunv2.application.operations.notification_preferences import NotificationCategory
+from hovorunv2.application.operations.notifications import NOTIFICATION_BODY_TTL_SECONDS
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
 
-BODY_TTL_SECONDS = 300
+BODY_TTL_SECONDS = NOTIFICATION_BODY_TTL_SECONDS
 AUTHORITY_ACTION = "bot:administer"
 SYSTEM_ACTOR = ActorContext.system("beta introduction")
 MESSAGE = "Beta activation requires the eligible subject or current management authority."
@@ -107,7 +108,10 @@ class BetaPromptService:
         if not targets:
             return 0
         sealed = await self._bodies.seal(
-            event_key, self._render(definition).encode(), self._clock.now() + BODY_TTL_SECONDS
+            event_key,
+            self._render(definition).encode(),
+            self._clock.now() + BODY_TTL_SECONDS,
+            retention_seconds=NOTIFICATION_BODY_TTL_SECONDS,
         )
         if await self._bodies.put(sealed) != PayloadState.READY:
             return 0

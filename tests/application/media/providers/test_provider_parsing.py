@@ -34,7 +34,7 @@ class TestProviderParsing(MediaParser):
         payload = self._build_browser_payload(results, SOURCE, CONFIG)
         assert payload.media_items[0].url == url
         assert payload.media_items[0].is_video is video
-        assert payload.content == "<b>Synthetic post</b>"
+        assert payload.content == "Synthetic post"
         assert payload.original_url == SOURCE
 
     def test_json_scripts_skip_malformed_candidates_and_preserve_first_usable_media(self) -> None:

@@ -139,7 +139,7 @@ def test_get_changelog_updates_prefers_client_notes(monkeypatch: MonkeyPatch, tm
     updates = get_changelog_updates("0.2.0", "0.2.1")
     assert updates is not None
     # Must use client notes
-    assert "New in Hovorun v0.2.1: Instant Release Links & Feedback!" in updates
+    assert "New in Hovorun v0.2.1: Instant Release Links &amp; Feedback!" in updates
     assert "<b>/feedback Command:</b>" in updates
 
 

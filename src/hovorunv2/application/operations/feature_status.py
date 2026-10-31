@@ -1,5 +1,6 @@
 """Public outage and recovery notices for scopes actually using a feature."""
 
+import html
 from typing import Protocol
 
 from hovorunv2.application.access.permissions import PermissionTarget
@@ -12,10 +13,11 @@ from hovorunv2.application.operations.notification_ledger import (
     NotificationOutcome,
 )
 from hovorunv2.application.operations.notification_preferences import NotificationCategory
+from hovorunv2.application.operations.notifications import NOTIFICATION_BODY_TTL_SECONDS
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.audit import ActorContext
 
-BODY_TTL_SECONDS = 300
+BODY_TTL_SECONDS = NOTIFICATION_BODY_TTL_SECONDS
 
 
 class FeatureAudienceStore(Protocol):
@@ -63,7 +65,12 @@ class FeatureStatusNotifier:
         event_key = self._event_key(state)
         if await self._audience.announced(event_key):
             return 0
-        sealed = await self._bodies.seal(event_key, self._render(state).encode(), self._clock.now() + BODY_TTL_SECONDS)
+        sealed = await self._bodies.seal(
+            event_key,
+            self._render(state).encode(),
+            self._clock.now() + BODY_TTL_SECONDS,
+            retention_seconds=NOTIFICATION_BODY_TTL_SECONDS,
+        )
         if await self._bodies.put(sealed) != PayloadState.READY:
             return 0
         event = NotificationEvent(
@@ -93,5 +100,8 @@ class FeatureStatusNotifier:
         """Render only the required public-safe text; internal reasons never appear."""
         definition = self._registry.require(state.feature_key)
         if state.disabled:
-            return f"⚠️ <b>{definition.display_name}</b> is temporarily unavailable: {state.public_reason}"
-        return f"✅ <b>{definition.display_name}</b> is available again."
+            return (
+                f"⚠️ <b>{html.escape(definition.display_name)}</b> is temporarily unavailable: "
+                f"{html.escape(state.public_reason or '')}"
+            )
+        return f"✅ <b>{html.escape(definition.display_name)}</b> is available again."

@@ -260,8 +260,8 @@ async def test_chat_reminders_and_unauthorized_prompts_in_operations_worker(
 
     namespace = RuntimeNamespace("test:{reminders}:")
     client = redis.Redis.from_url(settings.valkey_url, decode_responses=True)
-    client.delete(f"periodic:unauthorized_prompt:{unauthorized_chat_id}")
-    client.delete(f"periodic:pending_ping:{pending_chat_id}")
+    client.delete(f"{namespace.value}periodic:unauthorized_prompt:{unauthorized_chat_id}")
+    client.delete(f"{namespace.value}periodic:pending_ping:{pending_chat_id}")
 
     with WorkerDatabase(settings) as db:
         runner = WorkerOperationsRunner(
@@ -280,8 +280,8 @@ async def test_chat_reminders_and_unauthorized_prompts_in_operations_worker(
             count = run_chat_maintenance_task()
             assert count >= 1
 
-            assert client.get(f"periodic:unauthorized_prompt:{unauthorized_chat_id}") == "1"
-            assert client.get(f"periodic:pending_ping:{pending_chat_id}") == "1"
+            assert client.get(f"{namespace.value}periodic:unauthorized_prompt:{unauthorized_chat_id}") == "1"
+            assert client.get(f"{namespace.value}periodic:pending_ping:{pending_chat_id}") == "1"
 
             # Running again should respect cooldown and send nothing
             sync_http.calls.clear()
@@ -309,9 +309,8 @@ async def test_cleanup_sweep_in_operations_worker(
 
     expired_member = "-100888111:501"
     future_member = "-100888111:502"
-    client.zadd("cleanup:index", {expired_member: now - 100, future_member: now + 5000})
-
     namespace = RuntimeNamespace("test:{cleanup}:")
+    client.zadd(f"{namespace.value}cleanup:index", {expired_member: now - 100, future_member: now + 5000})
     with WorkerDatabase(settings) as db:
         runner = WorkerOperationsRunner(
             ops=db.operations,
@@ -333,12 +332,12 @@ async def test_cleanup_sweep_in_operations_worker(
             assert len(delete_calls) == 1
             assert delete_calls[0][2] == {"chat_id": -100888111, "message_id": 501}
 
-            remaining = client.zrange("cleanup:index", 0, -1)
+            remaining = client.zrange(f"{namespace.value}cleanup:index", 0, -1)
             assert expired_member not in remaining
             assert future_member in remaining
         finally:
             set_operations_runner(None)
-            client.zrem("cleanup:index", future_member)
+            client.zrem(f"{namespace.value}cleanup:index", future_member)
             client.close()
 
 

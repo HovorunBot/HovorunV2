@@ -14,6 +14,7 @@ from hovorunv2.application.operations.notification_ledger import (
     NotificationOutcome,
 )
 from hovorunv2.application.operations.notification_preferences import NotificationCategory
+from hovorunv2.application.operations.notifications import NOTIFICATION_BODY_TTL_SECONDS
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.announcement import AnnouncementAudience
 from hovorunv2.domain.audit import ActorContext
@@ -32,7 +33,7 @@ class AnnouncementDraft:
 
 
 CONFIRMATION_TTL_SECONDS = 300
-DISPATCH_BODY_TTL_SECONDS = 300
+DISPATCH_BODY_TTL_SECONDS = NOTIFICATION_BODY_TTL_SECONDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,6 +317,7 @@ class AnnouncementService:
             event_key,
             (await self._store.body(draft.id)).encode(),
             self._clock.now() + DISPATCH_BODY_TTL_SECONDS,
+            retention_seconds=NOTIFICATION_BODY_TTL_SECONDS,
         )
         if await self._bodies.put(sealed) != PayloadState.READY:
             msg = "Announcement body is not available."

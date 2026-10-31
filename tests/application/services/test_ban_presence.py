@@ -12,6 +12,7 @@ from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.operations.reminder_service import ChatReminderService
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.cache import CacheService
@@ -43,6 +44,7 @@ async def test_restrictions_survive_rejoin_and_maintenance(test_container: Async
         cache,
         await test_container.get(OwnerNotifier),
         TelegramUnauthorizedPromptSender(chats),
+        RuntimeNamespace(),
     )
     join = BotJoinHandler(statuses, reminder, await test_container.get(MembershipEventHandler))
     try:

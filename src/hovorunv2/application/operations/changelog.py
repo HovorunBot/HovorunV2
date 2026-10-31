@@ -1,5 +1,6 @@
 """Utilities for reading project version and parsing user-facing CHANGES.md and technical CHANGELOG.md."""
 
+import html
 import logging
 import os
 import re
@@ -124,7 +125,7 @@ def format_markdown_for_telegram(text: str) -> str:
     """
     lines: list[str] = []
     for raw_line in text.splitlines():
-        line = raw_line.rstrip()
+        line = html.escape(raw_line.rstrip())
         # Convert markdown bullet prefixes (* or -) to bullet character •
         line = re.sub(r"^\s*[\*\-]\s+", "• ", line)
         # Convert **bold** to <b>bold</b>
@@ -215,15 +216,15 @@ def extract_fallback_notes(technical_content: str, last_version: str, current_ve
             if scope in INTERNAL_SCOPES:
                 continue
             desc = scope_match.group("desc").strip()
-            formatted_desc = desc[0].upper() + desc[1:] if desc else ""
-            formatted_scope = scope.replace("_", " ").title()
+            formatted_desc = html.escape(desc[0].upper() + desc[1:]) if desc else ""
+            formatted_scope = html.escape(scope.replace("_", " ").title())
             user_facing_lines.append(f"• <b>{formatted_scope}:</b> {formatted_desc}")
             continue
 
         simple_match = re.match(r"^-\s+(?P<desc>.+)$", line)
         if simple_match:
             desc = simple_match.group("desc").strip()
-            formatted_desc = desc[0].upper() + desc[1:] if desc else ""
+            formatted_desc = html.escape(desc[0].upper() + desc[1:]) if desc else ""
             user_facing_lines.append(f"• {formatted_desc}")
 
     return "\n".join(user_facing_lines) if user_facing_lines else None

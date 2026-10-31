@@ -139,6 +139,8 @@ class NotificationDeliveryService:
         Returns:
             True when the receipt is due and eligible for delivery, False otherwise.
         """
+        if not self._due(receipt):
+            return False
         category = receipt.category
         if not receipt.bypass_preferences and (
             category is None or not self._ledger.preference_enabled(receipt.target, category)
@@ -148,7 +150,7 @@ class NotificationDeliveryService:
         if not self._ledger.reachable(receipt.target):
             self._record(receipt, NotificationOutcome.UNREACHABLE)
             return False
-        return self._due(receipt)
+        return True
 
     def _body(self, receipt: NotificationReceipt) -> str | None:
         """Load the encrypted body by reference; no body is rendered from ledger metadata.

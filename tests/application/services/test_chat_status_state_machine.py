@@ -13,6 +13,7 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.operations.reminder_service import ChatReminderService
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.domain.enums import ChatStatus
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.cache import CacheService
@@ -39,7 +40,7 @@ def bot_event(chat_id: int, *, present: bool, date: datetime) -> ChatMemberUpdat
 async def test_state_machine_flow(test_container: AsyncContainer) -> None:
     """Joining, requests, departure, private approval and restrictions preserve durable state."""
     chat_id = -(secrets.randbelow(2**40) + 1)
-    cooldown_key = f"periodic:unauthorized_prompt:{chat_id}"
+    cooldown_key = f"{RuntimeNamespace().value}periodic:unauthorized_prompt:{chat_id}"
     settings = await test_container.get(Settings)
     cache = CacheService(settings.valkey_url)
     chats = await test_container.get(ChatStore)
@@ -52,6 +53,7 @@ async def test_state_machine_flow(test_container: AsyncContainer) -> None:
         cache,
         await test_container.get(OwnerNotifier),
         TelegramUnauthorizedPromptSender(chats),
+        RuntimeNamespace(),
     )
     join = BotJoinHandler(statuses, reminder, await test_container.get(MembershipEventHandler))
     now = datetime.now(UTC)

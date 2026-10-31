@@ -10,6 +10,7 @@ from hovorunv2.application.access.ports import UnauthorizedPromptSender
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.messaging.ports import CachePort
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.domain.enums import ChatStatus
 
 logger = logging.getLogger(__name__)
@@ -34,12 +35,14 @@ class ChatReminderService:
         cache_service: CachePort,
         owner_notifier: OwnerNotifier,
         prompt_sender: UnauthorizedPromptSender,
+        namespace: RuntimeNamespace,
     ) -> None:
         """Initialize chat reminder service."""
         self._chat_service = chat_service
         self._cache_service = cache_service
         self._owner_notifier = owner_notifier
         self._prompt_sender = prompt_sender
+        self._namespace = namespace
 
     async def send_unauthorized_prompt(
         self,
@@ -59,7 +62,7 @@ class ChatReminderService:
             True when sent, False when throttled or delivery failed.
 
         """
-        cooldown_key = f"{UNAUTHORIZED_PROMPT_KEY_PREFIX}:{chat_id}"
+        cooldown_key = f"{self._namespace.value}{UNAUTHORIZED_PROMPT_KEY_PREFIX}:{chat_id}"
         if not force and await self._cache_service.get(cooldown_key):
             logger.debug("Chat %d is in cooldown, skipping unauthorized reminder", chat_id)
             return False
@@ -89,7 +92,7 @@ class ChatReminderService:
         # 3. Check pending chats to remind owners
         pending_chats = await self._chat_service.get_all_by_status(ChatStatus.PENDING)
         for chat in pending_chats:
-            pending_key = f"periodic:pending_ping:{chat.chat_id}"
+            pending_key = f"{self._namespace.value}periodic:pending_ping:{chat.chat_id}"
             if await self._cache_service.get(pending_key):
                 continue
 

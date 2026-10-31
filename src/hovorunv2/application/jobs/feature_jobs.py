@@ -149,7 +149,13 @@ class PayloadPort(Protocol):
     """Encrypt before admission; store/read opaque payloads with bounded retention."""
 
     async def seal(
-        self, job_id: str, data: bytes, deadline: float, *, sender_label: str | None = None
+        self,
+        job_id: str,
+        data: bytes,
+        deadline: float,
+        *,
+        sender_label: str | None = None,
+        retention_seconds: int | None = None,
     ) -> SealedPayload:
         """Prepare ciphertext without persisting a plaintext or uncounted payload."""
         ...
