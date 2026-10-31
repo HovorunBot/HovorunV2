@@ -51,13 +51,13 @@ async def test_soft_deleted_chat_and_active_coexist(test_container: AsyncContain
     # 3. Normal lookup excludes soft-deleted chat
     assert await chat_store.get_chat(chat_id) is None
 
-    # 4. Insert generation 2 directly
+    # 4. Insert the next active generation directly (deletion advanced the tombstone to 2)
     async with session_maker() as session:
         gen2 = ChatDB(
             chat_id=chat_id,
             platform=Platform.TELEGRAM,
             status=ChatStatus.APPROVED,
-            generation=2,
+            generation=3,
         )
         session.add(gen2)
         await session.commit()
@@ -65,12 +65,12 @@ async def test_soft_deleted_chat_and_active_coexist(test_container: AsyncContain
     # 5. Historical lookup returns both generations
     history = await chat_store.get_historical_by_chat_id(chat_id)
     assert len(history) == 2
-    assert [c.generation for c in history] == [2, 1]
+    assert [c.generation for c in history] == [3, 2]
 
-    # Active lookup returns only generation 2
+    # Active lookup returns only the fresh generation
     active = await chat_store.get_chat(chat_id)
     assert active is not None
-    assert active.generation == 2
+    assert active.generation == 3
 
 
 async def test_soft_delete_is_audited_transactionally(test_container: AsyncContainer) -> None:

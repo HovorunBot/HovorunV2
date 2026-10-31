@@ -143,6 +143,7 @@ class SQLAlchemyUserRepository:
         user.deleted_at = deleted_at or datetime.now(UTC)
         user.deleted_by_actor_id = actor_id
         user.deleted_reason = reason
+        user.generation += 1
         return True
 
     async def set_trust(

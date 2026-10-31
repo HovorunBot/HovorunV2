@@ -151,4 +151,5 @@ class SQLAlchemyChatRepository:
         chat.deleted_at = deleted_at or datetime.now(UTC)
         chat.deleted_by_actor_id = actor_id
         chat.deleted_reason = reason
+        chat.generation += 1
         return True

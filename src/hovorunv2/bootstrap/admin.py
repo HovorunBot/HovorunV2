@@ -23,6 +23,7 @@ from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureReg
 from hovorunv2.application.groups.activation import ActivationStore
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.lifecycle import IdentityLifecycleService
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.application.usage.policies import UsagePolicyStore, UsageSafetyCaps
 from hovorunv2.application.usage.usage_administration import UsageAdministrationService
@@ -65,6 +66,7 @@ class AdminProvider(DatabaseProvider):
     handles_impl = provide(SQLAlchemyPublicHandleStore)
     handles = alias(source=SQLAlchemyPublicHandleStore, provides=PublicHandleStore)
     role_service = provide(RoleService)
+    lifecycle_service = provide(IdentityLifecycleService)
     role_cli = provide(RoleCLI)
     user_store_impl = provide(SQLAlchemyUserStore)
     user_store = alias(source=SQLAlchemyUserStore, provides=UserStore)
@@ -150,6 +152,24 @@ async def _execute_feature_admin(container: AsyncContainer, arguments: RoleArgum
     )
 
 
+async def _execute_lifecycle_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
+    """Apply one CLI-authorized identity soft-deletion and report the new generation."""
+    if arguments.target is None or arguments.reason is None:
+        msg = "Lifecycle deletion requires --target and --reason."
+        raise ValueError(msg)
+    if not arguments.yes:
+        msg = "Lifecycle deletion requires --yes."
+        raise ValueError(msg)
+    service = await container.get(IdentityLifecycleService)
+    actor = ActorContext.cli(reason=arguments.reason)
+    if arguments.operation == "delete-user":
+        return await service.delete_user(arguments.target, reason=arguments.reason, actor=actor)
+    if arguments.operation == "delete-group":
+        return await service.delete_group(arguments.target, reason=arguments.reason, actor=actor)
+    msg = "Unknown lifecycle operation."
+    raise ValueError(msg)
+
+
 async def _execute_trust_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
     """Validate target user and update trust state."""
     if arguments.target is None:
@@ -178,6 +198,8 @@ async def run_admin(arguments: RoleArguments) -> str:
             return await _execute_trust_admin(container, arguments)
         if arguments.topic == "feature":
             return await _execute_feature_admin(container, arguments)
+        if arguments.topic == "lifecycle":
+            return await _execute_lifecycle_admin(container, arguments)
         cli = await container.get(RoleCLI)
         return await cli.execute(arguments)
     finally:

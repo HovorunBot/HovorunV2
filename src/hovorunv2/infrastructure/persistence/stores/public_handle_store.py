@@ -57,7 +57,7 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
             match row.target_kind:
                 case TargetKind.USER:
                     user_repo = SQLAlchemyUserRepository(session)
-                    if await user_repo.get_by_telegram_id(row.target_id, str(platform)) is None:
+                    if await user_repo.get_by_id(row.target_id) is None:
                         return None
                 case TargetKind.GROUP:
                     chat_repo = SQLAlchemyChatRepository(session)
@@ -84,6 +84,13 @@ class SQLAlchemyPublicHandleStore(PublicHandleStore):
             row = await repo.get_by_target(target_kind, target_id, platform)
             if not row:
                 return None
+            match row.target_kind:
+                case TargetKind.USER:
+                    if await SQLAlchemyUserRepository(session).get_by_id(row.target_id) is None:
+                        return None
+                case TargetKind.GROUP:
+                    if await SQLAlchemyChatRepository(session).get_by_id(row.target_id, str(platform)) is None:
+                        return None
             return self._resolved_target(row)
 
     async def _execute_sync_handle(
