@@ -4,6 +4,7 @@ import argparse
 from typing import Never
 
 from hovorunv2.application.access.administration import AdminAction, AdminRequest
+from hovorunv2.application.usage.policies import UsageUnit
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import TargetKind
 
@@ -26,6 +27,13 @@ def add_access_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ban-kind", choices=tuple(BanKind), default=BanKind.FULL.value)
     parser.add_argument("--feature", default="*")
     parser.add_argument("--request-id", type=int)
+    parser.add_argument("--bucket", help="Usage bucket such as feature:twv or family:media.")
+    parser.add_argument("--unit", choices=tuple(UsageUnit), type=UsageUnit)
+    parser.add_argument("--window-seconds", dest="window_seconds", type=int)
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--burst", type=int)
+    parser.add_argument("--concurrency", type=int)
+    parser.add_argument("--pending", type=int)
 
 
 def parse_access(arguments: list[str]) -> AdminRequest:

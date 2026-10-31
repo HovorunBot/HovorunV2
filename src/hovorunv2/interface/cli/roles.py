@@ -20,6 +20,13 @@ class RoleArguments(argparse.Namespace):
     ban_kind: str
     feature: str
     request_id: int | None
+    bucket: str | None
+    unit: str | None
+    window_seconds: int | None
+    limit: int | None
+    burst: int | None
+    concurrency: int | None
+    pending: int | None
     topic: str
     operation: str
     target: str | None

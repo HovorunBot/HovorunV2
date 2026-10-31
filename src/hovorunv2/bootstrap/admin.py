@@ -22,6 +22,9 @@ from hovorunv2.application.groups.activation import ActivationStore
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.usage.policies import UsagePolicyStore, UsageSafetyCaps
+from hovorunv2.application.usage.usage_administration import UsageAdministrationService
+from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
@@ -36,6 +39,7 @@ from hovorunv2.infrastructure.persistence.stores.ban_store import SQLAlchemyBanS
 from hovorunv2.infrastructure.persistence.stores.beta_store import SQLAlchemyBetaEntitlementStore
 from hovorunv2.infrastructure.persistence.stores.chat_store import SQLAlchemyChatStore
 from hovorunv2.infrastructure.persistence.stores.group_grant_store import SQLAlchemyGroupGrantStore
+from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAlchemyUsagePolicyStore
 from hovorunv2.infrastructure.persistence.stores.user_store import SQLAlchemyUserStore
 from hovorunv2.interface.cli.access import AccessCLI
 from hovorunv2.interface.cli.roles import RoleArguments, RoleCLI, build_parser
@@ -75,6 +79,11 @@ class AdminProvider(DatabaseProvider):
     activation_store = alias(source=SQLAlchemyActivationStore, provides=ActivationStore)
     grants_impl = provide(SQLAlchemyGroupGrantStore)
     grants = alias(source=SQLAlchemyGroupGrantStore, provides=GroupGrantStore)
+    usage_policy_store_impl = provide(SQLAlchemyUsagePolicyStore)
+    usage_policy_store = alias(source=SQLAlchemyUsagePolicyStore, provides=UsagePolicyStore)
+    usage_safety_caps = provide(UsageSafetyCaps)
+    usage_policy_service = provide(UsagePolicyService)
+    usage_administration_service = provide(UsageAdministrationService)
     administration_service = provide(AdministrationService)
     access_cli = provide(AccessCLI)
 
@@ -101,6 +110,13 @@ async def _execute_access_admin(container: AsyncContainer, arguments: RoleArgume
             "ban_kind": arguments.ban_kind,
             "feature": arguments.feature,
             "request_id": arguments.request_id,
+            "bucket": arguments.bucket,
+            "unit": arguments.unit,
+            "window_seconds": arguments.window_seconds,
+            "limit": arguments.limit,
+            "burst": arguments.burst,
+            "concurrency": arguments.concurrency,
+            "pending": arguments.pending,
         }
     )
     return await (await container.get(AccessCLI)).execute(request)

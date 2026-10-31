@@ -10,6 +10,8 @@ from hovorunv2.application.groups.activation import ActivationAction, Activation
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.usage.policies import UsagePolicy, UsageUnit, UsageWindow
+from hovorunv2.application.usage.usage_administration import UsageAdministrationService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
@@ -31,6 +33,7 @@ class AdministrationService:
         beta: BetaEligibilityService,
         activation: ActivationStore,
         grants: GroupGrantStore,
+        usage: UsageAdministrationService,
     ) -> None:
         self._users = users
         self._chats = chats
@@ -41,6 +44,7 @@ class AdministrationService:
         self._beta = beta
         self._activation = activation
         self._grants = grants
+        self._usage = usage
 
     async def authorize(self, actor: ActorContext, transport: str | None) -> None:
         """Require current private bot administration or actual CLI origin."""
@@ -124,6 +128,22 @@ class AdministrationService:
         match request.action:
             case AdminAction.INSPECT | AdminAction.REQUESTS:
                 return state
+            case AdminAction.LIMITS:
+                return await self._inspect_limits(permission_target, request)
+            case AdminAction.LIMIT_SET:
+                changed = await self._usage.set_override(
+                    permission_target,
+                    self._limit_policy(request),
+                    actor=actor,
+                    transport_kind=transport,
+                )
+            case AdminAction.LIMIT_RESET:
+                changed = await self._usage.reset_override(
+                    permission_target,
+                    self._limit_policy(request),
+                    actor=actor,
+                    transport_kind=transport,
+                )
             case AdminAction.TRUST | AdminAction.UNTRUST:
                 changed = await self._execute_trust(request, target, actor, transport)
             case AdminAction.BAN:
@@ -150,6 +170,36 @@ class AdministrationService:
             case AdminAction.APPROVE | AdminAction.ACCEPT | AdminAction.REJECT:
                 return await self._execute_activation(request, permission_target, actor, transport)
         return {"changed": changed}
+
+    async def _inspect_limits(self, target: PermissionTarget, request: AdminRequest) -> dict[str, object]:
+        """Show effective default/override values and independent safety caps."""
+        view = await self._usage.inspect(target, request.feature, request.unit or UsageUnit.REQUESTS)
+        return view.as_dict()
+
+    def _limit_policy(self, request: AdminRequest) -> UsagePolicy:
+        """Build the typed override only after the request validator established its shape."""
+        bucket = request.bucket
+        unit = request.unit
+        window_seconds = request.window_seconds
+        if bucket is None or unit is None or window_seconds is None:
+            msg = "Limit changes require bucket, unit and window."
+            raise ValueError(msg)
+        if request.action == AdminAction.LIMIT_SET:
+            return self._complete_limit_policy(request, bucket, unit, window_seconds)
+        return UsagePolicy(bucket, 1, 1, 1, 1, unit, UsageWindow(window_seconds))
+
+    def _complete_limit_policy(
+        self, request: AdminRequest, bucket: str, unit: UsageUnit, window_seconds: int
+    ) -> UsagePolicy:
+        """Require every positive override dimension before constructing the policy."""
+        limit = request.limit
+        burst = request.burst
+        concurrency = request.concurrency
+        pending = request.pending
+        if limit is None or burst is None or concurrency is None or pending is None:
+            msg = "Setting a limit requires limit, burst, concurrency and pending."
+            raise ValueError(msg)
+        return UsagePolicy(bucket, limit, burst, concurrency, pending, unit, UsageWindow(window_seconds))
 
     async def _execute_trust(
         self, request: AdminRequest, target: AdminTarget, actor: ActorContext, transport: str | None

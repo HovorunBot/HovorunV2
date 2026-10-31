@@ -10,6 +10,7 @@ from hovorunv2.application.jobs.feature_jobs import PayloadPort
 from hovorunv2.application.usage.budget_service import BudgetService
 from hovorunv2.application.usage.budgets import BudgetPort, Clock, RuntimeNamespace, WallClock
 from hovorunv2.application.usage.policies import UsagePolicyStore, UsageSafetyCaps
+from hovorunv2.application.usage.usage_administration import UsageAdministrationService
 from hovorunv2.application.usage.usage_ledger import UsageLedgerStore
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.infrastructure.persistence.stores.usage_ledger_store import SQLAlchemyUsageLedgerStore
@@ -52,6 +53,7 @@ class RuntimeUsageProvider(Provider):
     usage_policy_store_impl = provide(SQLAlchemyUsagePolicyStore)
     usage_policy_store = alias(source=SQLAlchemyUsagePolicyStore, provides=UsagePolicyStore)
     usage_policy_service = provide(UsagePolicyService)
+    usage_administration_service = provide(UsageAdministrationService)
 
     @provide
     def usage_safety_caps(self) -> UsageSafetyCaps:

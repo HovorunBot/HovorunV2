@@ -22,9 +22,12 @@ from hovorunv2.interface.telegram.settings.callbacks import AdminCallback
 
 ADMIN_HELP = (
     "Use /admin ACTION user|group ID|@known_username [options].\n"
-    "Actions: inspect, trust, untrust, ban, unban, requests, approve, accept, reject, beta-grant, beta-revoke.\n"
+    "Actions: inspect, trust, untrust, ban, unban, requests, approve, accept, reject, beta-grant, beta-revoke, "
+    "limits, limit-set, limit-reset.\n"
     'Options: --reason "internal reason", --public "safe explanation", --ban-kind personal|full, '
     "--feature KEY|*, --request-id ID.\n"
+    "Limit options: --bucket feature:KEY|family:NAME, --unit requests|resource_units|tokens, "
+    "--window-seconds N, --limit N, --burst N, --concurrency N, --pending N.\n"
     "Internal reasons stay private. Only --public is suitable for disclosure. Role changes require CLI."
 )
 ADMIN_UNAVAILABLE = "Administration unavailable. Repeat /admin privately."
@@ -76,6 +79,12 @@ class AdministrationCommand(BaseCommand):
             preview += f"\nInternal reason (private): {request.reason or 'None'}"
             preview += f"\nPublic explanation: {request.public_explanation or 'None'}"
             preview += f"\nBan kind: {request.ban_kind}; feature: {request.feature}; request: {request.request_id}"
+            if request.bucket is not None:
+                preview += (
+                    f"\nLimit: {request.bucket} {request.unit} window={request.window_seconds}s "
+                    f"limit={request.limit} burst={request.burst} concurrency={request.concurrency} "
+                    f"pending={request.pending}"
+                )
             window = await message.answer(html.escape(preview))
             token = await self._sessions.issue(request, target, actor.actor_id or 0, window.message_id)
             keyboard = InlineKeyboardMarkup(

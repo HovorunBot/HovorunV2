@@ -48,6 +48,16 @@ async def setup_admin(container: AsyncContainer) -> AdministrationService:
     return await container.get(AdministrationService)
 
 
+def _limit_kwargs(action: AdminAction) -> dict[str, object]:
+    """Supply complete typed dimensions for override actions in the authority matrix."""
+    if action not in {AdminAction.LIMIT_SET, AdminAction.LIMIT_RESET}:
+        return {}
+    kwargs: dict[str, object] = {"bucket": "family:media", "unit": "requests", "window_seconds": 60}
+    if action == AdminAction.LIMIT_SET:
+        kwargs.update(limit=6, burst=3, concurrency=1, pending=10)
+    return kwargs
+
+
 @pytest.mark.parametrize(("origin", "transport"), [("telegram", "group"), ("ordinary", "private"), ("system", None)])
 async def test_all_operations_require_private_current_authority(
     test_container: AsyncContainer, origin: str, transport: str | None
@@ -67,6 +77,7 @@ async def test_all_operations_require_private_current_authority(
             target=str(USER),
             reason="synthetic restriction",
             request_id=1,
+            **_limit_kwargs(action),
         )
         with pytest.raises(PermissionError):
             await service.execute(request, target, actor, transport)
