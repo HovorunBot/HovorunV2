@@ -16,7 +16,7 @@ class InvalidHandleError(ValueError):
     """Raised when a public handle has invalid format."""
 
     def __init__(self, handle: str) -> None:
-        """Initialize with invalid handle."""
+        """Record the offending handle on the error."""
         super().__init__(f"Invalid public handle format: {handle}")
         self.handle = handle
 
@@ -25,13 +25,20 @@ class UnknownHandleError(ValueError):
     """Raised when an unknown username cannot be resolved to any numeric identity."""
 
     def __init__(self, handle: str) -> None:
-        """Initialize with unresolved handle."""
+        """Record the unresolved handle on the error."""
         super().__init__(f"Unknown public handle: {handle}")
         self.handle = handle
 
 
 def normalize_handle(handle: str | None) -> str | None:
-    """Normalize public handle by stripping @ and lowercasing."""
+    """Normalize a public handle for storage and comparison.
+
+    Args:
+        handle: Raw handle text, optionally with a leading @.
+
+    Returns:
+        Lowercased handle without a leading @, or None when the input is empty.
+    """
     if not handle:
         return None
     cleaned = handle.strip().lstrip("@")
@@ -41,7 +48,14 @@ def normalize_handle(handle: str | None) -> str | None:
 
 
 def validate_handle(handle: str) -> bool:
-    """Validate public handle format (alphanumeric and underscore, 1-64 chars)."""
+    """Return whether a public handle matches the allowed format.
+
+    Args:
+        handle: Raw handle text, optionally with a leading @.
+
+    Returns:
+        True when the stripped handle is alphanumeric or underscore only, 1-64 characters long.
+    """
     cleaned = handle.strip().lstrip("@")
     return bool(_HANDLE_PATTERN.fullmatch(cleaned))
 

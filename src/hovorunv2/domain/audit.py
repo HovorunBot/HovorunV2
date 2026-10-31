@@ -39,7 +39,14 @@ def _is_sensitive_audit_field(field: str) -> bool:
 
 
 def sanitize_audit_changes(changes: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Sanitize changed fields by redacting secret and private payload material."""
+    """Redact secret and private payload material from audited changes.
+
+    Args:
+        changes: Field-to-value mapping to sanitize, or None.
+
+    Returns:
+        New mapping with sensitive fields redacted, or None when changes is None.
+    """
     if not changes:
         return changes
 

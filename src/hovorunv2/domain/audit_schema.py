@@ -19,10 +19,12 @@ _INVALID_AUDIT_FIELD_MESSAGE: Final = "Unsupported audit field or value shape"
 
 
 def _enum(value: str | int, *, kind: type[Enum]) -> Enum:
+    """Coerce a raw value into the target enum member."""
     return kind(value)
 
 
 def _adapter(annotation: object) -> TypeAdapter[object]:
+    """Build a strict adapter that hides rejected input from validation errors."""
     return TypeAdapter(annotation, config=ConfigDict(strict=True, hide_input_in_errors=True))
 
 
@@ -153,7 +155,18 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
 
 
 def _require_audit_schema(target_type: str, action: str) -> dict[str, TypeAdapter[object]]:
-    """Require an explicitly supported audit entity/action before inspecting its changes."""
+    """Return the schema for a supported audit entity/action.
+
+    Args:
+        target_type: Entity being audited.
+        action: Mutation action applied to the entity.
+
+    Returns:
+        Field-to-adapter schema registered for the entity/action.
+
+    Raises:
+        ValueError: If the entity/action pair has no registered schema.
+    """
     schema = AUDIT_SCHEMAS.get((target_type, action))
     if schema is None:
         msg = "Unsupported audit entity/action"
@@ -162,7 +175,16 @@ def _require_audit_schema(target_type: str, action: str) -> dict[str, TypeAdapte
 
 
 def _validate_audit_field(schema: dict[str, TypeAdapter[object]], field: str, value: object) -> None:
-    """Require an allowlisted field and reject invalid values without retaining private error context."""
+    """Reject fields or value shapes outside the allowlisted schema.
+
+    Args:
+        schema: Field-to-adapter schema for the current entity/action.
+        field: Field name being audited.
+        value: Value to validate against the field's adapter.
+
+    Raises:
+        ValueError: If the field is not allowlisted or the value fails validation.
+    """
     specification = schema.get(field)
     if specification is None:
         raise ValueError(_INVALID_AUDIT_FIELD_MESSAGE)
@@ -177,7 +199,16 @@ def _validate_audit_field(schema: dict[str, TypeAdapter[object]], field: str, va
 
 
 def validate_audit_changes(target_type: str, action: str, changes: dict[str, object] | None) -> None:
-    """Reject unknown events, fields and unsupported shapes without exposing rejected values."""
+    """Reject unknown events, fields, and unsupported shapes without exposing rejected values.
+
+    Args:
+        target_type: Entity being audited.
+        action: Mutation action applied to the entity.
+        changes: Field-to-value mapping to validate, or None.
+
+    Raises:
+        TypeError: If changes is neither None nor a field dictionary.
+    """
     schema = _require_audit_schema(target_type, action)
     if changes is None:
         return
@@ -189,7 +220,14 @@ def validate_audit_changes(target_type: str, action: str, changes: dict[str, obj
 
 
 def validate_audit_reason(reason: object) -> None:
-    """Accept only explicit operational reason text, never structured message payloads."""
+    """Accept only explicit operational reason text, never structured message payloads.
+
+    Args:
+        reason: Reason value to validate.
+
+    Raises:
+        TypeError: If reason is neither None nor a string.
+    """
     if reason is not None and not isinstance(reason, str):
         msg = "Audit reason must be explicit operational text"
         raise TypeError(msg)

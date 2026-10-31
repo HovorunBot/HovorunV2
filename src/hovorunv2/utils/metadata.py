@@ -5,7 +5,14 @@ import re
 
 
 def extract_og_metadata(html_content: str) -> dict[str, str]:
-    """Robustly extract OG and Twitter metadata from HTML."""
+    """Extract OpenGraph and Twitter Card metadata from an HTML document.
+
+    Args:
+        html_content: Raw HTML document text.
+
+    Returns:
+        Mapping of lowercase metadata key to its decoded value, preserving first occurrence.
+    """
     metadata = {}
     for meta in re.finditer(r"<meta\s+([^>]+)>", html_content, re.IGNORECASE):
         body = meta.group(1)

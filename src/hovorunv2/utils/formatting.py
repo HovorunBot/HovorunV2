@@ -8,7 +8,14 @@ THOUSAND: Final = 1_000
 
 
 def format_number(num: int) -> str:
-    """Format large numbers into readable text (e.g. 1.2K, 3.4M)."""
+    """Format a large integer as compact human-readable text.
+
+    Args:
+        num: Integer value to format.
+
+    Returns:
+        Compact B/M/K-suffixed text, or the plain decimal string for values below one thousand.
+    """
     if num >= BILLION:
         return f"{num / BILLION:.1f}B".replace(".0B", "B")
     if num >= MILLION:
