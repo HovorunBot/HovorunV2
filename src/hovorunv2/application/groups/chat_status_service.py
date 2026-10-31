@@ -15,7 +15,17 @@ from hovorunv2.domain.enums import ChatStatus, TargetKind
 
 
 def evidence_time(value: datetime) -> datetime:
-    """Validate aware PostgreSQL facts and normalize their UTC representation."""
+    """Validate an aware timestamp and normalize it to UTC.
+
+    Args:
+        value: Timestamp from PostgreSQL facts.
+
+    Returns:
+        The timestamp converted to UTC.
+
+    Raises:
+        ValueError: If the timestamp is timezone-naive.
+    """
     if value.utcoffset() is None:
         msg = "Membership facts require a timezone-aware timestamp."
         raise ValueError(msg)
@@ -45,7 +55,14 @@ class ChatStatusService:
         self._membership_store = membership_store
 
     async def get_status(self, chat_id: int) -> ChatStatus:
-        """Get the current lifecycle status of a chat."""
+        """Return the current lifecycle status of a chat.
+
+        Args:
+            chat_id: Numeric Telegram identity of the chat.
+
+        Returns:
+            The current status, or UNAUTHORIZED for a missing chat.
+        """
         chat = await self._chat_service.get_chat(chat_id)
         if not chat:
             return ChatStatus.UNAUTHORIZED
@@ -56,12 +73,24 @@ class ChatStatusService:
         await self._chat_service.update_status(chat_id, status)
 
     async def approve(self, chat_id: int) -> None:
-        """Approve a chat and enable its default command set."""
+        """Approve a chat and enable its default command set.
+
+        Args:
+            chat_id: Numeric Telegram identity of the chat.
+        """
         await self.set_status(chat_id, ChatStatus.APPROVED)
         await self._command_service.enable_defaults(chat_id)
 
     async def evaluate_access(self, chat_id: int, now: datetime | None = None) -> AccessDecision:
-        """Collect current group facts and apply the shared approval/blocker precedence."""
+        """Collect current group facts and apply the shared approval and blocker precedence.
+
+        Args:
+            chat_id: Numeric Telegram identity of the chat.
+            now: Optional current aware datetime; defaults to now in UTC.
+
+        Returns:
+            Allowed decision, or a denial for the first matching blocker.
+        """
         current_time = now if now is not None else datetime.now(UTC)
         chat = await self._chat_service.get_chat(chat_id)
         if chat is None:
@@ -90,6 +119,13 @@ class ChatStatusService:
         )
 
     async def is_approved(self, chat_id: int) -> bool:
-        """Check if chat is approved and free of active blockers."""
+        """Return whether the chat is approved and free of active blockers.
+
+        Args:
+            chat_id: Numeric Telegram identity of the chat.
+
+        Returns:
+            Whether the group access decision allows the chat.
+        """
         decision = await self.evaluate_access(chat_id)
         return decision.allowed

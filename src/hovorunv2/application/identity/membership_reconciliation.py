@@ -28,7 +28,14 @@ class MembershipReconciliationService:
         self._refreshing: set[int] = set()
 
     async def run_cycle(self, now: datetime | None = None) -> int:
-        """Refresh at most ten groups, each with at most fifty relevant members."""
+        """Refresh at most ten due groups, each with at most fifty relevant members.
+
+        Args:
+            now: Optional current aware datetime; defaults to now in UTC.
+
+        Returns:
+            Number of groups refreshed in this cycle, or zero when a cycle is already running.
+        """
         if self._cycle_lock.locked():
             return 0
         async with self._cycle_lock:
@@ -44,7 +51,15 @@ class MembershipReconciliationService:
             return refreshed
 
     async def refresh_group(self, group: ChatDB, *, deadline: float | None = None) -> bool:
-        """Coalesce simultaneous requests for the same active group generation."""
+        """Refresh bot, administrator and member evidence for a single group generation.
+
+        Args:
+            group: Group to refresh.
+            deadline: Optional absolute event-loop deadline; defaults to a fresh timeout.
+
+        Returns:
+            Whether the group was refreshed; False when a refresh is already in progress.
+        """
         if group.id in self._refreshing:
             return False
         self._refreshing.add(group.id)

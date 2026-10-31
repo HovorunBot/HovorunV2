@@ -59,7 +59,11 @@ class AdminRequest(BaseModel):
         return self
 
     def _validate_action_scope(self) -> None:
-        """Restrict trust to users and approval/request operations to groups."""
+        """Restrict trust to users and approval or request operations to groups.
+
+        Raises:
+            ValueError: If trust targets a non-user or a request operation targets a non-group.
+        """
         if self.action in {AdminAction.TRUST, AdminAction.UNTRUST} and self.kind != TargetKind.USER:
             msg = "Trust applies only to users."
             raise ValueError(msg)
@@ -71,7 +75,11 @@ class AdminRequest(BaseModel):
             raise ValueError(msg)
 
     def _validate_request_decision(self) -> None:
-        """Require a concrete request only for operations that decide it."""
+        """Require a concrete request only for operations that decide it.
+
+        Raises:
+            ValueError: If a decision operation lacks a positive request ID.
+        """
         if self.action not in {AdminAction.ACCEPT, AdminAction.REJECT}:
             return
         if self.request_id is None or self.request_id <= 0:
@@ -79,7 +87,11 @@ class AdminRequest(BaseModel):
             raise ValueError(msg)
 
     def _validate_ban_reason(self) -> None:
-        """Require an operational reason only when changing a restriction."""
+        """Require an operational reason when changing a restriction.
+
+        Raises:
+            ValueError: If a ban change lacks a non-empty reason.
+        """
         if self.action not in {AdminAction.BAN, AdminAction.UNBAN}:
             return
         if not self.reason or not self.reason.strip():
@@ -87,7 +99,11 @@ class AdminRequest(BaseModel):
             raise ValueError(msg)
 
     def _validate_limit_reason(self) -> None:
-        """Require an operational reason only when changing a scoped limit override."""
+        """Require an operational reason when changing a scoped limit override.
+
+        Raises:
+            ValueError: If a limit change lacks a non-empty reason.
+        """
         if self.action not in {AdminAction.LIMIT_SET, AdminAction.LIMIT_RESET}:
             return
         if not self.reason or not self.reason.strip():
@@ -95,7 +111,11 @@ class AdminRequest(BaseModel):
             raise ValueError(msg)
 
     def _validate_limit_shape(self) -> None:
-        """Require complete typed override dimensions before preview or mutation."""
+        """Require complete typed override dimensions before preview or mutation.
+
+        Raises:
+            ValueError: If a limit change lacks bucket, unit or window, or a limit set lacks a full override dimension.
+        """
         if self.action not in {AdminAction.LIMIT_SET, AdminAction.LIMIT_RESET}:
             return
         if not self.bucket or self.unit is None or self.window_seconds is None:

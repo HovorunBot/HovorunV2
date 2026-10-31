@@ -40,7 +40,16 @@ class GroupAdminEvidence:
     expires_at: datetime
 
     def applies_to(self, actor_id: int, target: PermissionTarget, now: datetime) -> bool:
-        """Reject mismatched, expired, future or timezone-ambiguous evidence."""
+        """Return whether the evidence applies to the actor, target and time.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+            target: Selected permission target.
+            now: Current aware datetime.
+
+        Returns:
+            Whether the evidence matches the actor, the target generation and the validity interval.
+        """
         if self.actor_id != actor_id:
             return False
         if not self._matches_target(target):
@@ -90,7 +99,11 @@ class AccessDecision:
     reason: DecisionReason
 
     def __post_init__(self) -> None:
-        """Keep allow/deny flags consistent with their reason code."""
+        """Validate that the allow/deny flag matches its reason code.
+
+        Raises:
+            ValueError: If the flag does not match the ALLOWED reason code.
+        """
         if self.allowed != (self.reason == DecisionReason.ALLOWED):
             msg = "Allowed decisions must have reason ALLOWED; denied decisions must not."
             raise ValueError(msg)

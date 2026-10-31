@@ -54,6 +54,14 @@ class GroupManagementService:
         self._permissions = permissions
 
     async def _actor_available(self, actor_id: int) -> bool:
+        """Return whether the actor exists and has no active restriction.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+
+        Returns:
+            Whether the actor is known and not banned.
+        """
         return await self._users.get_by_telegram_id(actor_id) is not None and not await self._bans.list_active(
             TargetKind.USER, actor_id
         )
@@ -69,7 +77,18 @@ class GroupManagementService:
     async def _evidence_still_current(
         self, actor_id: int, user_id: int, telegram_id: int, target: PermissionTarget, evidence: MembershipEvidence
     ) -> bool:
-        """Recheck identities, presence and bans after Telegram membership I/O."""
+        """Recheck identities, presence and bans after Telegram membership I/O.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+            user_id: Internal identity of the observed user.
+            telegram_id: Numeric Telegram identity of the group.
+            target: Permission target of the group.
+            evidence: Member evidence just collected from Telegram.
+
+        Returns:
+            Whether the evidence still reflects a current, admin, unbanned actor.
+        """
         current_group = await self._chats.get_chat(telegram_id)
         current_user = await self._users.get_by_telegram_id(actor_id)
         if current_group is None or not self._matches_target(current_group, target):
@@ -85,7 +104,15 @@ class GroupManagementService:
         return evidence.group_telegram_id == target.telegram_id and evidence.user_telegram_id == actor_id
 
     async def can_manage(self, actor_id: int, target: PermissionTarget) -> bool:
-        """Verify current actor, exact target/generation and live Telegram authority on each action."""
+        """Return whether the actor may manage the exact target generation.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+            target: Permission target of the group to manage.
+
+        Returns:
+            Whether current bot administration or live group-administrator evidence authorizes management.
+        """
         if target.kind != "group" or target.telegram_id is None or not await self._actor_available(actor_id):
             return False
         group = await self._chats.get_chat(target.telegram_id)
@@ -115,7 +142,15 @@ class GroupManagementService:
         )
 
     async def list_groups(self, actor_id: int, after_id: int = 0) -> ManagedGroupPage:
-        """Scan one bounded page; reveal only currently authorized groups, never unrelated titles."""
+        """Return one bounded page of groups the actor may currently manage.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+            after_id: Internal identity to page after; zero starts from the beginning.
+
+        Returns:
+            Page of authorized groups and the next page cursor.
+        """
         if after_id < 0 or not await self._actor_available(actor_id):
             return ManagedGroupPage((), None)
         bot_admin = await self._permissions.has_authority(actor_id, "bot:administer")

@@ -27,10 +27,18 @@ class UserStore(Protocol):
     async def ingest_user(
         self, telegram_id: int, platform: str = "telegram", actor: ActorContext | None = None
     ) -> UserDB | None:
-        """Ingest user from incoming evidence.
+        """Ingest a user from incoming evidence without resurrecting tombstones.
 
-        Returns active UserDB if exists or newly created.
-        Returns None if user was previously soft-deleted (tombstone-aware; does not resurrect).
+        Returns the active user if it exists or is newly created, and None when
+        the user was previously soft-deleted.
+
+        Args:
+            telegram_id: Numeric Telegram identity of the user.
+            platform: Platform the user belongs to.
+            actor: Optional audited actor performing the ingestion.
+
+        Returns:
+            The active user, or None for a tombstoned identity.
         """
         ...
 
@@ -83,10 +91,20 @@ class PublicHandleStore(Protocol):
         actor: ActorContext,
         platform: Platform = Platform.TELEGRAM,
     ) -> ResolvedTarget | None:
-        """Synchronize a handle with audit; return None when evidence removes it.
+        """Synchronize a handle with audit.
 
         Invalid nonempty handles raise InvalidHandleError. An unchanged valid
         mapping remains a successful result.
+
+        Args:
+            target_kind: Kind of the target owning the handle.
+            target_id: Internal identity of the target.
+            raw_handle: Raw handle to synchronize, or None to remove it.
+            actor: Audited actor performing the change.
+            platform: Platform the handle belongs to.
+
+        Returns:
+            The synchronized mapping, or None when evidence removes the handle.
         """
         ...
 

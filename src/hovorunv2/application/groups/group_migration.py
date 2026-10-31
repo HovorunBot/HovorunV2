@@ -7,10 +7,17 @@ class GroupMigrationStore(Protocol):
     """Preserve group identity and configuration through Telegram service events."""
 
     async def migrate(self, old_id: int, new_id: int) -> bool:
-        """Change routing atomically; replaying the same migration returns False.
+        """Change group routing atomically.
 
         Invalid IDs, unavailable or stale sources, and conflicting target
         identities or handle mappings raise ValueError.
+
+        Args:
+            old_id: Numeric Telegram identity of the source group.
+            new_id: Numeric Telegram identity of the destination group.
+
+        Returns:
+            Whether routing changed; replaying the same migration returns False.
         """
         ...
 

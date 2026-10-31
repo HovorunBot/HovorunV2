@@ -28,9 +28,20 @@ class BanStore(Protocol):
         actor: ActorContext,
         public_explanation: str | None = None,
     ) -> bool:
-        """Return whether a restriction changed; an already applied/revoked state is a no-op.
+        """Apply or revoke a restriction and report whether it changed.
 
         Invalid targets or restriction combinations raise ValueError; rejected
         authority or protected-target changes raise PermissionError.
+
+        Args:
+            target: Kind of the restricted entity.
+            telegram_id: Numeric Telegram identity of the restricted entity.
+            kind: Restriction kind to apply or revoke.
+            active: Whether to apply (True) or revoke (False) the restriction.
+            actor: Audited actor performing the change.
+            public_explanation: Optional user-visible reason for the restriction.
+
+        Returns:
+            Whether the restriction state changed.
         """
         ...

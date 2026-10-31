@@ -37,6 +37,15 @@ class RoleStore(Protocol):
 
         Return False for an unchanged role or tombstoned identity. Non-CLI
         actors raise PermissionError.
+
+        Args:
+            telegram_id: Numeric Telegram identity of the user.
+            role: Role to assign.
+            actor: Audited actor performing the assignment.
+            platform: Platform to assign the role on.
+
+        Returns:
+            Whether the role changed for an active identity.
         """
         ...
 
@@ -45,9 +54,16 @@ class UnauthorizedPromptSender(Protocol):
     """Protocol for sending unauthorized guidance and approval prompts."""
 
     async def send(self, bot: Bot, chat_id: int) -> bool:
-        """Return True after sending, False for an ineligible target or caught send failure.
+        """Send unauthorized guidance and report whether it was attempted.
 
         This is best-effort guidance, not a delivery receipt or retry guarantee.
+
+        Args:
+            bot: Telegram bot used to send the prompt.
+            chat_id: Numeric Telegram identity of the target chat.
+
+        Returns:
+            True after sending; False for an ineligible target or a caught send failure.
         """
         ...
 

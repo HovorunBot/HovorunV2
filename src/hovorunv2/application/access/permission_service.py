@@ -32,12 +32,27 @@ class PermissionService:
         self._ban_store = ban_store
 
     async def has_authority(self, actor_id: int, action: str) -> bool:
-        """Query current bot authority for legacy gates; execution still needs action/target guards."""
+        """Return whether the actor holds current authority for the action.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+            action: Permission action to check.
+
+        Returns:
+            Whether the actor's active role permits the action.
+        """
         user = await self._users.get_by_telegram_id(actor_id)
         return authority_allowed(self._policy, user.role if user is not None else None, action)
 
     async def _evaluate_target(self, request: PermissionRequest) -> AccessDecision:
-        """Return a concrete transport and resource availability decision."""
+        """Return the transport and resource availability decision for the target.
+
+        Args:
+            request: Permission request to evaluate.
+
+        Returns:
+            Concrete allowed or denied decision for the target kind.
+        """
         target = request.target
         if target.kind == "bot" and request.transport_kind != "private":
             return AccessDecision(allowed=False, reason=DecisionReason.UNAUTHORIZED_MANAGEMENT)
@@ -46,7 +61,14 @@ class PermissionService:
         return await self._evaluate_group_target(request)
 
     async def _evaluate_group_target(self, request: PermissionRequest) -> AccessDecision:
-        """Check the selected group's current generation and full-ban state."""
+        """Return the selected group's generation and full-ban decision.
+
+        Args:
+            request: Permission request whose target is a group.
+
+        Returns:
+            Allowed decision, or a denial for an unavailable, stale or banned group.
+        """
         target = request.target
         if target.telegram_id is None:
             return AccessDecision(allowed=False, reason=DecisionReason.ENTITY_UNAVAILABLE)
@@ -61,7 +83,14 @@ class PermissionService:
         return AccessDecision(allowed=True, reason=DecisionReason.ALLOWED)
 
     async def evaluate(self, request: PermissionRequest) -> AccessDecision:
-        """Read fresh active identities; owners cannot bypass resource blockers."""
+        """Evaluate the request against a fresh active identity and current target state.
+
+        Args:
+            request: Permission request to evaluate.
+
+        Returns:
+            Allowed decision, or a denial for an unavailable identity or blocked target.
+        """
         user = await self._users.get_by_telegram_id(request.actor_id, request.platform.value)
         if user is None:
             return AccessDecision(allowed=False, reason=DecisionReason.ENTITY_UNAVAILABLE)

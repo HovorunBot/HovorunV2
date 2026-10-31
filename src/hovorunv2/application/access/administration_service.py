@@ -47,7 +47,15 @@ class AdministrationService:
         self._usage = usage
 
     async def authorize(self, actor: ActorContext, transport: str | None) -> None:
-        """Require current private bot administration or actual CLI origin."""
+        """Require current private bot administration or actual CLI origin.
+
+        Args:
+            actor: Audited actor requesting access.
+            transport: Transport the actor used.
+
+        Raises:
+            PermissionError: If the actor is not the CLI or a private bot administrator, or is banned.
+        """
         if actor.origin == ActorOrigin.CLI:
             return
         if (
@@ -63,7 +71,18 @@ class AdministrationService:
             raise PermissionError(msg)
 
     async def resolve(self, kind: TargetKind, reference: str) -> AdminTarget:
-        """Reject unknown handles, tombstones and noncanonical routes without provisioning."""
+        """Resolve a known identity to a canonical target without provisioning.
+
+        Args:
+            kind: Kind of the target to resolve.
+            reference: Numeric Telegram ID or @handle supplied by the caller.
+
+        Returns:
+            Resolved target bound to the current identity generation.
+
+        Raises:
+            ValueError: If the reference cannot be resolved to an active canonical target.
+        """
         telegram_id = await self._resolve_reference(kind, reference)
         if not -MAX_TELEGRAM_ID <= telegram_id <= MAX_TELEGRAM_ID or telegram_id == 0:
             msg = "Telegram ID must be a nonzero signed 64-bit integer."
@@ -86,7 +105,18 @@ class AdministrationService:
         return AdminTarget(kind=kind, telegram_id=telegram_id, entity_id=chat.id, generation=chat.generation)
 
     async def _resolve_reference(self, kind: TargetKind, reference: str) -> int:
-        """Resolve a handle to its known target without provisioning an identity."""
+        """Resolve a numeric ID or @handle to its known target.
+
+        Args:
+            kind: Kind of the target to resolve.
+            reference: Numeric Telegram ID or @handle to resolve.
+
+        Returns:
+            Numeric Telegram ID of the resolved target.
+
+        Raises:
+            ValueError: If no active target has that known handle.
+        """
         if not reference.startswith("@"):
             return int(reference)
         handle = await self._handles.resolve_handle(reference)
@@ -96,7 +126,19 @@ class AdministrationService:
         return handle.target_id
 
     async def inspect(self, target: AdminTarget, actor: ActorContext, transport: str | None) -> dict[str, object]:
-        """Return operational state only, excluding internal ban reasons, salts and message contents."""
+        """Return operational state without internal reasons, salts or message contents.
+
+        Args:
+            target: Target to inspect.
+            actor: Audited actor performing the inspection.
+            transport: Transport the actor used.
+
+        Returns:
+            Operational state keyed by field name.
+
+        Raises:
+            ValueError: If the target identity changed since the preview.
+        """
         await self.authorize(actor, transport)
         current = await self.resolve(target.kind, str(target.telegram_id))
         if current != target:
@@ -119,7 +161,20 @@ class AdministrationService:
     async def execute(
         self, request: AdminRequest, target: AdminTarget, actor: ActorContext, transport: str | None
     ) -> dict[str, object]:
-        """Recheck exact preview identity and current authority before every operation."""
+        """Recheck the previewed identity and authority before executing an operation.
+
+        Args:
+            request: Administration request to execute.
+            target: Previewed target to execute against.
+            actor: Audited actor performing the operation.
+            transport: Transport the actor used.
+
+        Returns:
+            Operation result keyed by field name.
+
+        Raises:
+            ValueError: If the request target kind differs from the preview.
+        """
         state = await self.inspect(target, actor, transport)
         if request.kind != target.kind:
             msg = "Target kind changed."
@@ -172,12 +227,30 @@ class AdministrationService:
         return {"changed": changed}
 
     async def _inspect_limits(self, target: PermissionTarget, request: AdminRequest) -> dict[str, object]:
-        """Show effective default/override values and independent safety caps."""
+        """Return effective default or override values with independent safety caps.
+
+        Args:
+            target: Permission target to inspect limits for.
+            request: Administration request carrying the feature and unit.
+
+        Returns:
+            Usage inspection view serialized to a dictionary.
+        """
         view = await self._usage.inspect(target, request.feature, request.unit or UsageUnit.REQUESTS)
         return view.as_dict()
 
     def _limit_policy(self, request: AdminRequest) -> UsagePolicy:
-        """Build the typed override only after the request validator established its shape."""
+        """Build the typed override policy for the request.
+
+        Args:
+            request: Administration request carrying limit fields.
+
+        Returns:
+            Typed usage policy for the override.
+
+        Raises:
+            ValueError: If bucket, unit or window is missing.
+        """
         bucket = request.bucket
         unit = request.unit
         window_seconds = request.window_seconds
@@ -191,7 +264,20 @@ class AdministrationService:
     def _complete_limit_policy(
         self, request: AdminRequest, bucket: str, unit: UsageUnit, window_seconds: int
     ) -> UsagePolicy:
-        """Require every positive override dimension before constructing the policy."""
+        """Build a complete positive override policy.
+
+        Args:
+            request: Administration request carrying limit, burst, concurrency and pending.
+            bucket: Usage bucket for the override.
+            unit: Usage unit for the override.
+            window_seconds: Override window in seconds.
+
+        Returns:
+            Fully populated usage policy.
+
+        Raises:
+            ValueError: If any override dimension is missing.
+        """
         limit = request.limit
         burst = request.burst
         concurrency = request.concurrency
@@ -204,7 +290,20 @@ class AdministrationService:
     async def _execute_trust(
         self, request: AdminRequest, target: AdminTarget, actor: ActorContext, transport: str | None
     ) -> bool:
-        """Apply trust only to an already verified user target."""
+        """Apply a trust change to a verified user target.
+
+        Args:
+            request: Administration request carrying the trust action.
+            target: Previewed target.
+            actor: Audited actor performing the change.
+            transport: Transport the actor used.
+
+        Returns:
+            Whether the trust flag was applied.
+
+        Raises:
+            ValueError: If the target is not a user.
+        """
         if target.kind != TargetKind.USER:
             msg = "Trust applies only to users."
             raise ValueError(msg)
@@ -218,7 +317,17 @@ class AdministrationService:
     async def _execute_activation(
         self, request: AdminRequest, target: PermissionTarget, actor: ActorContext, transport: str | None
     ) -> dict[str, object]:
-        """Translate the selected administration action into an activation request."""
+        """Translate the selected administration action into an activation request.
+
+        Args:
+            request: Administration request carrying the action and request ID.
+            target: Permission target for the activation.
+            actor: Audited actor performing the action.
+            transport: Transport the actor used.
+
+        Returns:
+            Activation outcome and request ID keyed by field name.
+        """
         action = {
             AdminAction.APPROVE: ActivationAction.GRANT,
             AdminAction.ACCEPT: ActivationAction.APPROVE,

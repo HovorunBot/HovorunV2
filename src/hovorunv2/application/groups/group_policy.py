@@ -25,7 +25,14 @@ def _requires_administrator_verification(facts: GroupAccessFacts) -> bool:
 
 
 def group_access(facts: GroupAccessFacts) -> AccessDecision:
-    """Preserve absolute bans, fresh administrator evidence and durable approval order."""
+    """Apply absolute bans, fresh administrator evidence and approval precedence.
+
+    Args:
+        facts: Current group access facts.
+
+    Returns:
+        Allowed decision, or a denial for the first matching blocker.
+    """
     if not facts.active:
         return AccessDecision(allowed=False, reason=DecisionReason.ENTITY_UNAVAILABLE)
     if facts.banned:

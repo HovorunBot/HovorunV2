@@ -32,21 +32,46 @@ class GroupActivationService:
         self._store = store
 
     async def target(self, telegram_id: int) -> PermissionTarget | None:
-        """Resolve only an existing active group, never provision it from callback data."""
+        """Resolve an existing active group without provisioning from callback data.
+
+        Args:
+            telegram_id: Numeric Telegram identity of the group.
+
+        Returns:
+            Permission target for the active group, or None for a missing or non-group target.
+        """
         chat = await self._chats.get_chat(telegram_id)
         if chat is None or chat.chat_type not in {"group", "supergroup"}:
             return None
         return PermissionTarget("group", chat.id, chat.generation, chat.chat_id)
 
     async def enable(self, actor_id: int, target: PermissionTarget, transport_kind: str) -> ActivationResult:
-        """Trusted users need no Telegram admin rights; untrusted requesters need fresh evidence."""
+        """Enable a group, collecting fresh administrator evidence only when required.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+            target: Permission target of the group to enable.
+            transport_kind: Transport the actor used.
+
+        Returns:
+            Activation result from the atomic store.
+        """
         evidence = await self._group_admin_evidence(actor_id, target, transport_kind)
         return await self._store.execute(ActivationRequest(actor_id, target, transport_kind, group_admin=evidence))
 
     async def _group_admin_evidence(
         self, actor_id: int, target: PermissionTarget, transport_kind: str
     ) -> GroupAdminEvidence | None:
-        """Verify current Telegram administrator evidence only when activation requires it."""
+        """Verify current Telegram administrator evidence only when activation requires it.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+            target: Permission target of the group.
+            transport_kind: Transport the actor used.
+
+        Returns:
+            Administrator evidence, or None when no Telegram verification is required or possible.
+        """
         user = await self._users.get_by_telegram_id(actor_id)
         if not self._requires_group_admin(user):
             return None

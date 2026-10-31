@@ -71,14 +71,28 @@ class AccessService:
         return await self._permission_service.has_authority(user_id, "bot:administer")
 
     async def is_banned(self, user_id: int | None) -> bool:
-        """Check if user has an active personal or full ban."""
+        """Return whether the user has an active personal or full ban.
+
+        Args:
+            user_id: Numeric Telegram identity of the user, or None for an unknown actor.
+
+        Returns:
+            Whether any active user restriction exists.
+        """
         if user_id is None:
             return False
         bans = await self._ban_store.list_active(TargetKind.USER, user_id)
         return len(bans) > 0
 
     async def is_trusted(self, user_id: int | None) -> bool:
-        """Check if user has trusted flag enabled and is active."""
+        """Return whether the user is trusted and still active.
+
+        Args:
+            user_id: Numeric Telegram identity of the user, or None for an unknown actor.
+
+        Returns:
+            Whether the user exists, carries the trust flag and is not deleted.
+        """
         if user_id is None:
             return False
         user = await self._user_store.get_by_telegram_id(user_id)
@@ -90,7 +104,16 @@ class AccessService:
         chat_id: int,
         user_id: int,
     ) -> bool:
-        """Check if a user is an administrator in a specific group chat."""
+        """Return whether the user is an administrator or creator in the group chat.
+
+        Args:
+            bot: Telegram bot used to query chat membership.
+            chat_id: Numeric Telegram identity of the group chat.
+            user_id: Numeric Telegram identity of the user.
+
+        Returns:
+            Whether the member status is administrator or creator; failures return False.
+        """
         try:
             member = await bot.get_chat_member(chat_id, user_id)
         except Exception:
@@ -98,7 +121,15 @@ class AccessService:
         return member.status in ("administrator", "creator")
 
     async def _group_policy_allows(self, chat_id: int, policy: CommandPolicy) -> bool:
-        """Apply group blockers before any actor authority bypass."""
+        """Return whether group blockers permit the command policy.
+
+        Args:
+            chat_id: Numeric Telegram identity of the group chat.
+            policy: Command policy to validate.
+
+        Returns:
+            Whether group bans, unavailability and approval blockers are satisfied.
+        """
         decision = await self._chat_status_service.evaluate_access(chat_id)
         if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ENTITY_UNAVAILABLE}:
             return False
@@ -114,7 +145,17 @@ class AccessService:
         policy: CommandPolicy,
         bot: Bot | None,
     ) -> bool:
-        """Evaluate policy constraints for non-administrative users."""
+        """Return whether a non-admin actor satisfies the policy constraints.
+
+        Args:
+            user_id: Numeric Telegram identity of the user, or None for an unknown actor.
+            chat_id: Numeric Telegram identity of the group chat.
+            policy: Command policy to validate.
+            bot: Telegram bot used for group administrator checks, when required.
+
+        Returns:
+            Whether admin, group-admin and approval requirements are satisfied.
+        """
         if policy.requires_admin:
             return False
         if policy.requires_group_admin and (
@@ -131,18 +172,17 @@ class AccessService:
         bot: Bot | None = None,
         command_name: str | None = None,
     ) -> bool:
-        """Check if an action is allowed based on the provided policy.
+        """Return whether the action is allowed under the given policy.
 
         Args:
             user_id: Platform-specific user ID.
-            chat_id: Platform-specific chat/group ID.
-            policy: The validation strategy to apply.
-            bot: The bot instance (required for group admin checks).
+            chat_id: Platform-specific chat or group ID.
+            policy: Command policy to validate against.
+            bot: Bot instance required for group administrator checks.
             command_name: Optional name of the command being executed.
 
         Returns:
-            True if allowed, False otherwise.
-
+            Whether the action is allowed.
         """
         if (
             policy.is_toggleable

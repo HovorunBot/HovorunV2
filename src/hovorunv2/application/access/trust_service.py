@@ -25,21 +25,34 @@ class TrustService:
         actor: ActorContext,
         transport_kind: str | None = None,
     ) -> bool:
-        """Change an existing active user's flag; return whether the identity exists.
+        """Change an existing active user's trust flag.
 
         Actor origin and transport are trusted interface facts, never callback data.
-        UserDB.trust_revision advances only on a change, in the audit transaction.
+        The trust revision advances only on a change, inside the audit transaction.
+
+        Args:
+            target: Numeric Telegram ID or @username of the user.
+            is_trusted: New trust flag value.
+            actor: Audited actor performing the change.
+            transport_kind: Transport the actor used, required for Telegram authorization.
 
         Returns:
             Whether the identity exists and the flag was applied.
-
         """
         await self._authorize(actor, transport_kind)
         user_id = await self._resolve_user(target)
         return await self._users.set_trust(user_id, is_trusted=is_trusted, actor=actor)
 
     async def _authorize(self, actor: ActorContext, transport_kind: str | None) -> None:
-        """Require current bot administration when the actor is not the CLI."""
+        """Require current bot administration when the actor is not the CLI.
+
+        Args:
+            actor: Audited actor requesting access.
+            transport_kind: Transport the actor used.
+
+        Raises:
+            PermissionError: If the actor is not the CLI or an authorized private bot administrator.
+        """
         if actor.origin == ActorOrigin.CLI:
             return
         user = await self._users.get_by_telegram_id(actor.actor_id) if actor.actor_id is not None else None
@@ -53,6 +66,17 @@ class TrustService:
             raise PermissionError(msg)
 
     async def _resolve_user(self, target: str) -> int:
+        """Resolve a numeric ID or @username to a positive numeric user ID.
+
+        Args:
+            target: Numeric Telegram ID or @username to resolve.
+
+        Returns:
+            Positive numeric Telegram user ID.
+
+        Raises:
+            ValueError: If the target is an unknown handle, a non-numeric string, or an out-of-range ID.
+        """
         if target.startswith("@"):
             resolved = await self._handles.resolve_handle(target)
             if resolved is None or resolved.target_kind != TargetKind.USER:

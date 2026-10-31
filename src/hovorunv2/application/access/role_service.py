@@ -22,7 +22,16 @@ class RoleService:
         return await self.get_role(telegram_id, platform) == role
 
     async def has_at_least_role(self, telegram_id: int, minimum: Role, platform: Platform = Platform.TELEGRAM) -> bool:
-        """Check authority tier without granting missing or deleted identities a default."""
+        """Return whether the user holds at least the given authority tier.
+
+        Args:
+            telegram_id: Numeric Telegram identity of the user.
+            minimum: Lowest role that satisfies the check.
+            platform: Platform to look up.
+
+        Returns:
+            Whether the active role meets or exceeds the minimum tier.
+        """
         role = await self.get_role(telegram_id, platform)
         return role is not None and role >= minimum
 
@@ -45,7 +54,20 @@ class RoleService:
         actor: ActorContext,
         platform: Platform = Platform.TELEGRAM,
     ) -> bool:
-        """Set authority through CLI only; assigning USER explicitly demotes."""
+        """Assign a role from the CLI origin only.
+
+        Args:
+            telegram_id: Numeric Telegram identity of the user.
+            role: Role to assign; USER demotes authority.
+            actor: Audited actor performing the assignment.
+            platform: Platform to assign the role on.
+
+        Returns:
+            Whether the role assignment was applied.
+
+        Raises:
+            PermissionError: If the actor is not the CLI origin.
+        """
         if actor.origin != ActorOrigin.CLI:
             msg = "Role assignment is strictly restricted to CLI origin."
             raise PermissionError(msg)

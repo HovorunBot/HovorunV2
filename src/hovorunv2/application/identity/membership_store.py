@@ -27,10 +27,17 @@ class MembershipStore(Protocol):
         ...
 
     async def full_banned_admin_status(self, group_id: int, now: datetime) -> MembershipStatus | None:
-        """Return ADMIN for a verified full-ban blocker, UNKNOWN for unresolved evidence.
+        """Return the full-ban administrator blocker status for the group.
 
         None means no full-banned administrator candidate requires blocking or
         verification. The query is not truncated by maintenance batch sizes.
+
+        Args:
+            group_id: Internal identity of the group.
+            now: Current aware datetime.
+
+        Returns:
+            ADMIN for a verified blocker, UNKNOWN for unresolved evidence, or None when no blocker exists.
         """
         ...
 
@@ -54,10 +61,19 @@ class MembershipStore(Protocol):
         *,
         expected_user_id: int | None = None,
     ) -> bool:
-        """Return whether relevant evidence changed; stale or inapplicable updates return False.
+        """Persist member evidence and report whether relevant evidence changed.
 
         Mismatched group routing raises ValueError. expected_user_id optionally
         binds the observed identity to the caller's current generation.
+
+        Args:
+            group_id: Internal identity of the group.
+            evidence: Member evidence to persist.
+            actor: Optional audited actor performing the save.
+            expected_user_id: Optional expected internal user identity for generation binding.
+
+        Returns:
+            Whether relevant evidence changed; stale or inapplicable updates return False.
         """
         ...
 
@@ -68,9 +84,17 @@ class MembershipStore(Protocol):
     async def save_admins(
         self, group_id: int, evidence: AdministratorEvidence, actor: ActorContext | None = None
     ) -> bool:
-        """Return whether administrator evidence changed; stale/inapplicable input is a no-op.
+        """Persist administrator evidence and report whether it changed.
 
         Unknown API evidence preserves prior candidates as UNKNOWN; this state
         is distinct from a persistence failure, which raises.
+
+        Args:
+            group_id: Internal identity of the group.
+            evidence: Administrator evidence to persist.
+            actor: Optional audited actor performing the save.
+
+        Returns:
+            Whether administrator evidence changed; stale or inapplicable input returns False.
         """
         ...

@@ -15,6 +15,11 @@ class BanService:
         self._permissions = permissions
 
     async def _authorize(self, actor: ActorContext, transport_kind: str | None) -> None:
+        """Require CLI or private bot administration before changing restrictions.
+
+        Raises:
+            PermissionError: If the actor is not the CLI or an authorized private bot administrator.
+        """
         if actor.origin == ActorOrigin.CLI:
             return
         if (
@@ -40,7 +45,19 @@ class BanService:
         *,
         transport_kind: str | None = None,
     ) -> bool:
-        """Apply a restriction, requiring a separate internal reason."""
+        """Apply a restriction after authorizing the actor.
+
+        Args:
+            target: Kind of the restricted entity.
+            telegram_id: Numeric Telegram identity of the restricted entity.
+            kind: Restriction kind to apply.
+            actor: Audited actor performing the change.
+            public_explanation: Optional user-visible reason for the restriction.
+            transport_kind: Transport the actor used, required for Telegram authorization.
+
+        Returns:
+            Whether the restriction changed.
+        """
         await self._authorize(actor, transport_kind)
         return await self._bans.set_ban(
             target,
@@ -60,6 +77,17 @@ class BanService:
         *,
         transport_kind: str | None = None,
     ) -> bool:
-        """Revoke a restriction while retaining its record and audit history."""
+        """Revoke a restriction after authorizing the actor and retain its audit history.
+
+        Args:
+            target: Kind of the restricted entity.
+            telegram_id: Numeric Telegram identity of the restricted entity.
+            kind: Restriction kind to revoke.
+            actor: Audited actor performing the change.
+            transport_kind: Transport the actor used, required for Telegram authorization.
+
+        Returns:
+            Whether the restriction changed.
+        """
         await self._authorize(actor, transport_kind)
         return await self._bans.set_ban(target, telegram_id, kind, active=False, actor=actor)

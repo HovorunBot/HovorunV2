@@ -39,10 +39,18 @@ class GroupGrantStore(Protocol):
         ...
 
     async def decide(self, request_id: int, status: RequestStatus, actor: ActorContext) -> bool:
-        """Decide with atomic audit/approval; missing, deleted or decided requests return False.
+        """Decide a pending request with atomic audit and approval.
 
         PENDING is not a decision and raises ValueError, as do unavailable
-        required group/user generations for an existing request.
+        required group or user generations for an existing request.
+
+        Args:
+            request_id: Identifier of the request to decide.
+            status: Decision status to apply.
+            actor: Audited actor performing the decision.
+
+        Returns:
+            Whether the request was decided; missing, deleted or decided requests return False.
         """
         ...
 
