@@ -177,6 +177,10 @@ def get_changelog_updates(last_version: str, current_version: str) -> str | None
     """Extract formatted user-facing release notes between last_version and current_version.
 
     Prioritizes curated client notes from CHANGES.md, falling back to filtered CHANGELOG.md.
+
+    Returns:
+        Formatted user-facing notes, or None when no lines apply.
+
     """
     # 1. Primary: Curated client notes in CHANGES.md
     if client_path := get_client_changelog_path():

@@ -18,6 +18,7 @@ class NotificationEventDB(Base):
     category: Mapped[str] = mapped_column(String(32), nullable=False)
     introduction: Mapped[str] = mapped_column(String(96), nullable=False)
     release_identity: Mapped[str] = mapped_column(String(96), nullable=False)
+    body_ref: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

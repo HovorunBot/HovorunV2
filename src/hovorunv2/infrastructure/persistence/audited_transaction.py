@@ -49,7 +49,7 @@ class SQLAlchemyAuditedTransaction(AuditedUnitOfWork):
 
         Raises:
             ValueError: If target_type is 'audit' (prevents recursive audit).
-            Exception: Any exception raised during operation, triggering full rollback.
+            DBAPIError: If a non-retryable database error exhausts transaction attempts.
 
         """
         if target_type == "audit":

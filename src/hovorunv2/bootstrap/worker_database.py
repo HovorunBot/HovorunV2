@@ -11,6 +11,9 @@ from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureReg
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.infrastructure.authorization.casbin_policy import load_packaged_policy
 from hovorunv2.infrastructure.config import DatabaseSettings
+from hovorunv2.infrastructure.persistence.stores.worker_notification_store import (
+    WorkerNotificationStore,
+)
 from hovorunv2.infrastructure.persistence.stores.worker_store import (
     WorkerOperationsStore,
     WorkerPolicyStore,
@@ -59,6 +62,7 @@ class WorkerDatabase:
         self._policies = WorkerPolicyStore(sessions, policy, self._registry, self._safety, self._require_owner)
         self._ledger = WorkerUsageLedgerStore(sessions, self._registry, self._require_owner)
         self._operations = WorkerOperationsStore(sessions, self._require_owner)
+        self._notifications = WorkerNotificationStore(sessions, self._require_owner)
         self._opened = True
         self._engine = engine
         self._owner = getpid()
@@ -94,6 +98,12 @@ class WorkerDatabase:
         """Expose operations persistence only to the owning child."""
         self._require_owner()
         return self._operations
+
+    @property
+    def notifications(self) -> WorkerNotificationStore:
+        """Expose notification delivery persistence only to the owning child."""
+        self._require_owner()
+        return self._notifications
 
     def __exit__(
         self,

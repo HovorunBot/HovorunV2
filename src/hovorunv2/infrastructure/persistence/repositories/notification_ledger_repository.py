@@ -38,6 +38,7 @@ class NotificationLedgerRepository:
                 category=event.category.value,
                 introduction=event.introduction,
                 release_identity=event.release_identity,
+                body_ref=event.body_ref,
                 created_at=datetime.now(UTC),
             )
         )

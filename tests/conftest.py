@@ -123,6 +123,13 @@ def resolve_worker_valkey_url(worker_id: str, base_url: str | None = None) -> st
 
     Databases 1-15 are reserved for testing. Database 0 is strictly forbidden to protect
     developer and application state.
+
+    Returns:
+        The isolated Valkey URL for the worker.
+
+    Raises:
+        ValueError: If the resolved database index is outside the allowed test range.
+
     """
     raw_base = base_url if base_url is not None else os.environ.get("TEST_VALKEY_URL", DEFAULT_TEST_VALKEY_URL)
     parsed = urllib.parse.urlparse(raw_base)

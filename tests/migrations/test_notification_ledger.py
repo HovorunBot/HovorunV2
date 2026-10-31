@@ -41,3 +41,18 @@ def test_notification_ledger_migration_upgrade_and_downgrade(tmp_path: Path, mon
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "notification_events" not in tables
         assert "notification_receipts" not in tables
+
+
+def test_body_reference_column_upgrade_and_downgrade(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The encrypted body reference column is additive and removable without touching rows."""
+    database = tmp_path / "notification_body.db"
+    config = migration_config(monkeypatch, database)
+    command.upgrade(config, "notif053")
+    command.upgrade(config, "notif054")
+    with closing(sqlite3.connect(database)) as connection, connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(notification_events)")}
+        assert "body_ref" in columns
+    command.downgrade(config, "notif053")
+    with closing(sqlite3.connect(database)) as connection, connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(notification_events)")}
+        assert "body_ref" not in columns

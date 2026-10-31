@@ -98,6 +98,10 @@ def minimal_message_data(message: types.Message) -> dict[str, object]:
 
     Provider quotes are part of extraction payloads, not Telegram reply cache entries.
     Media handles keep identifiers and required technical dimensions only.
+
+    Returns:
+        The minimal serialized message projection.
+
     """
     return message.model_dump(
         mode="json",

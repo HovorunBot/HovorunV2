@@ -182,6 +182,9 @@ class BrowserService:
             idle_timeout: Seconds to wait before shutting down idle browser.
             flags: Optional list of browser arguments.
 
+        Raises:
+            ValueError: If max_tabs is not positive.
+
         """
         if max_tabs <= 0:
             msg = "Browser tab capacity must be positive."
@@ -234,6 +237,9 @@ class BrowserService:
 
         Returns:
             Tuple of (extracted_metadata, list of downloaded media bytes).
+
+        Raises:
+            BrowserError: If the browser session cannot be acquired or executes.
 
         """
         async with self._semaphore:

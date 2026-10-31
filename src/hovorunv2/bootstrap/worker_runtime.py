@@ -22,6 +22,7 @@ from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.errors import MediaFailure
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
 from hovorunv2.application.operations.operations_runner import WorkerOperationsRunner
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace, WallClock
@@ -287,6 +288,12 @@ class WorkerChildContext:
             publisher=self._publisher,
         )
         prompt_sender = SyncTelegramUnauthorizedPromptSender(api)
+        notification_delivery = NotificationDeliveryService(
+            ledger=self._db.notifications,
+            payloads=self._runtime.payloads,
+            sender=api,
+            clock=self._clock,
+        )
         self._operations = WorkerOperationsRunner(
             ops=self._db.operations,
             client=self._runtime.client,
@@ -295,6 +302,7 @@ class WorkerChildContext:
             prompt_sender=prompt_sender,
             settings=self._settings,
             clock=self._clock,
+            delivery=notification_delivery,
         )
         self._opened = True
         return self

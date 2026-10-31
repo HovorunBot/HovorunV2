@@ -33,6 +33,10 @@ class OperationsRunnerPort(Protocol):
         """Broadcast release notification on version upgrade."""
         ...
 
+    def deliver_notifications(self) -> int:
+        """Deliver bounded due notification receipts."""
+        ...
+
     def send_unauthorized_reminder(self, chat_id: int, *, force: bool = False) -> bool:
         """Dispatch guidance prompt to unauthorized group chat."""
         ...

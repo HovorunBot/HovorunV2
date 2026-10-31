@@ -43,6 +43,7 @@ MEMBERSHIP_RECONCILIATION_TASK = "reconcile_memberships"
 CHAT_MAINTENANCE_TASK = "run_chat_maintenance"
 CLEANUP_SWEEP_TASK = "sweep_expired_cleanups"
 RELEASE_NOTIFICATIONS_TASK = "broadcast_release_notifications"
+NOTIFICATION_DELIVERY_TASK = "deliver_notifications"
 UNAUTHORIZED_REMINDER_TASK = "send_unauthorized_reminder"
 OPERATIONS_QUEUE_NAME = "operations"
 
@@ -106,6 +107,11 @@ def broadcast_release_notifications_task() -> int:
     return get_operations_runner().broadcast_release_notifications()
 
 
+def deliver_notifications_task() -> int:
+    """Deliver bounded due notification receipts through the operations worker."""
+    return get_operations_runner().deliver_notifications()
+
+
 def send_unauthorized_reminder_task(chat_id: int) -> bool:
     """Send guidance prompt to unauthorized group chat."""
     return get_operations_runner().send_unauthorized_reminder(chat_id)
@@ -143,6 +149,11 @@ def build_beat_schedule(namespace_prefix: str) -> dict[str, dict[str, object]]:
             "schedule": 60.0,
             "options": {"queue": queue},
         },
+        "notification_delivery": {
+            "task": NOTIFICATION_DELIVERY_TASK,
+            "schedule": 60.0,
+            "options": {"queue": queue},
+        },
         "recovery_sweeps": {
             "task": RECOVERY_TASK_FUNCTION,
             "schedule": 60.0,
@@ -163,6 +174,8 @@ def _register_maintenance_tasks(app: Celery) -> None:
         app.task(name=CLEANUP_SWEEP_TASK, ignore_result=True)(sweep_expired_cleanups_task)
     if RELEASE_NOTIFICATIONS_TASK not in app.tasks:
         app.task(name=RELEASE_NOTIFICATIONS_TASK, ignore_result=True)(broadcast_release_notifications_task)
+    if NOTIFICATION_DELIVERY_TASK not in app.tasks:
+        app.task(name=NOTIFICATION_DELIVERY_TASK, ignore_result=True)(deliver_notifications_task)
     if UNAUTHORIZED_REMINDER_TASK not in app.tasks:
         app.task(name=UNAUTHORIZED_REMINDER_TASK, ignore_result=True)(send_unauthorized_reminder_task)
 

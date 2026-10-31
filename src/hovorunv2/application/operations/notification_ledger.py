@@ -30,6 +30,7 @@ class NotificationEvent:
     category: NotificationCategory
     introduction: str
     release_identity: str
+    body_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,9 @@ class NotificationReceipt:
     outcome: NotificationOutcome
     attempts: int
     telegram_message_id: int | None
+    category: NotificationCategory | None = None
+    body_ref: str | None = None
+    last_attempt_at: float | None = None
 
 
 class NotificationEventStore(Protocol):

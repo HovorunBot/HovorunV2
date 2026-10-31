@@ -8,6 +8,7 @@ encryption configuration before starting against the new database.
 
 ### Feat
 
+- **notifications**: deliver through the operations worker
 - **notifications**: add scoped notification preferences
 - **admin**: control global feature emergency stops
 - **features**: persist emergency stop state and epochs

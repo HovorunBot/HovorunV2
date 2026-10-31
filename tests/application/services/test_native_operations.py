@@ -17,8 +17,10 @@ from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.http_ports import HTTPFiles, HTTPForm, HTTPHeaders, HTTPQuery, SyncHTTPPort
 from hovorunv2.application.operations.changelog import get_current_version
+from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
 from hovorunv2.application.operations.operations_runner import WorkerOperationsRunner
 from hovorunv2.application.usage.budgets import RuntimeNamespace
+from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.container import AppProvider
 from hovorunv2.bootstrap.providers.infrastructure import InfrastructureProvider
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -38,10 +40,28 @@ from hovorunv2.infrastructure.queues.feature_queue import (
     set_operations_runner,
     sweep_expired_cleanups_task,
 )
+from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
 from hovorunv2.interface.telegram.settings.prompts import SyncTelegramUnauthorizedPromptSender
 from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramAPI
 from tests.conftest import provision_role
 from tests.utils.runtime import ManualClock
+
+
+def _delivery(
+    db: WorkerDatabase,
+    client: redis.Redis,
+    settings: Settings,
+    namespace: RuntimeNamespace,
+    api: NativeTelegramAPI,
+) -> NotificationDeliveryService:
+    """Compose the real delivery service with the child-owned database and payload client."""
+    clock = ManualClock()
+    return NotificationDeliveryService(
+        ledger=db.notifications,
+        payloads=WorkerPayloadClient(client, settings, clock, namespace, UsageSafetyCaps(), lambda: None),
+        sender=api,
+        clock=clock,
+    )
 
 
 class RecordingSyncHTTP(SyncHTTPPort):
@@ -181,6 +201,7 @@ async def test_membership_reconciliation_in_operations_worker(
             prompt_sender=sync_prompt_sender,
             settings=settings,
             clock=ManualClock(),
+            delivery=_delivery(db, client, settings, namespace, sync_telegram_api),
         )
         set_operations_runner(runner)
         try:
@@ -234,6 +255,7 @@ async def test_chat_reminders_and_unauthorized_prompts_in_operations_worker(
             prompt_sender=sync_prompt_sender,
             settings=settings,
             clock=ManualClock(),
+            delivery=_delivery(db, client, settings, namespace, sync_telegram_api),
         )
         set_operations_runner(runner)
         try:
@@ -281,6 +303,7 @@ async def test_cleanup_sweep_in_operations_worker(
             prompt_sender=sync_prompt_sender,
             settings=settings,
             clock=ManualClock(),
+            delivery=_delivery(db, client, settings, namespace, sync_telegram_api),
         )
         set_operations_runner(runner)
         try:
@@ -328,6 +351,7 @@ async def test_release_notifications_in_operations_worker(
             prompt_sender=sync_prompt_sender,
             settings=settings,
             clock=ManualClock(),
+            delivery=_delivery(db, client, settings, namespace, sync_telegram_api),
         )
         set_operations_runner(runner)
         try:

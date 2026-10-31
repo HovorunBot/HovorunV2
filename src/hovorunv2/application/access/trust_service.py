@@ -29,6 +29,10 @@ class TrustService:
 
         Actor origin and transport are trusted interface facts, never callback data.
         UserDB.trust_revision advances only on a change, in the audit transaction.
+
+        Returns:
+            Whether the identity exists and the flag was applied.
+
         """
         await self._authorize(actor, transport_kind)
         user_id = await self._resolve_user(target)

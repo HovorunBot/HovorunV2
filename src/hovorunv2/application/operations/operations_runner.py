@@ -15,6 +15,7 @@ from hovorunv2.application.identity.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.operations.changelog import get_changelog_updates, get_current_version, parse_version
+from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
 from hovorunv2.application.operations.ports import (
     OperationsRunnerPort,
     SyncUnauthorizedPromptPort,
@@ -139,6 +140,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         prompt_sender: SyncUnauthorizedPromptPort,
         settings: AppSettings,
         clock: Clock,
+        delivery: NotificationDeliveryService,
     ) -> None:
         self._ops = ops
         self._client = client
@@ -147,6 +149,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         self._prompt_sender = prompt_sender
         self._settings = settings
         self._clock = clock
+        self._delivery = delivery
         self._bot_id = self._parse_bot_id(settings.bot_token)
 
     def _parse_bot_id(self, token: str) -> int:
@@ -296,6 +299,10 @@ class WorkerOperationsRunner(OperationsRunnerPort):
             return self._execute_release_broadcast()
         finally:
             self._client.delete(lock_key)
+
+    def deliver_notifications(self) -> int:
+        """Deliver bounded due notification receipts with preference and access checks."""
+        return self._delivery.deliver_due()
 
     def _execute_release_broadcast(self) -> int:
         current_version = get_current_version()

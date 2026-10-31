@@ -31,7 +31,9 @@ class FeedbackService:
     ) -> bool:
         """Dispatch user feedback to all registered bot owners in DM.
 
-        Returns True if delivered to at least one owner, False otherwise.
+        Returns:
+            True if delivered to at least one owner, False otherwise.
+
         """
         escaped_user = html.escape(user_name)
         escaped_username = f"@{username}" if username else "N/A"

@@ -50,7 +50,9 @@ class ChatReminderService:
     ) -> bool:
         """Send prompt to unauthorized chat if not currently in cooldown.
 
-        Returns True if sent, False if throttled or delivery failed.
+        Returns:
+            True if sent, False if throttled or delivery failed.
+
         """
         cooldown_key = f"{UNAUTHORIZED_PROMPT_KEY_PREFIX}:{chat_id}"
         if not force and await self._cache_service.get(cooldown_key):
