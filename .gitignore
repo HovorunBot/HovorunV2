@@ -171,5 +171,9 @@ cython_debug/
 # Local implementation plans (ordinary Markdown; no AI-ignore rule)
 /ai-schemes/
 
+# Local tool caches (uv/pre-commit), never shipped
+/.uv-cache/
+/.pre-commit-cache/
+
 # Local Harness plugins (installed into the DSH profile, never shipped)
 /.agents/plugins/
