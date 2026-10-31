@@ -10,6 +10,7 @@ from hovorunv2.application.features.beta_prompts import BetaPromptStore
 from hovorunv2.application.features.emergency import FeatureEmergencyStore
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.identity.recovery import RecoveryStore
 from hovorunv2.application.operations.announcements import AnnouncementStore
 from hovorunv2.application.operations.feature_status import FeatureAudienceStore
 from hovorunv2.application.operations.notification_ledger import NotificationEventStore
@@ -33,6 +34,7 @@ from hovorunv2.infrastructure.persistence.stores.notification_ledger_store impor
 from hovorunv2.infrastructure.persistence.stores.notification_preference_store import (
     SQLAlchemyNotificationPreferenceStore,
 )
+from hovorunv2.infrastructure.persistence.stores.recovery_store import SQLAlchemyRecoveryStore
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
@@ -73,6 +75,9 @@ class AuditAndPersistenceProvider(Provider):
         return SQLAlchemyAnnouncementStore(session_maker, audited_uow, key)
 
     announcement_store = alias(source=SQLAlchemyAnnouncementStore, provides=AnnouncementStore)
+
+    recovery_store_impl = provide(SQLAlchemyRecoveryStore)
+    recovery_store = alias(source=SQLAlchemyRecoveryStore, provides=RecoveryStore)
 
     feature_audience_store_impl = provide(SQLAlchemyFeatureAudienceStore)
     feature_audience_store = alias(source=SQLAlchemyFeatureAudienceStore, provides=FeatureAudienceStore)

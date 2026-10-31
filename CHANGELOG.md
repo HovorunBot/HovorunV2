@@ -8,6 +8,7 @@ encryption configuration before starting against the new database.
 
 ### Feat
 
+- **recovery**: preview explicit entity recovery choices
 - **lifecycle**: soft-delete user and group identities
 - **announcements**: confirm urgent notification bypass
 - **announcements**: dispatch confirmed routine broadcasts

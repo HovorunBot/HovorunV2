@@ -10,6 +10,7 @@ from hovorunv2.application.features.beta_prompts import BetaPromptService
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_management_service import GroupManagementService
+from hovorunv2.application.identity.recovery import RecoveryPreviewService
 from hovorunv2.application.messaging.feedback_service import FeedbackService
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
@@ -33,6 +34,7 @@ from hovorunv2.interface.telegram.handlers.debug import DebugCommand
 from hovorunv2.interface.telegram.handlers.emergency import EmergencyCommand
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
+from hovorunv2.interface.telegram.handlers.recovery import RecoveryCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
 
@@ -72,6 +74,8 @@ class InterfaceAndUtilityProvider(Provider):
     beta_prompt_command = provide(BetaPromptCommand)
     announcement_service = provide(AnnouncementService)
     announce_command = provide(AnnounceCommand)
+    recovery_preview = provide(RecoveryPreviewService)
+    recovery_command = provide(RecoveryCommand)
     debug_command = provide(DebugCommand)
     emergency_command = provide(EmergencyCommand)
     help_command = provide(HelpCommand)
@@ -88,6 +92,7 @@ class InterfaceAndUtilityProvider(Provider):
         debug_command: DebugCommand,
         beta_prompt_command: BetaPromptCommand,
         announce_command: AnnounceCommand,
+        recovery_command: RecoveryCommand,
         emergency_command: EmergencyCommand,
         administration_command: AdministrationCommand,
     ) -> UtilityCommands:
@@ -102,6 +107,7 @@ class InterfaceAndUtilityProvider(Provider):
                 emergency_command,
                 beta_prompt_command,
                 announce_command,
+                recovery_command,
             ]
         )
 
