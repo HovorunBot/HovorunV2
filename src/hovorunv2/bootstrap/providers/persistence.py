@@ -8,6 +8,7 @@ from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.emergency import FeatureEmergencyStore
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
+from hovorunv2.application.operations.notification_ledger import NotificationEventStore
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceStore
 from hovorunv2.application.operations.ports import SystemStore
 from hovorunv2.infrastructure.persistence import (
@@ -18,6 +19,9 @@ from hovorunv2.infrastructure.persistence import (
     SQLAlchemyUserStore,
 )
 from hovorunv2.infrastructure.persistence.stores.feature_emergency_store import SQLAlchemyFeatureEmergencyStore
+from hovorunv2.infrastructure.persistence.stores.notification_ledger_store import (
+    SQLAlchemyNotificationLedgerStore,
+)
 from hovorunv2.infrastructure.persistence.stores.notification_preference_store import (
     SQLAlchemyNotificationPreferenceStore,
 )
@@ -50,6 +54,9 @@ class AuditAndPersistenceProvider(Provider):
     notification_preference_store = alias(
         source=SQLAlchemyNotificationPreferenceStore, provides=NotificationPreferenceStore
     )
+
+    notification_ledger_store_impl = provide(SQLAlchemyNotificationLedgerStore)
+    notification_ledger_store = alias(source=SQLAlchemyNotificationLedgerStore, provides=NotificationEventStore)
 
     audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
     audited_transaction = alias(source=SQLAlchemyAuditedTransaction, provides=AuditedUnitOfWork)

@@ -13,6 +13,7 @@ from hovorunv2.application.messaging.feedback_service import FeedbackService
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.operations.cleanup_service import CleanupService
+from hovorunv2.application.operations.notification_ledger import NotificationLedgerService
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceService
 from hovorunv2.application.operations.notification_service import NotificationService
 from hovorunv2.application.operations.reminder_service import ChatReminderService
@@ -44,6 +45,7 @@ class InterfaceAndUtilityProvider(Provider):
     message_service = provide(MessageService)
     notification_service = provide(NotificationService)
     notification_preferences = provide(NotificationPreferenceService)
+    notification_ledger = provide(NotificationLedgerService)
     owner_notifier = provide(OwnerNotifier)
     reminder_service = provide(ChatReminderService)
     feedback_service = provide(FeedbackService)

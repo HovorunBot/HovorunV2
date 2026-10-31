@@ -80,6 +80,12 @@ FEATURE_EMERGENCY_FIELDS: Final = {
     "public_reason_changed": FLAG,
 }
 NOTIFICATION_PREFERENCE_FIELDS: Final = {"category": TEXT, "enabled": FLAG_PAIR}
+NOTIFICATION_EVENT_FIELDS: Final = {"event_key": TEXT, "category": TEXT}
+NOTIFICATION_RECEIPT_FIELDS: Final = {
+    "status": _adapter(Pair[StrictStr | None]),
+    "attempts": NUMBER,
+    "telegram_message_id": _adapter(StrictInt | None),
+}
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
@@ -96,6 +102,8 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("feature_emergency", "disable"): FEATURE_EMERGENCY_FIELDS.copy(),
     ("feature_emergency", "enable"): FEATURE_EMERGENCY_FIELDS.copy(),
     ("notification_preference", "set"): NOTIFICATION_PREFERENCE_FIELDS.copy(),
+    ("notification_event", "create"): NOTIFICATION_EVENT_FIELDS.copy(),
+    ("notification_receipt", "set"): NOTIFICATION_RECEIPT_FIELDS.copy(),
     ("group_activation", "approve"): ACTIVATION_FIELDS,
     ("group_activation", "reject"): ACTIVATION_FIELDS,
     ("chat", "migrate_route"): {"group_id": NUMBER, "telegram_id": NUMBER_PAIR},

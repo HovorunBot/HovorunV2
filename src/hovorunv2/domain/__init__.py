@@ -24,6 +24,7 @@ from hovorunv2.domain.handle import (
 )
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.notification import NotificationPreferenceDB
+from hovorunv2.domain.notification_event import NotificationEventDB, NotificationReceiptDB
 from hovorunv2.domain.role import UserRoleDB
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.domain.usage import UsageOverrideDB
@@ -49,7 +50,9 @@ __all__ = [
     "GroupRouteDB",
     "InvalidHandleError",
     "MemberEvidenceDB",
+    "NotificationEventDB",
     "NotificationPreferenceDB",
+    "NotificationReceiptDB",
     "PublicHandleDB",
     "RequestStatus",
     "SystemStateDB",
