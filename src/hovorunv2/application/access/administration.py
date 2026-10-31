@@ -53,7 +53,8 @@ class AdminRequest(BaseModel):
         """Reject impossible scopes and incomplete decisions before showing confirmation."""
         self._validate_action_scope()
         self._validate_request_decision()
-        self._validate_mutation_reason()
+        self._validate_ban_reason()
+        self._validate_limit_reason()
         self._validate_limit_shape()
         return self
 
@@ -77,17 +78,20 @@ class AdminRequest(BaseModel):
             msg = "Request decisions require a positive request ID."
             raise ValueError(msg)
 
-    def _validate_mutation_reason(self) -> None:
-        """Require an operational reason only when changing a restriction or override."""
-        if self.action not in {
-            AdminAction.BAN,
-            AdminAction.UNBAN,
-            AdminAction.LIMIT_SET,
-            AdminAction.LIMIT_RESET,
-        }:
+    def _validate_ban_reason(self) -> None:
+        """Require an operational reason only when changing a restriction."""
+        if self.action not in {AdminAction.BAN, AdminAction.UNBAN}:
             return
         if not self.reason or not self.reason.strip():
-            msg = "Restriction and limit changes require an internal reason."
+            msg = "Ban changes require an internal reason."
+            raise ValueError(msg)
+
+    def _validate_limit_reason(self) -> None:
+        """Require an operational reason only when changing a scoped limit override."""
+        if self.action not in {AdminAction.LIMIT_SET, AdminAction.LIMIT_RESET}:
+            return
+        if not self.reason or not self.reason.strip():
+            msg = "Limit changes require an internal reason."
             raise ValueError(msg)
 
     def _validate_limit_shape(self) -> None:
