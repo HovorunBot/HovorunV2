@@ -24,6 +24,7 @@ from hovorunv2.application.settings.settings_session_service import (
     SettingsTarget,
 )
 from hovorunv2.application.translation.language_service import LanguageService
+from hovorunv2.application.usage.usage_view import UsageSummary, UsageViewService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
     CommandName,
@@ -58,6 +59,7 @@ class SettingsCommand(BaseCommand):
         cleanup_service: CleanupService,
         sessions: SettingsSessionService,
         groups: GroupManagementService,
+        usage_views: UsageViewService,
     ) -> None:
         """Initialize command."""
         self._language_service = language_service
@@ -66,6 +68,7 @@ class SettingsCommand(BaseCommand):
         self._cleanup_service = cleanup_service
         self._sessions = sessions
         self._groups = groups
+        self._usage_views = usage_views
 
     @property
     def name(self) -> str:
@@ -188,6 +191,11 @@ class SettingsCommand(BaseCommand):
                 InlineKeyboardButton(text="First page", callback_data=SettingsCallback(menu=SettingsMenu.GROUPS).pack())
             )
         builder.row(
+            InlineKeyboardButton(
+                text="📊 My usage", callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="own").pack()
+            )
+        )
+        builder.row(
             InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
         )
         text = "👥 <b>Manage groups</b>\n\nSelect a group to configure. Authority is checked again for every action."
@@ -226,6 +234,18 @@ class SettingsCommand(BaseCommand):
             builder.row(
                 InlineKeyboardButton(
                     text="🔎 Access & permissions", callback_data=SettingsCallback(menu=SettingsMenu.ACCESS).pack()
+                )
+            )
+        if context.transport_chat_id > 0:
+            builder.row(
+                InlineKeyboardButton(
+                    text="📊 My usage", callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="own").pack()
+                )
+            )
+        if context.target_chat_id < 0:
+            builder.row(
+                InlineKeyboardButton(
+                    text="📊 Group usage", callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="group").pack()
                 )
             )
         builder.row(
@@ -277,6 +297,55 @@ class SettingsCommand(BaseCommand):
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
         await self._render(message, text, builder, context)
+
+    async def _show_usage(self, query: CallbackQuery, context: SettingsContext, scope: str | None) -> None:
+        """Show own direct usage or current group-charged usage without queue or private contents."""
+        message = query.message
+        if not isinstance(message, Message):
+            return
+        if scope == "group":
+            if context.target is None or context.target_chat_id >= 0:
+                await query.answer("Group usage unavailable.", show_alert=True)
+                return
+            summary = await self._usage_views.for_group(context.target_chat_id)
+            title = "📊 Group usage"
+        else:
+            if context.transport_chat_id <= 0:
+                await query.answer("Personal usage is available in private settings.", show_alert=True)
+                return
+            summary = await self._usage_views.for_user(query.from_user.id)
+            title = "📊 Your usage"
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
+        await self._render(message, self._render_usage(title, summary), builder, context)
+
+    def _render_usage(self, title: str, summary: UsageSummary) -> str:
+        """Render aggregate totals, effective remaining allowance and independent safety caps."""
+        lines = [f"<b>{title}</b>", ""]
+        if not summary.features:
+            lines.append("No feature usage is currently configured.")
+        for feature in summary.features:
+            unit = feature.unit.value
+            if summary.unlimited_personal_quota:
+                lines.append(
+                    f"{feature.display_name}: {feature.consumed} {unit} per {feature.window_seconds}s "
+                    "(personal quota unlimited)"
+                )
+            else:
+                lines.append(
+                    f"{feature.display_name}: {feature.consumed}/{feature.limit} {unit} per "
+                    f"{feature.window_seconds}s ({feature.remaining} left)"
+                )
+        safety = summary.safety
+        lines.append("")
+        lines.append(
+            f"Safety caps: concurrency {safety.global_concurrency}, pending {safety.global_pending}, "
+            f"payload {safety.payload_bytes} bytes, deadline {safety.deadline_seconds}s, "
+            f"execution {safety.execution_seconds}s."
+        )
+        if summary.unlimited_personal_quota:
+            lines.append("Bot administrators bypass ordinary personal quota; safety caps still apply.")
+        return "\n".join(lines)
 
     async def _show_lang_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
         """Show language configuration menu."""
@@ -458,16 +527,26 @@ class SettingsCommand(BaseCommand):
                 await self._show_main_menu(msg, context)
             case SettingsMenu.ACCESS:
                 await self._show_access_menu(query, context)
+            case SettingsMenu.USAGE:
+                await self._show_usage(query, context, callback_data.value)
             case SettingsMenu.LANG:
                 await self._show_lang_menu(query, context)
+            case SettingsMenu.MODULES | SettingsMenu.LANG_TARGET | SettingsMenu.LANG_IGNORED:
+                await self._dispatch_action(query, callback_data, context)
+            case SettingsMenu.CLOSE:
+                await self.handle_close(query)
+
+    async def _dispatch_action(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
+        """Route configuration toggles that mutate language or module selection."""
+        match callback_data.menu:
             case SettingsMenu.MODULES:
                 await self._handle_modules_callback(query, callback_data, context)
             case SettingsMenu.LANG_TARGET:
                 await self._handle_lang_target_callback(query, callback_data, context)
             case SettingsMenu.LANG_IGNORED:
                 await self._handle_lang_ignored_callback(query, callback_data, context)
-            case SettingsMenu.CLOSE:
-                await self.handle_close(query)
 
     async def _handle_modules_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext

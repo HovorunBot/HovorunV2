@@ -19,6 +19,7 @@ class SettingsMenu(StrEnum):
     GROUPS = "groups"
     GROUP_SELECT = "group_select"
     ACCESS = "access"
+    USAGE = "usage"
     CLOSE = "close"
     MAIN = "main"
     LANG = "lang"

@@ -8,6 +8,7 @@ encryption configuration before starting against the new database.
 
 ### Feat
 
+- **usage**: show scoped feature usage and allowances
 - **admin**: manage scoped feature usage limits
 - **queue**: bound and deduplicate work admission
 - **limits**: reserve execution budgets atomically

@@ -13,6 +13,7 @@ from hovorunv2.application.usage.policies import UsagePolicyStore, UsageSafetyCa
 from hovorunv2.application.usage.usage_administration import UsageAdministrationService
 from hovorunv2.application.usage.usage_ledger import UsageLedgerStore
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
+from hovorunv2.application.usage.usage_view import UsageViewService
 from hovorunv2.infrastructure.persistence.stores.usage_ledger_store import SQLAlchemyUsageLedgerStore
 from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAlchemyUsagePolicyStore
 from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
@@ -54,6 +55,7 @@ class RuntimeUsageProvider(Provider):
     usage_policy_store = alias(source=SQLAlchemyUsagePolicyStore, provides=UsagePolicyStore)
     usage_policy_service = provide(UsagePolicyService)
     usage_administration_service = provide(UsageAdministrationService)
+    usage_view_service = provide(UsageViewService)
 
     @provide
     def usage_safety_caps(self) -> UsageSafetyCaps:
