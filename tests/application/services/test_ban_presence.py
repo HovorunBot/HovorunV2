@@ -7,7 +7,7 @@ import pytest
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
-from hovorunv2.application.ports import ChatStore, TaskQueuePort
+from hovorunv2.application.ports import ChatStore
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
@@ -41,7 +41,6 @@ async def test_restrictions_survive_rejoin_and_maintenance(test_container: Async
     reminder = ChatReminderService(
         chats,
         cache,
-        await test_container.get(TaskQueuePort),
         await test_container.get(OwnerNotifier),
         TelegramUnauthorizedPromptSender(chats),
     )

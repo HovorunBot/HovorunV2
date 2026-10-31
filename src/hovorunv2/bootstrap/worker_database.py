@@ -11,7 +11,11 @@ from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry
 from hovorunv2.application.usage import UsageSafetyCaps
 from hovorunv2.infrastructure.authorization.casbin_policy import load_packaged_policy
 from hovorunv2.infrastructure.config import DatabaseSettings
-from hovorunv2.infrastructure.persistence.worker_store import WorkerPolicyStore, WorkerUsageLedgerStore
+from hovorunv2.infrastructure.persistence.worker_store import (
+    WorkerOperationsStore,
+    WorkerPolicyStore,
+    WorkerUsageLedgerStore,
+)
 
 WORKER_POOL_SIZE = 1
 WORKER_POOL_OVERFLOW = 0
@@ -54,6 +58,7 @@ class WorkerDatabase:
         sessions = sessionmaker(engine, expire_on_commit=False)
         self._policies = WorkerPolicyStore(sessions, policy, self._registry, self._safety, self._require_owner)
         self._ledger = WorkerUsageLedgerStore(sessions, self._registry, self._require_owner)
+        self._operations = WorkerOperationsStore(sessions, self._require_owner)
         self._opened = True
         self._engine = engine
         self._owner = getpid()
@@ -83,6 +88,12 @@ class WorkerDatabase:
         """Expose accounting only to the owning child."""
         self._require_owner()
         return self._ledger
+
+    @property
+    def operations(self) -> WorkerOperationsStore:
+        """Expose operations persistence only to the owning child."""
+        self._require_owner()
+        return self._operations
 
     def __exit__(
         self,

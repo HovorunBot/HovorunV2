@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, Chat, ChatMemberLeft, ChatMemberMember,
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
-from hovorunv2.application.ports import ChatStore, TaskQueuePort, UserStore
+from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.application.services.reminder_service import ChatReminderService
@@ -49,7 +49,6 @@ async def test_state_machine_flow(test_container: AsyncContainer) -> None:
     reminder = ChatReminderService(
         chats,
         cache,
-        await test_container.get(TaskQueuePort),
         await test_container.get(OwnerNotifier),
         TelegramUnauthorizedPromptSender(chats),
     )

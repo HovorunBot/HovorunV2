@@ -43,7 +43,6 @@ from hovorunv2.application.ports import (
     PublicHandleStore,
     RoleStore,
     SystemStore,
-    TaskQueuePort,
     UnauthorizedPromptSender,
     UserStore,
 )
@@ -109,7 +108,6 @@ from hovorunv2.infrastructure.persistence.group_migration_store import SQLAlchem
 from hovorunv2.infrastructure.persistence.membership_store import SQLAlchemyMembershipStore
 from hovorunv2.infrastructure.persistence.usage_ledger_store import SQLAlchemyUsageLedgerStore
 from hovorunv2.infrastructure.persistence.usage_policy_store import SQLAlchemyUsagePolicyStore
-from hovorunv2.infrastructure.task_queue import TaskQueueService
 from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
@@ -165,13 +163,6 @@ class InfrastructureProvider(DatabaseProvider):
         await service.close()
 
     @provide(scope=Scope.APP)
-    async def get_task_queue_service(self, config: Settings) -> AsyncIterable[TaskQueueService]:
-        """Provide TaskQueueService (SAQ)."""
-        service = TaskQueueService(config)
-        yield service
-        await service.stop_worker()
-
-    @provide(scope=Scope.APP)
     async def feature_queue(
         self,
         config: Settings,
@@ -191,7 +182,6 @@ class InfrastructureProvider(DatabaseProvider):
     settings_port = alias(source=Settings, provides=AppSettings)
     cache_port = alias(source=CacheService, provides=CachePort)
     browser_port = alias(source=BrowserService, provides=BrowserPort)
-    task_queue_port = alias(source=TaskQueueService, provides=TaskQueuePort)
 
 
 class SecurityAndAccessProvider(Provider):

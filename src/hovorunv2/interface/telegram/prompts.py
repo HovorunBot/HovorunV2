@@ -1,11 +1,13 @@
 """Telegram unauthorized prompt presentation and delivery."""
 
+import json
+
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from hovorunv2.application.ports import ChatStore
+from hovorunv2.application.ports import ChatStore, SyncUnauthorizedPromptPort, WorkerTelegramPort
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 
@@ -76,3 +78,16 @@ class TelegramUnauthorizedPromptSender:
             return False
         text, builder = build_unauthorized_prompt(chat_id, chat.id, chat.generation)
         return await self._dispatch_prompt(bot, chat_id, text, builder)
+
+
+class SyncTelegramUnauthorizedPromptSender(SyncUnauthorizedPromptPort):
+    """Delivers unauthorized guidance prompt to Telegram chats synchronously."""
+
+    def __init__(self, api: WorkerTelegramPort) -> None:
+        self._api = api
+
+    def send(self, chat_id: int, group_id: int, generation: int) -> bool:
+        """Send prompt to unauthorized chat."""
+        text, builder = build_unauthorized_prompt(chat_id, group_id, generation)
+        reply_markup = json.dumps(builder.as_markup().model_dump(mode="json"))
+        return self._api.send_message(chat_id, text, reply_markup=reply_markup) is not None

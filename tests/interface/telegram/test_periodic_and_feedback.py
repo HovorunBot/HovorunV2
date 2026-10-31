@@ -1,4 +1,4 @@
-"""Tests for Feedback, ChatReminderService, and TaskQueueService components."""
+"""Tests for Feedback and ChatReminderService components."""
 
 import pytest
 from aiogram import Bot
@@ -8,11 +8,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.ports import CachePort, ChatStore
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
-from hovorunv2.application.services.reminder_service import (
-    ChatReminderService,
-    maintenance_cron_job,
-    scheduled_unauthorized_reminder_job,
-)
+from hovorunv2.application.services.reminder_service import ChatReminderService
 from hovorunv2.domain.enums import CommandName, Role
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from tests.conftest import provision_role
@@ -111,15 +107,14 @@ async def test_reminder_service_send_prompt_cooldown(
 
 
 async def test_scheduled_job_callbacks(test_container: AsyncContainer, recording_bot: Bot) -> None:
-    """Run worker callbacks through real reminder service and check durable cooldown."""
+    """Run maintenance through real reminder service and check durable cooldown."""
     reminder_service = await test_container.get(ChatReminderService)
     chats = await test_container.get(ChatStore)
     await chats.get_or_create_chat(-100999)
     cache = await test_container.get(CachePort)
     await cache.delete("periodic:unauthorized_prompt:-100999")
-    ctx = {"reminder_service": reminder_service, "bot": recording_bot}
-    await scheduled_unauthorized_reminder_job(ctx, chat_id=-100999)
+    await reminder_service.send_unauthorized_prompt(recording_bot, -100999)
     assert await cache.get("periodic:unauthorized_prompt:-100999") == 1
     assert len(recording_bot.session.calls) == 1
-    await maintenance_cron_job(ctx)
+    await reminder_service.run_maintenance_cycle(recording_bot)
     assert len(recording_bot.session.calls) == 1

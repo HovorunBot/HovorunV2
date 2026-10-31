@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from celery import Celery
+from celery.schedules import crontab
 from kombu import Queue
 from kombu.exceptions import OperationalError
 from redis.exceptions import RedisError
@@ -22,6 +23,7 @@ from hovorunv2.application.feature_jobs import (
     JobStatus,
     QueuedFeature,
 )
+from hovorunv2.application.ports import OperationsRunnerPort
 from hovorunv2.application.usage import UsageSafetyCaps
 from hovorunv2.application.worker_io import SyncQueuePublisherPort
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
@@ -32,10 +34,17 @@ BROKER_VISIBILITY_SECONDS = 2 * RUNTIME_RETENTION_SECONDS
 BROKER_SOCKET_SECONDS = 2
 
 RECOVERY_TASK_FUNCTION = "recover_feature_jobs"
+MEMBERSHIP_RECONCILIATION_TASK = "reconcile_memberships"
+CHAT_MAINTENANCE_TASK = "run_chat_maintenance"
+CLEANUP_SWEEP_TASK = "sweep_expired_cleanups"
+RELEASE_NOTIFICATIONS_TASK = "broadcast_release_notifications"
+UNAUTHORIZED_REMINDER_TASK = "send_unauthorized_reminder"
+OPERATIONS_QUEUE_NAME = "operations"
 
 TaskRunner = Callable[[dict[str, object], JobStage], str]
 _task_runner: TaskRunner | None = None
 _recovery_runner: Callable[[], int] | None = None
+_operations_runner: OperationsRunnerPort | None = None
 
 
 def set_feature_task_runner(runner: TaskRunner | None) -> None:
@@ -50,12 +59,51 @@ def set_recovery_runner(runner: Callable[[], int] | None) -> None:
     _recovery_runner = runner
 
 
+def set_operations_runner(runner: OperationsRunnerPort | None) -> None:
+    """Attach operations runner for native maintenance tasks."""
+    global _operations_runner  # noqa: PLW0603
+    _operations_runner = runner
+
+
+def get_operations_runner() -> OperationsRunnerPort:
+    """Return operations runner or raise if not initialized."""
+    if _operations_runner is None:
+        msg = "Worker operations runner is not initialized."
+        raise ValueError(msg)
+    return _operations_runner
+
+
 def recover_feature_jobs() -> int:
     """Run one bounded native lifecycle sweep without private task inputs or results."""
     if _recovery_runner is None:
         msg = "Worker lifecycle recovery is not initialized."
         raise ValueError(msg)
     return _recovery_runner()
+
+
+def reconcile_memberships_task() -> int:
+    """Run membership reconciliation sweep on native operations worker."""
+    return get_operations_runner().reconcile_memberships()
+
+
+def run_chat_maintenance_task() -> int:
+    """Run periodic chat reminders and maintenance sweep."""
+    return get_operations_runner().run_chat_reminders()
+
+
+def sweep_expired_cleanups_task() -> int:
+    """Sweep and delete expired cleanup window messages."""
+    return get_operations_runner().sweep_expired_cleanups()
+
+
+def broadcast_release_notifications_task() -> int:
+    """Broadcast release notifications to approved group chats upon version upgrade."""
+    return get_operations_runner().broadcast_release_notifications()
+
+
+def send_unauthorized_reminder_task(chat_id: int) -> bool:
+    """Send guidance prompt to unauthorized group chat."""
+    return get_operations_runner().send_unauthorized_reminder(chat_id)
 
 
 def get_feature_task_runner() -> TaskRunner:
@@ -66,10 +114,56 @@ def get_feature_task_runner() -> TaskRunner:
     return _task_runner
 
 
-def register_feature_tasks(app: Celery) -> None:
-    """Register synchronous worker tasks on a Celery application instance."""
+def build_beat_schedule(namespace_prefix: str) -> dict[str, dict[str, object]]:
+    """Build the singleton Celery Beat schedule for native operations."""
+    queue = namespace_prefix + OPERATIONS_QUEUE_NAME
+    return {
+        "membership_reconciliation": {
+            "task": MEMBERSHIP_RECONCILIATION_TASK,
+            "schedule": 60.0,
+            "options": {"queue": queue},
+        },
+        "chat_maintenance": {
+            "task": CHAT_MAINTENANCE_TASK,
+            "schedule": crontab(minute=0, hour="*"),
+            "options": {"queue": queue},
+        },
+        "cleanup_sweep": {
+            "task": CLEANUP_SWEEP_TASK,
+            "schedule": 60.0,
+            "options": {"queue": queue},
+        },
+        "release_notifications": {
+            "task": RELEASE_NOTIFICATIONS_TASK,
+            "schedule": 60.0,
+            "options": {"queue": queue},
+        },
+        "recovery_sweeps": {
+            "task": RECOVERY_TASK_FUNCTION,
+            "schedule": 60.0,
+            "options": {"queue": queue},
+        },
+    }
+
+
+def _register_maintenance_tasks(app: Celery) -> None:
+    """Register synchronous worker maintenance tasks on a Celery application instance."""
     if RECOVERY_TASK_FUNCTION not in app.tasks:
         app.task(name=RECOVERY_TASK_FUNCTION, ignore_result=True)(recover_feature_jobs)
+    if MEMBERSHIP_RECONCILIATION_TASK not in app.tasks:
+        app.task(name=MEMBERSHIP_RECONCILIATION_TASK, ignore_result=True)(reconcile_memberships_task)
+    if CHAT_MAINTENANCE_TASK not in app.tasks:
+        app.task(name=CHAT_MAINTENANCE_TASK, ignore_result=True)(run_chat_maintenance_task)
+    if CLEANUP_SWEEP_TASK not in app.tasks:
+        app.task(name=CLEANUP_SWEEP_TASK, ignore_result=True)(sweep_expired_cleanups_task)
+    if RELEASE_NOTIFICATIONS_TASK not in app.tasks:
+        app.task(name=RELEASE_NOTIFICATIONS_TASK, ignore_result=True)(broadcast_release_notifications_task)
+    if UNAUTHORIZED_REMINDER_TASK not in app.tasks:
+        app.task(name=UNAUTHORIZED_REMINDER_TASK, ignore_result=True)(send_unauthorized_reminder_task)
+
+
+def _register_feature_execution_tasks(app: Celery) -> None:
+    """Register feature execution tasks on a Celery application instance."""
     if FEATURE_JOB_FUNCTION not in app.tasks:
 
         @app.task(name=FEATURE_JOB_FUNCTION, bind=True)
@@ -92,7 +186,17 @@ def register_feature_tasks(app: Celery) -> None:
             return runner(envelope, JobStage.BROWSER)
 
 
+def register_feature_tasks(app: Celery) -> None:
+    """Register synchronous worker tasks on a Celery application instance."""
+    _register_maintenance_tasks(app)
+    _register_feature_execution_tasks(app)
+
+
 celery_app = Celery("hovorun_features")
+celery_app.conf.update(
+    task_queues=[Queue("media"), Queue("browser"), Queue(OPERATIONS_QUEUE_NAME)],
+    beat_schedule=build_beat_schedule(""),
+)
 register_feature_tasks(celery_app)
 
 
@@ -111,6 +215,7 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
         self._admission = ValkeyAdmissionStore(self._cache, namespace)
         self._media_queue = namespace.value + "media"
         self._browser_queue = namespace.value + "browser"
+        self._operations_queue = namespace.value + OPERATIONS_QUEUE_NAME
         self._queue_name = self._media_queue
         self._app = Celery("hovorun_features", broker=settings.valkey_url)
         self._app.conf.update(
@@ -118,7 +223,9 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
             task_queues=[
                 Queue(self._media_queue),
                 Queue(self._browser_queue),
+                Queue(self._operations_queue),
             ],
+            beat_schedule=build_beat_schedule(namespace.value),
             task_serializer="json",
             accept_content=["json"],
             task_ignore_result=True,

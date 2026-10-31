@@ -2,11 +2,11 @@
 
 import asyncio
 import logging
-from typing import Any, Final
+from typing import Final
 
 from aiogram import Bot
 
-from hovorunv2.application.ports import CachePort, ChatStore, TaskQueuePort, UnauthorizedPromptSender
+from hovorunv2.application.ports import CachePort, ChatStore, UnauthorizedPromptSender
 from hovorunv2.application.services.owner_notifier import OwnerNotifier
 from hovorunv2.domain.enums import ChatStatus
 
@@ -17,20 +17,6 @@ DEFAULT_REMINDER_COOLDOWN_SECONDS: Final = 86400  # 24 hours
 HOURLY_MAINTENANCE_CRON: Final = "0 * * * *"
 
 
-async def scheduled_unauthorized_reminder_job(ctx: dict[str, Any], *, chat_id: int) -> None:
-    """Worker task callback for sending an unauthorized chat reminder."""
-    reminder_service: ChatReminderService = ctx["reminder_service"]
-    bot: Bot = ctx["bot"]
-    await reminder_service.send_unauthorized_prompt(bot, chat_id, force=False)
-
-
-async def maintenance_cron_job(ctx: dict[str, Any]) -> None:
-    """Worker cron callback executing hourly chat maintenance."""
-    reminder_service: ChatReminderService = ctx["reminder_service"]
-    bot: Bot = ctx["bot"]
-    await reminder_service.run_maintenance_cycle(bot)
-
-
 class ChatReminderService:
     """Business service governing chat reminder scheduling, cooldowns, and maintenance.
 
@@ -38,28 +24,20 @@ class ChatReminderService:
     - Dispatching unauthorized prompts with cooldown tracking in Valkey.
     - Preserving bot presence and restrictions in rejected chats.
     - Pinging bot owners about long-pending chat approvals.
-    - Registering scheduled jobs with TaskQueueService.
     """
 
     def __init__(
         self,
         chat_service: ChatStore,
         cache_service: CachePort,
-        task_queue: TaskQueuePort,
         owner_notifier: OwnerNotifier,
         prompt_sender: UnauthorizedPromptSender,
     ) -> None:
         """Initialize chat reminder service."""
         self._chat_service = chat_service
         self._cache_service = cache_service
-        self._task_queue = task_queue
         self._owner_notifier = owner_notifier
         self._prompt_sender = prompt_sender
-
-    def register_jobs(self) -> None:
-        """Register reminder functions with background task queue."""
-        self._task_queue.register_function(scheduled_unauthorized_reminder_job)
-        self._task_queue.register_cron(maintenance_cron_job, cron=HOURLY_MAINTENANCE_CRON)
 
     async def send_unauthorized_prompt(
         self,

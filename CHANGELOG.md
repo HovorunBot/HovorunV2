@@ -57,6 +57,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **maintenance**: move background work to Celery
 - **queue**: reconcile native worker lifecycle
 - **workers**: compose native Celery execution
 - **media**: support synchronous Instagram and Threads extraction with browser continuation

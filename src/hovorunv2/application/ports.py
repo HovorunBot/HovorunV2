@@ -7,12 +7,14 @@ operations propagate failures to the owning workflow. Injected adapters are mand
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from aiogram import Bot
 
 from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.media.errors import MediaFailure
+from hovorunv2.application.membership import AdministratorEvidence, BotCapabilityEvidence, MembershipEvidence
 from hovorunv2.application.permissions import PermissionFacts
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
@@ -83,24 +85,136 @@ class BrowserPort(Protocol):
         ...
 
 
-class TaskQueuePort(Protocol):
-    """Protocol for asynchronous background task queuing and scheduling."""
+class OperationsRunnerPort(Protocol):
+    """Protocol for synchronous execution of periodic and maintenance operations."""
 
-    def register_function(self, fn: Callable[..., Any]) -> None:
-        """Register a worker task callback function."""
+    def reconcile_memberships(self, now: datetime | None = None) -> int:
+        """Run membership reconciliation sweep."""
         ...
 
-    def register_cron(self, fn: Callable[..., Any], cron: str) -> None:
-        """Register a scheduled cron job callback."""
+    def run_chat_reminders(self) -> int:
+        """Run periodic reminder sweep for unauthorized and pending chats."""
         ...
 
-    async def enqueue(self, function_name: str, **kwargs: Any) -> None:
-        """Submit work by name; this command contract provides no execution receipt."""
+    def sweep_expired_cleanups(self, now: float | None = None) -> int:
+        """Sweep and delete expired cleanup window messages."""
+        ...
+
+    def broadcast_release_notifications(self) -> int:
+        """Broadcast release notification on version upgrade."""
+        ...
+
+    def send_unauthorized_reminder(self, chat_id: int, *, force: bool = False) -> bool:
+        """Dispatch guidance prompt to unauthorized group chat."""
+        ...
+
+
+class WorkerOperationsPort(Protocol):
+    """Synchronous operations persistence interface for background maintenance."""
+
+    def due_groups(self, now: datetime, limit: int = 10) -> list[ChatDB]:
+        """Return group records requiring membership verification."""
+        ...
+
+    def relevant_users(self, group_id: int, limit: int = 50) -> list[UserDB]:
+        """Return distinct user records active in group."""
+        ...
+
+    def save_bot(self, group_id: int, evidence: BotCapabilityEvidence, actor: ActorContext | None = None) -> bool:
+        """Upsert bot presence and capabilities in group."""
+        ...
+
+    def save_admins(self, group_id: int, evidence: AdministratorEvidence, actor: ActorContext | None = None) -> bool:
+        """Upsert detected administrators for group."""
+        ...
+
+    def save_member(
+        self,
+        group_id: int,
+        evidence: MembershipEvidence,
+        actor: ActorContext | None = None,
+        *,
+        expected_user_id: int | None = None,
+    ) -> bool:
+        """Upsert single user membership evidence in group."""
+        ...
+
+    def unauthorized_group_chats(self) -> list[ChatDB]:
+        """Return active unauthorized group chats."""
+        ...
+
+    def pending_chats(self) -> list[ChatDB]:
+        """Return chats pending approval."""
+        ...
+
+    def list_owners(self) -> list[UserDB]:
+        """Return user accounts with owner role."""
+        ...
+
+    def get_last_notified_version(self) -> str | None:
+        """Return last notified software release version."""
+        ...
+
+    def set_last_notified_version(self, version: str, actor: ActorContext | None = None) -> None:
+        """Record last notified software release version."""
+        ...
+
+    def approved_group_chats(self) -> list[ChatDB]:
+        """Return active approved group chats."""
+        ...
+
+    def get_chat(self, chat_id: int) -> ChatDB | None:
+        """Fetch chat record by Telegram chat ID."""
+        ...
+
+
+class WorkerTelegramPort(Protocol):
+    """Synchronous Telegram API port for native maintenance operations."""
+
+    def get_chat_member(self, chat_id: int, user_id: int) -> dict[str, object] | None:
+        """Fetch chat member info."""
+        ...
+
+    def get_chat_administrators(self, chat_id: int) -> list[object] | None:
+        """Fetch list of chat administrators."""
+        ...
+
+    def send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        parse_mode: str = "HTML",
+        reply_markup: str | None = None,
+        disable_web_page_preview: bool = True,
+    ) -> int | None:
+        """Send formatted text message and return message ID if delivered."""
+        ...
+
+    def delete_message(self, chat_id: int, message_id: int) -> bool:
+        """Delete message, returning True if accepted."""
+        ...
+
+    def edit_message_text(self, chat_id: int, message_id: int, text: str, *, parse_mode: str = "HTML") -> bool:
+        """Edit text message, returning True if accepted."""
+        ...
+
+
+class SyncUnauthorizedPromptPort(Protocol):
+    """Synchronous interface for dispatching unauthorized guidance prompts."""
+
+    def send(self, chat_id: int, group_id: int, generation: int) -> bool:
+        """Send prompt to unauthorized chat."""
         ...
 
 
 class AppSettings(Protocol):
     """Protocol for application configuration properties needed by application services."""
+
+    @property
+    def bot_token(self) -> str:
+        """Telegram bot token."""
+        ...
 
     @property
     def cache_encryption_key(self) -> str | None:

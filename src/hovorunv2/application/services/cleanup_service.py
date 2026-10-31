@@ -1,6 +1,5 @@
 """Service for handling persistent message cleanup using Valkey."""
 
-import asyncio
 import contextlib
 import logging
 from datetime import UTC, datetime
@@ -17,21 +16,12 @@ logger = logging.getLogger(__name__)
 class CleanupService:
     """Service to manage message self-destruction based on Valkey TTL."""
 
-    # Redis keys
-    CLEANUP_INDEX = "cleanup:index"  # ZSET of {chat_id}:{message_id} -> timestamp
-    CLEANUP_SINGLETON_PREFIX = "cleanup:singleton"  # STRING of {chat_id}:{type} -> message_id
-
-    # Default interval to check when nothing is pending
-    IDLE_CHECK_INTERVAL: int = 3600
-    # Minimum sleep interval to prevent busy loops
-    MIN_CHECK_INTERVAL: int = 5
-    ERROR_RETRY_INTERVAL: int = 60
+    CLEANUP_INDEX = "cleanup:index"
+    CLEANUP_SINGLETON_PREFIX = "cleanup:singleton"
 
     def __init__(self, cache_service: CachePort) -> None:
         """Initialize service with cache dependency."""
         self._cache = cache_service
-        self._loop_task: asyncio.Task[None] | None = None
-        self._trigger = asyncio.Event()
 
     def _make_member(self, chat_id: int, message_id: int) -> str:
         """Format ZSET member string."""
@@ -55,9 +45,7 @@ class CleanupService:
 
         if cleanup_type:
             singleton_key = self._make_singleton_key(chat_id, cleanup_type)
-            await self._cache.set(singleton_key, message_id, expire=ttl + 3600)  # Buffer for singleton
-
-        self._trigger.set()
+            await self._cache.set(singleton_key, message_id, expire=ttl + 3600)
 
     async def reset_ttl(self, chat_id: int, message_id: int, ttl: int, cleanup_type: str | None = None) -> None:
         """Reset the inactivity timer for a registered message."""
@@ -82,60 +70,25 @@ class CleanupService:
 
         await self.register_window(chat_id, message_id, ttl, cleanup_type)
 
-    async def start_cleanup_loop(self, bot: Bot) -> None:
-        """Start the background loop to process expired messages."""
-        if self._loop_task and not self._loop_task.done():
-            return
-
-        self._loop_task = asyncio.create_task(self._run_loop(bot))
-        logger.info("Valkey cleanup loop started")
-
-    async def stop_cleanup_loop(self) -> None:
-        """Stop the background loop if running."""
-        if not self._loop_task or self._loop_task.done():
-            return
-        self._loop_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self._loop_task
-        self._loop_task = None
-        logger.info("Valkey cleanup loop stopped")
-
-    async def _run_loop(self, bot: Bot) -> None:
-        """Background loop that periodically checks and deletes expired messages."""
-        while True:
-            try:
-                now = datetime.now(UTC).timestamp()
-                await self._process_expired(bot, now)
-                await self._wait_for_next_check(now)
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                logger.exception("Error in Valkey cleanup loop")
-                await asyncio.sleep(self.ERROR_RETRY_INTERVAL)
-
-    async def _process_expired(self, bot: Bot, now: float) -> None:
+    async def process_expired(self, bot: Bot, now: float | None = None) -> int:
         """Attempt each due deletion and remove the processed batch from the index."""
-        expired_members = await self._cache.zrangebyscore(self.CLEANUP_INDEX, 0, now)
+        current_time = now if now is not None else datetime.now(UTC).timestamp()
+        expired_members = await self._cache.zrangebyscore(self.CLEANUP_INDEX, 0, current_time)
+        deleted_count = 0
         for member in expired_members:
-            chat_id, message_id = self._parse_member(member)
-            try:
-                await bot.delete_message(chat_id=chat_id, message_id=message_id)
-                logger.info("Successfully removed expired message %d in chat %d", message_id, chat_id)
-            except Exception as error:
-                logger.warning("Could not delete message %d in chat %d (%s)", message_id, chat_id, type(error))
+            if await self._delete_single_expired(bot, member):
+                deleted_count += 1
         if expired_members:
             await self._cache.zrem(self.CLEANUP_INDEX, *expired_members)
+        return deleted_count
 
-    async def _wait_for_next_check(self, now: float) -> None:
-        """Wait for the next deadline or a registration that changes the schedule."""
-        next_expiry_list = await self._cache.zrange(self.CLEANUP_INDEX, 0, 0, withscores=True)
-        if next_expiry_list:
-            _, next_expiry = next_expiry_list[0]
-            sleep_time = max(self.MIN_CHECK_INTERVAL, next_expiry - now)
-        else:
-            sleep_time = self.IDLE_CHECK_INTERVAL
+    async def _delete_single_expired(self, bot: Bot, member: str) -> bool:
+        chat_id, message_id = self._parse_member(member)
         try:
-            await asyncio.wait_for(self._trigger.wait(), timeout=sleep_time)
-            self._trigger.clear()
-        except TimeoutError:
-            pass
+            await bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except Exception as error:
+            logger.warning("Could not delete message %d in chat %d (%s)", message_id, chat_id, type(error))
+            return False
+        else:
+            logger.info("Successfully removed expired message %d in chat %d", message_id, chat_id)
+            return True

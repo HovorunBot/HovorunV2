@@ -34,7 +34,6 @@ dependencies = [
     "cryptography",
     "pycountry",
     "pycountry-convert",
-    "saq",
     "celery[redis]>=5.7.0rc1",
     "casbin",
     "psycopg[binary]",

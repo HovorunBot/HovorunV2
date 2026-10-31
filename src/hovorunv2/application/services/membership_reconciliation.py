@@ -2,23 +2,15 @@
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any
 
 from hovorunv2.application.membership import MembershipPort
 from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.ports import TaskQueuePort
 from hovorunv2.domain.chat import ChatDB
 
 RECONCILIATION_CRON = "* * * * *"
 GROUP_BATCH_SIZE = 10
 MEMBER_BATCH_SIZE = 50
 CYCLE_TIMEOUT_SECONDS = 30
-
-
-async def membership_reconciliation_job(ctx: dict[str, Any]) -> None:
-    """Refresh a bounded batch through the existing SAQ maintenance worker."""
-    service: MembershipReconciliationService = ctx["membership_reconciliation"]
-    await service.run_cycle()
 
 
 class MembershipReconciliationService:
@@ -29,16 +21,11 @@ class MembershipReconciliationService:
     result is cached here. A failed API check stores UNKNOWN and retains grants.
     """
 
-    def __init__(self, store: MembershipStore, membership: MembershipPort, task_queue: TaskQueuePort) -> None:
+    def __init__(self, store: MembershipStore, membership: MembershipPort) -> None:
         self._store = store
         self._membership = membership
-        self._queue = task_queue
         self._cycle_lock = asyncio.Lock()
         self._refreshing: set[int] = set()
-
-    def register_jobs(self) -> None:
-        """Use the existing SAQ worker for periodic evidence maintenance."""
-        self._queue.register_cron(membership_reconciliation_job, cron=RECONCILIATION_CRON)
 
     async def run_cycle(self, now: datetime | None = None) -> int:
         """Refresh at most ten groups, each with at most fifty relevant members."""

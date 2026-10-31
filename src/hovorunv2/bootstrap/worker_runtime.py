@@ -23,6 +23,7 @@ from hovorunv2.application.media.errors import MediaFailure
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.services.native_translation import NativeTranslationService
+from hovorunv2.application.services.operations_runner import WorkerOperationsRunner
 from hovorunv2.application.usage import UsageSafetyCaps
 from hovorunv2.application.worker_io import SyncBrowserPort
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -34,9 +35,11 @@ from hovorunv2.infrastructure.feature_queue import (
     BROKER_SOCKET_SECONDS,
     BROKER_VISIBILITY_SECONDS,
     set_feature_task_runner,
+    set_operations_runner,
     set_recovery_runner,
 )
 from hovorunv2.infrastructure.native_http import NativeHTTPClient
+from hovorunv2.interface.telegram.prompts import SyncTelegramUnauthorizedPromptSender
 from hovorunv2.interface.telegram.sync_delivery import NativeTelegramAPI, NativeTelegramDelivery
 
 RUNTIME_SOCKET_SECONDS = 2
@@ -89,6 +92,11 @@ class WorkerRuntime:
             msg = "Worker runtime resources require an open context in their owning process."
             raise ValueError(msg)
         return self._client
+
+    @property
+    def client(self) -> redis.Redis:
+        """Expose open Valkey client to the owning child."""
+        return self._require_open_client()
 
     @property
     def admission(self) -> WorkerAdmissionClient:
@@ -267,8 +275,23 @@ class WorkerChildContext:
             browser=self._browser,
             publisher=self._publisher,
         )
+        prompt_sender = SyncTelegramUnauthorizedPromptSender(api)
+        self._operations = WorkerOperationsRunner(
+            ops=self._db.operations,
+            client=self._runtime.client,
+            namespace=self._namespace,
+            api=api,
+            prompt_sender=prompt_sender,
+            settings=self._settings,
+            clock=self._clock,
+        )
         self._opened = True
         return self
+
+    @property
+    def opened(self) -> bool:
+        """Return whether this child context has been opened."""
+        return self._opened
 
     @property
     def runner(self) -> FeatureJobRunner:
@@ -278,10 +301,19 @@ class WorkerChildContext:
             raise ValueError(msg)
         return self._runner
 
+    @property
+    def operations(self) -> WorkerOperationsRunner:
+        """Expose initialized operations runner to maintenance task execution."""
+        if self._operations is None:
+            msg = "Worker child context has not been opened."
+            raise ValueError(msg)
+        return self._operations
+
     def close(self) -> None:
         """Close all child resources deterministically."""
         if not self._opened:
             return
+        self._operations = None
         self._runner = None
         if self._publisher is not None:
             self._publisher.close()
@@ -318,6 +350,7 @@ def init_worker_child(
     _current_worker_context = context
     set_feature_task_runner(_execute_task_in_child)
     set_recovery_runner(context.runner.recover)
+    set_operations_runner(context.operations)
     return context
 
 
@@ -333,6 +366,7 @@ def shutdown_worker_child() -> None:
         _current_worker_context = None
     set_feature_task_runner(None)
     set_recovery_runner(None)
+    set_operations_runner(None)
 
 
 def get_worker_runner() -> FeatureJobRunner:
@@ -341,6 +375,14 @@ def get_worker_runner() -> FeatureJobRunner:
         init_worker_child()
     assert _current_worker_context is not None
     return _current_worker_context.runner
+
+
+def get_worker_operations_runner() -> WorkerOperationsRunner:
+    """Return the active WorkerOperationsRunner for the current child process."""
+    if _current_worker_context is None:
+        init_worker_child()
+    assert _current_worker_context is not None
+    return _current_worker_context.operations
 
 
 def set_worker_runner(runner: FeatureJobRunner | None) -> None:
@@ -354,6 +396,7 @@ def set_worker_runner(runner: FeatureJobRunner | None) -> None:
         _current_worker_context = WorkerChildContext(runner=runner)
         set_feature_task_runner(_execute_task_in_child)
         set_recovery_runner(runner.recover)
+        set_operations_runner(None)
 
 
 @contextmanager
@@ -377,6 +420,7 @@ def worker_child_context(
     _current_worker_context = context
     set_feature_task_runner(_execute_task_in_child)
     set_recovery_runner(context.runner.recover)
+    set_operations_runner(context.operations if runner is None else None)
     try:
         yield context.runner
     finally:
@@ -385,9 +429,11 @@ def worker_child_context(
         if old_context is not None:
             set_feature_task_runner(_execute_task_in_child)
             set_recovery_runner(old_context.runner.recover)
+            set_operations_runner(old_context.operations if old_context.opened else None)
         else:
             set_feature_task_runner(None)
             set_recovery_runner(None)
+            set_operations_runner(None)
 
 
 @worker_process_init.connect

@@ -56,6 +56,70 @@ class NativeTelegramAPI:
             raise TelegramDeliveryUncertainError from None
         return _api_result(response)
 
+    def get_chat_member(self, chat_id: int, user_id: int) -> dict[str, object] | None:
+        """Fetch member payload or return None on API rejection or transport failure."""
+        try:
+            result = self.call(TelegramMethod.GET_CHAT_MEMBER, data={"chat_id": chat_id, "user_id": user_id})
+        except TelegramRejectedError, TelegramDeliveryUncertainError:
+            return None
+        else:
+            return result if isinstance(result, dict) else None
+
+    def get_chat_administrators(self, chat_id: int) -> list[object] | None:
+        """Fetch admin list or return None on API rejection or transport failure."""
+        try:
+            result = self.call(TelegramMethod.GET_CHAT_ADMINISTRATORS, data={"chat_id": chat_id})
+        except TelegramRejectedError, TelegramDeliveryUncertainError:
+            return None
+        else:
+            return result if isinstance(result, list) else None
+
+    def send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        parse_mode: str = "HTML",
+        reply_markup: str | None = None,
+        disable_web_page_preview: bool = True,
+    ) -> int | None:
+        """Send formatted text message and return message ID if delivered."""
+        data: dict[str, str | int | float | bool] = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode,
+            "disable_web_page_preview": disable_web_page_preview,
+        }
+        if reply_markup is not None:
+            data["reply_markup"] = reply_markup
+        try:
+            result = self.call(TelegramMethod.SEND_MESSAGE, data=data)
+        except TelegramRejectedError, TelegramDeliveryUncertainError:
+            return None
+        else:
+            return _require_message_id(result)
+
+    def delete_message(self, chat_id: int, message_id: int) -> bool:
+        """Delete message, returning True if accepted by Telegram."""
+        try:
+            result = self.call(TelegramMethod.DELETE_MESSAGE, data={"chat_id": chat_id, "message_id": message_id})
+        except TelegramRejectedError, TelegramDeliveryUncertainError:
+            return False
+        else:
+            return result is True
+
+    def edit_message_text(self, chat_id: int, message_id: int, text: str, *, parse_mode: str = "HTML") -> bool:
+        """Edit text message, returning True if accepted."""
+        try:
+            result = self.call(
+                TelegramMethod.EDIT_MESSAGE_TEXT,
+                data={"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": parse_mode},
+            )
+        except TelegramRejectedError, TelegramDeliveryUncertainError:
+            return False
+        else:
+            return isinstance(result, dict)
+
 
 def _api_result(response: object) -> object:
     if not isinstance(response, dict) or type(response.get("ok")) is not bool:

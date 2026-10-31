@@ -12,7 +12,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.group_grants import GroupGrantStore
 from hovorunv2.application.membership import MembershipEvidence, MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
-from hovorunv2.application.ports import ChatStore, TaskQueuePort, UserStore
+from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.services import membership_reconciliation as reconciliation
 from hovorunv2.application.services.membership_reconciliation import GROUP_BATCH_SIZE, MembershipReconciliationService
 from hovorunv2.domain.audit import ActorContext
@@ -73,9 +73,8 @@ async def test_startup_failure_and_later_recovery_preserve_grants(test_container
     users = await test_container.get(UserStore)
     user = await users.get_by_telegram_id(USER_ID)
     assert user is not None
-    queue = await test_container.get(TaskQueuePort)
     async with Bot(BOT_CREDENTIAL).context() as bot:
-        service = MembershipReconciliationService(store, TelegramMembershipAdapter(bot), queue)
+        service = MembershipReconciliationService(store, TelegramMembershipAdapter(bot))
         with aioresponses() as mocked:
             record_refresh(mocked, unavailable=True)
             assert await service.run_cycle() == 1
@@ -96,12 +95,11 @@ async def test_refresh_coordination_and_cycle_batch_are_bounded(test_container: 
     """Concurrent refreshes share one group request sequence and batches exclude unrelated members."""
     group_id = await prepare_group(test_container)
     store = await test_container.get(MembershipStore)
-    queue = await test_container.get(TaskQueuePort)
     chats = await test_container.get(ChatStore)
     group = await chats.get_chat(GROUP_ID)
     assert group is not None
     async with Bot(BOT_CREDENTIAL).context() as bot:
-        service = MembershipReconciliationService(store, TelegramMembershipAdapter(bot), queue)
+        service = MembershipReconciliationService(store, TelegramMembershipAdapter(bot))
         with aioresponses() as mocked:
             record_refresh(mocked)
             results = await asyncio.gather(service.refresh_group(group), service.refresh_group(group))
@@ -118,9 +116,8 @@ async def test_cycle_deadline_leaves_evidence_due_and_releases_coordination(
     """Exhausting the wall-clock budget cannot leave a stuck refresh lock or fabricated evidence."""
     group_id = await prepare_group(test_container)
     store = await test_container.get(MembershipStore)
-    queue = await test_container.get(TaskQueuePort)
     async with Bot(BOT_CREDENTIAL).context() as bot:
-        service = MembershipReconciliationService(store, TelegramMembershipAdapter(bot), queue)
+        service = MembershipReconciliationService(store, TelegramMembershipAdapter(bot))
         with monkeypatch.context() as scoped:
             scoped.setattr(reconciliation, "CYCLE_TIMEOUT_SECONDS", 0)
             assert await service.run_cycle() == 0
