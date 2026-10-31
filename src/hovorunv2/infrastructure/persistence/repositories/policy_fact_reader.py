@@ -239,7 +239,7 @@ class PolicyFactReader:
         row = self.session.scalar(select(FeatureEmergencyDB).where(FeatureEmergencyDB.feature_key == key))
         if row is None:
             return FeatureEmergencyState(key)
-        return FeatureEmergencyState(row.feature_key, row.disabled, row.reason, row.epoch)
+        return FeatureEmergencyState(row.feature_key, row.disabled, row.reason, row.public_reason, row.epoch)
 
     def _group_feature_facts(
         self,

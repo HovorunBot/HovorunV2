@@ -59,11 +59,14 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
         feature_key: str,
         disabled: bool,
         reason: str,
+        public_reason: str | None,
         actor: ActorContext,
         transport_kind: str | None,
     ) -> tuple[FeatureEmergencyState, dict[str, object]]:
         await require_private_administrator(session, actor, transport_kind, self._policy, message=MESSAGE)
-        return await FeatureEmergencyRepository(session).set_state(feature_key, disabled=disabled, reason=reason)
+        return await FeatureEmergencyRepository(session).set_state(
+            feature_key, disabled=disabled, reason=reason, public_reason=public_reason
+        )
 
     async def set_state(
         self,
@@ -71,6 +74,7 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
         *,
         disabled: bool,
         reason: str,
+        public_reason: str | None,
         actor: ActorContext,
         transport_kind: str | None,
     ) -> FeatureEmergencyState:
@@ -86,6 +90,7 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
                 feature_key=key,
                 disabled=disabled,
                 reason=reason,
+                public_reason=public_reason,
                 actor=actor,
                 transport_kind=transport_kind,
             ),

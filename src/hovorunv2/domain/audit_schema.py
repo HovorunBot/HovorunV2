@@ -74,7 +74,11 @@ GROUP_BETA_FIELDS: Final = {
     "enabler_added": FLAG,
     "enablers_revoked": NUMBER,
 }
-FEATURE_EMERGENCY_FIELDS: Final = {"disabled": FLAG_PAIR, "epoch": NUMBER_PAIR}
+FEATURE_EMERGENCY_FIELDS: Final = {
+    "disabled": FLAG_PAIR,
+    "epoch": NUMBER_PAIR,
+    "public_reason_changed": FLAG,
+}
 
 # Each pair owns its fields. Adding an entity/action requires an explicit schema here.
 AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {

@@ -14,6 +14,7 @@ class FeatureEmergencyState:
     feature_key: str
     disabled: bool = False
     reason: str | None = None
+    public_reason: str | None = None
     epoch: int = 0
 
 
@@ -44,6 +45,7 @@ class FeatureEmergencyStore(Protocol):
         *,
         disabled: bool,
         reason: str,
+        public_reason: str | None,
         actor: ActorContext,
         transport_kind: str | None,
     ) -> FeatureEmergencyState:

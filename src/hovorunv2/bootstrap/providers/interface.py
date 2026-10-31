@@ -23,6 +23,7 @@ from hovorunv2.interface.telegram.handlers.administration import AdministrationC
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.debug import DebugCommand
+from hovorunv2.interface.telegram.handlers.emergency import EmergencyCommand
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
@@ -58,6 +59,7 @@ class InterfaceAndUtilityProvider(Provider):
 
     bot_join_handler = provide(BotJoinHandler)
     debug_command = provide(DebugCommand)
+    emergency_command = provide(EmergencyCommand)
     help_command = provide(HelpCommand)
     feedback_command = provide(FeedbackCommand)
     group_management = provide(GroupManagementService)
@@ -70,6 +72,7 @@ class InterfaceAndUtilityProvider(Provider):
         feedback_command: FeedbackCommand,
         settings_command: SettingsCommand,
         debug_command: DebugCommand,
+        emergency_command: EmergencyCommand,
         administration_command: AdministrationCommand,
     ) -> UtilityCommands:
         """Provide list of utility/infrastructure commands."""
@@ -80,6 +83,7 @@ class InterfaceAndUtilityProvider(Provider):
                 settings_command,
                 debug_command,
                 administration_command,
+                emergency_command,
             ]
         )
 

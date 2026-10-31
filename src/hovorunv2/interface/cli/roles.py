@@ -62,6 +62,14 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--reason")
     access = topics.add_parser("access", help="Inspect known identities and manage access and beta eligibility.")
     add_access_arguments(access)
+    feature = topics.add_parser("feature", help="Disable or re-enable a feature capability.")
+    feature.set_defaults(role=None, yes=False)
+    feature_operations = feature.add_subparsers(dest="operation", required=True)
+    for operation in ("disable", "enable"):
+        command = feature_operations.add_parser(operation)
+        command.add_argument("--feature", required=True)
+        command.add_argument("--reason", required=True)
+        command.add_argument("--public", dest="public_explanation")
     return parser
 
 

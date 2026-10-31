@@ -506,6 +506,23 @@ class ValkeyAdmissionStore(AdmissionPort):
             msg = "Admission recovery state is unavailable."
             raise AdmissionUnavailableError(msg) from None
 
+    async def pending_for_feature(self, feature: str, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
+        """Read a bounded pending page and keep one normalized provider family."""
+        if limit < 1:
+            return ()
+        key = resolve_emergency_key(feature)
+        try:
+            ids = await self._cache.client.zrange(self._prefix + "pending", 0, limit - 1)
+            tickets = []
+            for job_id in ids:
+                ticket = await self.get(_duplicate_id(job_id))
+                if ticket is not None and resolve_emergency_key(ticket.envelope.feature) == key:
+                    tickets.append(ticket)
+            return tuple(tickets)
+        except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
+            msg = "Admission pending state is unavailable."
+            raise AdmissionUnavailableError(msg) from None
+
 
 class WorkerAdmissionClient:
     """Native worker transactions share pure state rules while retaining child-owned I/O."""

@@ -17,6 +17,7 @@ class FeatureEmergencyDB(Base):
     feature_key: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
     disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    public_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
     epoch: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -110,3 +110,32 @@ async def test_disable_and_enable_audit_atomically_advance_epoch(test_container:
         )
         assert [audit.action for audit in audits] == ["disable", "enable"]
         assert all("synthetic" not in json.dumps(audit.changed_fields) for audit in audits)
+
+
+async def test_public_reason_is_separate_from_internal_notes(test_container: AsyncContainer) -> None:
+    """Public-safe outage text is stored apart from internal notes and never audited verbatim."""
+    await provision_role(test_container, ADMIN)
+    service = await test_container.get(FeatureEmergencyService)
+    state = await service.set_state(
+        PROVIDER.value,
+        disabled=True,
+        reason="internal incident note",
+        public_reason="Temporary provider outage",
+        actor=ActorContext.cli(),
+    )
+    assert state.reason == "internal incident note"
+    assert state.public_reason == "Temporary provider outage"
+    session_maker = await test_container.get(async_sessionmaker)
+    async with session_maker() as session:
+        row = await session.scalar(select(FeatureEmergencyDB))
+        assert row is not None
+        assert row.reason == "internal incident note"
+        assert row.public_reason == "Temporary provider outage"
+        audit = await session.scalar(select(AuditEventDB).where(AuditEventDB.target_type == "feature_emergency"))
+        assert audit is not None
+        assert audit.changed_fields["public_reason_changed"] is True
+        assert "Temporary provider outage" not in json.dumps(audit.changed_fields)
+    enabled = await service.set_state(
+        PROVIDER.value, disabled=False, reason="synthetic recovery", actor=ActorContext.cli()
+    )
+    assert enabled.public_reason is None

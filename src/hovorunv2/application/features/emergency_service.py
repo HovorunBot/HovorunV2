@@ -21,13 +21,15 @@ class FeatureEmergencyService:
         disabled: bool,
         reason: str,
         actor: ActorContext,
+        public_reason: str | None = None,
         transport_kind: str | None = None,
     ) -> FeatureEmergencyState:
-        """Apply one audited transition with a required operational reason."""
+        """Apply one audited transition with a required internal reason and optional public text."""
         return await self._store.set_state(
             feature_key,
             disabled=disabled,
             reason=self._validate_reason(reason),
+            public_reason=self._normalize_public_reason(public_reason),
             actor=actor,
             transport_kind=transport_kind,
         )
@@ -38,3 +40,10 @@ class FeatureEmergencyService:
             msg = "Feature emergency changes require an internal reason."
             raise ValueError(msg)
         return reason.strip()
+
+    def _normalize_public_reason(self, public_reason: str | None) -> str | None:
+        """Keep public-safe text separate from internal notes; empty text means absent."""
+        if public_reason is None:
+            return None
+        normalized = public_reason.strip()
+        return normalized or None

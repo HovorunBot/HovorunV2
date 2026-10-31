@@ -189,6 +189,10 @@ class AdmissionPort(Protocol):
         """Return a bounded page, possibly empty; raise AdmissionUnavailableError on inaccessible or corrupt state."""
         ...
 
+    async def pending_for_feature(self, feature: str, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
+        """Return a bounded non-terminal page for one normalized provider family."""
+        ...
+
 
 class SyncAdmissionPort(Protocol):
     """Synchronous worker admission lifecycle and stage claim contract."""

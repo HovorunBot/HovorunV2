@@ -17,6 +17,8 @@ from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.beta import BetaEntitlementStore
 from hovorunv2.application.features.beta_service import BetaEligibilityService
+from hovorunv2.application.features.emergency import FeatureEmergencyStore
+from hovorunv2.application.features.emergency_service import FeatureEmergencyService
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureRegistry
 from hovorunv2.application.groups.activation import ActivationStore
 from hovorunv2.application.groups.group_grants import GroupGrantStore
@@ -38,6 +40,7 @@ from hovorunv2.infrastructure.persistence.stores.activation_store import SQLAlch
 from hovorunv2.infrastructure.persistence.stores.ban_store import SQLAlchemyBanStore
 from hovorunv2.infrastructure.persistence.stores.beta_store import SQLAlchemyBetaEntitlementStore
 from hovorunv2.infrastructure.persistence.stores.chat_store import SQLAlchemyChatStore
+from hovorunv2.infrastructure.persistence.stores.feature_emergency_store import SQLAlchemyFeatureEmergencyStore
 from hovorunv2.infrastructure.persistence.stores.group_grant_store import SQLAlchemyGroupGrantStore
 from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAlchemyUsagePolicyStore
 from hovorunv2.infrastructure.persistence.stores.user_store import SQLAlchemyUserStore
@@ -81,9 +84,17 @@ class AdminProvider(DatabaseProvider):
     grants = alias(source=SQLAlchemyGroupGrantStore, provides=GroupGrantStore)
     usage_policy_store_impl = provide(SQLAlchemyUsagePolicyStore)
     usage_policy_store = alias(source=SQLAlchemyUsagePolicyStore, provides=UsagePolicyStore)
-    usage_safety_caps = provide(UsageSafetyCaps)
+
+    @provide
+    def usage_safety_caps(self) -> UsageSafetyCaps:
+        """Provide application ceilings separately from ordinary quota overrides."""
+        return UsageSafetyCaps()
+
     usage_policy_service = provide(UsagePolicyService)
     usage_administration_service = provide(UsageAdministrationService)
+    feature_emergency_store_impl = provide(SQLAlchemyFeatureEmergencyStore)
+    feature_emergency_store = alias(source=SQLAlchemyFeatureEmergencyStore, provides=FeatureEmergencyStore)
+    feature_emergency_service = provide(FeatureEmergencyService)
     administration_service = provide(AdministrationService)
     access_cli = provide(AccessCLI)
 
@@ -122,6 +133,23 @@ async def _execute_access_admin(container: AsyncContainer, arguments: RoleArgume
     return await (await container.get(AccessCLI)).execute(request)
 
 
+async def _execute_feature_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
+    """Apply one CLI-origin feature emergency transition and report its durable state."""
+    service = await container.get(FeatureEmergencyService)
+    state = await service.set_state(
+        arguments.feature,
+        disabled=arguments.operation == "disable",
+        reason=arguments.reason or "",
+        public_reason=arguments.public_explanation,
+        actor=ActorContext.cli(reason=arguments.reason),
+    )
+    public_reason = state.public_reason or "-"
+    return (
+        f"{state.feature_key}\t{'disabled' if state.disabled else 'enabled'}"
+        f"\tepoch={state.epoch}\tpublic_reason={public_reason}"
+    )
+
+
 async def _execute_trust_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
     """Validate target user and update trust state."""
     if arguments.target is None:
@@ -148,6 +176,8 @@ async def run_admin(arguments: RoleArguments) -> str:
             return await _execute_access_admin(container, arguments)
         if arguments.topic == "trust":
             return await _execute_trust_admin(container, arguments)
+        if arguments.topic == "feature":
+            return await _execute_feature_admin(container, arguments)
         cli = await container.get(RoleCLI)
         return await cli.execute(arguments)
     finally:
