@@ -287,6 +287,8 @@ class WorkerChildContext:
             registry=FEATURE_REGISTRY,
             browser=self._browser,
             publisher=self._publisher,
+            telegram=api,
+            feedback=self._db.policies,
         )
         prompt_sender = SyncTelegramUnauthorizedPromptSender(api)
         notification_delivery = NotificationDeliveryService(

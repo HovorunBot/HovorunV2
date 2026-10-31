@@ -30,6 +30,7 @@ from hovorunv2.application.usage.usage_ledger import (
 from hovorunv2.application.usage.usage_resolution import resolve_usage
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
+from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.emergency import FeatureEmergencyDB
 from hovorunv2.domain.enums import ChatStatus, Platform, Role
@@ -148,6 +149,28 @@ class WorkerPolicyStore:
             return False
         with self._sessions() as session:
             return session.scalar(statement) is not None
+
+    def feedback_allowed(self, target: PermissionTarget) -> bool:
+        """Allow progress feedback only for the exact active, unbanned destination."""
+        self._require_owner()
+        with self._sessions() as session:
+            statement = exact_target(target)
+            if statement is None or session.scalar(statement) is None:
+                return False
+            if target.kind == "group":
+                status = session.scalar(select(ChatDB.status).where(ChatDB.id == target.entity_id))
+                if status != ChatStatus.APPROVED:
+                    return False
+            ban = session.scalar(
+                select(BanDB.id).where(
+                    BanDB.target_kind == target.kind,
+                    BanDB.telegram_id == target.telegram_id,
+                    BanDB.platform == "telegram",
+                    BanDB.revoked_at.is_(None),
+                    BanDB.deleted_at.is_(None),
+                )
+            )
+            return ban is None
 
     def permission(self, request: PermissionRequest) -> AccessDecision:
         """Check current active authority and exact target generation.

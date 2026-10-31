@@ -72,6 +72,26 @@ class VideoMediaClient(BaseMediaClient):
         )
 
 
+class RecordingTelegram:
+    """Synthetic synchronous Telegram text sender capturing calls."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, str]] = []
+
+    def send_message(self, chat_id: int, text: str) -> int:
+        """Capture one feedback message."""
+        self.calls.append((chat_id, text))
+        return 1
+
+
+class AllowFeedback:
+    """Allow feedback for synthetic active targets."""
+
+    def feedback_allowed(self, target: object) -> bool:
+        """Return True for the controlled test target."""
+        return True
+
+
 class RecordingDelivery:
     """Synthetic synchronous delivery capturing calls for assertion."""
 
@@ -286,6 +306,8 @@ async def test_post_extraction_split_feature_recheck_blocks_delivery_and_charges
                 browser=browser,
                 publisher=publisher,
                 clients=[video_client],
+                telegram=RecordingTelegram(),
+                feedback=AllowFeedback(),
             )
             outcome = runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
             assert outcome == JobOutcome.COMPLETE.value

@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping
 from enum import StrEnum
 from typing import Protocol
 
+from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_jobs import JobEnvelope
 from hovorunv2.application.media.browser import BrowserTab
@@ -119,6 +120,22 @@ class SyncTelegramDeliveryPort(Protocol):
         self, chat_id: int, message_id: int, payload: RichMediaPayload, platform_name: str, sender_label: str | None
     ) -> tuple[int, ...]:
         """Deliver using canonical route facts and the transient decrypted sender label."""
+        ...
+
+
+class SyncFeedbackPort(Protocol):
+    """Current access check before sending request-progress feedback."""
+
+    def feedback_allowed(self, target: PermissionTarget) -> bool:
+        """Return False for deleted, banned or unapproved destinations."""
+        ...
+
+
+class SyncFeedbackTelegramPort(Protocol):
+    """Minimal synchronous Telegram text contract for request feedback."""
+
+    def send_message(self, chat_id: int, text: str) -> int | None:
+        """Send one short operational text and return its message ID when accepted."""
         ...
 
 

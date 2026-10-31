@@ -13,6 +13,7 @@ from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureDef
 from hovorunv2.application.jobs.admission import (
     AdmissionConflictError,
     JobStage,
+    NoticeKind,
     SettlementIntent,
     SyncAdmissionPort,
     TicketState,
@@ -27,6 +28,8 @@ from hovorunv2.application.jobs.feature_jobs import (
 from hovorunv2.application.jobs.http_ports import (
     HTTPTransportError,
     SyncBrowserPort,
+    SyncFeedbackPort,
+    SyncFeedbackTelegramPort,
     SyncHTTPPort,
     SyncQueuePublisherPort,
     SyncTelegramDeliveryPort,
@@ -70,6 +73,10 @@ from hovorunv2.domain.enums import (
 
 logger = logging.getLogger(__name__)
 
+DELAYED_NOTICE_SECONDS = 20.0
+DELAYED_NOTICE_TEXT = "⏳ This request is taking longer than usual. It is still queued."
+TIMEOUT_NOTICE_TEXT = "⌛ This request timed out before it could finish. Please try again."
+
 
 def default_media_clients(settings: AppSettings | None = None) -> dict[CommandName, BaseMediaClient]:
     """Construct native synchronous provider clients for worker execution.
@@ -110,6 +117,8 @@ class FeatureJobRunner:
         settings: AppSettings,
         publisher: SyncQueuePublisherPort,
         *,
+        telegram: SyncFeedbackTelegramPort,
+        feedback: SyncFeedbackPort,
         registry: FeatureRegistry = FEATURE_REGISTRY,
         browser: SyncBrowserPort | None = None,
         clients: Sequence[BaseMediaClient] | Mapping[CommandName, BaseMediaClient] | None = None,
@@ -128,6 +137,8 @@ class FeatureJobRunner:
         self._registry = registry
         self._browser = browser
         self._publisher = publisher
+        self._telegram = telegram
+        self._feedback = feedback
         self._clients = self._init_clients(clients, settings)
         self._lifecycle = WorkerLifecycleService(admission, budgets, ledger, clock)
 
@@ -169,7 +180,7 @@ class FeatureJobRunner:
             return None
         now = self._clock.now()
         if now >= envelope.deadline:
-            self._finish_expired_unclaimed(envelope.job_id)
+            self._finish_expired_unclaimed(envelope)
             return None
         token = secrets.token_hex(16)
         ticket = self._admission.claim_stage(envelope.job_id, stage, now, token, expected_envelope=envelope)
@@ -177,11 +188,12 @@ class FeatureJobRunner:
             return None
         return envelope, token
 
-    def _finish_expired_unclaimed(self, job_id: str) -> None:
+    def _finish_expired_unclaimed(self, envelope: JobEnvelope) -> None:
         try:
-            self._admission.finish(job_id, JobOutcome.EXPIRED)
+            self._admission.finish(envelope.job_id, JobOutcome.EXPIRED)
         except Exception:
             logger.warning("Expired ticket reconciliation deferred")
+        self._notify(envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
 
     def _resolve_unclaimed(self, envelope_data: dict[str, object]) -> str:
         job_id = envelope_data.get("job_id")
@@ -274,6 +286,23 @@ class FeatureJobRunner:
         )
         return self._budgets.reserve(request, now, totals)
 
+    def _notify(self, envelope: JobEnvelope, kind: NoticeKind, text: str) -> None:
+        """Send one deduplicated progress notice only to a still-authorized target."""
+        target = PermissionTarget(
+            envelope.target.kind.value,
+            envelope.target.entity_id,
+            envelope.target.generation,
+            envelope.target.telegram_id,
+        )
+        if not self._feedback.feedback_allowed(target):
+            return
+        if not self._admission.claim_notice(envelope.job_id, kind):
+            return
+        try:
+            self._telegram.send_message(envelope.target.telegram_id, text)
+        except Exception:
+            logger.warning("Request progress feedback deferred")
+
     def _handle_denied_reservation(self, envelope: JobEnvelope, token: str, reservation: ReservationDecision) -> str:
         if reservation.state == ReservationState.WAITING:
             retry = reservation.next_eligible_at
@@ -285,6 +314,7 @@ class FeatureJobRunner:
                 if deferred is None:
                     self._finish_ticket_safe(envelope.job_id, token, JobOutcome.CANCELLED)
                     return JobOutcome.CANCELLED.value
+                self._notify(envelope, NoticeKind.DELAYED, DELAYED_NOTICE_TEXT)
                 return ReservationState.WAITING.value
         if reservation.state == ReservationState.UNAVAILABLE:
             # A lost reserve acknowledgement can hide a live reservation; do not refund it.
@@ -295,6 +325,8 @@ class FeatureJobRunner:
             else JobOutcome.FAILED
         )
         self._finish_ticket_safe(envelope.job_id, token, outcome)
+        if outcome == JobOutcome.EXPIRED:
+            self._notify(envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
         return outcome.value
 
     def _extract_and_deliver(

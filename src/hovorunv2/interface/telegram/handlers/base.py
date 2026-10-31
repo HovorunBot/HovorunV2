@@ -35,6 +35,26 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+BUSY_NOTICE_COOLDOWN_SECONDS = 30.0
+BUSY_NOTICE_TEXT = "⏳ I'm handling the maximum number of media requests right now. Please try again in a moment."
+
+
+class BusyNoticeGate:
+    """Bound repeated overflow replies per chat without blocking the event loop."""
+
+    def __init__(self, cooldown: float = BUSY_NOTICE_COOLDOWN_SECONDS) -> None:
+        self._cooldown = cooldown
+        self._last: dict[int, float] = {}
+
+    def should_notify(self, chat_id: int, now: float) -> bool:
+        """Return True at most once per cooldown window for a chat."""
+        last = self._last.get(chat_id)
+        if last is not None and now - last < self._cooldown:
+            return False
+        self._last[chat_id] = now
+        return True
+
+
 class BaseCommand(ABC):
     """Abstract base class defining interface for bot command handlers."""
 
@@ -92,6 +112,7 @@ class RichMediaCommand(BaseCommand):
         self._chats = chats
         self._users = users
         self._clock = clock
+        self._busy_gate = BusyNoticeGate()
 
     @property
     def name(self) -> str:
@@ -340,5 +361,9 @@ class RichMediaCommand(BaseCommand):
         result = await self._admission.admit(envelope, sealed)
         if result.state == AdmissionState.ACCEPTED:
             await self._admission.handoff(envelope.job_id)
+        elif result.state == AdmissionState.FULL:
+            logger.info("Media admission denied for %s (full)", self.name)
+            if self._busy_gate.should_notify(message.chat.id, self._clock.now()):
+                await message.answer(BUSY_NOTICE_TEXT)
         else:
             logger.info("Media admission denied for %s (%s)", self.name, result.state.value)
