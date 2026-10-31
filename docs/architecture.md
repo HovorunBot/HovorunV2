@@ -100,7 +100,7 @@ PostgreSQL and Valkey run independently of application processes with named data
 
 ## Worker redesign contracts
 
-The following process ownership is the accepted direction for the ongoing redesign. Current live media remains on its async path and maintenance still uses embedded SAQ until the respective cutover blocks are verified. This section does not claim native execution is already deployed.
+The following process ownership is the implemented production architecture. Media, browser, operations, and lifecycle recovery run in native synchronous Celery workers; Beat owns periodic operations; the bot owns only Telegram ingress, interactive behavior, admission, and publication.
 
 | Process | Responsibilities |
 | --- | --- |
@@ -117,9 +117,9 @@ Bot, media, browser, operations, singleton Beat and migration run as independent
 
 Shared values include PermissionRequest/PermissionTarget/PermissionFacts/AccessDecision, FeatureDefinition/FeatureDecision, BetaEligibilityFacts/GroupBetaFacts, UsageSubject/UsagePolicy/ResolvedUsage, and strict JobEnvelope/SealedPayload metadata. These are inputs/results, not transferable permission grants. Re-read authority, generation, route and feature state before execution and delivery. Extract pure evaluators from asynchronous fact collection; share provider parsing and formatting independently of HTTP/Telegram transports. No generic sync/async compatibility framework or unused port is required.
 
-The versioned job boundary contains only bounded feature/trigger, actor when applicable, target identity/generation, charged subject, message/deduplication identifiers, original acceptance/deadline and encrypted-payload references. It contains no Message/Bot, ORM entity, session, browser, copied allow decision or plaintext private content. Direct work requires an active human identity; automatic group work is group-owned. JobEnvelope and AdmissionService accept actor_id=None and actor_generation=None for automatic group work, including sender_chat attribution. Direct work still requires both positive actor fields. RichMediaCommand ingress remains on its existing execution path until R10; this contract alone does not enable new handler traffic.
+The versioned job boundary contains only bounded feature/trigger, actor when applicable, target identity/generation, charged subject, message/deduplication identifiers, original acceptance/deadline and encrypted-payload references. It contains no Message/Bot, ORM entity, session, browser, copied allow decision or plaintext private content. Direct work requires an active human identity; automatic group work is group-owned. JobEnvelope and AdmissionService accept actor_id=None and actor_generation=None for automatic group work, including sender_chat attribution. Direct work still requires both positive actor fields. RichMediaCommand ingress admits the request and publishes the thin Celery envelope; extraction, delivery, and accounting happen in native workers.
 
-Removal work is complete: R06 consolidated feature_queue.py receipt state into admission; R09 replaced FeatureWorkerBridge with native execution; R10 replaced direct handler media execution and bot-owned browser work; R12 moved all queue.py/TaskQueuePort callback and cron consumers before draining/removing SAQ and bot startup/shutdown worker loops; R13 removed the exec-only shell entrypoint and build-sentinel wiring and split lean, browser and importer image targets. Immediate interactive replies remain with the bot.
+Removal work is complete: R06 consolidated queue receipt state into admission; R09 replaced the transitional in-process bridge with native worker tasks; R10 moved media extraction and delivery into staged workers; R12 moved maintenance to operations tasks and singleton Beat; R13 split lean, browser, and importer image targets and removed the exec-only shell entrypoint; R14 and R15 aligned tests and proved restart/fault isolation. Immediate interactive replies remain with the bot.
 
 ### Shared policy persistence and worker database ownership
 
@@ -134,8 +134,9 @@ previous allow results never grant authority. Permission and usage resolution ru
 or connection. Enter its context inside the worker child, retain it for that child's lifetime, and exit it on shutdown.
 It owns a synchronous engine with one pooled connection and no overflow, native policy/accounting adapters and packaged
 Casbin policy. Access outside the open owning process, including retained adapter references after fork or shutdown, fails.
-Contexts are single-use. No bot container, polling loop or browser package is needed by this composition. Celery lifecycle
-signal wiring and task executors remain subsequent implementation work; this boundary starts no worker by itself.
+Contexts are single-use. No bot container, polling loop or browser package is needed by this composition. Celery
+lifecycle signals connect this boundary to child-local resources, and `worker_app` starts no resource until a worker
+child begins executing.
 
 `WorkerPolicyStore.active_target` validates exact identity, generation and canonical route using the same statements as
 bot beta/usage persistence. Worker execution must bind envelope references and recheck current policy at its required

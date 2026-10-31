@@ -103,13 +103,13 @@ the request bound. Payload retention covers the remaining original deadline plus
 cleanup margin. Rewriting the same payload never extends retention. Missing, expired, unavailable
 or undecryptable input produces a safe typed outcome with no plaintext fallback.
 
-SAQFeatureQueue owns a separate queue from operational tasks. Enqueue/schedule/inspect/cancel
-use typed application contracts; SAQ jobs stay in infrastructure. Job timeout bounds execution,
-not the acceptance deadline. Job records retain one hour after completion. FeatureJobRunner and
-FeatureWorkerBridge convert executor exceptions and results into fixed outcome codes; serialization
-also strips arbitrary metadata and sanitizes result/error fields before persistence and finish logs.
-The feature queue uses SET with expiry for terminal persistence. No feature worker starts in this
-foundation; worker cutover must also address the stock SAQ 0.26.4 deprecated coroutine probe.
+`CeleryFeatureQueue` publishes to the namespaced `media` and `browser` queues; Celery task IDs are
+correlation identifiers, not execution claims or result stores. Enqueue/schedule/inspect/cancel use
+typed application contracts, while Celery transport details stay in infrastructure. Job timeout
+bounds execution, not the acceptance deadline. Feature jobs retain no Celery result; admission
+tickets own terminal state. `FeatureJobRunner` executes in a native synchronous worker and returns
+only fixed allowlisted outcome codes, with broker messages containing no private payload or
+exception text. Media, browser, operations, and Beat run as independent services.
 
 ## Bounded admission and queue handoff
 
@@ -124,18 +124,19 @@ Duplicates return their original envelope and do not reserve capacity or store a
 Initial ingress cap is ten pending jobs per sender in a group, further bounded by subject policy.
 Counts share stable subjects across features. Personal administrator quota bypass does not remove
 pending/ingress/global/byte safety bounds. Actual ciphertext blob bytes are counted once; tickets
-contain no duplicate ciphertext. Original envelope JSON remains verbatim inside the ticket so Lua
-JSON number formatting cannot change deadlines, large numeric identities or SAQ replay checks.
+contain no duplicate ciphertext. Original envelope JSON remains verbatim inside the ticket so JSON
+number formatting cannot change deadlines, large numeric identities, or replay comparisons.
 
-Acceptance and SAQ enqueue are two phases. Accepted tickets appear in a bounded recovery index.
-A retry enqueues by the original stable job ID, accepts an existing identical SAQ job, then marks
-the ticket enqueued. Failure before enqueue or after enqueue/before acknowledgement leaves a
-recoverable accepted ticket with capacity held. No cross-system transaction is promised.
+Acceptance and Celery publication are two phases. Accepted tickets appear in a bounded recovery
+index. A retry publishes by the original stable job ID, accepts an existing identical publication,
+then marks the ticket enqueued. Failure before publication or after publication/before
+acknowledgement leaves a recoverable accepted ticket with capacity held. No cross-system
+transaction is promised.
 
 Only verified terminal completion/cancellation may release counters and remove ciphertext.
 Terminal release is idempotent; changed terminal outcomes fail. Empty subject/ingress counters
 are removed. Active tickets/dedupe/capacity do not silently expire while work might still run.
 Expired accepted work retains capacity for the separate terminal sweeper; recovery skips it rather
 than blocking live tickets. Terminal ticket/dedupe receipts retain one hour. Callers must preserve
-original acceptance/deadline on retry. Fair scheduling, live media cutover, terminal sweeping and
-restart reconciliation remain later implementation steps.
+original acceptance/deadline on retry. Fair waiting, native media/browser cutover, terminal sweeping,
+and restart reconciliation are implemented contracts covered by the R09–R15 reports.
