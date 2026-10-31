@@ -77,6 +77,14 @@ class NotificationEventStore(Protocol):
         """Return a bounded page of pending/retry recipients for delivery."""
         ...
 
+    async def outcomes(self, event_key: str) -> dict[NotificationOutcome, int]:
+        """Count recipients by current outcome for one event."""
+        ...
+
+    async def cancel(self, event_key: str, *, actor: ActorContext) -> int:
+        """Dismiss pending/retry receipts for exactly this event; report the count."""
+        ...
+
 
 class NotificationLedgerService:
     """Keep event identity and per-recipient outcomes separate from message bodies."""
@@ -120,3 +128,11 @@ class NotificationLedgerService:
         """Return whether a new, pending or retry receipt may still be delivered."""
         receipt = await self._store.receipt(event_key, target)
         return receipt is None or receipt.outcome in {NotificationOutcome.PENDING, NotificationOutcome.RETRY}
+
+    async def outcomes(self, event_key: str) -> dict[NotificationOutcome, int]:
+        """Count recipients by current outcome for one event."""
+        return await self._store.outcomes(event_key)
+
+    async def cancel(self, event_key: str, *, actor: ActorContext) -> int:
+        """Dismiss pending/retry receipts for exactly this event; report the count."""
+        return await self._store.cancel(event_key, actor=actor)

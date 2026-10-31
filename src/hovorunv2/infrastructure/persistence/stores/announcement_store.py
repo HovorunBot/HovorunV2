@@ -3,15 +3,25 @@
 import secrets
 from datetime import UTC, datetime
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.messaging.crypto import get_fernet_for_chat
-from hovorunv2.application.operations.announcements import AnnouncementDraft, AnnouncementPreview, AnnouncementStore
+from hovorunv2.application.operations.announcements import (
+    AnnouncementConfirmation,
+    AnnouncementDraft,
+    AnnouncementPreview,
+    AnnouncementStore,
+)
 from hovorunv2.application.operations.notification_preferences import NotificationCategory
-from hovorunv2.domain.announcement import AnnouncementAudience, AnnouncementDraftDB, AnnouncementTargetDB
+from hovorunv2.domain.announcement import (
+    AnnouncementAudience,
+    AnnouncementConfirmationDB,
+    AnnouncementDraftDB,
+    AnnouncementTargetDB,
+)
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB
@@ -104,6 +114,15 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
                 draft.body_ciphertext = ciphertext
                 draft.body_salt = salt
             await self._replace_targets(session, draft.id, targets)
+            await session.execute(
+                update(AnnouncementConfirmationDB)
+                .where(
+                    AnnouncementConfirmationDB.draft_id == draft.id,
+                    AnnouncementConfirmationDB.status == "pending",
+                    AnnouncementConfirmationDB.deleted_at.is_(None),
+                )
+                .values(status="cancelled", cancelled_at=datetime.now(UTC))
+            )
             return draft, self._changes(
                 category, audience, draft.revision, preview.total, body_changed=body is not None
             )
@@ -173,28 +192,43 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         audience: AnnouncementAudience,
         targets: tuple[PermissionTarget, ...],
     ) -> tuple[int, int]:
-        """Count users and groups after deletion, ban and category-preference filtering."""
+        """Count eligible users and groups after deletion, ban and category-preference filtering."""
         user_ids = [t.entity_id for t in targets if t.kind == "user" and t.entity_id is not None]
         group_ids = [t.entity_id for t in targets if t.kind == "group" and t.entity_id is not None]
         async with self._session_maker() as session:
-            users = await self._count_users(session, category, audience, user_ids)
-            groups = await self._count_groups(session, category, audience, group_ids)
-        return users, groups
+            users = await self._eligible_users(session, category, audience, user_ids)
+            groups = await self._eligible_groups(session, category, audience, group_ids)
+        return len(users), len(groups)
 
-    async def _count_users(
+    async def snapshot(
+        self,
+        category: NotificationCategory,
+        audience: AnnouncementAudience,
+        targets: tuple[PermissionTarget, ...],
+    ) -> tuple[PermissionTarget, ...]:
+        """Resolve the exact recipients at confirmation time for a revision-bound send."""
+        user_ids = [t.entity_id for t in targets if t.kind == "user" and t.entity_id is not None]
+        group_ids = [t.entity_id for t in targets if t.kind == "group" and t.entity_id is not None]
+        async with self._session_maker() as session:
+            users = await self._eligible_users(session, category, audience, user_ids)
+            groups = await self._eligible_groups(session, category, audience, group_ids)
+        resolved = [PermissionTarget("user", u.id, u.generation, u.telegram_id) for u in users]
+        resolved.extend(PermissionTarget("group", c.id, c.generation, c.chat_id) for c in groups)
+        return tuple(resolved)
+
+    async def _eligible_users(
         self,
         session: AsyncSession,
         category: NotificationCategory,
         audience: AnnouncementAudience,
         user_ids: list[int],
-    ) -> int:
+    ) -> list[UserDB]:
         if audience == AnnouncementAudience.GROUPS:
-            return 0
+            return []
         if audience == AnnouncementAudience.SELECTED and not user_ids:
-            return 0
+            return []
         statement = (
-            select(func.count())
-            .select_from(UserDB)
+            select(UserDB)
             .where(UserDB.platform == "telegram", UserDB.deleted_at.is_(None))
             .where(
                 ~exists().where(
@@ -216,27 +250,22 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         )
         if audience == AnnouncementAudience.SELECTED:
             statement = statement.where(UserDB.id.in_(user_ids))
-        return int(await session.scalar(statement) or 0)
+        return list((await session.scalars(statement)).all())
 
-    async def _count_groups(
+    async def _eligible_groups(
         self,
         session: AsyncSession,
         category: NotificationCategory,
         audience: AnnouncementAudience,
         group_ids: list[int],
-    ) -> int:
+    ) -> list[ChatDB]:
         if audience == AnnouncementAudience.USERS:
-            return 0
+            return []
         if audience == AnnouncementAudience.SELECTED and not group_ids:
-            return 0
+            return []
         statement = (
-            select(func.count())
-            .select_from(ChatDB)
-            .where(
-                ChatDB.status == ChatStatus.APPROVED,
-                ChatDB.deleted_at.is_(None),
-                ChatDB.chat_id < 0,
-            )
+            select(ChatDB)
+            .where(ChatDB.status == ChatStatus.APPROVED, ChatDB.deleted_at.is_(None), ChatDB.chat_id < 0)
             .where(
                 ~exists().where(
                     BanDB.target_kind == "group",
@@ -257,7 +286,143 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
         )
         if audience == AnnouncementAudience.SELECTED:
             statement = statement.where(ChatDB.id.in_(group_ids))
-        return int(await session.scalar(statement) or 0)
+        return list((await session.scalars(statement)).all())
+
+    async def confirm(
+        self,
+        draft: AnnouncementDraft,
+        *,
+        actor: ActorContext,
+        actor_user_id: int,
+        recipients: tuple[PermissionTarget, ...],
+        expires_at: float,
+    ) -> AnnouncementConfirmation:
+        """Create one single-use confirmation row bound to actor, revision and snapshot."""
+        token = secrets.token_urlsafe(24)
+        snapshot = [
+            {
+                "kind": target.kind,
+                "entity_id": target.entity_id,
+                "generation": target.generation,
+                "telegram_id": target.telegram_id,
+            }
+            for target in recipients
+        ]
+
+        async def operation(session: AsyncSession) -> tuple[AnnouncementConfirmationDB, dict[str, object]]:
+            row = AnnouncementConfirmationDB(
+                draft_id=draft.id,
+                actor_user_id=actor_user_id,
+                revision=draft.revision,
+                token=token,
+                audience_snapshot=snapshot,
+                status="pending",
+                expires_at=datetime.fromtimestamp(expires_at, UTC),
+                created_at=datetime.now(UTC),
+            )
+            session.add(row)
+            await session.flush()
+            return row, {"revision": draft.revision, "recipients": len(recipients), "status": "pending"}
+
+        result: tuple[AnnouncementConfirmationDB, dict[str, object]] = await self._audited_uow.execute(
+            actor=actor,
+            target_type="announcement_confirmation",
+            target_id=str(draft.id),
+            action="confirm",
+            operation=operation,
+            changed_fields=lambda outcome: outcome[1],
+            audit_if=lambda _outcome: True,
+        )
+        return self._to_confirmation(result[0])
+
+    async def consume(self, draft_id: int, token: str, *, actor_user_id: int) -> AnnouncementConfirmation:
+        """Atomically consume a fresh, same-actor, current-revision confirmation."""
+
+        async def operation(session: AsyncSession) -> tuple[AnnouncementConfirmationDB, dict[str, object]]:
+            row = await session.scalar(
+                select(AnnouncementConfirmationDB).where(
+                    AnnouncementConfirmationDB.draft_id == draft_id,
+                    AnnouncementConfirmationDB.token == token,
+                    AnnouncementConfirmationDB.deleted_at.is_(None),
+                )
+            )
+            if row is None:
+                msg = "Confirmation is invalid."
+                raise ValueError(msg)
+            draft = await session.get(AnnouncementDraftDB, draft_id)
+            if draft is None or row.revision != draft.revision:
+                msg = "Confirmation is stale; confirm the draft again."
+                raise ValueError(msg)
+            if row.actor_user_id != actor_user_id:
+                msg = "Confirmation belongs to another actor."
+                raise PermissionError(msg)
+            if row.status != "pending":
+                msg = "Confirmation is no longer usable."
+                raise ValueError(msg)
+            if row.expires_at <= datetime.now(UTC):
+                msg = "Confirmation expired."
+                raise ValueError(msg)
+            row.status = "dispatched"
+            row.consumed_at = datetime.now(UTC)
+            await session.flush()
+            return row, {
+                "revision": row.revision,
+                "recipients": len(row.audience_snapshot),
+                "status": "dispatched",
+            }
+
+        result: tuple[AnnouncementConfirmationDB, dict[str, object]] = await self._audited_uow.execute(
+            actor=ActorContext.system("announcement dispatch"),
+            target_type="announcement_confirmation",
+            target_id=str(draft_id),
+            action="dispatch",
+            operation=operation,
+            changed_fields=lambda outcome: outcome[1],
+            audit_if=lambda _outcome: True,
+        )
+        return self._to_confirmation(result[0])
+
+    async def cancel(self, draft_id: int, *, actor: ActorContext) -> bool:
+        """Cancel only pending confirmations for this draft."""
+
+        async def operation(session: AsyncSession) -> tuple[int, dict[str, object]]:
+            rows = (
+                await session.scalars(
+                    select(AnnouncementConfirmationDB).where(
+                        AnnouncementConfirmationDB.draft_id == draft_id,
+                        AnnouncementConfirmationDB.status == "pending",
+                        AnnouncementConfirmationDB.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+            for row in rows:
+                row.status = "cancelled"
+                row.cancelled_at = datetime.now(UTC)
+            return len(rows), {"cancelled": len(rows)}
+
+        result: tuple[int, dict[str, object]] = await self._audited_uow.execute(
+            actor=actor,
+            target_type="announcement_confirmation",
+            target_id=str(draft_id),
+            action="cancel",
+            operation=operation,
+            changed_fields=lambda outcome: outcome[1],
+            audit_if=lambda outcome: outcome[0] > 0,
+        )
+        return result[0] > 0
+
+    async def confirmation(self, draft_id: int) -> AnnouncementConfirmation | None:
+        """Return the latest confirmation for inspect views."""
+        async with self._session_maker() as session:
+            row = await session.scalar(
+                select(AnnouncementConfirmationDB)
+                .where(
+                    AnnouncementConfirmationDB.draft_id == draft_id,
+                    AnnouncementConfirmationDB.deleted_at.is_(None),
+                )
+                .order_by(AnnouncementConfirmationDB.id.desc())
+            )
+            return None if row is None else self._to_confirmation(row)
 
     async def _replace_targets(
         self, session: AsyncSession, draft_id: int, targets: tuple[PermissionTarget, ...]
@@ -299,6 +464,26 @@ class SQLAlchemyAnnouncementStore(AnnouncementStore):
             "preview_count": preview_count,
             "body_changed": body_changed,
         }
+
+    def _to_confirmation(self, row: AnnouncementConfirmationDB) -> AnnouncementConfirmation:
+        recipients = tuple(
+            PermissionTarget(
+                str(item["kind"]),
+                int(item["entity_id"]),
+                int(item["generation"]),
+                int(item["telegram_id"]),
+            )
+            for item in row.audience_snapshot
+        )
+        return AnnouncementConfirmation(
+            row.id,
+            row.draft_id,
+            row.revision,
+            row.status,
+            row.expires_at.timestamp(),
+            recipients,
+            row.token,
+        )
 
     def _to_draft(self, row: AnnouncementDraftDB) -> AnnouncementDraft:
         return AnnouncementDraft(

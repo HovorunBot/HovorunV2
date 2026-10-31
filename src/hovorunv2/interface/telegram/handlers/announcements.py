@@ -11,7 +11,7 @@ from aiogram.types import Message
 
 from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.access.administration_service import AdministrationService
-from hovorunv2.application.operations.announcements import AnnouncementDraft, AnnouncementService
+from hovorunv2.application.operations.announcements import AnnouncementDraft, AnnouncementService, AnnouncementStatus
 from hovorunv2.application.operations.notification_preferences import NotificationCategory
 from hovorunv2.domain.announcement import AnnouncementAudience
 from hovorunv2.domain.audit import ActorContext
@@ -24,10 +24,13 @@ ANNOUNCE_HELP = (
     "Use /announce draft --category CATEGORY --audience all|users|groups|selected "
     '[--target ID ...] --body "text"\n'
     "Then /announce preview ID, /announce show ID, or /announce edit ID [--category ...] "
-    "[--audience ...] [--target ...] [--body ...]."
+    "[--audience ...] [--target ...] [--body ...].\n"
+    "Dispatch: /announce confirm ID, /announce dispatch ID TOKEN, /announce status ID, "
+    "/announce cancel ID."
 )
 ANNOUNCE_UNAVAILABLE = "Announcement composition unavailable. Use /announce privately."
 MIN_ANNOUNCE_TOKENS = 3
+DISPATCH_ARGUMENTS = 2
 
 
 class AnnounceCommand(BaseCommand):
@@ -77,6 +80,14 @@ class AnnounceCommand(BaseCommand):
             await self._preview(message, rest)
         elif mode == "show":
             await self._show(message, rest)
+        elif mode == "confirm":
+            await self._confirm(message, actor, rest)
+        elif mode == "dispatch":
+            await self._dispatch_flow(message, actor, rest)
+        elif mode == "cancel":
+            await self._cancel(message, actor, rest)
+        elif mode == "status":
+            await self._status(message, rest)
         else:
             await message.answer(ANNOUNCE_HELP)
 
@@ -126,6 +137,54 @@ class AnnounceCommand(BaseCommand):
         draft, body = await self._announcements.show(int(rest[0]))
         await message.answer(html.escape(body))
         await message.answer(self._draft_text(draft))
+
+    async def _confirm(self, message: Message, actor: ActorContext, rest: list[str]) -> None:
+        if not rest or not rest[0].isdigit():
+            await message.answer(ANNOUNCE_HELP)
+            return
+        confirmation = await self._announcements.confirm(int(rest[0]), actor=actor)
+        await message.answer(
+            f"Confirmation for revision {confirmation.revision} and "
+            f"{len(confirmation.recipients)} recipient(s):\n"
+            f"/announce dispatch {confirmation.draft_id} {confirmation.token}\n"
+            f"Single use; expires in 5 minutes."
+        )
+
+    async def _dispatch_flow(self, message: Message, actor: ActorContext, rest: list[str]) -> None:
+        if len(rest) < DISPATCH_ARGUMENTS or not rest[0].isdigit():
+            await message.answer(ANNOUNCE_HELP)
+            return
+        status = await self._announcements.dispatch(int(rest[0]), rest[1], actor=actor)
+        await message.answer(self._status_text(status))
+
+    async def _cancel(self, message: Message, actor: ActorContext, rest: list[str]) -> None:
+        if not rest or not rest[0].isdigit():
+            await message.answer(ANNOUNCE_HELP)
+            return
+        status = await self._announcements.cancel(int(rest[0]), actor=actor)
+        await message.answer(self._status_text(status))
+
+    async def _status(self, message: Message, rest: list[str]) -> None:
+        if not rest or not rest[0].isdigit():
+            await message.answer(ANNOUNCE_HELP)
+            return
+        status = await self._announcements.status(int(rest[0]))
+        await message.answer(self._status_text(status))
+
+    def _status_text(self, status: AnnouncementStatus) -> str:
+        confirmation = status.confirmation
+        details = (
+            f"revision {confirmation.revision} · {confirmation.status} · {len(confirmation.recipients)} recipient(s)"
+            if confirmation is not None
+            else "no confirmation"
+        )
+        outcomes = ", ".join(f"{outcome.value}: {count}" for outcome, count in status.outcomes.items())
+        return (
+            f"Draft #{status.draft.id} revision {status.draft.revision}\n"
+            f"Confirmation: {details}\n"
+            f"Event: {status.event_key or 'none'}\n"
+            f"Outcomes: {outcomes or 'none'}"
+        )
 
     def _composer(self, prog: str, *, body_required: bool) -> AccessArgumentParser:
         parser = AccessArgumentParser(prog=prog, add_help=False)

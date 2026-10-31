@@ -2,6 +2,7 @@
 
 from functools import partial
 
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.access.permissions import PermissionTarget
@@ -14,6 +15,7 @@ from hovorunv2.application.operations.notification_ledger import (
     NotificationReceipt,
 )
 from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.notification_event import NotificationEventDB, NotificationReceiptDB
 from hovorunv2.infrastructure.persistence.repositories.notification_ledger_repository import (
     NotificationLedgerRepository,
 )
@@ -136,3 +138,52 @@ class SQLAlchemyNotificationLedgerStore(NotificationEventStore):
         """
         async with self._session_maker() as session:
             return await NotificationLedgerRepository(session).pending(event_key, limit)
+
+    async def outcomes(self, event_key: str) -> dict[NotificationOutcome, int]:
+        """Count recipients by current outcome for one event."""
+        async with self._session_maker() as session:
+            event_id = await session.scalar(
+                select(NotificationEventDB.id).where(NotificationEventDB.event_key == event_key)
+            )
+            if event_id is None:
+                return {}
+            rows = await session.execute(
+                select(NotificationReceiptDB.status, func.count())
+                .where(NotificationReceiptDB.event_id == event_id)
+                .group_by(NotificationReceiptDB.status)
+            )
+            return {NotificationOutcome(status): count for status, count in rows}
+
+    async def cancel(self, event_key: str, *, actor: ActorContext) -> int:
+        """Dismiss pending/retry receipts for exactly this event and audit the count."""
+
+        async def operation(session: AsyncSession) -> tuple[int, dict[str, object]]:
+            event_id = await session.scalar(
+                select(NotificationEventDB.id).where(NotificationEventDB.event_key == event_key)
+            )
+            if event_id is None:
+                return 0, {}
+            result = await session.execute(
+                update(NotificationReceiptDB)
+                .where(
+                    NotificationReceiptDB.event_id == event_id,
+                    NotificationReceiptDB.status.in_(
+                        (NotificationOutcome.PENDING.value, NotificationOutcome.RETRY.value)
+                    ),
+                )
+                .values(status=NotificationOutcome.DISMISSED.value, updated_at=func.now())
+                .returning(NotificationReceiptDB.id)
+            )
+            count = len(result.all())
+            return count, {"dismissed": count}
+
+        result: tuple[int, dict[str, object]] = await self._audited_uow.execute(
+            actor=actor,
+            target_type="notification_event",
+            target_id=event_key,
+            action="cancel",
+            operation=operation,
+            changed_fields=lambda outcome: outcome[1],
+            audit_if=lambda outcome: outcome[0] > 0,
+        )
+        return result[0]

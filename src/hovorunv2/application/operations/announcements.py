@@ -6,7 +6,14 @@ from typing import Protocol
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
+from hovorunv2.application.jobs.feature_jobs import PayloadPort, PayloadState
+from hovorunv2.application.operations.notification_ledger import (
+    NotificationEvent,
+    NotificationLedgerService,
+    NotificationOutcome,
+)
 from hovorunv2.application.operations.notification_preferences import NotificationCategory
+from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.announcement import AnnouncementAudience
 from hovorunv2.domain.audit import ActorContext
 
@@ -21,6 +28,33 @@ class AnnouncementDraft:
     audience: AnnouncementAudience
     revision: int
     preview_count: int
+
+
+CONFIRMATION_TTL_SECONDS = 300
+DISPATCH_BODY_TTL_SECONDS = 300
+
+
+@dataclass(frozen=True, slots=True)
+class AnnouncementConfirmation:
+    """Single-use authorization bound to actor, revision, snapshot and expiry."""
+
+    id: int
+    draft_id: int
+    revision: int
+    status: str
+    expires_at: float
+    recipients: tuple[PermissionTarget, ...]
+    token: str
+
+
+@dataclass(frozen=True, slots=True)
+class AnnouncementStatus:
+    """Current draft, latest confirmation and per-outcome delivery counts."""
+
+    draft: AnnouncementDraft
+    confirmation: AnnouncementConfirmation | None
+    event_key: str | None
+    outcomes: dict[NotificationOutcome, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +123,39 @@ class AnnouncementStore(Protocol):
         """Count eligible users and groups after deletion, ban and preference filters."""
         ...
 
+    async def snapshot(
+        self,
+        category: NotificationCategory,
+        audience: AnnouncementAudience,
+        targets: tuple[PermissionTarget, ...],
+    ) -> tuple[PermissionTarget, ...]:
+        """Resolve the concrete recipients at confirmation time."""
+        ...
+
+    async def confirm(
+        self,
+        draft: AnnouncementDraft,
+        *,
+        actor: ActorContext,
+        actor_user_id: int,
+        recipients: tuple[PermissionTarget, ...],
+        expires_at: float,
+    ) -> AnnouncementConfirmation:
+        """Create one single-use confirmation row."""
+        ...
+
+    async def consume(self, draft_id: int, token: str, *, actor_user_id: int) -> AnnouncementConfirmation:
+        """Atomically consume a fresh pending confirmation or raise a semantic error."""
+        ...
+
+    async def cancel(self, draft_id: int, *, actor: ActorContext) -> bool:
+        """Cancel a pending confirmation; dispatched confirmations are cancelled at the ledger."""
+        ...
+
+    async def confirmation(self, draft_id: int) -> AnnouncementConfirmation | None:
+        """Return the latest confirmation for inspect/cancel views."""
+        ...
+
 
 class AnnouncementService:
     """Validate authoring input and compute the preview at the draft's current revision."""
@@ -98,10 +165,16 @@ class AnnouncementService:
         store: AnnouncementStore,
         users: UserStore,
         chats: ChatStore,
+        ledger: NotificationLedgerService,
+        bodies: PayloadPort,
+        clock: Clock,
     ) -> None:
         self._store = store
         self._users = users
         self._chats = chats
+        self._ledger = ledger
+        self._bodies = bodies
+        self._clock = clock
 
     async def create(
         self,
@@ -164,6 +237,72 @@ class AnnouncementService:
         """Return safe metadata and the decrypted body for an authorized composer view."""
         draft = await self._required(draft_id)
         return draft, await self._store.body(draft_id)
+
+    async def confirm(self, draft_id: int, *, actor: ActorContext) -> AnnouncementConfirmation:
+        """Bind the current revision and concrete audience snapshot to one actor."""
+        draft = await self._required(draft_id)
+        actor_user_id = await self._author_user_id(actor)
+        targets = await self._store.targets(draft_id)
+        recipients = await self._store.snapshot(draft.category, draft.audience, targets)
+        if not recipients:
+            msg = "No eligible announcement recipients."
+            raise ValueError(msg)
+        return await self._store.confirm(
+            draft,
+            actor=actor,
+            actor_user_id=actor_user_id,
+            recipients=recipients,
+            expires_at=self._clock.now() + CONFIRMATION_TTL_SECONDS,
+        )
+
+    async def dispatch(self, draft_id: int, token: str, *, actor: ActorContext) -> AnnouncementStatus:
+        """Consume a confirmation and queue the announcement through the delivery worker."""
+        draft = await self._required(draft_id)
+        actor_user_id = await self._author_user_id(actor)
+        confirmation = await self._store.consume(draft_id, token, actor_user_id=actor_user_id)
+        event_key = self._event_key(draft.id, confirmation.revision)
+        sealed = await self._bodies.seal(
+            event_key,
+            (await self._store.body(draft.id)).encode(),
+            self._clock.now() + DISPATCH_BODY_TTL_SECONDS,
+        )
+        if await self._bodies.put(sealed) != PayloadState.READY:
+            msg = "Announcement body is not available."
+            raise ValueError(msg)
+        await self._ledger.ensure_event(
+            NotificationEvent(event_key, draft.category, "announcement", f"draft:{draft.id}", sealed.reference),
+            actor=actor,
+        )
+        for recipient in confirmation.recipients:
+            await self._ledger.record(
+                event_key,
+                recipient,
+                NotificationOutcome.PENDING,
+                attempts=0,
+                actor=actor,
+            )
+        return await self.status(draft.id)
+
+    async def cancel(self, draft_id: int, *, actor: ActorContext) -> AnnouncementStatus:
+        """Cancel pending authorization or dismiss only this announcement's queued receipts."""
+        draft = await self._required(draft_id)
+        current = await self._store.confirmation(draft_id)
+        changed = await self._store.cancel(draft_id, actor=actor)
+        if current is not None and current.status == "dispatched":
+            await self._ledger.cancel(self._event_key(draft.id, current.revision), actor=actor)
+        _ = changed
+        return await self.status(draft.id)
+
+    async def status(self, draft_id: int) -> AnnouncementStatus:
+        """Return the latest confirmation and outcome counts for inspect views."""
+        draft = await self._required(draft_id)
+        confirmation = await self._store.confirmation(draft_id)
+        event_key = self._event_key(draft.id, confirmation.revision) if confirmation is not None else None
+        outcomes = await self._ledger.outcomes(event_key) if event_key is not None else {}
+        return AnnouncementStatus(draft, confirmation, event_key, outcomes)
+
+    def _event_key(self, draft_id: int, revision: int) -> str:
+        return f"announcement.{draft_id}.r{revision}"
 
     async def _resolve(
         self, audience: AnnouncementAudience, target_ids: tuple[int, ...]

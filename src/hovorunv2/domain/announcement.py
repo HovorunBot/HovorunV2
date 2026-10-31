@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, and_, column
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, and_, column
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hovorunv2.domain.base import Base
@@ -83,4 +83,33 @@ class AnnouncementTargetDB(Base):
             unique=True,
             postgresql_where=and_(column("deleted_at").is_(None), column("group_id").is_not(None)),
         ),
+    )
+
+
+class AnnouncementConfirmationDB(Base):
+    """Single-use, revision- and actor-bound authorization to dispatch one draft."""
+
+    __tablename__ = "announcement_confirmations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    draft_id: Mapped[int] = mapped_column(ForeignKey("announcement_drafts.id"), nullable=False)
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    audience_snapshot: Mapped[list[dict[str, int | str]]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'dispatched', 'cancelled', 'expired')",
+            name="ck_announcement_confirmations_status",
+        ),
+        CheckConstraint("revision >= 1", name="ck_announcement_confirmations_revision"),
     )
