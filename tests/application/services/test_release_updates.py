@@ -1,5 +1,6 @@
 """Release updates published as recipient events and delivered with preferences."""
 
+import pytest
 import redis
 from dishka import AsyncContainer
 
@@ -27,6 +28,7 @@ GROUP = -570001
 ADMIN = 570002
 NAMESPACE = RuntimeNamespace("test:{release-updates}:")
 START_VERSION = "0.1.0"
+TELEGRAM_MESSAGE_LIMIT = 4096
 
 
 class RecordingSender:
@@ -87,6 +89,43 @@ async def test_same_version_restart_does_not_requeue_or_resend(test_container: A
             assert release.publish() == 0
             assert delivery.deliver_due() == 0
             assert len(sender.calls) == 1
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    ("previous_version", "current_version", "includes_features", "includes_fixes"),
+    [("0.2.1", "0.3.0", True, False), ("0.2.1", "0.3.1", True, True), ("0.3.0", "0.3.1", False, True)],
+)
+async def test_release_notes_fit_one_telegram_message(
+    test_container: AsyncContainer,
+    monkeypatch: pytest.MonkeyPatch,
+    previous_version: str,
+    current_version: str,
+    *,
+    includes_features: bool,
+    includes_fixes: bool,
+) -> None:
+    """Combine applicable features and fixes in one bounded release announcement."""
+    monkeypatch.setenv("APP_VERSION", current_version)
+    await _approved_group(test_container)
+    settings = await test_container.get(Settings)
+    client = redis.Redis.from_url(settings.valkey_url, decode_responses=True)
+    sender = RecordingSender()
+    try:
+        with WorkerDatabase(settings) as db:
+            release, delivery = _services(db, client, settings, sender)
+            db.operations.set_last_notified_version(previous_version)
+            assert release.publish() == 1
+            assert delivery.deliver_due() == 1
+            assert len(sender.calls) == 1
+            chat_id, message = sender.calls[0]
+            assert chat_id == GROUP
+            assert f"Hovorun Updated to v{current_version}" in message
+            assert ("Private Group Settings" in message) is includes_features
+            assert ("Settings &amp; Update Notification Fixes" in message) is includes_fixes
+            # Counting markup too gives a conservative upper bound after entity parsing.
+            assert len(message.encode("utf-16-le")) // 2 <= TELEGRAM_MESSAGE_LIMIT
     finally:
         client.close()
 

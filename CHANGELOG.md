@@ -2,11 +2,13 @@
 
 ### Fix
 
+- **notifications**: keep combined release notes within telegram limits
 - **settings**: keep notification callbacks within Telegram limits
 - **build**: build shared Docker images only once
 
 ### Refactor
 
+- **settings**: improve usage quota rendering
 - **storage**: remove obsolete sqlite support
 
 ## v0.3.0 (2026-11-01)

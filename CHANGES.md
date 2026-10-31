@@ -1,3 +1,22 @@
+## 0.3.1
+
+🛠️ **Hovorun v0.3.1: Settings & Update Notification Fixes**
+
+* 🔔 **Notification Settings:** Fixed notification preference buttons that exceeded Telegram's callback limits.
+* 📊 **Clearer Usage Display:** Improved quota formatting, time windows, and progress indicators in settings.
+* 📬 **Release Updates:** Added concise release notes so update announcements fit in one Telegram message.
+
+## 0.3.0
+
+✨ **New in Hovorun v0.3.0: Group Management, Usage Controls & Notification Preferences!**
+
+* ⚙️ **Private Group Settings:** Manage your groups from a private chat with the bot, including media features, access, and translation settings.
+* 🔐 **Explicit Access & Beta Features:** Administrators can manage trusted access and grant beta features to users or entire groups.
+* 📊 **Usage & Limits:** View feature usage and allowances. Queued requests now report delays and expiration.
+* 🔔 **Notification Preferences:** Choose which release, beta, outage, and announcement notifications you receive.
+* 📣 **Announcements:** Administrators can prepare broadcasts, with confirmation before urgent announcements bypass preferences.
+* 🛡️ **Administration & Recovery:** Inspect administrative changes and recover deleted records through explicit recovery choices.
+
 ## 0.2.1
 
 ✨ **New in Hovorun v0.2.1: Feedback, Periodic Reminders & Direct Release Links!**
