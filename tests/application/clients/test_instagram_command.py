@@ -1,7 +1,6 @@
 """Tests for Instagram rich media command."""
 
-from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import instaloader
 import pytest
@@ -10,14 +9,18 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.clients.instagram import InstagramService
 from hovorunv2.application.dtos import MediaItem, RichMediaPayload
+from hovorunv2.application.feature_jobs import JobOutcome
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.infrastructure.native_browser import NativeBrowserService
+from hovorunv2.infrastructure.native_http import NativeHTTPClient
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_browser import FakeSyncBrowser
 from tests.utils.sync_http import FakeSyncHTTP, HTTPFixture, HTTPReply
+from tests.utils.telegram.recording_delivery import drain_and_run_media
 
 
 @pytest.fixture
@@ -28,55 +31,58 @@ async def instagram_command(test_container: AsyncContainer) -> RichMediaCommand:
 
 @pytest.mark.slow
 @pytest.mark.vcr
-async def test_handle_instagram_post(instagram_command: RichMediaCommand, test_container: AsyncContainer) -> None:
-    """Test handling an Instagram post using real extraction and VCR."""
+async def test_handle_instagram_post(
+    instagram_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+) -> None:
+    """Test handling an Instagram post using real extraction and VCR through queued execution."""
     chat_id = 789
     url = "https://www.instagram.com/p/DYPIeHDoZ-w/"
-    message = create_private_media_message(url, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
+    message = create_private_media_message(url, chat_id=chat_id).as_(recording_bot)
 
     chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
     await authorize_private_media(test_container, chat_id)
 
-    await instagram_command.handle(message, cast("Bot", bot))
+    await instagram_command.handle(message, recording_bot)
 
-    bot.send_media_group.assert_called_once()
-    _args, kwargs = bot.send_media_group.call_args
-    assert kwargs["chat_id"] == chat_id
-    caption = kwargs["media"][0].caption
+    outcome, _ = await drain_and_run_media(test_container, recording_bot=recording_bot)
+    assert outcome == JobOutcome.COMPLETE
+    assert len(recording_bot.session.calls) == 1
+    call = recording_bot.session.calls[0]
+    caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
     assert "Mock User" in caption
     assert "instagram.com" in caption
 
 
 @pytest.mark.vcr
-async def test_handle_instagram_reel(instagram_command: RichMediaCommand, test_container: AsyncContainer) -> None:
-    """Test handling an Instagram reel using real extraction and VCR."""
-    chat_id = 789
+async def test_handle_instagram_reel(
+    instagram_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+) -> None:
+    """Test handling an Instagram reel using real extraction and VCR through queued execution."""
+    chat_id = 790
     url = "https://www.instagram.com/reels/DVMKxZHggx7/"
-    message = create_private_media_message(url, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
+    message = create_private_media_message(url, chat_id=chat_id, message_id=12346).as_(recording_bot)
 
     chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
     await authorize_private_media(test_container, chat_id)
 
-    await instagram_command.handle(message, cast("Bot", bot))
+    await instagram_command.handle(message, recording_bot)
 
-    bot.send_media_group.assert_called_once()
-    _args, kwargs = bot.send_media_group.call_args
-    caption = kwargs["media"][0].caption
+    outcome, _ = await drain_and_run_media(test_container, recording_bot=recording_bot)
+    assert outcome == JobOutcome.COMPLETE
+    assert len(recording_bot.session.calls) == 1
+    call = recording_bot.session.calls[0]
+    caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
     assert "Mock User" in caption
     assert "instagram.com" in caption
 
 
 @pytest.mark.browser
 @pytest.mark.slow
-async def test_instagram_browser_fallback_uses_real_dom_and_media(test_container: AsyncContainer) -> None:
+def test_instagram_browser_fallback_uses_real_dom_and_media() -> None:
     """Real browser extraction downloads loopback media without replacing an internal strategy/service."""
-    service = await test_container.get(InstagramService)
+    service = InstagramService.sync()
     with HTTPFixture({"/image.jpg": HTTPReply(b"synthetic image")}) as media:
         document = (
             '<html><head><meta property="og:title" content="Synthetic fallback">'
@@ -84,11 +90,17 @@ async def test_instagram_browser_fallback_uses_real_dom_and_media(test_container
             "</head><body><main>Synthetic fallback</main></body></html>"
         )
         with HTTPFixture({"/post": HTTPReply(document.encode(), headers={"Content-Type": "text/html"})}) as server:
-            payload = await service.extract_fallback(server.url("/post"))
-            assert payload is not None
-            assert "Synthetic fallback" in payload.content
-            assert payload.media_items[0].data == b"synthetic image"
-            assert payload.media_items[0].url == media.url("/image.jpg")
+            browser = NativeBrowserService()
+            http = NativeHTTPClient()
+            try:
+                payload = service.extract_browser_media_sync(server.url("/post"), http, browser)
+                assert payload is not None
+                assert "Synthetic fallback" in payload.content
+                assert payload.media_items[0].data == b"synthetic image"
+                assert payload.media_items[0].url == media.url("/image.jpg")
+            finally:
+                browser.close()
+                http.close()
 
 
 @pytest.mark.unit

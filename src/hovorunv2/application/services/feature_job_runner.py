@@ -3,6 +3,7 @@
 import logging
 import secrets
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from hovorunv2.application.admission import (
     AdmissionConflictError,
@@ -43,12 +44,12 @@ from hovorunv2.application.media.errors import (
     MediaExtractionError,
 )
 from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.media.finalization import append_translation
+from hovorunv2.application.media.finalization import append_translation, prepare_caption_text
 from hovorunv2.application.permissions import PermissionTarget
 from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.services.native_translation import NativeTranslationService
 from hovorunv2.application.services.worker_lifecycle_service import WorkerLifecycleService
-from hovorunv2.application.usage import UsageUnit
+from hovorunv2.application.usage import MEDIA_BUCKET, UsageUnit
 from hovorunv2.application.usage_ledger import AccountingSubject, SyncLedgerPort, UsageCharge, UsageEvent
 from hovorunv2.application.worker_io import (
     HTTPTransportError,
@@ -198,7 +199,7 @@ class FeatureJobRunner:
                 return JobOutcome.CANCELLED.value
             return self._extract_and_deliver(envelope, loaded, stage, token, now)
         except Exception:
-            logger.warning("Claimed execution reconciliation deferred")
+            logger.exception("Claimed execution reconciliation deferred")
             return JobOutcome.FAILED.value
 
     def _load_payload(self, envelope: JobEnvelope, token: str) -> LoadedPayload | None:
@@ -217,7 +218,11 @@ class FeatureJobRunner:
 
     def _reserve_execution_budget(self, envelope: JobEnvelope, now: float) -> ReservationDecision:
         group_id = envelope.target.telegram_id if envelope.target.kind == TargetKind.GROUP else None
-        usage = self._policies.resolve(envelope.feature, envelope.trigger, envelope.actor_id, group_id=group_id)
+        provider = self._resolve_provider_command(envelope.feature)
+        feature_key = self._registry.capture(provider, is_video=True).key if provider is not None else envelope.feature
+        usage = self._policies.resolve(feature_key, envelope.trigger, envelope.actor_id, group_id=group_id)
+        if provider is not None:
+            usage = replace(usage, policies=tuple(p for p in usage.policies if p.bucket == MEDIA_BUCKET))
         distinct_units = dict.fromkeys(policy.unit for policy in usage.policies)
         estimates = tuple(UnitAmount(unit, 1) for unit in distinct_units)
         request = BudgetRequest(
@@ -299,7 +304,7 @@ class FeatureJobRunner:
         token: str,
         now: float,
     ) -> str:
-        self._translate_payload(raw_payload, envelope.target.telegram_id)
+        self._translate_payload(raw_payload, envelope.target.telegram_id, strip_hashtags=client.config.strip_hashtags)
         if self._admission.begin_delivery(envelope.job_id, token, self._clock.now()) is None:
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
             return JobOutcome.CANCELLED.value
@@ -363,6 +368,7 @@ class FeatureJobRunner:
             kind=envelope.target.kind,
             entity_id=envelope.target.entity_id,
             generation=envelope.target.generation,
+            telegram_id=envelope.target.telegram_id,
         )
         if not self._policies.active_target(target):
             return None
@@ -380,11 +386,15 @@ class FeatureJobRunner:
             return None
         return split_def
 
-    def _translate_payload(self, payload: RichMediaPayload, chat_id: int) -> None:
+    def _translate_payload(self, payload: RichMediaPayload, chat_id: int, *, strip_hashtags: bool = False) -> None:
         if payload.content:
+            payload.content = prepare_caption_text(payload.content, strip_hashtags=strip_hashtags)
             translated = self._translation.translate_if_needed(payload.content, chat_id)
             payload.content = append_translation(payload.content, translated)
         if payload.quoted_payload and payload.quoted_payload.content:
+            payload.quoted_payload.content = prepare_caption_text(
+                payload.quoted_payload.content, strip_hashtags=strip_hashtags
+            )
             quote_translated = self._translation.translate_if_needed(payload.quoted_payload.content, chat_id)
             payload.quoted_payload.content = append_translation(payload.quoted_payload.content, quote_translated)
 

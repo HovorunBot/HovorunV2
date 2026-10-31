@@ -1,6 +1,7 @@
 """Base classes and unified rich media command handler."""
 
 import re
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -10,13 +11,22 @@ from aiogram.filters import Filter
 from aiogram.types import Message
 from aiogram.utils.magic_filter import MagicFilter
 
+from hovorunv2.application.admission import AdmissionState, incoming_action_key
+from hovorunv2.application.budgets import Clock
 from hovorunv2.application.clients.base import BaseMediaClient
+from hovorunv2.application.feature_jobs import (
+    MAX_JOB_LIFETIME_SECONDS,
+    JobEnvelope,
+    JobTarget,
+    PayloadPort,
+)
 from hovorunv2.application.features import FEATURE_REGISTRY, TriggerKind
-from hovorunv2.application.media.errors import MediaExtractionError
-from hovorunv2.application.media.pipeline import MediaPipeline
+from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.services.access_service import CommandPolicy
+from hovorunv2.application.services.admission_service import AdmissionService
+from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.logger import get_logger
-from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 
 if TYPE_CHECKING:
     from aiogram import Router
@@ -66,15 +76,21 @@ class RichMediaCommand(BaseCommand):
     def __init__(
         self,
         primary_client: BaseMediaClient,
-        pipeline: MediaPipeline,
-        media_delivery: TelegramMediaDelivery,
+        admission: AdmissionService,
+        payloads: PayloadPort,
+        chats: ChatStore,
+        users: UserStore,
+        clock: Clock,
     ) -> None:
-        """Initialize command with its provider client and shared pipeline/delivery services."""
+        """Initialize command with provider client, admission service and persistence ports."""
         FEATURE_REGISTRY.capture(primary_client.name, is_video=True)
         FEATURE_REGISTRY.capture(primary_client.name, is_video=False)
         self._primary_client = primary_client
-        self._pipeline = pipeline
-        self._delivery = media_delivery
+        self._admission = admission
+        self._payloads = payloads
+        self._chats = chats
+        self._users = users
+        self._clock = clock
 
     @property
     def name(self) -> str:
@@ -94,11 +110,13 @@ class RichMediaCommand(BaseCommand):
     @property
     def trigger(self) -> MagicFilter:
         """Trigger filter for rich media links."""
-        return F.text.regexp(self.pattern) & ~F.from_user.is_bot
+        return F.text.regexp(self.pattern) & (F.sender_chat | ~F.from_user.is_bot)
 
     async def is_triggered(self, message: Message) -> bool:
         """Check if message contains links matching the command's pattern."""
-        if not message.text or not message.from_user or message.from_user.is_bot:
+        if not message.text:
+            return False
+        if not message.sender_chat and (not message.from_user or message.from_user.is_bot):
             return False
         return bool(self.pattern.search(message.text))
 
@@ -109,42 +127,156 @@ class RichMediaCommand(BaseCommand):
         **kwargs: Any,
     ) -> None:
         """Standardized handling of rich media links."""
-        if not message.text or not message.from_user:
+        if not message.text:
+            return
+        if not message.sender_chat and not message.from_user:
             return
 
         matches = list(self.pattern.finditer(message.text))
         if not matches:
             return
 
-        logger.info("Processing %d link(s) for %s from user %s", len(matches), self.name, message.from_user.id)
+        actor_label = (
+            message.from_user.id if message.from_user else (message.sender_chat.id if message.sender_chat else 0)
+        )
+        logger.info("Processing %d link(s) for %s from %s", len(matches), self.name, actor_label)
         direct = message.text.startswith("/")
         for match in matches:
-            await self._process_match(match, message, bot, direct=direct)
+            await self._process_match(match, message, direct=direct)
+
+    async def _resolve_sender(self, message: Message) -> tuple[int | None, int | None, str] | None:
+        """Resolve numeric actor, generation, and transient label from Telegram message."""
+        if message.sender_chat:
+            return None, None, message.sender_chat.title or ""
+        if message.from_user is None or message.from_user.is_bot:
+            return None
+        user = await self._users.get_by_telegram_id(message.from_user.id)
+        if user is None:
+            user = await self._users.ingest_user(
+                message.from_user.id,
+                actor=ActorContext.system("telegram_identity_evidence"),
+            )
+        if user is None:
+            return None
+        return user.telegram_id, user.generation, message.from_user.full_name or ""
+
+    async def _resolve_group_target(
+        self, message: Message, actor_id: int | None, *, direct: bool
+    ) -> tuple[JobTarget, int, TriggerKind, TargetKind, int] | None:
+        """Resolve group chat target, epoch, and charging configuration."""
+        chat = await self._chats.get_chat(message.chat.id)
+        if chat is None:
+            chat = await self._chats.get_or_create_chat(
+                message.chat.id,
+                actor=ActorContext.system("telegram_identity_evidence"),
+            )
+        if chat is None:
+            return None
+        target = JobTarget(
+            kind=TargetKind.GROUP,
+            entity_id=chat.id,
+            generation=chat.generation,
+            telegram_id=chat.chat_id,
+        )
+        if direct:
+            if actor_id is None:
+                return None
+            return target, chat.generation, TriggerKind.DIRECT, TargetKind.USER, actor_id
+        return target, chat.generation, TriggerKind.AUTOMATIC, TargetKind.GROUP, chat.chat_id
+
+    async def _resolve_target_and_charging(
+        self,
+        message: Message,
+        actor_id: int | None,
+        actor_generation: int | None,
+        *,
+        direct: bool,
+    ) -> tuple[JobTarget, int, TriggerKind, TargetKind, int] | None:
+        """Resolve target, epoch, and charge parameters for either group or private chat."""
+        if message.chat.id < 0:
+            return await self._resolve_group_target(message, actor_id, direct=direct)
+        if actor_id is None or actor_generation is None:
+            return None
+        user = await self._users.get_by_telegram_id(actor_id)
+        if user is None:
+            return None
+        target = JobTarget(
+            kind=TargetKind.USER,
+            entity_id=user.id,
+            generation=user.generation,
+            telegram_id=user.telegram_id,
+        )
+        return target, user.generation, TriggerKind.DIRECT, TargetKind.USER, user.telegram_id
 
     async def _process_match(
         self,
         match: re.Match[str],
         message: Message,
-        bot: Bot,
         *,
         direct: bool,
     ) -> None:
-        """Process and deliver a single matched media link."""
+        """Admit and enqueue a single matched media link for worker execution."""
         try:
-            actor_id = message.from_user.id if not message.sender_chat and message.from_user else None
-            trigger = TriggerKind.DIRECT if direct else TriggerKind.AUTOMATIC
-            payload = await self._pipeline.process(
-                self._primary_client,
-                match.group(0),
-                message.chat.id,
-                actor_id=actor_id,
-                trigger=trigger,
-            )
-            if not payload:
+            sender = await self._resolve_sender(message)
+            if sender is None:
                 return
-
-            await self._delivery.deliver(bot, message, payload, self.platform_name)
-        except MediaExtractionError:
-            logger.warning("Extraction strategies failed for %s", self.name)
+            actor_id, actor_generation, sender_label = sender
+            target_info = await self._resolve_target_and_charging(message, actor_id, actor_generation, direct=direct)
+            if target_info is None:
+                return
+            target, epoch, trigger, charged_kind, charged_id = target_info
+            await self._admit_and_enqueue(
+                match.group(0),
+                message,
+                target,
+                epoch,
+                actor_id,
+                actor_generation,
+                sender_label,
+                trigger,
+                charged_kind,
+                charged_id,
+            )
         except Exception:
-            logger.exception("Failed to process %s link", self.name)
+            logger.exception("Failed to admit %s link", self.name)
+
+    async def _admit_and_enqueue(
+        self,
+        url: str,
+        message: Message,
+        target: JobTarget,
+        epoch: int,
+        actor_id: int | None,
+        actor_generation: int | None,
+        sender_label: str,
+        trigger: TriggerKind,
+        charged_kind: TargetKind,
+        charged_id: int,
+    ) -> None:
+        """Construct envelope, seal payload and admit ticket to background queue."""
+        now = self._clock.now()
+        deadline = now + MAX_JOB_LIFETIME_SECONDS
+        job_id = uuid.uuid4().hex
+        sealed = await self._payloads.seal(job_id, url.encode(), deadline, sender_label=sender_label)
+        dedupe_key = incoming_action_key(self.name, target.telegram_id, actor_id, message.message_id, trigger)
+        envelope = JobEnvelope(
+            job_id=job_id,
+            payload_ref=sealed.reference,
+            feature=self.name,
+            target=target,
+            actor_id=actor_id,
+            actor_generation=actor_generation,
+            trigger=trigger,
+            charged_kind=charged_kind,
+            charged_telegram_id=charged_id,
+            accepted_at=now,
+            deadline=deadline,
+            dedupe_key=dedupe_key,
+            feature_epoch=epoch,
+            message_id=message.message_id,
+        )
+        result = await self._admission.admit(envelope, sealed)
+        if result.state == AdmissionState.ACCEPTED:
+            await self._admission.handoff(envelope.job_id)
+        else:
+            logger.info("Media admission denied for %s (%s)", self.name, result.state.value)

@@ -52,3 +52,6 @@ class FakeSyncBrowser(SyncBrowserPort):
             if pattern in url:
                 return res
         return None, []
+
+    def close(self) -> None:
+        """Deterministically close fake browser."""

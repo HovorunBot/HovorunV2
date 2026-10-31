@@ -4,7 +4,10 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from typing import cast
+from unittest.mock import MagicMock
 
+import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, Message, TelegramObject, User
@@ -22,12 +25,12 @@ from hovorunv2.application.features import (
     TriggerKind,
 )
 from hovorunv2.application.group_beta import GroupBetaStore
-from hovorunv2.application.media.extractor import MediaExtractor
+from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.policy_facts import FeatureFactStore
-from hovorunv2.application.ports import CachePort, ChatStore, CommandStore, UserStore
+from hovorunv2.application.ports import BrowserPort, CachePort, ChatStore, CommandStore, UserStore
 from hovorunv2.application.services.access_service import AccessService, CommandPolicy
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
@@ -263,10 +266,8 @@ async def test_pipeline_denies_before_network_and_rechecks_after_extraction(test
         for definition in REGISTRY.all()
     )
     service = await feature_runtime(test_container, registry)
-    pipeline = MediaPipeline(
-        await test_container.get(MediaExtractor), await test_container.get(TranslationService), service
-    )
-    client = await test_container.get(TwitterService)
+    pipeline = MediaPipeline(NativeMediaExtractor(), await test_container.get(TranslationService), service)
+    client = TwitterService(await test_container.get(aiohttp.ClientSession), cast("BrowserPort", MagicMock()))
     with RecordedResponses() as http:
         result = await pipeline.process(
             client, "https://x.com/synthetic/status/123", GROUP, actor_id=MEMBER, trigger=TriggerKind.AUTOMATIC

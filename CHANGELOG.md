@@ -57,6 +57,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **media**: route work through native worker stages
 - **maintenance**: move background work to Celery
 - **queue**: reconcile native worker lifecycle
 - **workers**: compose native Celery execution

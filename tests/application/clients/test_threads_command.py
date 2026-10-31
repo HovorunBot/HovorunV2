@@ -1,14 +1,12 @@
 """Tests for Threads rich media command."""
 
-from typing import cast
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.clients.threads import ThreadsService
 from hovorunv2.application.dtos import RichMediaPayload
+from hovorunv2.application.feature_jobs import JobOutcome
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.services.chat_status_service import ChatStatusService
@@ -17,6 +15,7 @@ from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_browser import FakeSyncBrowser
 from tests.utils.sync_http import FakeSyncHTTP
+from tests.utils.telegram.recording_delivery import drain_and_run_media
 
 EXPECTED_MEDIA_COUNT: int = 1
 
@@ -29,26 +28,51 @@ async def threads_command(test_container: AsyncContainer) -> RichMediaCommand:
 
 @pytest.mark.slow
 @pytest.mark.vcr
-async def test_handle_threads_post(threads_command: RichMediaCommand, test_container: AsyncContainer) -> None:
-    """Test handling a Threads post using real extraction and VCR."""
+async def test_handle_threads_post(
+    threads_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+) -> None:
+    """Test handling a Threads post using real extraction and VCR through staged continuation."""
     chat_id = 456
     url = "https://www.threads.net/@maksymtarkivskyy/post/DYOeEaaD-vR"
-    message = create_private_media_message(url, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
+    message = create_private_media_message(url, chat_id=chat_id).as_(recording_bot)
 
     chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
     await authorize_private_media(test_container, chat_id)
 
-    await threads_command.handle(message, cast("Bot", bot))
+    html_content = """
+    <html>
+    <head>
+        <meta property="og:title" content="Maksym Tarkivskyy (@maksymtarkivskyy) on Threads"/>
+        <meta property="og:description" content="Чому це відбувається? Чи є цьому наукове пояснення? 👀"/>
+    </head>
+    <body>
+        <article>
+            <div dir="auto">Чому це відбувається? Чи є цьому наукове пояснення? 👀</div>
+            <img src="https://scontent.cdninstagram.com/media_img1.jpg"/>
+        </article>
+        <script type="application/json">
+        {
+            "code": "DYOeEaaD-vR",
+            "like_count": 100,
+            "direct_reply_count": 5,
+            "repost_count": 2
+        }
+        </script>
+    </body>
+    </html>
+    """
+    fake_browser = FakeSyncBrowser(html_responses={url: html_content})
 
-    bot.send_media_group.assert_called_once()
-    _args, kwargs = bot.send_media_group.call_args
-    assert kwargs["chat_id"] == chat_id
-    assert "Mock User" in kwargs["media"][0].caption
-    assert "threads.net" in kwargs["media"][0].caption
-    assert len(kwargs["media"]) >= EXPECTED_MEDIA_COUNT
+    await threads_command.handle(message, recording_bot)
+
+    outcome, _calls = await drain_and_run_media(test_container, recording_bot=recording_bot, browser=fake_browser)
+    assert outcome == JobOutcome.COMPLETE
+    assert len(recording_bot.session.calls) == 1
+    call = recording_bot.session.calls[0]
+    caption = getattr(call, "caption", "") or getattr(call, "text", "")
+    assert "Mock User" in caption
+    assert "threads.net" in caption
 
 
 @pytest.mark.unit

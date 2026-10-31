@@ -1,23 +1,19 @@
 """Tests for Twitter rich media command."""
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from http import HTTPStatus
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import aiohttp
 import pytest
 from aiogram import Bot
+from aiogram.methods import SendMessage, SendVideo
 from dishka import AsyncContainer
 
 from hovorunv2.application.clients.twitter import TwitterService
+from hovorunv2.application.feature_jobs import JobOutcome
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_http import FakeSyncHTTP
+from tests.utils.telegram.recording_delivery import drain_and_run_media
 
 
 @pytest.fixture
@@ -27,30 +23,32 @@ async def twitter_command(test_container: AsyncContainer) -> RichMediaCommand:
 
 
 @pytest.mark.vcr
-async def test_handle_twitter_post(twitter_command: RichMediaCommand, test_container: AsyncContainer) -> None:
-    """Test handling a real Twitter post using VCR."""
+async def test_handle_twitter_post(
+    twitter_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+) -> None:
+    """Test handling a real Twitter post using VCR through queued native execution."""
     chat_id = 456
     url = "https://x.com/elonmusk/status/2053586034743705773"
-    message = create_private_media_message(url, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
+    message = create_private_media_message(url, chat_id=chat_id).as_(recording_bot)
 
     chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
     await authorize_private_media(test_container, chat_id)
 
-    await twitter_command.handle(message, cast("Bot", bot))
+    await twitter_command.handle(message, recording_bot)
 
-    message.answer.assert_called_once()
-    args, kwargs = message.answer.call_args
-    caption = args[0] if args else kwargs["text"]
+    outcome, _calls = await drain_and_run_media(test_container, recording_bot=recording_bot)
+    assert outcome == JobOutcome.COMPLETE
+    assert len(recording_bot.session.calls) == 1
+    call = recording_bot.session.calls[0]
+    caption = getattr(call, "text", None) or getattr(call, "caption", "")
     assert "Elon Musk" in caption
     assert "❤️" in caption
     assert "🔁" in caption
 
 
 async def test_twitter_split_video_vs_post_toggles(
-    twitter_command: RichMediaCommand, test_container: AsyncContainer
+    twitter_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
 ) -> None:
     """Test that disabling twitter_post skips text/image tweets while keeping video tweets enabled."""
     chat_id = 789
@@ -63,9 +61,6 @@ async def test_twitter_split_video_vs_post_toggles(
     await authorize_private_media(test_container, chat_id)
     await command_service.enable_command(chat_id, CommandName.TWITTER)
     await command_service.disable_command(chat_id, CommandName.TWITTER_POST)
-
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
 
     text_tweet_json = {
         "text": "Just a text and image tweet",
@@ -85,31 +80,26 @@ async def test_twitter_split_video_vs_post_toggles(
         "replies": 5,
         "media_extended": [{"url": "https://video.twimg.com/vid1.mp4", "type": "video"}],
     }
+    fake_http = FakeSyncHTTP(
+        json_responses={
+            "1111111111": text_tweet_json,
+            "2222222222": video_tweet_json,
+        }
+    )
 
-    @asynccontextmanager
-    async def mock_get(url: str, **_kwargs: Any) -> AsyncGenerator[MagicMock]:
-        resp = MagicMock()
-        resp.status = HTTPStatus.OK
-        if "1111111111" in url:
-            resp.json = AsyncMock(return_value=text_tweet_json)
-        elif "2222222222" in url:
-            resp.json = AsyncMock(return_value=video_tweet_json)
-        else:
-            resp.json = AsyncMock(return_value=[[[""]], None, "en"])
-        yield resp
+    msg_post = create_private_media_message(text_tweet_url, chat_id=chat_id).as_(recording_bot)
+    await twitter_command.handle(msg_post, recording_bot)
+    outcome_post, _ = await drain_and_run_media(test_container, recording_bot=recording_bot, http=fake_http)
+    assert outcome_post == JobOutcome.COMPLETE
+    assert len(recording_bot.session.calls) == 0
 
-    msg_post = create_private_media_message(text_tweet_url, chat_id=chat_id)
-    with patch.object(aiohttp.ClientSession, "get", side_effect=mock_get):
-        await twitter_command.handle(msg_post, cast("Bot", bot))
-
-    bot.send_media_group.assert_not_called()
-    msg_post.answer.assert_not_called()
-
-    msg_video = create_private_media_message(video_tweet_url, chat_id=chat_id)
-    with patch.object(aiohttp.ClientSession, "get", side_effect=mock_get):
-        await twitter_command.handle(msg_video, cast("Bot", bot))
-
-    bot.send_media_group.assert_called_once()
+    msg_video = create_private_media_message(video_tweet_url, chat_id=chat_id, message_id=12346).as_(recording_bot)
+    await twitter_command.handle(msg_video, recording_bot)
+    outcome_video, _ = await drain_and_run_media(test_container, recording_bot=recording_bot, http=fake_http)
+    assert outcome_video == JobOutcome.COMPLETE
+    assert len(recording_bot.session.calls) == 1
+    call = recording_bot.session.calls[0]
+    assert isinstance(call, (SendMessage, SendVideo))
 
 
 @pytest.mark.unit

@@ -1,18 +1,17 @@
 """Tests for Bluesky rich media command."""
 
-from typing import cast
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.clients.bluesky import BlueskyService
+from hovorunv2.application.feature_jobs import JobOutcome
 from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_http import FakeSyncHTTP
+from tests.utils.telegram.recording_delivery import drain_and_run_media
 
 
 @pytest.fixture
@@ -22,47 +21,49 @@ async def bluesky_command(test_container: AsyncContainer) -> RichMediaCommand:
 
 
 @pytest.mark.vcr
-async def test_handle_bluesky_post(bluesky_command: RichMediaCommand, test_container: AsyncContainer) -> None:
+async def test_handle_bluesky_post(
+    bluesky_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+) -> None:
     """Test handling a Bluesky post using real extraction and VCR."""
     chat_id = 789
     url = "https://bsky.app/profile/josiahcohen.bsky.social/post/3mlmib6xdbc2a"
-    message = create_private_media_message(url, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
+    message = create_private_media_message(url, chat_id=chat_id).as_(recording_bot)
 
     chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
     await authorize_private_media(test_container, chat_id)
 
-    await bluesky_command.handle(message, cast("Bot", bot))
+    await bluesky_command.handle(message, recording_bot)
 
-    bot.send_media_group.assert_called_once()
-    _args, kwargs = bot.send_media_group.call_args
-    caption = kwargs["media"][0].caption
+    outcome, _calls = await drain_and_run_media(test_container, recording_bot=recording_bot)
+    assert outcome == JobOutcome.COMPLETE
+    assert len(recording_bot.session.calls) == 1
+    call = recording_bot.session.calls[0]
+    caption = getattr(call, "caption", "") or getattr(call, "text", "")
     assert "Mock User" in caption
     assert "bsky.app" in caption
 
 
 @pytest.mark.vcr
 async def test_handle_bluesky_quote_with_media(
-    bluesky_command: RichMediaCommand, test_container: AsyncContainer
+    bluesky_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
 ) -> None:
     """Test handling a Bluesky quote post with media using real extraction and VCR."""
     chat_id = 789
     url = "https://bsky.app/profile/hikkifox.bsky.social/post/3mlnxm3on6s2x"
-    message = create_private_media_message(url, chat_id=chat_id)
-    bot = MagicMock(spec=Bot)
-    bot.send_media_group = AsyncMock()
+    message = create_private_media_message(url, chat_id=chat_id, message_id=12346).as_(recording_bot)
 
     chat_status_service = await test_container.get(ChatStatusService)
     await chat_status_service.approve(chat_id)
     await authorize_private_media(test_container, chat_id)
 
-    await bluesky_command.handle(message, cast("Bot", bot))
+    await bluesky_command.handle(message, recording_bot)
 
-    bot.send_media_group.assert_called_once()
-    _args, kwargs = bot.send_media_group.call_args
-    caption = kwargs["media"][0].caption
+    outcome, _calls = await drain_and_run_media(test_container, recording_bot=recording_bot)
+    assert outcome == JobOutcome.COMPLETE
+    assert len(recording_bot.session.calls) == 1
+    call = recording_bot.session.calls[0]
+    caption = getattr(call, "caption", "") or getattr(call, "text", "")
     assert "Mock User" in caption
     assert "bsky.app" in caption
 

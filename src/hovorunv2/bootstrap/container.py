@@ -12,23 +12,13 @@ from hovorunv2.application.admission import AdmissionPort
 from hovorunv2.application.ban_ports import BanStore
 from hovorunv2.application.beta import BetaEntitlementStore
 from hovorunv2.application.budgets import BudgetPort, Clock, RuntimeNamespace, WallClock
-from hovorunv2.application.clients.base import FACEBOOK_CONFIG, BaseMediaClient
-from hovorunv2.application.clients.bluesky import BlueskyService
-from hovorunv2.application.clients.instagram import InstagramService
-from hovorunv2.application.clients.reddit import RedditService
-from hovorunv2.application.clients.threads import ThreadsService
-from hovorunv2.application.clients.tiktok import TikTokService
-from hovorunv2.application.clients.twitter import TwitterService
-from hovorunv2.application.clients.youtube import YoutubeService
+from hovorunv2.application.clients.base import BaseMediaClient
 from hovorunv2.application.feature_jobs import FeatureQueuePort, PayloadPort
 from hovorunv2.application.features import FEATURE_REGISTRY, FeatureRegistry
 from hovorunv2.application.group_beta import GroupBetaStore
 from hovorunv2.application.group_grants import GroupGrantStore
 from hovorunv2.application.group_migration import GroupMigrationStore
 from hovorunv2.application.identity import GroupIdentityStore
-from hovorunv2.application.media.downloader import MediaDownloader
-from hovorunv2.application.media.extractor import MediaExtractor
-from hovorunv2.application.media.pipeline import MediaPipeline
 from hovorunv2.application.membership import MembershipPort
 from hovorunv2.application.membership_store import MembershipStore
 from hovorunv2.application.policy_facts import FeatureFactStore
@@ -36,7 +26,6 @@ from hovorunv2.application.ports import (
     AppSettings,
     AuditedUnitOfWork,
     AuthorizationPolicy,
-    BrowserPort,
     CachePort,
     ChatStore,
     CommandStore,
@@ -58,6 +47,7 @@ from hovorunv2.application.services.chat_status_service import ChatStatusService
 from hovorunv2.application.services.cleanup_service import CleanupService
 from hovorunv2.application.services.command_service import CommandService
 from hovorunv2.application.services.feature_access_service import FeatureAccessService
+from hovorunv2.application.services.feature_job_runner import default_media_clients
 from hovorunv2.application.services.feedback_service import FeedbackService
 from hovorunv2.application.services.group_beta_service import GroupBetaService
 from hovorunv2.application.services.group_management_service import GroupManagementService
@@ -82,7 +72,6 @@ from hovorunv2.application.usage_ledger import UsageLedgerStore
 from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
-from hovorunv2.infrastructure.browser import BrowserService
 from hovorunv2.infrastructure.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import DatabaseSettings, Settings
@@ -108,7 +97,6 @@ from hovorunv2.infrastructure.persistence.group_migration_store import SQLAlchem
 from hovorunv2.infrastructure.persistence.membership_store import SQLAlchemyMembershipStore
 from hovorunv2.infrastructure.persistence.usage_ledger_store import SQLAlchemyUsageLedgerStore
 from hovorunv2.infrastructure.persistence.usage_policy_store import SQLAlchemyUsagePolicyStore
-from hovorunv2.interface.telegram.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
 from hovorunv2.interface.telegram.handlers.base import BaseCommand, RichMediaCommand
@@ -153,16 +141,6 @@ class InfrastructureProvider(DatabaseProvider):
         await service.close()
 
     @provide(scope=Scope.APP)
-    async def get_browser_service(self, config: Settings) -> AsyncIterable[BrowserService]:
-        """Provide BrowserService (DrissionPage)."""
-        service = BrowserService(
-            max_tabs=config.browser_max_tabs,
-            idle_timeout=config.browser_idle_timeout,
-        )
-        yield service
-        await service.close()
-
-    @provide(scope=Scope.APP)
     async def feature_queue(
         self,
         config: Settings,
@@ -181,7 +159,6 @@ class InfrastructureProvider(DatabaseProvider):
     database_settings = alias(source=Settings, provides=DatabaseSettings)
     settings_port = alias(source=Settings, provides=AppSettings)
     cache_port = alias(source=CacheService, provides=CachePort)
-    browser_port = alias(source=BrowserService, provides=BrowserPort)
 
 
 class SecurityAndAccessProvider(Provider):
@@ -311,72 +288,37 @@ class RuntimeUsageProvider(Provider):
 
 
 class MediaAndContentProvider(Provider):
-    """Provide media extraction, pipeline processing, downloads and provider adapters."""
+    """Provide media providers and content translation services."""
 
     scope = Scope.APP
-
-    media_downloader = provide(MediaDownloader)
-    media_extractor = provide(MediaExtractor)
-    media_pipeline = provide(MediaPipeline)
-
-    tiktok_service = provide(TikTokService)
-    twitter_service = provide(TwitterService)
-    threads_service = provide(ThreadsService)
-    instagram_service = provide(InstagramService)
-    bluesky_service = provide(BlueskyService)
-    youtube_service = provide(YoutubeService)
-    reddit_service = provide(RedditService)
 
     translation_provider = provide(GoogleTranslationService, provides=BaseTranslationService)
     translation_service = provide(TranslationService)
 
     @provide(scope=Scope.APP)
-    def get_media_clients(
-        self,
-        session: aiohttp.ClientSession,
-        browser: BrowserPort,
-        bluesky_service: BlueskyService,
-        instagram_service: InstagramService,
-        threads_service: ThreadsService,
-        tiktok_service: TikTokService,
-        twitter_service: TwitterService,
-        youtube_service: YoutubeService,
-        reddit_service: RedditService,
-    ) -> list[BaseMediaClient]:
-        """Provide all registered media provider clients."""
-        return [
-            bluesky_service,
-            BaseMediaClient(config=FACEBOOK_CONFIG, http=session, browser=browser),
-            instagram_service,
-            threads_service,
-            tiktok_service,
-            twitter_service,
-            youtube_service,
-            reddit_service,
-        ]
-
-    @provide(scope=Scope.APP)
-    def get_telegram_media_delivery(
-        self,
-        media_downloader: MediaDownloader,
-        session: aiohttp.ClientSession,
-    ) -> TelegramMediaDelivery:
-        """Provide Telegram media delivery adapter."""
-        return TelegramMediaDelivery(media_downloader=media_downloader, session=session)
+    def get_media_clients(self, settings: Settings) -> list[BaseMediaClient]:
+        """Provide registered media provider clients for bot routing."""
+        return list(default_media_clients(settings).values())
 
     @provide(scope=Scope.APP)
     def get_rich_media_commands(
         self,
         media_clients: list[BaseMediaClient],
-        pipeline: MediaPipeline,
-        media_delivery: TelegramMediaDelivery,
+        admission_service: AdmissionService,
+        payload_store: PayloadPort,
+        chat_store: ChatStore,
+        user_store: UserStore,
+        clock: Clock,
     ) -> list[RichMediaCommand]:
         """Wrap all registered media clients into generalized RichMediaCommand handlers."""
         return [
             RichMediaCommand(
                 primary_client=client,
-                pipeline=pipeline,
-                media_delivery=media_delivery,
+                admission=admission_service,
+                payloads=payload_store,
+                chats=chat_store,
+                users=user_store,
+                clock=clock,
             )
             for client in media_clients
         ]

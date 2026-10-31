@@ -25,7 +25,7 @@ from hovorunv2.application.services.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.services.native_translation import NativeTranslationService
 from hovorunv2.application.services.operations_runner import WorkerOperationsRunner
 from hovorunv2.application.usage import UsageSafetyCaps
-from hovorunv2.application.worker_io import SyncBrowserPort
+from hovorunv2.application.worker_io import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.infrastructure.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.budgets import WorkerBudgetClient
@@ -229,16 +229,23 @@ class WorkerChildContext:
         clock: Clock | None = None,
         *,
         runner: FeatureJobRunner | None = None,
+        delivery: SyncTelegramDeliveryPort | None = None,
+        http: SyncHTTPPort | None = None,
+        browser: SyncBrowserPort | None = None,
     ) -> None:
         self._settings = settings or Settings()
         self._namespace = namespace or RuntimeNamespace()
         self._safety = safety or DEFAULT_SAFETY
         self._clock = clock or WallClock()
         self._runner = runner
+        self._custom_delivery = delivery
+        self._custom_http = http
+        self._custom_browser = browser
         self._db: WorkerDatabase | None = None
         self._runtime: WorkerRuntime | None = None
-        self._http: NativeHTTPClient | None = None
-        self._browser: LazyBrowserService | None = None
+        self._owned_http: NativeHTTPClient | None = None
+        self._http: SyncHTTPPort | None = None
+        self._browser: SyncBrowserPort | None = None
         self._publisher: WorkerQueuePublisher | None = None
         self._opened = runner is not None
 
@@ -250,14 +257,18 @@ class WorkerChildContext:
         self._db.__enter__()
         self._runtime = WorkerRuntime(self._settings, self._clock, self._namespace, self._safety)
         self._runtime.__enter__()
-        self._http = NativeHTTPClient()
-        self._http.__enter__()
+        if self._custom_http is not None:
+            self._http = self._custom_http
+        else:
+            self._owned_http = NativeHTTPClient()
+            self._owned_http.__enter__()
+            self._http = self._owned_http
         api = NativeTelegramAPI(self._http, self._settings.bot_token)
         downloader = NativeMediaDownloader(self._http)
-        delivery = NativeTelegramDelivery(api, downloader)
+        delivery = self._custom_delivery or NativeTelegramDelivery(api, downloader)
         translation = NativeTranslationService(self._http, self._settings, self._db.policies)
         extractor = NativeMediaExtractor()
-        self._browser = LazyBrowserService()
+        self._browser = self._custom_browser or LazyBrowserService()
         self._publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
         self._runner = FeatureJobRunner(
             admission=self._runtime.admission,
@@ -321,9 +332,10 @@ class WorkerChildContext:
         if self._browser is not None:
             self._browser.close()
             self._browser = None
-        if self._http is not None:
-            self._http.close()
-            self._http = None
+        if self._owned_http is not None:
+            self._owned_http.close()
+            self._owned_http = None
+        self._http = None
         if self._runtime is not None:
             self._runtime.__exit__(None, None, None)
             self._runtime = None
@@ -406,6 +418,10 @@ def worker_child_context(
     safety: UsageSafetyCaps | None = None,
     clock: Clock | None = None,
     runner: FeatureJobRunner | None = None,
+    *,
+    delivery: SyncTelegramDeliveryPort | None = None,
+    http: SyncHTTPPort | None = None,
+    browser: SyncBrowserPort | None = None,
 ) -> Generator[FeatureJobRunner]:
     """Scoped context manager for child-local runner lifecycle."""
     global _current_worker_context  # noqa: PLW0603
@@ -413,7 +429,7 @@ def worker_child_context(
     context = (
         WorkerChildContext(runner=runner)
         if runner is not None
-        else WorkerChildContext(settings, namespace, safety, clock)
+        else WorkerChildContext(settings, namespace, safety, clock, delivery=delivery, http=http, browser=browser)
     )
     if runner is None:
         context.open()
