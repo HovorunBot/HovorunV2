@@ -57,6 +57,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **bootstrap**: split composition providers by ownership
 - **telegram**: organize Telegram transport and delivery
 - **infrastructure**: group runtime and external adapters
 - **persistence**: consolidate PostgreSQL persistence packages

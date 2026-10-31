@@ -26,7 +26,8 @@ from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.identity.membership import AdministratorEvidence
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.ports import ChatStore, UserStore
-from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
+from hovorunv2.bootstrap.container import AppProvider
+from hovorunv2.bootstrap.providers.infrastructure import InfrastructureProvider
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.enums import CommandName, Role

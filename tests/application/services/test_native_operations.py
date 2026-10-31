@@ -18,7 +18,8 @@ from hovorunv2.application.operations.changelog import get_current_version
 from hovorunv2.application.operations.operations_runner import WorkerOperationsRunner
 from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.application.usage.budgets import RuntimeNamespace
-from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
+from hovorunv2.bootstrap.container import AppProvider
+from hovorunv2.bootstrap.providers.infrastructure import InfrastructureProvider
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.enums import ChatStatus, Role
 from hovorunv2.domain.system import SystemStateDB

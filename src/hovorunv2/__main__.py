@@ -14,7 +14,8 @@ from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.messaging.crypto import verify_encryption_key
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.ports import CachePort
-from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
+from hovorunv2.bootstrap.container import AppProvider
+from hovorunv2.bootstrap.providers.infrastructure import InfrastructureProvider
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.infrastructure.logger import AsyncTelegramHandler, get_logger, setup_logging, setup_telegram_logging
