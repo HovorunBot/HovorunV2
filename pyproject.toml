@@ -86,7 +86,7 @@ select = ["ALL"]
 # Opt in to nesting and condition-size checks without selecting every preview rule.
 preview = true
 explicit-preview-rules = true
-extend-select = ["PLR0916", "PLR1702"]
+extend-select = ["PLR0916", "PLR1702", "DOC102", "DOC201", "DOC202", "DOC402", "DOC403", "DOC501", "DOC502"]
 ignore = [
     "D107",
     "D203",
@@ -117,6 +117,12 @@ max-statements = 50
 max-returns = 6
 max-nested-blocks = 3
 max-bool-expr = 4
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pydoclint]
+ignore-one-line-docstrings = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["FBT", "PLR2004"]
