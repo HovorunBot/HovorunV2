@@ -31,7 +31,16 @@ class IdentityMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        """Persist minimal observed fields and never ingest message contents."""
+        """Persist minimal observed fields and never ingest message contents.
+
+        Args:
+            handler: Downstream handler to invoke after observation.
+            event: Telegram update being processed.
+            data: Handler context dictionary.
+
+        Returns:
+            Handler result, or None when the update was consumed or skipped.
+        """
         active = True
         if isinstance(event, Message):
             if event.migrate_to_chat_id is not None or event.migrate_from_chat_id is not None:
@@ -52,7 +61,15 @@ class IdentityMiddleware(BaseMiddleware):
         return await handler(event, data)
 
     async def observe(self, chat: Chat | None, user: User | None) -> bool:
-        """Sync only human users and group public metadata from Telegram evidence."""
+        """Sync only human users and group public metadata from Telegram evidence.
+
+        Args:
+            chat: Telegram chat carrying group metadata, or None when absent.
+            user: Telegram user carrying public identity, or None when absent.
+
+        Returns:
+            True when the observed identity is active, False when unavailable.
+        """
         actor = ActorContext.system("telegram_identity_evidence")
         if user is not None and not user.is_bot:
             active_user = await self._users.ingest_user(user.id, actor=actor)
@@ -67,7 +84,11 @@ class IdentityMiddleware(BaseMiddleware):
         return True
 
     async def _migrate(self, message: Message) -> None:
-        """Consume authentic service fields before new-ID ingestion creates a competing group."""
+        """Consume authentic service fields before new-ID ingestion creates a competing group.
+
+        Args:
+            message: Telegram message carrying migration service fields.
+        """
         if message.migrate_to_chat_id is not None and message.chat.type == ChatType.GROUP:
             old_id, new_id = message.chat.id, message.migrate_to_chat_id
         elif message.migrate_from_chat_id is not None and message.chat.type == ChatType.SUPERGROUP:

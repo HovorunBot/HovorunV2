@@ -26,7 +26,14 @@ MEMBERSHIP_REQUEST_TIMEOUT = 10
 
 
 def membership_status(member: ChatMemberUnion) -> MembershipStatus:
-    """Translate Telegram variants, counting creators as administrators."""
+    """Translate Telegram variants, counting creators as administrators.
+
+    Args:
+        member: Telegram chat member variant to translate.
+
+    Returns:
+        Mapped membership status.
+    """
     if isinstance(member, (ChatMemberOwner, ChatMemberAdministrator)):
         return MembershipStatus.ADMIN
     if isinstance(member, ChatMemberMember):
@@ -56,7 +63,15 @@ class TelegramMembershipAdapter:
         )
 
     async def verify_member(self, group_telegram_id: int, user_telegram_id: int) -> MembershipEvidence:
-        """Return API-observed membership; network, permission and API errors stay UNKNOWN."""
+        """Return API-observed membership; network, permission and API errors stay UNKNOWN.
+
+        Args:
+            group_telegram_id: Telegram group ID to query.
+            user_telegram_id: Telegram user ID to verify.
+
+        Returns:
+            Membership evidence with the observed status.
+        """
         now = datetime.now(UTC)
         try:
             member = await self._bot.get_chat_member(
@@ -69,7 +84,14 @@ class TelegramMembershipAdapter:
         return self._evidence(group_telegram_id, user_telegram_id, status, now)
 
     async def list_administrators(self, group_telegram_id: int) -> AdministratorEvidence:
-        """Fetch numeric human administrator evidence without storing public/private profile fields."""
+        """Fetch numeric human administrator evidence without storing public/private profile fields.
+
+        Args:
+            group_telegram_id: Telegram group ID to query.
+
+        Returns:
+            Administrator evidence with known flag and collected members.
+        """
         now = datetime.now(UTC)
         try:
             administrators = await self._bot.get_chat_administrators(
@@ -89,7 +111,14 @@ class TelegramMembershipAdapter:
         )
 
     async def verify_bot(self, group_telegram_id: int) -> BotCapabilityEvidence:
-        """Check rights individually; ordinary presence never implies administrator capabilities."""
+        """Check rights individually; ordinary presence never implies administrator capabilities.
+
+        Args:
+            group_telegram_id: Telegram group ID to query.
+
+        Returns:
+            Bot capability evidence with individually verified rights.
+        """
         now = datetime.now(UTC)
         try:
             member = await self._bot.get_chat_member(

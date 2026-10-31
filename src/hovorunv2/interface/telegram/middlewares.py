@@ -1,4 +1,4 @@
-"""ALL middlewares of Hovorun application."""
+"""Telegram middlewares binding logging context, message caching and access control."""
 
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -34,13 +34,30 @@ class LogContextMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        """Bind event user and chat IDs to logging context for the current update task."""
+        """Bind event user and chat IDs to logging context for the current update task.
+
+        Args:
+            handler: Downstream handler to invoke after context binding.
+            event: Telegram update being processed.
+            data: Handler context dictionary.
+
+        Returns:
+            Result of the downstream handler.
+        """
         user_id, chat_id = self._extract_ids(event, data)
         set_log_context(user_id=user_id, chat_id=chat_id)
         return await handler(event, data)
 
     def _extract_ids(self, event: TelegramObject, data: dict[str, Any]) -> tuple[int | None, int | None]:
-        """Extract user_id and chat_id from Telegram events or aiogram EventContext."""
+        """Extract user_id and chat_id from Telegram events or aiogram EventContext.
+
+        Args:
+            event: Telegram update being processed.
+            data: Handler context dictionary.
+
+        Returns:
+            Extracted user and chat IDs, or None entries when absent.
+        """
         event_context = data.get(EVENT_CONTEXT_KEY)
         if isinstance(event_context, EventContext):
             return event_context.user_id, event_context.chat_id
@@ -77,7 +94,16 @@ class MessageCacheMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        """Cache minimal content only after filters and access checks succeed."""
+        """Cache minimal content only after filters and access checks succeed.
+
+        Args:
+            handler: Downstream handler to invoke after caching.
+            event: Telegram update being processed.
+            data: Handler context dictionary.
+
+        Returns:
+            Result of the downstream handler.
+        """
         if isinstance(event, Message):
             try:
                 await self._message_service.cache_message(event)
@@ -105,7 +131,19 @@ class AccessMiddleware(BaseMiddleware):
         policy: CommandPolicy,
         command_name: str | None,
     ) -> Any:
-        """Authorize private features without treating trust as group management authority."""
+        """Authorize private features without treating trust as group management authority.
+
+        Args:
+            handler: Downstream handler to invoke when access is allowed.
+            event: Telegram update being processed.
+            data: Handler context dictionary.
+            user_id: Telegram user ID of the actor, or None when absent.
+            policy: Command policy governing this interaction.
+            command_name: Triggering command name, or None for callbacks.
+
+        Returns:
+            Handler result when allowed, otherwise None after denial.
+        """
         if not user_id or await self._access_service.is_banned(user_id):
             await self._deny_private_chat(event)
             return None
@@ -142,7 +180,20 @@ class AccessMiddleware(BaseMiddleware):
         policy: CommandPolicy,
         command_name: str | None,
     ) -> Any:
-        """Authorize group interactions: ban enforcement, direct vs automatic differ, bot admin private-only."""
+        """Authorize group interactions with ban enforcement and private-only bot administration.
+
+        Args:
+            handler: Downstream handler to invoke when access is allowed.
+            event: Telegram update being processed.
+            data: Handler context dictionary.
+            user_id: Telegram user ID of the actor, or None when absent.
+            chat_id: Telegram chat ID of the group.
+            policy: Command policy governing this interaction.
+            command_name: Triggering command name, or None for callbacks.
+
+        Returns:
+            Handler result when allowed, otherwise None after denial.
+        """
         if policy.requires_admin:
             logger.info("Bot administration rejected in group chat %d", chat_id)
             return None
@@ -173,7 +224,12 @@ class AccessMiddleware(BaseMiddleware):
         return None
 
     async def _send_group_denial(self, event: Message, chat_id: int) -> None:
-        """Send cooldown-limited guidance only for group or administrator bans."""
+        """Send cooldown-limited guidance only for group or administrator bans.
+
+        Args:
+            event: Telegram message being answered.
+            chat_id: Telegram chat ID of the group.
+        """
         decision = await self._access_service.evaluate_group_access(chat_id)
         if decision.reason not in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
             return
@@ -192,7 +248,16 @@ class AccessMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        """Check authorization before executing handler with deny-by-default for missing policies."""
+        """Check authorization before executing handler with deny-by-default for missing policies.
+
+        Args:
+            handler: Downstream handler to invoke when access is allowed.
+            event: Telegram update being processed.
+            data: Handler context dictionary.
+
+        Returns:
+            Handler result when allowed, otherwise None after denial.
+        """
         handler_obj = data.get("handler")
         raw_policy = data.get("policy") or get_flag(data, "policy")
         if (
@@ -246,7 +311,19 @@ class AccessMiddleware(BaseMiddleware):
         command_name: str | None,
         policy: CommandPolicy,
     ) -> bool | None:
-        """Return no feature decision for public/management actions; unknown features fail closed."""
+        """Return no feature decision for public actions; unknown features fail closed.
+
+        Args:
+            event: Telegram update being processed.
+            chat_id: Telegram chat ID for the feature evaluation.
+            user_id: Telegram user ID of the actor, or None when absent.
+            command_name: Triggering command name, or None for callbacks.
+            policy: Command policy governing this interaction.
+
+        Returns:
+            True when the feature is allowed, False when closed, or None when no
+            feature decision applies.
+        """
         if not isinstance(command_name, str):
             return None
         registry = self._access_service.features.registry
@@ -264,7 +341,14 @@ class AccessMiddleware(BaseMiddleware):
         return False
 
     def _extract_event_context(self, event: TelegramObject) -> tuple[int | None, int, bool]:
-        """Extract user_id, chat_id, and private chat flag from a Telegram event."""
+        """Extract user_id, chat_id, and private chat flag from a Telegram event.
+
+        Args:
+            event: Telegram update being processed.
+
+        Returns:
+            Extracted user ID, chat ID, and whether the chat is private.
+        """
         if isinstance(event, Message):
             user_id = (
                 event.from_user.id if event.from_user and not event.from_user.is_bot and not event.sender_chat else None
@@ -278,7 +362,11 @@ class AccessMiddleware(BaseMiddleware):
         return None, 0, False
 
     async def _deny_private_chat(self, event: TelegramObject) -> None:
-        """Send landing page or access denied alert to non-admin private chat users."""
+        """Send landing page or access denied alert to non-admin private chat users.
+
+        Args:
+            event: Telegram message or callback query to answer.
+        """
         if isinstance(event, Message):
             help_cmd = HelpCommand(self._settings, self._access_service)
             await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)

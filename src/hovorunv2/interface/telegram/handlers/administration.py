@@ -53,7 +53,13 @@ class AdministrationCommand(BaseCommand):
         return Command(CommandName.ADMIN)
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
-        """Preview exact active target; never mutate on initial command entry."""
+        """Preview exact active target; never mutate on initial command entry.
+
+        Args:
+            message: Telegram message triggering the command.
+            bot: Telegram bot used to deliver the preview.
+            **kwargs: Additional handler context, unused.
+        """
         if message.chat.type != ChatType.PRIVATE or message.from_user is None:
             return
         if message.from_user.is_bot or message.sender_chat is not None:
@@ -102,7 +108,12 @@ class AdministrationCommand(BaseCommand):
             await message.answer(ADMIN_UNAVAILABLE)
 
     async def handle_callback(self, query: CallbackQuery, callback_data: AdminCallback) -> None:
-        """Reject other transports, stale authority and replay before touching audited state."""
+        """Reject other transports, stale authority and replay before touching audited state.
+
+        Args:
+            query: Callback query carrying the confirmation decision.
+            callback_data: Unpacked admin callback payload.
+        """
         message = query.message
         if (
             not isinstance(message, Message)
@@ -134,5 +145,10 @@ class AdministrationCommand(BaseCommand):
             await query.answer(ADMIN_UNAVAILABLE, show_alert=True)
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
-        """Register the same private admin policy for opaque confirmations."""
+        """Register the same private admin policy for opaque confirmations.
+
+        Args:
+            router: Router receiving the callback registration.
+            flags: Handler flags bound to the callback route.
+        """
         router.callback_query.register(self.handle_callback, AdminCallback.filter(), flags=flags)

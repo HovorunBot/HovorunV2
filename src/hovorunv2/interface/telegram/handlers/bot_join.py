@@ -27,7 +27,12 @@ class BotJoinHandler:
         self._membership_handler = membership_handler
 
     async def handle_my_chat_member_update(self, event: ChatMemberUpdated, bot: Bot) -> None:
-        """Handle status change of the bot in a chat."""
+        """Handle status change of the bot in a chat.
+
+        Args:
+            event: Bot chat member update being processed.
+            bot: Telegram bot bound to the update.
+        """
         await self._membership_handler.handle_bot(event, bot)
         chat_id = event.chat.id
         new_status = event.new_chat_member.status
@@ -60,6 +65,10 @@ class BotJoinHandler:
         await self._reminder_service.send_unauthorized_prompt(bot, chat_id, force=True)
 
     def register(self, router: Router) -> None:
-        """Register the handler with the router."""
+        """Register the handler with the router.
+
+        Args:
+            router: Router receiving the bot membership registrations.
+        """
         router.my_chat_member.register(self.handle_my_chat_member_update)
         self._membership_handler.register(router)

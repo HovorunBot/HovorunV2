@@ -31,7 +31,14 @@ class DebugCommand(BaseCommand):
         return Command(CommandName.DEBUG, "force_error")
 
     async def is_triggered(self, message: Message) -> bool:
-        """Check if message starts with /debug or /force_error."""
+        """Return whether the message text targets /debug or /force_error.
+
+        Args:
+            message: Telegram message to inspect.
+
+        Returns:
+            True if the message text starts with /debug or /force_error.
+        """
         if not message.text:
             return False
         parts = message.text.strip().split()
@@ -41,7 +48,16 @@ class DebugCommand(BaseCommand):
         return cmd_part in (CommandName.DEBUG, "force_error")
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
-        """Handle debug commands."""
+        """Handle debug commands.
+
+        Args:
+            message: Telegram message triggering the command.
+            bot: Telegram bot bound to the handler.
+            **kwargs: Additional handler context, unused.
+
+        Raises:
+            ValueError: When /force_error is requested, to exercise error logging.
+        """
         if message.text and message.text.startswith("/force_error"):
             logger.info("Forcing error for testing purposes")
             msg = "Test error for Telegram DM logging"

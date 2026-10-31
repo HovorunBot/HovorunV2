@@ -114,7 +114,14 @@ class RichMediaCommand(BaseCommand):
         return F.text.regexp(self.pattern) & (F.sender_chat | ~F.from_user.is_bot)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Check if message contains links matching the command's pattern."""
+        """Return whether the message contains links matching the command pattern.
+
+        Args:
+            message: Telegram message to inspect.
+
+        Returns:
+            True if the message text contains a link handled by this provider.
+        """
         if not message.text:
             return False
         if not message.sender_chat and (not message.from_user or message.from_user.is_bot):
@@ -127,7 +134,13 @@ class RichMediaCommand(BaseCommand):
         bot: Bot,
         **kwargs: Any,
     ) -> None:
-        """Standardized handling of rich media links."""
+        """Standardized handling of rich media links.
+
+        Args:
+            message: Telegram message containing matched links.
+            bot: Telegram bot bound to the handler.
+            **kwargs: Additional handler context, unused.
+        """
         if not message.text:
             return
         if not message.sender_chat and not message.from_user:
@@ -146,7 +159,15 @@ class RichMediaCommand(BaseCommand):
             await self._process_match(match, message, direct=direct)
 
     async def _resolve_sender(self, message: Message) -> tuple[int | None, int | None, str] | None:
-        """Resolve numeric actor, generation, and transient label from Telegram message."""
+        """Resolve numeric actor, generation, and transient label from Telegram message.
+
+        Args:
+            message: Telegram message carrying the sender.
+
+        Returns:
+            Actor ID, generation and display label, or None when the sender is
+            absent, a bot, or unavailable.
+        """
         if message.sender_chat:
             return None, None, message.sender_chat.title or ""
         if message.from_user is None or message.from_user.is_bot:
@@ -164,7 +185,17 @@ class RichMediaCommand(BaseCommand):
     async def _resolve_group_target(
         self, message: Message, actor_id: int | None, *, direct: bool
     ) -> tuple[JobTarget, int, TriggerKind, TargetKind, int] | None:
-        """Resolve group chat target, epoch, and charging configuration."""
+        """Resolve group chat target, epoch, and charging configuration.
+
+        Args:
+            message: Telegram message carrying the group context.
+            actor_id: Numeric actor ID, or None when the sender is a channel.
+            direct: Whether the message was a direct slash command.
+
+        Returns:
+            Job target, generation, trigger kind, charged kind and ID, or None when
+            the group cannot be resolved.
+        """
         chat = await self._chats.get_chat(message.chat.id)
         if chat is None:
             chat = await self._chats.get_or_create_chat(
@@ -193,7 +224,18 @@ class RichMediaCommand(BaseCommand):
         *,
         direct: bool,
     ) -> tuple[JobTarget, int, TriggerKind, TargetKind, int] | None:
-        """Resolve target, epoch, and charge parameters for either group or private chat."""
+        """Resolve target, epoch, and charge parameters for either group or private chat.
+
+        Args:
+            message: Telegram message carrying the chat context.
+            actor_id: Numeric actor ID, or None when the sender is a channel.
+            actor_generation: Current actor generation, or None when absent.
+            direct: Whether the message was a direct slash command.
+
+        Returns:
+            Job target, generation, trigger kind, charged kind and ID, or None when
+            the target cannot be resolved.
+        """
         if message.chat.id < 0:
             return await self._resolve_group_target(message, actor_id, direct=direct)
         if actor_id is None or actor_generation is None:
@@ -216,7 +258,13 @@ class RichMediaCommand(BaseCommand):
         *,
         direct: bool,
     ) -> None:
-        """Admit and enqueue a single matched media link for worker execution."""
+        """Admit and enqueue a single matched media link for worker execution.
+
+        Args:
+            match: Regex match containing the media URL.
+            message: Telegram message carrying the link.
+            direct: Whether the message was a direct slash command.
+        """
         try:
             sender = await self._resolve_sender(message)
             if sender is None:
@@ -254,7 +302,20 @@ class RichMediaCommand(BaseCommand):
         charged_kind: TargetKind,
         charged_id: int,
     ) -> None:
-        """Construct envelope, seal payload and admit ticket to background queue."""
+        """Construct envelope, seal payload and admit ticket to background queue.
+
+        Args:
+            url: Media URL extracted from the message.
+            message: Telegram message carrying the link.
+            target: Job target identifying the charged chat or user.
+            epoch: Feature generation used for admission.
+            actor_id: Numeric actor ID, or None when the sender is a channel.
+            actor_generation: Current actor generation, or None when absent.
+            sender_label: Transient display label of the sender.
+            trigger: Trigger kind for the admission.
+            charged_kind: Kind of the entity charged for the job.
+            charged_id: Numeric ID of the charged entity.
+        """
         now = self._clock.now()
         deadline = now + MAX_JOB_LIFETIME_SECONDS
         job_id = uuid.uuid4().hex

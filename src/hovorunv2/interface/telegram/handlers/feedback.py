@@ -16,9 +16,9 @@ logger = get_logger(__name__)
 
 
 class FeedbackCommand(BaseCommand):
-    """Handler for the /feedback command.
+    """Handle the /feedback command.
 
-    Delegates user feedback submission to FeedbackService.
+    Delegate user feedback submission to FeedbackService.
     """
 
     POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
@@ -38,7 +38,14 @@ class FeedbackCommand(BaseCommand):
         return Command(CommandName.FEEDBACK)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Check if message starts with /feedback."""
+        """Return whether the message text targets the /feedback command.
+
+        Args:
+            message: Telegram message to inspect.
+
+        Returns:
+            True if the message text starts with /feedback.
+        """
         if not message.text:
             return False
         parts = message.text.strip().split()
@@ -48,13 +55,24 @@ class FeedbackCommand(BaseCommand):
         return cmd_part == CommandName.FEEDBACK
 
     def _extract_feedback_content(self, message: Message) -> str:
-        """Extract feedback body from command message."""
+        """Extract feedback body from command message.
+
+        Args:
+            message: Telegram message carrying the feedback text.
+
+        Returns:
+            Feedback text after the command, or an empty string when absent.
+        """
         text = (message.text or "").strip()
         parts = text.split(maxsplit=1)
         return parts[1].strip() if len(parts) > 1 else ""
 
     async def _send_instruction(self, message: Message) -> None:
-        """Reply with feedback command usage guidance."""
+        """Reply with feedback command usage guidance.
+
+        Args:
+            message: Telegram message to reply to.
+        """
         await message.reply(
             "💬 <b>How to send feedback:</b>\n\n"
             "Please provide your message after <code>/feedback</code>:\n"
@@ -63,7 +81,12 @@ class FeedbackCommand(BaseCommand):
         )
 
     async def _send_delivery_status(self, message: Message, *, delivered: bool) -> None:
-        """Reply with feedback delivery outcome."""
+        """Reply with feedback delivery outcome.
+
+        Args:
+            message: Telegram message to reply to.
+            delivered: Whether the feedback reached the development team.
+        """
         if delivered:
             await message.reply(
                 "✅ <b>Thank you!</b> Your feedback has been sent directly to the development team.",
@@ -76,7 +99,13 @@ class FeedbackCommand(BaseCommand):
         )
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
-        """Process user feedback via FeedbackService."""
+        """Process user feedback via FeedbackService.
+
+        Args:
+            message: Telegram message triggering the command.
+            bot: Telegram bot used to submit the feedback.
+            **kwargs: Additional handler context, unused.
+        """
         feedback_content = self._extract_feedback_content(message)
         if not feedback_content:
             await self._send_instruction(message)

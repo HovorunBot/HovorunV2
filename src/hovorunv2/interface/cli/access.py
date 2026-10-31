@@ -14,7 +14,17 @@ class AccessCLI:
         self._administration = administration
 
     async def execute(self, request: AdminRequest) -> str:
-        """Resolve current known targets and preserve actual CLI provenance."""
+        """Resolve current known targets and preserve actual CLI provenance.
+
+        Args:
+            request: Administrative command parsed from offline arguments.
+
+        Returns:
+            JSON-encoded result of the applied operation.
+
+        Raises:
+            ValueError: If the administration service refuses the operation.
+        """
         actor = ActorContext.cli(reason=request.reason)
         target = await self._administration.resolve(request.kind, request.target)
         result = await self._administration.execute(request, target, actor, None)

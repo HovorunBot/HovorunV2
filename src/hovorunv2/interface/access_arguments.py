@@ -13,12 +13,23 @@ class AccessArgumentParser(argparse.ArgumentParser):
     """Report invalid private input without terminating the bot process."""
 
     def error(self, message: str) -> Never:
-        """Raise a semantic input error that interfaces can present safely."""
+        """Raise a semantic input error that interfaces can present safely.
+
+        Args:
+            message: Human-readable description of the invalid private input.
+
+        Raises:
+            ValueError: Always, with the supplied message.
+        """
         raise ValueError(message)
 
 
 def add_access_arguments(parser: argparse.ArgumentParser) -> None:
-    """Configure one operational command without role, limit or recovery mutations."""
+    """Configure one operational command without role, limit or recovery mutations.
+
+    Args:
+        parser: Argument parser receiving the shared access command syntax.
+    """
     parser.add_argument("action", choices=tuple(AdminAction))
     parser.add_argument("kind", choices=tuple(TargetKind))
     parser.add_argument("target", help="Existing numeric Telegram ID or known @username.")
@@ -37,7 +48,14 @@ def add_access_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def parse_access(arguments: list[str]) -> AdminRequest:
-    """Parse bounded operational fields and preserve quoted reason text."""
+    """Parse bounded operational fields and preserve quoted reason text.
+
+    Args:
+        arguments: Whitespace-split tokens following the /admin command.
+
+    Returns:
+        Validated administrative request built from the parsed fields.
+    """
     parser = AccessArgumentParser(prog="/admin", add_help=False)
     add_access_arguments(parser)
     return AdminRequest.model_validate(vars(parser.parse_args(arguments)))

@@ -60,7 +60,14 @@ class AccessCommand(BaseCommand):
         return Command(CommandName.ALLOW_CHAT)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Check if message is /allow_chat."""
+        """Return whether the message text targets the /allow_chat command.
+
+        Args:
+            message: Telegram message to inspect.
+
+        Returns:
+            True if the message text starts with /allow_chat.
+        """
         if not message.text:
             return False
         parts = message.text.strip().split()
@@ -70,7 +77,13 @@ class AccessCommand(BaseCommand):
         return cmd_part == CommandName.ALLOW_CHAT
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
-        """Bind activation to the known group carrying the authenticated human command."""
+        """Bind activation to the known group carrying the authenticated human command.
+
+        Args:
+            message: Telegram message triggering the command.
+            bot: Telegram bot used to deliver activation notifications.
+            **kwargs: Additional handler context, unused.
+        """
         if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
             await message.answer("Run /allow_chat in the group you want to activate.")
             return
@@ -92,7 +105,15 @@ class AccessCommand(BaseCommand):
     async def _notify_request(
         self, message: Message, actor: User, bot: Bot, target: PermissionTarget, request_id: int
     ) -> None:
-        """Notify current ADMIN/OWNER recipients once, using only public operational metadata."""
+        """Notify current ADMIN/OWNER recipients once, using only public operational metadata.
+
+        Args:
+            message: Telegram message carrying the group context.
+            actor: User requesting activation.
+            bot: Telegram bot used to broadcast the request.
+            target: Permission target for the group being activated.
+            request_id: Identifier of the saved activation request.
+        """
         request_text = (
             "🔔 <b>Access Request</b>\n\n"
             f"<b>Group:</b> {html.escape(message.chat.title or 'Unknown')}\n"
@@ -119,7 +140,13 @@ class AccessCommand(BaseCommand):
         await self._notifier.broadcast(bot, request_text, reply_markup=builder.as_markup(), include_admins=True)
 
     async def handle_callback(self, query: CallbackQuery, callback_data: AccessCallback, bot: Bot) -> None:
-        """Use the callback actor and revalidate the exact selected group/request at mutation."""
+        """Use the callback actor and revalidate the exact selected group/request at mutation.
+
+        Args:
+            query: Callback query carrying the approval decision.
+            callback_data: Unpacked access callback payload.
+            bot: Telegram bot used to confirm approvals.
+        """
         message = query.message
         if not isinstance(message, Message) or query.from_user.is_bot:
             await query.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE], show_alert=True)
@@ -158,5 +185,10 @@ class AccessCommand(BaseCommand):
         await query.answer(RESULT_TEXT[result.outcome], show_alert=result.outcome not in SUCCESS_OUTCOMES)
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
-        """Register callback handlers with router."""
+        """Register callback handlers with router.
+
+        Args:
+            router: Router receiving the callback registration.
+            flags: Handler flags bound to the callback route.
+        """
         router.callback_query.register(self.handle_callback, AccessCallback.filter(), flags=flags)

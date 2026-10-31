@@ -16,7 +16,16 @@ logger = get_logger(__name__)
 
 
 def build_unauthorized_prompt(chat_id: int, group_id: int, generation: int) -> tuple[str, InlineKeyboardBuilder]:
-    """Generate guidance text and approval button for unauthorized chats."""
+    """Generate guidance text and approval button for unauthorized chats.
+
+    Args:
+        chat_id: Telegram chat ID receiving the prompt.
+        group_id: Group entity ID bound into the approval callback.
+        generation: Group identity generation bound into the approval callback.
+
+    Returns:
+        Guidance text and keyboard builder carrying the approval request.
+    """
     builder = InlineKeyboardBuilder()
     builder.add(
         InlineKeyboardButton(
@@ -56,7 +65,17 @@ class TelegramUnauthorizedPromptSender:
         text: str,
         builder: InlineKeyboardBuilder,
     ) -> bool:
-        """Dispatch prompt message catching expected transport errors."""
+        """Dispatch prompt message catching expected transport errors.
+
+        Args:
+            bot: Telegram bot delivering the prompt.
+            chat_id: Telegram chat ID receiving the prompt.
+            text: Guidance text to send.
+            builder: Keyboard builder carrying the approval request.
+
+        Returns:
+            True when the prompt was sent, False on transport errors.
+        """
         try:
             await bot.send_message(
                 chat_id=chat_id,
@@ -73,7 +92,15 @@ class TelegramUnauthorizedPromptSender:
         return True
 
     async def send(self, bot: Bot, chat_id: int) -> bool:
-        """Send prompt to chat. Returns True if sent, False if forbidden or on error."""
+        """Send prompt to chat, returning False when forbidden or on error.
+
+        Args:
+            bot: Telegram bot delivering the prompt.
+            chat_id: Telegram chat ID receiving the prompt.
+
+        Returns:
+            True when the prompt was sent, False otherwise.
+        """
         chat = await self._chats.get_chat(chat_id)
         if chat is None or not self._is_eligible_group(chat.chat_type):
             return False
@@ -88,7 +115,16 @@ class SyncTelegramUnauthorizedPromptSender(SyncUnauthorizedPromptPort):
         self._api = api
 
     def send(self, chat_id: int, group_id: int, generation: int) -> bool:
-        """Send prompt to unauthorized chat."""
+        """Send prompt to unauthorized chat.
+
+        Args:
+            chat_id: Telegram chat ID receiving the prompt.
+            group_id: Group entity ID bound into the approval callback.
+            generation: Group identity generation bound into the approval callback.
+
+        Returns:
+            True when the prompt was delivered, False otherwise.
+        """
         text, builder = build_unauthorized_prompt(chat_id, group_id, generation)
         reply_markup = json.dumps(builder.as_markup().model_dump(mode="json"))
         return self._api.send_message(chat_id, text, reply_markup=reply_markup) is not None

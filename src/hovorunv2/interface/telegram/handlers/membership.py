@@ -61,7 +61,11 @@ class MembershipEventHandler:
         )
 
     async def handle_member(self, event: ChatMemberUpdated) -> None:
-        """Apply evidence only for human administrators or already recorded relevant identities."""
+        """Apply evidence only for human administrators or already recorded relevant identities.
+
+        Args:
+            event: Chat member update carrying the membership change.
+        """
         if event.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP} or event.new_chat_member.user.is_bot:
             return
         group = await self._identities.ingest_group(event.chat.id, event.chat.title, event.chat.type)
@@ -71,7 +75,12 @@ class MembershipEventHandler:
             )
 
     async def handle_bot(self, event: ChatMemberUpdated, bot: Bot) -> None:
-        """Record actual bot presence separately; unknown checks never mean removal."""
+        """Record actual bot presence separately; unknown checks never mean removal.
+
+        Args:
+            event: Chat member update carrying the bot membership change.
+            bot: Telegram bot identifying the physical bot account.
+        """
         if event.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP} or event.new_chat_member.user.id != bot.id:
             return
         group = await self._identities.ingest_group(event.chat.id, event.chat.title, event.chat.type)
@@ -81,5 +90,9 @@ class MembershipEventHandler:
             )
 
     def register(self, router: Router) -> None:
-        """Subscribe explicitly to human member changes; BotJoinHandler owns my_chat_member dispatch."""
+        """Subscribe explicitly to human member changes; BotJoinHandler owns my_chat_member dispatch.
+
+        Args:
+            router: Router receiving the chat member registration.
+        """
         router.chat_member.register(self.handle_member)

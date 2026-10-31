@@ -55,7 +55,13 @@ class EmergencyCommand(BaseCommand):
         return Command(CommandName.EMERGENCY)
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
-        """Apply one audited global transition only for a current private bot administrator."""
+        """Apply one audited global transition only for a current private bot administrator.
+
+        Args:
+            message: Telegram message triggering the command.
+            bot: Telegram bot bound to the handler.
+            **kwargs: Additional handler context, unused.
+        """
         if message.chat.type != ChatType.PRIVATE or message.from_user is None:
             return
         if message.from_user.is_bot or message.sender_chat is not None:
@@ -83,7 +89,14 @@ class EmergencyCommand(BaseCommand):
             await message.answer(EMERGENCY_UNAVAILABLE)
 
     def _parse(self, words: list[str]) -> argparse.Namespace | None:
-        """Parse the bounded private syntax without terminating the bot on invalid input."""
+        """Parse the bounded private syntax without terminating the bot on invalid input.
+
+        Args:
+            words: Whitespace-split tokens following the /emergency command.
+
+        Returns:
+            Parsed emergency arguments, or None when no arguments were supplied.
+        """
         if not words:
             return None
         parser = AccessArgumentParser(prog="/emergency", add_help=False)
@@ -94,7 +107,15 @@ class EmergencyCommand(BaseCommand):
         return parser.parse_args(words)
 
     def _summary(self, state: FeatureEmergencyState, pending: int) -> str:
-        """Report the durable state without claiming a partial cleanup completed."""
+        """Report the durable state without claiming a partial cleanup completed.
+
+        Args:
+            state: Current feature emergency state.
+            pending: Count of pending jobs for the feature.
+
+        Returns:
+            Human-readable summary of the transition and pending work.
+        """
         cleanup = (
             f"Pending work: {pending} item(s); the bounded recovery sweep will clear them. "
             "This is not a confirmed purge."

@@ -16,9 +16,9 @@ logger = get_logger(__name__)
 
 
 class HelpCommand(BaseCommand):
-    """Handler for the /help command.
+    """Handle the /help command.
 
-    Provides bot information and contact details.
+    Provide bot information and contact details.
     """
 
     POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
@@ -39,7 +39,14 @@ class HelpCommand(BaseCommand):
         return Command(CommandName.HELP, CommandName.START)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Check if message triggers /help or /start."""
+        """Return whether the message text targets /help or /start.
+
+        Args:
+            message: Telegram message to inspect.
+
+        Returns:
+            True if the message text starts with /help or /start.
+        """
         if not message.text:
             return False
         parts = message.text.strip().split()
@@ -49,7 +56,13 @@ class HelpCommand(BaseCommand):
         return cmd_part in (CommandName.HELP, CommandName.START)
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
-        """Handle help command."""
+        """Handle help command.
+
+        Args:
+            message: Telegram message triggering the command.
+            bot: Telegram bot bound to the handler.
+            **kwargs: Additional handler context, unused.
+        """
         logger.info("Providing help info to user %s", message.from_user.id if message.from_user else "unknown")
         visible: list[str] = []
         actor_id = message.from_user.id if message.from_user and not message.sender_chat else None
@@ -67,7 +80,11 @@ class HelpCommand(BaseCommand):
         await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
 
     def get_help_text(self) -> str:
-        """Generate formatted help text."""
+        """Generate formatted help text.
+
+        Returns:
+            HTML help text with project and contact information.
+        """
         return (
             f"<b>🦉 HovorunV2 — Your Telegram Media Companion</b>\n\n"
             f"{self._settings.project_description}\n\n"

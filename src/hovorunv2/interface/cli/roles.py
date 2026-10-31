@@ -36,7 +36,11 @@ class RoleArguments(argparse.Namespace):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build role commands without opening resources or requiring settings."""
+    """Build role commands without opening resources or requiring settings.
+
+    Returns:
+        Configured argument parser for offline role administration.
+    """
     parser = argparse.ArgumentParser(prog="hovorun-admin", description="Offline Hovorun administration.")
     topics = parser.add_subparsers(dest="topic", required=True)
     roles = topics.add_parser("role", help="Manage active authority roles.")
@@ -98,7 +102,18 @@ class RoleCLI:
         return user_id
 
     async def execute(self, arguments: RoleArguments) -> str:
-        """List roles or apply one audited assignment; protect demotion confirmation."""
+        """List roles or apply one audited assignment; protect demotion confirmation.
+
+        Args:
+            arguments: Parsed role command namespace.
+
+        Returns:
+            Human-readable result of the listing or assignment.
+
+        Raises:
+            ValueError: If a demotion lacks explicit confirmation, the target is
+                missing or unresolvable, or the operation is unsupported.
+        """
         if arguments.operation == "list":
             users = await self._roles.list_roles(Role[arguments.role.upper()] if arguments.role else None)
             if not users:

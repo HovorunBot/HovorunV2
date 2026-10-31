@@ -24,7 +24,16 @@ def _register_middlewares(
     cache: CachePort,
     settings: AppSettings,
 ) -> None:
-    """Attach identity, logging, access and caching middlewares to router."""
+    """Attach identity, logging, access and caching middlewares to router.
+
+    Args:
+        router: Router receiving the middlewares.
+        identity_middleware: Outer middleware ingesting public identity evidence.
+        access_service: Access service driving authorization decisions.
+        message_service: Service caching authorized messages.
+        cache: Cooldown cache for access denial guidance.
+        settings: Application settings consumed by the access middleware.
+    """
     router.message.outer_middleware(identity_middleware)
     router.callback_query.outer_middleware(identity_middleware)
     router.my_chat_member.outer_middleware(identity_middleware)
@@ -41,7 +50,12 @@ def _register_middlewares(
 
 
 def _register_commands(router: Router, commands: list[BaseCommand]) -> None:
-    """Register command triggers and attached callback query routes."""
+    """Register command triggers and attached callback query routes.
+
+    Args:
+        router: Router receiving the command and callback registrations.
+        commands: Command handlers to register with their access policies.
+    """
     for command in commands:
         flags = {
             "command_name": command.name,
@@ -64,7 +78,20 @@ def build_router(
     cache: CachePort,
     bot_join_handler: BotJoinHandler | None = None,
 ) -> Router:
-    """Build and configure the main Telegram router with middlewares and handlers."""
+    """Build and configure the main Telegram router with middlewares and handlers.
+
+    Args:
+        commands: Command handlers to register on the router.
+        message_service: Service caching authorized messages.
+        access_service: Access service driving authorization decisions.
+        settings: Application settings consumed by the access middleware.
+        identity_middleware: Outer middleware ingesting public identity evidence.
+        cache: Cooldown cache for access denial guidance.
+        bot_join_handler: Optional handler for bot membership changes.
+
+    Returns:
+        Configured Telegram router.
+    """
     router = Router()
     _register_middlewares(
         router,

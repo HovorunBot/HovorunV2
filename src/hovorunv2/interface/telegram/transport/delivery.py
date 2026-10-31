@@ -46,7 +46,14 @@ class TelegramMediaDelivery:
         self._session = session
 
     async def deliver(self, bot: Bot, message: Message, payload: RichMediaPayload, platform_name: str) -> None:
-        """Execute the standardized media delivery lifecycle."""
+        """Execute the standardized media delivery lifecycle.
+
+        Args:
+            bot: Telegram bot delivering the media.
+            message: Telegram message triggering delivery.
+            payload: Rich media payload to deliver.
+            platform_name: Human-readable provider platform label.
+        """
         if not message.from_user:
             return
 
@@ -82,7 +89,16 @@ class TelegramMediaDelivery:
     def _build_input_media(
         self, media: str | BufferedInputFile, *, is_video: bool, caption: str | None
     ) -> InputMediaVideo | InputMediaPhoto:
-        """Create InputMediaVideo or InputMediaPhoto with optional HTML caption."""
+        """Create InputMediaVideo or InputMediaPhoto with optional HTML caption.
+
+        Args:
+            media: Media URL or buffered file bytes.
+            is_video: Whether the media is a video.
+            caption: Optional HTML caption attached to the first item.
+
+        Returns:
+            Built input media object.
+        """
         parse_mode = "HTML" if caption else None
         if is_video:
             return InputMediaVideo(media=media, caption=caption, parse_mode=parse_mode)
@@ -91,7 +107,18 @@ class TelegramMediaDelivery:
     async def _handle_caption_limits(
         self, message: Message, payload: RichMediaPayload, total_text: str, tg_user_name: str, platform_name: str
     ) -> str:
-        """Send long captions separately if needed and return appropriate caption for media."""
+        """Send long captions separately if needed and return appropriate caption for media.
+
+        Args:
+            message: Telegram message receiving the caption.
+            payload: Rich media payload being delivered.
+            total_text: Full caption text before truncation.
+            tg_user_name: Sender display name.
+            platform_name: Human-readable provider platform label.
+
+        Returns:
+            Caption suitable for the media group.
+        """
         plan = rendering.plan_caption(payload, tg_user_name, platform_name, total_text)
         if plan.separate_text is not None:
             await message.answer(
@@ -104,7 +131,14 @@ class TelegramMediaDelivery:
     async def _send_predownloaded_bytes(
         self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str
     ) -> None:
-        """Send media items using pre-downloaded byte buffers."""
+        """Send media items using pre-downloaded byte buffers.
+
+        Args:
+            bot: Telegram bot delivering the media.
+            message: Telegram message triggering delivery.
+            payload: Rich media payload carrying the buffers.
+            caption: Caption attached to the media group.
+        """
         final_group = self._predownloaded_group(payload, caption)
 
         if not final_group:
@@ -144,7 +178,20 @@ class TelegramMediaDelivery:
         )
 
     async def _try_url_delivery(self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str) -> bool:
-        """Attempt delivery using optimistic URL approach."""
+        """Attempt delivery using optimistic URL approach.
+
+        Args:
+            bot: Telegram bot delivering the media.
+            message: Telegram message triggering delivery.
+            payload: Rich media payload carrying the URLs.
+            caption: Caption attached to the media group.
+
+        Returns:
+            True when the URL delivery succeeded or was handled, False to fall back.
+
+        Raises:
+            TelegramBadRequest: When Telegram rejects the media for a non-fetch reason.
+        """
         media_group: list[MediaUnion] = [
             self._build_input_media(item.url, is_video=item.is_video, caption=caption if i == 0 else None)
             for i, item in enumerate(payload.media_items)
@@ -167,7 +214,14 @@ class TelegramMediaDelivery:
         return False
 
     async def _perform_ram_delivery(self, bot: Bot, message: Message, payload: RichMediaPayload, caption: str) -> None:
-        """Perform fallback delivery by downloading media to RAM first."""
+        """Perform fallback delivery by downloading media to RAM first.
+
+        Args:
+            bot: Telegram bot delivering the media.
+            message: Telegram message triggering delivery.
+            payload: Rich media payload to download and deliver.
+            caption: Caption attached to the media group.
+        """
         placeholder_msg = await message.answer(
             text=caption + "\n\n⏳ <i>Downloading media...</i>",
             parse_mode="HTML",
@@ -223,7 +277,15 @@ class TelegramMediaDelivery:
     async def _edit_placeholder_error(
         self, bot: Bot, chat_id: int, message_id: int, caption: str, error_type: DeliveryError
     ) -> None:
-        """Update placeholder message with specific error text."""
+        """Update placeholder message with specific error text.
+
+        Args:
+            bot: Telegram bot editing the placeholder.
+            chat_id: Telegram chat ID of the placeholder.
+            message_id: Message ID of the placeholder.
+            caption: Caption to attach above the error text.
+            error_type: Delivery error kind to render.
+        """
         text = f"{caption}\n\n{self.ERROR_TEXTS[error_type]}"
         with suppress(TelegramBadRequest):
             await bot.edit_message_text(

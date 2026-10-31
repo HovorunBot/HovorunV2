@@ -48,7 +48,20 @@ class NativeTelegramAPI:
     def call(
         self, method: TelegramMethod | str, data: HTTPForm | None = None, files: HTTPFiles | None = None
     ) -> object:
-        """Distinguish a definite Telegram rejection from an uncertain mutating request."""
+        """Distinguish a definite Telegram rejection from an uncertain mutating request.
+
+        Args:
+            method: Telegram Bot API method to invoke.
+            data: Optional form fields for the request.
+            files: Optional multipart file fields for the request.
+
+        Returns:
+            Parsed API result object.
+
+        Raises:
+            TelegramDeliveryUncertainError: When transport fails or the response is
+                not a definite, well-formed Telegram result.
+        """
         operation = TelegramMethod(method)
         try:
             response = self._http.request_json("POST", self._base + operation.value, data=data, files=files)
@@ -57,7 +70,15 @@ class NativeTelegramAPI:
         return _api_result(response)
 
     def get_chat_member(self, chat_id: int, user_id: int) -> dict[str, object] | None:
-        """Fetch member payload or return None on API rejection or transport failure."""
+        """Fetch member payload or return None on API rejection or transport failure.
+
+        Args:
+            chat_id: Telegram chat ID to query.
+            user_id: Telegram user ID to fetch.
+
+        Returns:
+            Member payload, or None when the API rejects or transport fails.
+        """
         try:
             result = self.call(TelegramMethod.GET_CHAT_MEMBER, data={"chat_id": chat_id, "user_id": user_id})
         except TelegramRejectedError, TelegramDeliveryUncertainError:
@@ -66,7 +87,14 @@ class NativeTelegramAPI:
             return result if isinstance(result, dict) else None
 
     def get_chat_administrators(self, chat_id: int) -> list[object] | None:
-        """Fetch admin list or return None on API rejection or transport failure."""
+        """Fetch admin list or return None on API rejection or transport failure.
+
+        Args:
+            chat_id: Telegram chat ID to query.
+
+        Returns:
+            Administrator list, or None when the API rejects or transport fails.
+        """
         try:
             result = self.call(TelegramMethod.GET_CHAT_ADMINISTRATORS, data={"chat_id": chat_id})
         except TelegramRejectedError, TelegramDeliveryUncertainError:
@@ -83,7 +111,18 @@ class NativeTelegramAPI:
         reply_markup: str | None = None,
         disable_web_page_preview: bool = True,
     ) -> int | None:
-        """Send formatted text message and return message ID if delivered."""
+        """Send formatted text message and return message ID if delivered.
+
+        Args:
+            chat_id: Telegram chat ID to send to.
+            text: Message text to send.
+            parse_mode: Parsing mode for the message text.
+            reply_markup: Optional serialized reply markup.
+            disable_web_page_preview: Whether to disable link previews.
+
+        Returns:
+            Delivered message ID, or None when the API rejects or transport fails.
+        """
         data: dict[str, str | int | float | bool] = {
             "chat_id": chat_id,
             "text": text,
@@ -100,7 +139,15 @@ class NativeTelegramAPI:
             return _require_message_id(result)
 
     def delete_message(self, chat_id: int, message_id: int) -> bool:
-        """Delete message, returning True if accepted by Telegram."""
+        """Delete message, returning True if accepted by Telegram.
+
+        Args:
+            chat_id: Telegram chat ID of the message.
+            message_id: Message ID to delete.
+
+        Returns:
+            True when Telegram accepts the deletion, False otherwise.
+        """
         try:
             result = self.call(TelegramMethod.DELETE_MESSAGE, data={"chat_id": chat_id, "message_id": message_id})
         except TelegramRejectedError, TelegramDeliveryUncertainError:
@@ -109,7 +156,17 @@ class NativeTelegramAPI:
             return result is True
 
     def edit_message_text(self, chat_id: int, message_id: int, text: str, *, parse_mode: str = "HTML") -> bool:
-        """Edit text message, returning True if accepted."""
+        """Edit text message, returning True if accepted.
+
+        Args:
+            chat_id: Telegram chat ID of the message.
+            message_id: Message ID to edit.
+            text: New message text.
+            parse_mode: Parsing mode for the new text.
+
+        Returns:
+            True when Telegram accepts the edit, False otherwise.
+        """
         try:
             result = self.call(
                 TelegramMethod.EDIT_MESSAGE_TEXT,
@@ -280,7 +337,25 @@ class NativeTelegramDelivery:
     def deliver(
         self, chat_id: int, message_id: int, payload: RichMediaPayload, platform_name: str, sender_label: str | None
     ) -> tuple[int, ...]:
-        """Return minimal message receipts; uncertain acceptance always stops the delivery sequence."""
+        """Return minimal message receipts; uncertain acceptance always stops the delivery sequence.
+
+        Args:
+            chat_id: Canonical Telegram chat ID to deliver to.
+            message_id: Source message ID to reply to.
+            payload: Rich media payload to deliver.
+            platform_name: Human-readable provider platform label.
+            sender_label: Transient decrypted sender display label.
+
+        Returns:
+            Message IDs of every delivered or placeholder message.
+
+        Raises:
+            ValueError: When the chat or source message identity is missing.
+            TelegramDeliveryUncertainError: When acceptance is uncertain after some
+                messages were delivered.
+            TelegramRejectedError: When Telegram rejects the delivery and nothing was
+                sent yet.
+        """
         if chat_id == 0:
             msg = "Delivery requires canonical chat and source message identities."
             raise ValueError(msg)

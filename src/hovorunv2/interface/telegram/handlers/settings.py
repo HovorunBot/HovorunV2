@@ -93,7 +93,14 @@ class SettingsCommand(BaseCommand):
         return Command(CommandName.SETTINGS)
 
     async def is_triggered(self, message: Message) -> bool:
-        """Check if message is /settings."""
+        """Return whether the message text targets the /settings command.
+
+        Args:
+            message: Telegram message to inspect.
+
+        Returns:
+            True if the message text starts with /settings.
+        """
         if not message.text:
             return False
         parts = message.text.strip().split()
@@ -103,7 +110,13 @@ class SettingsCommand(BaseCommand):
         return cmd_part == CommandName.SETTINGS
 
     async def handle(self, message: Message, bot: Bot, **kwargs: Any) -> None:
-        """Handle /settings command."""
+        """Handle /settings command.
+
+        Args:
+            message: Telegram message triggering the command.
+            bot: Telegram bot bound to the handler.
+            **kwargs: Additional handler context, unused.
+        """
         if message.sender_chat or not message.from_user or message.from_user.is_bot:
             return
         try:
@@ -130,7 +143,16 @@ class SettingsCommand(BaseCommand):
             await self._show_main_menu(msg, context)
 
     async def _authorized(self, actor_id: int, context: SettingsContext, bot: Bot) -> bool:
-        """Recheck current actor restrictions and target-specific Telegram/bot authority."""
+        """Recheck current actor restrictions and target-specific Telegram/bot authority.
+
+        Args:
+            actor_id: Numeric Telegram user ID of the actor.
+            context: Current settings session context.
+            bot: Telegram bot bound to the interaction.
+
+        Returns:
+            True when the actor is authorized for the current target.
+        """
         if await self._access_service.is_banned(actor_id):
             return False
         if context.target is None:
@@ -149,7 +171,14 @@ class SettingsCommand(BaseCommand):
     async def _render(
         self, message: Message, text: str, builder: InlineKeyboardBuilder, context: SettingsContext
     ) -> None:
-        """Bind every action to this exact window and invalidate the previous render."""
+        """Bind every action to this exact window and invalidate the previous render.
+
+        Args:
+            message: Telegram message being edited.
+            text: Rendered settings text.
+            builder: Keyboard builder holding the actions.
+            context: Current settings session context.
+        """
         callbacks = [
             SettingsCallback.unpack(button.callback_data)
             for row in builder.export()
@@ -176,7 +205,14 @@ class SettingsCommand(BaseCommand):
     async def _show_groups_menu(
         self, message: Message, actor_id: int, context: SettingsContext, after_id: int = 0
     ) -> None:
-        """Render only verified groups; callback values are slots in server-side choices."""
+        """Render only verified groups; callback values are slots in server-side choices.
+
+        Args:
+            message: Telegram message being edited.
+            actor_id: Numeric Telegram user ID of the actor.
+            context: Current settings session context.
+            after_id: Cursor for paginating the group listing.
+        """
         page = await self._groups.list_groups(actor_id, after_id)
         choices = [
             SettingsTarget(entity_id=group.entity_id, generation=group.generation, telegram_id=group.telegram_id)
@@ -222,7 +258,13 @@ class SettingsCommand(BaseCommand):
         await self._render(message, text, builder, listing)
 
     async def _select_group(self, query: CallbackQuery, callback: SettingsCallback, context: SettingsContext) -> None:
-        """Resolve an opaque list slot, preserving the original absolute session deadline."""
+        """Resolve an opaque list slot, preserving the original absolute session deadline.
+
+        Args:
+            query: Callback query carrying the group selection.
+            callback: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
         if (
             not isinstance(query.message, Message)
             or query.bot is None
@@ -242,7 +284,12 @@ class SettingsCommand(BaseCommand):
         await self._show_main_menu(query.message, selected)
 
     async def _show_main_menu(self, message: Message, context: SettingsContext) -> None:
-        """Show the top-level settings menu."""
+        """Show the top-level settings menu.
+
+        Args:
+            message: Telegram message being edited.
+            context: Current settings session context.
+        """
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(text="🌐 Languages", callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()),
@@ -287,7 +334,12 @@ class SettingsCommand(BaseCommand):
         await self._render(message, text, builder, context)
 
     async def _show_access_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
-        """Explain operational access without revealing private ban or entitlement records."""
+        """Explain operational access without revealing private ban or entitlement records.
+
+        Args:
+            query: Callback query carrying the menu request.
+            context: Current settings session context.
+        """
         message = query.message
         if not isinstance(message, Message):
             return
@@ -323,7 +375,13 @@ class SettingsCommand(BaseCommand):
         await self._render(message, text, builder, context)
 
     async def _show_usage(self, query: CallbackQuery, context: SettingsContext, scope: str | None) -> None:
-        """Show own direct usage or current group-charged usage without queue or private contents."""
+        """Show own direct usage or current group-charged usage without queue or private contents.
+
+        Args:
+            query: Callback query carrying the menu request.
+            context: Current settings session context.
+            scope: Which usage scope to render, "own" or "group".
+        """
         message = query.message
         if not isinstance(message, Message):
             return
@@ -344,7 +402,15 @@ class SettingsCommand(BaseCommand):
         await self._render(message, self._render_usage(title, summary), builder, context)
 
     def _render_usage(self, title: str, summary: UsageSummary) -> str:
-        """Render aggregate totals, effective remaining allowance and independent safety caps."""
+        """Render aggregate totals, effective remaining allowance and independent safety caps.
+
+        Args:
+            title: Heading for the usage report.
+            summary: Aggregated usage summary to render.
+
+        Returns:
+            HTML-formatted usage report.
+        """
         lines = [f"<b>{title}</b>", ""]
         if not summary.features:
             lines.append("No feature usage is currently configured.")
@@ -372,7 +438,13 @@ class SettingsCommand(BaseCommand):
         return "\n".join(lines)
 
     async def _show_notifications(self, query: CallbackQuery, context: SettingsContext, scope: str | None) -> None:
-        """Show category switches for the actor or the selected group."""
+        """Show category switches for the actor or the selected group.
+
+        Args:
+            query: Callback query carrying the menu request.
+            context: Current settings session context.
+            scope: Which notification scope to render, "own" or "group".
+        """
         message = query.message
         if not isinstance(message, Message):
             return
@@ -406,7 +478,13 @@ class SettingsCommand(BaseCommand):
     async def _handle_notifications_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
     ) -> None:
-        """Toggle exactly one category, then re-render the same scope."""
+        """Toggle exactly one category, then re-render the same scope.
+
+        Args:
+            query: Callback query carrying the toggle action.
+            callback_data: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
         scope, _, category_value = (callback_data.value or "").partition(".")
         category = next((item for item in NotificationCategory if item.value == category_value), None)
         if category is None:
@@ -435,7 +513,16 @@ class SettingsCommand(BaseCommand):
     async def _notification_target(
         self, query: CallbackQuery, context: SettingsContext, scope: str | None
     ) -> PermissionTarget | None:
-        """Resolve the explicit scope target; never substitute another subject."""
+        """Resolve the explicit scope target; never substitute another subject.
+
+        Args:
+            query: Callback query carrying the request.
+            context: Current settings session context.
+            scope: Which notification scope to resolve, "own" or "group".
+
+        Returns:
+            Permission target for the scope, or None when unavailable.
+        """
         if scope == "own":
             if context.actor_id is None or context.transport_chat_id <= 0:
                 return None
@@ -455,7 +542,12 @@ class SettingsCommand(BaseCommand):
         return None
 
     async def _show_lang_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
-        """Show language configuration menu."""
+        """Show language configuration menu.
+
+        Args:
+            query: Callback query carrying the menu request.
+            context: Current settings session context.
+        """
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
@@ -487,7 +579,14 @@ class SettingsCommand(BaseCommand):
     async def _show_lang_picker(
         self, message: Message, menu_type: SettingsMenu, page: int, context: SettingsContext
     ) -> None:
-        """Show paginated language picker with smart sorting."""
+        """Show paginated language picker with smart sorting.
+
+        Args:
+            message: Telegram message being edited.
+            menu_type: Which language menu to render.
+            page: Zero-based page of the language listing.
+            context: Current settings session context.
+        """
         chat_id = context.target_chat_id
         target, ignored = await self._language_service.get_chat_settings(chat_id)
 
@@ -559,7 +658,12 @@ class SettingsCommand(BaseCommand):
         builder.row(*nav_row)
 
     async def _show_modules_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
-        """Show modules (commands) configuration menu with split Video and Post toggles."""
+        """Show modules configuration menu with split Video and Post toggles.
+
+        Args:
+            query: Callback query carrying the menu request.
+            context: Current settings session context.
+        """
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
@@ -595,7 +699,12 @@ class SettingsCommand(BaseCommand):
         await self._render(msg, text, builder, context)
 
     async def handle_callback(self, query: CallbackQuery, callback_data: SettingsCallback) -> None:
-        """Route callbacks to appropriate menu handlers."""
+        """Route callbacks to appropriate menu handlers.
+
+        Args:
+            query: Callback query carrying the settings action.
+            callback_data: Unpacked settings callback payload.
+        """
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
@@ -621,7 +730,13 @@ class SettingsCommand(BaseCommand):
     async def _dispatch_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
     ) -> None:
-        """Route only validated and consumed settings operations."""
+        """Route only validated and consumed settings operations.
+
+        Args:
+            query: Callback query carrying the settings action.
+            callback_data: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
         msg = query.message
         if not isinstance(msg, Message):
             return
@@ -648,7 +763,13 @@ class SettingsCommand(BaseCommand):
     async def _dispatch_action(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
     ) -> None:
-        """Route configuration toggles that mutate language or module selection."""
+        """Route configuration toggles that mutate language or module selection.
+
+        Args:
+            query: Callback query carrying the settings action.
+            callback_data: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
         match callback_data.menu:
             case SettingsMenu.MODULES:
                 await self._handle_modules_callback(query, callback_data, context)
@@ -665,7 +786,13 @@ class SettingsCommand(BaseCommand):
     async def _handle_modules_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
     ) -> None:
-        """Handle module toggle callbacks."""
+        """Handle module toggle callbacks.
+
+        Args:
+            query: Callback query carrying the toggle action.
+            callback_data: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
@@ -703,7 +830,13 @@ class SettingsCommand(BaseCommand):
     async def _handle_lang_target_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
     ) -> None:
-        """Handle target language selection callbacks."""
+        """Handle target language selection callbacks.
+
+        Args:
+            query: Callback query carrying the selection action.
+            callback_data: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
@@ -722,7 +855,13 @@ class SettingsCommand(BaseCommand):
     async def _handle_lang_ignored_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
     ) -> None:
-        """Handle ignored language toggle callbacks."""
+        """Handle ignored language toggle callbacks.
+
+        Args:
+            query: Callback query carrying the toggle action.
+            callback_data: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
@@ -745,7 +884,11 @@ class SettingsCommand(BaseCommand):
         await self._show_lang_picker(msg, SettingsMenu.LANG_IGNORED, callback_data.page, context)
 
     async def handle_close(self, query: CallbackQuery) -> None:
-        """Handle close button by deleting the window and unregistering from cleanup."""
+        """Handle close button by deleting the window and unregistering from cleanup.
+
+        Args:
+            query: Callback query carrying the close action.
+        """
         msg = query.message
         if not msg or not isinstance(msg, Message):
             return
@@ -757,5 +900,10 @@ class SettingsCommand(BaseCommand):
         await query.answer()
 
     def register_callbacks(self, router: Router, flags: dict[str, Any]) -> None:
-        """Register settings callbacks."""
+        """Register settings callbacks.
+
+        Args:
+            router: Router receiving the callback registration.
+            flags: Handler flags bound to the callback route.
+        """
         router.callback_query.register(self.handle_callback, SettingsCallback.filter(), flags=flags)
