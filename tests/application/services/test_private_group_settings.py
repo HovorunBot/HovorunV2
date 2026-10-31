@@ -34,8 +34,10 @@ from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.operations.cleanup_service import CleanupService
+from hovorunv2.application.operations.notification_preferences import NotificationPreferenceService
 from hovorunv2.application.settings.settings_session_service import SettingsSessionService
 from hovorunv2.application.translation.language_service import LanguageService
+from hovorunv2.application.usage.usage_view import UsageViewService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.chat import ChatDB
@@ -82,6 +84,8 @@ async def private_runtime(
             await container.get(CleanupService),
             await container.get(SettingsSessionService),
             service,
+            await container.get(UsageViewService),
+            await container.get(NotificationPreferenceService),
         )
         yield bot, command, service
 

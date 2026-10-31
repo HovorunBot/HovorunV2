@@ -71,6 +71,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **lifecycle**: preserve durable configuration deletion history
 - **updates**: use recipient-aware release notifications
 - **notifications**: track per-recipient delivery state
 - **architecture**: enforce the final package contracts and close

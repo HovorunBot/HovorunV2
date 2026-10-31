@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    and_,
     column,
     false,
 )
@@ -29,6 +30,7 @@ chat_commands = Table(
     Base.metadata,
     Column("chat_id", Integer, ForeignKey("chats.id", ondelete="CASCADE"), primary_key=True),
     Column("command_id", Integer, ForeignKey("commands.id", ondelete="CASCADE"), primary_key=True),
+    Column("deleted_at", DateTime(timezone=True), nullable=True),
 )
 
 
@@ -79,7 +81,14 @@ class ChatDB(Base):
     deleted_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
 
     # M2M Relationship
-    commands: Mapped[list[CommandDB]] = relationship(secondary=chat_commands, back_populates="chats")
+    commands: Mapped[list[CommandDB]] = relationship(
+        secondary=chat_commands,
+        primaryjoin=lambda: ChatDB.id == chat_commands.c.chat_id,
+        secondaryjoin=lambda: and_(
+            CommandDB.id == chat_commands.c.command_id,
+            chat_commands.c.deleted_at.is_(None),
+        ),
+    )
 
     __table_args__ = (
         Index(

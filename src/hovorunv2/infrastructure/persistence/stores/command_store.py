@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from functools import partial
 
-from sqlalchemy import select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
@@ -12,7 +12,7 @@ from hovorunv2.application.auditing import AuditedUnitOfWork
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanDB
-from hovorunv2.domain.chat import ChatDB
+from hovorunv2.domain.chat import ChatDB, chat_commands
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.enums import ActorOrigin, ChatStatus, Platform, TargetKind
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
@@ -173,9 +173,25 @@ class SQLAlchemyCommandStore(CommandStore):
             session.add(chat)
 
         legacy, first_selection = self._record_explicit_selection(chat)
-        chat_commands = await chat.awaitable_attrs.commands
-        if command not in chat_commands:
-            chat_commands.append(command)
+        existing = await session.execute(
+            select(chat_commands.c.deleted_at).where(
+                chat_commands.c.chat_id == chat.id,
+                chat_commands.c.command_id == command.id,
+            )
+        )
+        row = existing.first()
+        if row is None:
+            await session.execute(insert(chat_commands).values(chat_id=chat.id, command_id=command.id))
+            return True, True, legacy
+        if row[0] is not None:
+            await session.execute(
+                update(chat_commands)
+                .where(
+                    chat_commands.c.chat_id == chat.id,
+                    chat_commands.c.command_id == command.id,
+                )
+                .values(deleted_at=None)
+            )
             return True, True, legacy
         return True, legacy or first_selection, legacy
 
@@ -199,15 +215,23 @@ class SQLAlchemyCommandStore(CommandStore):
         chat = await repo.get_by_id(chat_id, platform)
         if not chat:
             return False, False, False
-        if await SQLAlchemyCommandRepository(session).get_by_name(command_name) is None:
+        command = await SQLAlchemyCommandRepository(session).get_by_name(command_name)
+        if command is None:
             return False, False, False
         legacy, first_selection = self._record_explicit_selection(chat)
 
-        chat_commands = await chat.awaitable_attrs.commands
-        for cmd in list(chat_commands):
-            if cmd.name == command_name:
-                chat_commands.remove(cmd)
-                return True, legacy, True
+        removed = await session.execute(
+            update(chat_commands)
+            .where(
+                chat_commands.c.chat_id == chat.id,
+                chat_commands.c.command_id == command.id,
+                chat_commands.c.deleted_at.is_(None),
+            )
+            .values(deleted_at=datetime.now(UTC))
+            .returning(chat_commands.c.chat_id)
+        )
+        if removed.first() is not None:
+            return True, legacy, True
         # A first explicit off selection must prevent later default initialization.
         return legacy, legacy, legacy or first_selection
 
