@@ -15,9 +15,9 @@ from celery.signals import worker_process_init
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import init_worker_child, on_worker_process_init
-from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_queue import register_feature_tasks
+from hovorunv2.infrastructure.queues.feature_queue import register_feature_tasks
+from hovorunv2.infrastructure.runtime.cache import CacheService
 
 
 def _initialize_probe_child(settings: Settings, namespace: RuntimeNamespace, **kwargs: object) -> None:

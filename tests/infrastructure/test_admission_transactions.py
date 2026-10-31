@@ -19,10 +19,10 @@ from hovorunv2.application.jobs.admission import (
 from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome, PayloadState
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
-from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
-from hovorunv2.infrastructure.admission_state import admission_keys
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
+from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.runtime.admission_state import admission_keys
+from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.jobs import PRIVATE_BODY, job_envelope
 from tests.utils.runtime import ManualClock, runtime_cache
 

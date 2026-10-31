@@ -6,7 +6,7 @@ from kombu import Queue
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.bootstrap import worker_runtime  # noqa: F401  # Registers child lifecycle listeners.
 from hovorunv2.infrastructure.config import BrokerSettings
-from hovorunv2.infrastructure.feature_queue import (
+from hovorunv2.infrastructure.queues.feature_queue import (
     BROKER_SOCKET_SECONDS,
     BROKER_VISIBILITY_SECONDS,
     build_beat_schedule,

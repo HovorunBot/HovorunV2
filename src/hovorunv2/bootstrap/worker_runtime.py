@@ -12,12 +12,12 @@ import redis
 from celery import Celery
 from celery.signals import worker_process_init, worker_process_shutdown
 
-from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.jobs.feature_jobs import FEATURE_JOB_FUNCTION, JobEnvelope
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
+from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.errors import MediaFailure
 from hovorunv2.application.media.extractor import NativeMediaExtractor
@@ -27,18 +27,18 @@ from hovorunv2.application.translation.native_translation import NativeTranslati
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace, WallClock
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
-from hovorunv2.infrastructure.admission import WorkerAdmissionClient
-from hovorunv2.infrastructure.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import WorkerPayloadClient
-from hovorunv2.infrastructure.feature_queue import (
+from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
+from hovorunv2.infrastructure.queues.feature_queue import (
     BROKER_SOCKET_SECONDS,
     BROKER_VISIBILITY_SECONDS,
     set_feature_task_runner,
     set_operations_runner,
     set_recovery_runner,
 )
-from hovorunv2.infrastructure.native_http import NativeHTTPClient
+from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
+from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
+from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
 from hovorunv2.interface.telegram.prompts import SyncTelegramUnauthorizedPromptSender
 from hovorunv2.interface.telegram.sync_delivery import NativeTelegramAPI, NativeTelegramDelivery
 
@@ -180,7 +180,7 @@ class WorkerQueuePublisher:
 
 
 def _create_native_browser() -> SyncBrowserPort:
-    from hovorunv2.infrastructure.native_browser import NativeBrowserService  # noqa: PLC0415
+    from hovorunv2.infrastructure.browser.native_browser import NativeBrowserService  # noqa: PLC0415
 
     return NativeBrowserService()
 

@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 
-from hovorunv2.infrastructure.browser import BrowserService
+from hovorunv2.infrastructure.browser.async_browser import BrowserService
 
 pytestmark = [pytest.mark.browser]
 

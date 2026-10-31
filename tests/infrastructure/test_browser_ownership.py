@@ -15,13 +15,13 @@ from threading import Event
 
 import pytest
 
-from hovorunv2.application.browser import BrowserTab
+from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.infrastructure.browser import BrowserService
-from hovorunv2.infrastructure.browser_discovery import find_browser_executable
-from hovorunv2.infrastructure.browser_process import OwnedChromium
-from hovorunv2.infrastructure.native_browser import NativeBrowserService, cookies_for_url
+from hovorunv2.infrastructure.browser.async_browser import BrowserService
+from hovorunv2.infrastructure.browser.browser_discovery import find_browser_executable
+from hovorunv2.infrastructure.browser.browser_process import OwnedChromium
+from hovorunv2.infrastructure.browser.native_browser import NativeBrowserService, cookies_for_url
 from tests.utils.browser_termination import hold_owned_chromium
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 

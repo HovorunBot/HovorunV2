@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from hovorunv2.infrastructure.browser_discovery import (
+from hovorunv2.infrastructure.browser.browser_discovery import (
     _appimage_candidates,
     _browser_candidates,
     _select_browser,

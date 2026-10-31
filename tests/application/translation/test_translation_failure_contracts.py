@@ -13,7 +13,7 @@ from hovorunv2.application.translation.providers import GoogleTranslationService
 from hovorunv2.application.translation.service import TranslationService
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.native_http import NativeHTTPClient
+from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from tests.utils.identities import database_config
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 

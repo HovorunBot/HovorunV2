@@ -30,7 +30,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     SealedPayload,
 )
 from hovorunv2.application.usage.budgets import RUNTIME_RETENTION_SECONDS, RuntimeNamespace
-from hovorunv2.infrastructure.admission_state import (
+from hovorunv2.infrastructure.runtime.admission_state import (
     AdmissionCapacity,
     AdmissionChange,
     AdmissionKeys,
@@ -48,7 +48,7 @@ from hovorunv2.infrastructure.admission_state import (
     read_string,
     validate_claim,
 )
-from hovorunv2.infrastructure.cache import CacheService
+from hovorunv2.infrastructure.runtime.cache import CacheService
 
 MAX_ADMISSION_ATTEMPTS = 32
 SORTED_SET_ENTRY_SIZE = 2

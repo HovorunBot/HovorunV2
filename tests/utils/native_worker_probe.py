@@ -23,9 +23,9 @@ def main() -> None:
     """Verify clean child execution without event loops, container imports, or Chromium in media queue."""
     logging.disable(logging.CRITICAL)
     assert "DrissionPage" not in sys.modules
-    assert "hovorunv2.infrastructure.browser" not in sys.modules
+    assert "hovorunv2.infrastructure.browser.async_browser" not in sys.modules
     sys.modules["DrissionPage"] = None
-    sys.modules["hovorunv2.infrastructure.browser"] = None
+    sys.modules["hovorunv2.infrastructure.browser.async_browser"] = None
     try:
         asyncio.get_running_loop()
     except RuntimeError:

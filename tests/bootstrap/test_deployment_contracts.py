@@ -10,7 +10,7 @@ import pytest
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.bootstrap.worker_app import build_worker_application
 from hovorunv2.infrastructure.config import BrokerSettings
-from hovorunv2.infrastructure.feature_queue import build_beat_schedule
+from hovorunv2.infrastructure.queues.feature_queue import build_beat_schedule
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APPLICATION_ROLES = ("bot", "worker-media", "worker-browser", "worker-operations", "beat", "migrate")
@@ -105,8 +105,8 @@ async def test_lean_worker_import_does_not_load_browser_packages() -> None:
         "import sys\n"
         "import hovorunv2.bootstrap.worker_app\n"
         "assert 'DrissionPage' not in sys.modules\n"
-        "assert 'hovorunv2.infrastructure.browser' not in sys.modules\n"
-        "assert 'hovorunv2.infrastructure.native_browser' not in sys.modules\n"
+        "assert 'hovorunv2.infrastructure.browser.async_browser' not in sys.modules\n"
+        "assert 'hovorunv2.infrastructure.browser.native_browser' not in sys.modules\n"
     )
     process = await asyncio.create_subprocess_exec(sys.executable, "-W", "error", "-c", script)
     assert await process.wait() == 0

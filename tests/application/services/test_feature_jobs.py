@@ -42,8 +42,8 @@ from hovorunv2.bootstrap.worker_runtime import (
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.jobs import (
     PRIVATE_BODY,
     PRIVATE_URL,

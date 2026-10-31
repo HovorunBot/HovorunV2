@@ -4,9 +4,9 @@ from collections.abc import Callable, Mapping
 from enum import StrEnum
 from typing import Protocol
 
-from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_jobs import JobEnvelope
+from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import MediaFailure
 from hovorunv2.application.media.payloads import RichMediaPayload
 

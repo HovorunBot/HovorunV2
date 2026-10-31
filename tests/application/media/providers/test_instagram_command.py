@@ -14,8 +14,8 @@ from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.instagram import InstagramService
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.native_browser import NativeBrowserService
-from hovorunv2.infrastructure.native_http import NativeHTTPClient
+from hovorunv2.infrastructure.browser.native_browser import NativeBrowserService
+from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_browser import FakeSyncBrowser

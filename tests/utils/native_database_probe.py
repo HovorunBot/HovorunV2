@@ -33,9 +33,9 @@ def reject_inherited_pool(database: WorkerDatabase) -> None:
 def main() -> None:
     """Use only synthetic fixture data and return operational counters, never payloads."""
     assert "DrissionPage" not in sys.modules
-    assert "hovorunv2.infrastructure.browser" not in sys.modules
+    assert "hovorunv2.infrastructure.browser.async_browser" not in sys.modules
     sys.modules["DrissionPage"] = None
-    sys.modules["hovorunv2.infrastructure.browser"] = None
+    sys.modules["hovorunv2.infrastructure.browser.async_browser"] = None
     try:
         asyncio.get_running_loop()
     except RuntimeError:

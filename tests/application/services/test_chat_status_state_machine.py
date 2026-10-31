@@ -13,8 +13,8 @@ from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.application.ports import ChatStore, UserStore
 from hovorunv2.domain.enums import ChatStatus
-from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.runtime.cache import CacheService
 from hovorunv2.interface.telegram.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.membership import MembershipEventHandler

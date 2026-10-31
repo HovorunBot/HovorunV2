@@ -17,8 +17,8 @@ from hovorunv2.application.messaging.crypto import decrypt_payload, encrypt_payl
 from hovorunv2.application.messaging.message_service import MessageService, minimal_message_data
 from hovorunv2.application.ports import ChatStore
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.runtime.cache import CacheService
 from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.identity import IdentityMiddleware

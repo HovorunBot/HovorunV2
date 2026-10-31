@@ -13,10 +13,10 @@ from hovorunv2.application.jobs.admission import AdmissionState, AdmissionUnavai
 from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome, JobStatus
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime, worker_child_context
-from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.jobs import (
     PRIVATE_BODY,
     admission_service,

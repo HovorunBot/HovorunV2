@@ -14,7 +14,7 @@ from DrissionPage import ChromiumOptions, ChromiumPage
 from DrissionPage.errors import BaseError
 
 from hovorunv2.application.media.errors import BrowserError
-from hovorunv2.infrastructure.browser_discovery import find_browser_executable
+from hovorunv2.infrastructure.browser.browser_discovery import find_browser_executable
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -146,7 +146,7 @@ class OwnedChromium:
             arguments = [
                 sys.executable,
                 "-m",
-                "hovorunv2.infrastructure.chromium_launcher",
+                "hovorunv2.infrastructure.browser.chromium_launcher",
                 *browser_arguments,
             ]
         self._process = subprocess.Popen(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: S603

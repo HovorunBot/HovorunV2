@@ -10,12 +10,12 @@ from typing import ClassVar, Self
 
 import aiohttp
 
-from hovorunv2.application.browser import BrowserTab
 from hovorunv2.application.jobs.http_ports import (
     HTTPTransportError,
     SyncBrowserPort,
     SyncHTTPPort,
 )
+from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import (
     BrowserContinuationRequired,
     BrowserError,

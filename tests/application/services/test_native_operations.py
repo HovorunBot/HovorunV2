@@ -23,7 +23,7 @@ from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.enums import ChatStatus, Role
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_queue import (
+from hovorunv2.infrastructure.queues.feature_queue import (
     CHAT_MAINTENANCE_TASK,
     CLEANUP_SWEEP_TASK,
     MEMBERSHIP_RECONCILIATION_TASK,

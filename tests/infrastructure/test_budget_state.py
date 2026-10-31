@@ -13,7 +13,7 @@ from hovorunv2.application.usage.budgets import (
 )
 from hovorunv2.application.usage.policies import ResolvedUsage, UsagePolicy, UsageSafetyCaps, UsageSubject, UsageUnit
 from hovorunv2.domain.enums import TargetKind
-from hovorunv2.infrastructure.budget_state import (
+from hovorunv2.infrastructure.runtime.budget_state import (
     MAX_EXACT_INTEGER,
     BudgetStateUnavailableError,
     build_record,

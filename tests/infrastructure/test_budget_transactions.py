@@ -13,9 +13,9 @@ from hovorunv2.application.usage.budgets import BudgetRequest, ReservationState
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
-from hovorunv2.infrastructure.budget_state import MAX_EXACT_INTEGER, build_record
-from hovorunv2.infrastructure.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.runtime.budget_state import MAX_EXACT_INTEGER, build_record
+from hovorunv2.infrastructure.runtime.budgets import ValkeyBudgetStore
 from tests.utils.identities import FEATURE, ONE, ZERO
 from tests.utils.runtime import ManualClock, runtime_cache
 from tests.utils.usage import USER, usage_subjects

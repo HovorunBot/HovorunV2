@@ -23,7 +23,7 @@ from hovorunv2.application.messaging.crypto import get_fernet_for_chat
 from hovorunv2.application.ports import AppSettings
 from hovorunv2.application.usage.budgets import TECHNICAL_ID, Clock, RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
-from hovorunv2.infrastructure.cache import CacheService
+from hovorunv2.infrastructure.runtime.cache import CacheService
 
 REFERENCE_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 MAX_SENDER_LABEL_LEN = 256

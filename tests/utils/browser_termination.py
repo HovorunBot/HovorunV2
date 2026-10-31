@@ -3,7 +3,7 @@
 import signal
 from pathlib import Path
 
-from hovorunv2.infrastructure.browser_process import OwnedChromium
+from hovorunv2.infrastructure.browser.browser_process import OwnedChromium
 
 
 def hold_owned_chromium(pid_file: str) -> None:

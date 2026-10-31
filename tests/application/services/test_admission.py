@@ -18,10 +18,10 @@ from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
-from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.identities import FEATURE
 from tests.utils.jobs import PRIVATE_BODY, job_envelope
 from tests.utils.runtime import ManualClock, runtime_cache

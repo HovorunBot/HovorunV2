@@ -13,7 +13,7 @@ from hovorunv2.application.jobs.feature_jobs import PayloadState
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
+from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.runtime import ManualClock, runtime_cache
 
 

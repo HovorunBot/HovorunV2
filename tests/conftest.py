@@ -30,7 +30,7 @@ from hovorunv2.bootstrap.container import AppProvider, InfrastructureProvider
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.enums import CommandName, Role
-from hovorunv2.infrastructure.browser import BrowserService
+from hovorunv2.infrastructure.browser.async_browser import BrowserService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand

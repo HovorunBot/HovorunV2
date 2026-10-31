@@ -13,10 +13,10 @@ from hovorunv2.application.jobs.admission import AdmissionLimits
 from hovorunv2.application.jobs.feature_jobs import JobEnvelope, JobOutcome, JobTarget
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.domain.enums import TargetKind
-from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
-from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
+from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.runtime.cache import CacheService
+from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.identities import FEATURE
 from tests.utils.runtime import ManualClock, RuntimeNamespace
 

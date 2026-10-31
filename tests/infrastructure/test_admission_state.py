@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from hovorunv2.application.jobs.admission import AdmissionUnavailableError, JobStage, TicketState
 from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome
-from hovorunv2.infrastructure.admission_state import (
+from hovorunv2.infrastructure.runtime.admission_state import (
     AdmissionCapacity,
     AdmissionOperation,
     AdmissionRecord,

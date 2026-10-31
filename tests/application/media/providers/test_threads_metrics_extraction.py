@@ -3,7 +3,7 @@
 import aiohttp
 
 from hovorunv2.application.media.providers.threads import ThreadsService
-from hovorunv2.infrastructure.browser import BrowserService
+from hovorunv2.infrastructure.browser.async_browser import BrowserService
 
 
 async def test_extract_footer_from_soup() -> None:

@@ -32,12 +32,12 @@ from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.bootstrap.worker_runtime import WorkerQueuePublisher, WorkerRuntime, worker_child_context
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
-from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
-from hovorunv2.infrastructure.admission_state import admission_keys
-from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from hovorunv2.infrastructure.feature_queue import RECOVERY_TASK_FUNCTION
+from hovorunv2.infrastructure.queues.feature_queue import RECOVERY_TASK_FUNCTION
+from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.runtime.admission_state import admission_keys
+from hovorunv2.infrastructure.runtime.cache import CacheService
+from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.celery_recovery import native_recovery_worker
 from tests.utils.identities import FEATURE, FEATURE_BUCKET, ONE, OTHER_FEATURE, ZERO
 from tests.utils.jobs import PRIVATE_BODY, PRIVATE_URL, broker_envelopes, job_envelope, wait_for_terminal

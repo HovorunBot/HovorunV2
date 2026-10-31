@@ -11,11 +11,11 @@ from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, TargetKind
-from hovorunv2.infrastructure.admission import ValkeyAdmissionStore
-from hovorunv2.infrastructure.cache import CacheService
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.feature_payloads import ValkeyPayloadStore
-from hovorunv2.infrastructure.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.runtime.cache import CacheService
+from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.jobs import PRIVATE_BODY, admit_test_job, job_envelope, wait_for_terminal
 from tests.utils.native_worker import native_feature_worker
 from tests.utils.runtime import ManualClock, runtime_cache

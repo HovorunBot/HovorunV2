@@ -18,7 +18,7 @@ from hovorunv2.application.messaging.crypto import (
     verify_encryption_key,
 )
 from hovorunv2.application.messaging.message_service import MessageService
-from hovorunv2.infrastructure.cache import CacheService
+from hovorunv2.infrastructure.runtime.cache import CacheService
 
 
 @pytest.fixture
