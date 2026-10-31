@@ -28,7 +28,6 @@ dependencies = [
     "alembic",
     "yt-dlp",
     "instaloader",
-    "DrissionPage",
     "beautifulsoup4",
     "dishka",
     "cryptography",
@@ -40,6 +39,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+browser = ["DrissionPage"]
 legacy-import = ["aiosqlite"]
 
 [project.urls]
@@ -63,6 +63,7 @@ dev = [
     "aiosqlite",
     "aioresponses",
     "commitizen",
+    "DrissionPage",
     "import-linter",
     "pre-commit",
     "pytest",

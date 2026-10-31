@@ -31,7 +31,15 @@ class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore", hide_input_in_errors=True)
 
 
-class Settings(DatabaseSettings):
+class BrokerSettings(BaseSettings):
+    """Valkey broker settings for scheduler processes that need no bot or database credentials."""
+
+    valkey_url: str = "redis://localhost:6379/0"
+
+    model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore", hide_input_in_errors=True)
+
+
+class Settings(BrokerSettings, DatabaseSettings):
     """Application settings schema.
 
     Attributes:
@@ -41,7 +49,6 @@ class Settings(DatabaseSettings):
     """
 
     bot_token: str
-    valkey_url: str = "redis://localhost:6379/0"
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
     browser_max_tabs: int = 4

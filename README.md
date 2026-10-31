@@ -41,11 +41,11 @@ make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role add 123
 make run
 ```
 
-A dedicated migration container applies schema upgrades before the bot starts. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
+A dedicated migration container applies schema upgrades before the bot starts. Bot, media worker, browser worker, operations worker and one Beat scheduler run as independent services and restart independently. Media, operations and Beat use the lean application image; only the browser worker includes Chromium and DrissionPage. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
 
 | Command | Purpose |
 | --- | --- |
-| `make run` | Start the bot, PostgreSQL and Valkey |
+| `make run` | Start the bot, native workers, Beat, PostgreSQL and Valkey |
 | `make stop` | Stop production services and preserve volumes |
 | `make run-dev` | Start the complete development stack in Docker |
 | `make stop-dev` | Stop development services and preserve volumes |
@@ -67,7 +67,7 @@ Operational logs omit message URLs, exception contents and credentials while ret
 
 ## Development
 
-Built with Python 3.15+, aiogram, SQLAlchemy/PostgreSQL, Valkey, Dishka and DrissionPage.
+Built with Python 3.15+, aiogram, SQLAlchemy/PostgreSQL, Valkey, Celery and Dishka; DrissionPage is installed only in the browser-worker image target.
 See the [contributor guide](CONTRIBUTING.md) for setup, checks and contribution conventions, and [architecture](docs/architecture.md) for implementation details.
 
 ## License

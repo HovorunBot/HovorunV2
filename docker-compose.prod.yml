@@ -4,8 +4,43 @@ x-app: &app
   image: hovorunv2:${APP_VERSION:-local}
   build:
     context: .
+    target: lean
     args:
       APP_VERSION: ${APP_VERSION:-}
+
+x-browser: &browser
+  image: hovorunv2-browser:${APP_VERSION:-local}
+  build:
+    context: .
+    target: browser
+    args:
+      APP_VERSION: ${APP_VERSION:-}
+
+x-import: &import
+  image: hovorunv2-import:${APP_VERSION:-local}
+  build:
+    context: .
+    target: legacy-import
+    args:
+      APP_VERSION: ${APP_VERSION:-}
+
+x-app-environment: &app-environment
+  DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
+  VALKEY_URL: redis://valkey:6379/0
+  BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in the server .env}
+  CACHE_ENCRYPTION_KEY: ${CACHE_ENCRYPTION_KEY:?Generate the server .env with make env-init}
+  APP_VERSION: ${APP_VERSION:-}
+
+x-worker: &worker
+  <<: *app
+  restart: unless-stopped
+  environment:
+    <<: *app-environment
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    valkey:
+      condition: service_healthy
 
 services:
   postgres:
@@ -57,23 +92,115 @@ services:
       - path: ${APP_ENV_FILE:-.env}
         required: true
     environment:
-      DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
+      <<: *app-environment
+
+  worker-media:
+    <<: *worker
+    environment:
+      <<: *app-environment
+      INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
+      TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
+      TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
+    command:
+      - uv
+      - run
+      - --no-sync
+      - celery
+      - -A
+      - hovorunv2.bootstrap.worker_app:app
+      - worker
+      - --pool=prefork
+      - --concurrency=2
+      - --loglevel=INFO
+      - --without-gossip
+      - --without-mingle
+      - --without-heartbeat
+      - "--queues=work:{work}:media"
+
+  worker-browser:
+    <<: *browser
+    environment:
+      <<: *app-environment
+      INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
+      TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
+      TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    command:
+      - uv
+      - run
+      - --no-sync
+      - celery
+      - -A
+      - hovorunv2.bootstrap.worker_app:app
+      - worker
+      - --pool=prefork
+      - --concurrency=1
+      - --max-tasks-per-child=1
+      - --loglevel=INFO
+      - --without-gossip
+      - --without-mingle
+      - --without-heartbeat
+      - "--queues=work:{work}:browser"
+
+  worker-operations:
+    <<: *worker
+    command:
+      - uv
+      - run
+      - --no-sync
+      - celery
+      - -A
+      - hovorunv2.bootstrap.worker_app:app
+      - worker
+      - --pool=prefork
+      - --concurrency=1
+      - --loglevel=INFO
+      - --without-gossip
+      - --without-mingle
+      - --without-heartbeat
+      - "--queues=work:{work}:operations"
+
+  beat:
+    <<: *app
+    restart: unless-stopped
+    environment:
       VALKEY_URL: redis://valkey:6379/0
-      BOT_TOKEN: ${BOT_TOKEN:-}
-      CACHE_ENCRYPTION_KEY: ${CACHE_ENCRYPTION_KEY:-}
       APP_VERSION: ${APP_VERSION:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    command:
+      - uv
+      - run
+      - --no-sync
+      - celery
+      - -A
+      - hovorunv2.bootstrap.worker_app:app
+      - beat
+      - --loglevel=INFO
+      - --schedule=/var/lib/celery/beat/celerybeat-schedule
+      - --pidfile=/var/lib/celery/beat/celerybeat.pid
+    volumes:
+      - beat_state:/var/lib/celery/beat
 
   import-sqlite:
-    <<: *app
+    <<: *import
     profiles: [tools]
     environment:
       DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
     depends_on:
       postgres:
         condition: service_healthy
-    entrypoint: ["uv", "run", "--no-sync", "hovorun-import-sqlite"]
+    command: ["uv", "run", "--no-sync", "hovorun-import-sqlite"]
     restart: "no"
 
 volumes:
   postgres_data:
   valkey_data:
+  beat_state:

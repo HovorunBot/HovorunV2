@@ -3,7 +3,11 @@ __pycache__
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
 .Python
+build/
+dist/
+.uv-cache/
 env/
 bin/
 lib/
@@ -13,7 +17,9 @@ include/
 pyvenv.cfg
 .pytest_cache/
 .ruff_cache/
+.import_linter_cache/
 .coverage
+.coverage.*
 htmlcov/
 .git/
 .github/
@@ -27,6 +33,7 @@ data/
 .worktrees/
 docs/
 tests/
+scripts/
 Makefile
 GEMINI.md
 LICENSE

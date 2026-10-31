@@ -10,9 +10,9 @@ Browser discovery checks an executable `BROWSER_PATH` override first, then packa
 
 Flatpak discovery includes user and system exports. Browser AppImages are searched non-recursively in PATH directories, `~/Applications`, `~/AppImages`, and `/opt/appimages`; downloads must be executable. This discovery support does not change the supported worker runtime. For a browser installed elsewhere, set `BROWSER_PATH` explicitly.
 
-Use Python 3.15+, uv and Docker for local PostgreSQL and Valkey. Install dependencies with `uv sync`. For the development bot container, supply `BOT_TOKEN` and `CACHE_ENCRYPTION_KEY` through your environment or private `.env`. `make run-dev` selects the complete `docker-compose.dev.yml` stack with public development database credentials. `make run` selects only `docker-compose.prod.yml`, requiring private server credentials. Use `APP_ENV_FILE=.env.dev` for separate development settings. `example.env` is the server template; `make env-init` generates server-only secrets without overwriting an existing file.
+Use Python 3.15+, uv and Docker for local PostgreSQL and Valkey. Install dependencies with `uv sync`; `DrissionPage` remains a development dependency for browser tests and is installed in the browser-worker image through the `browser` extra. For the development containers, supply `BOT_TOKEN` and `CACHE_ENCRYPTION_KEY` through your environment or private `.env`. `make run-dev` selects the complete `docker-compose.dev.yml` stack with public development database credentials. `make run` selects only `docker-compose.prod.yml`, requiring private server credentials. Use `APP_ENV_FILE=.env.dev` for separate development settings. `example.env` is the server template; `make env-init` generates server-only secrets without overwriting an existing file.
 
-* `make run-dev`: Build and start the development bot, migration tool, PostgreSQL and Valkey in Docker.
+* `make run-dev`: Build and start the development bot, native workers, Beat, migration tool, PostgreSQL and Valkey in Docker.
 * `make stop-dev`: Stop the development stack without deleting volumes.
 * `make dev`: Start PostgreSQL and Valkey only, for host-side tests.
 * `make compose-config COMPOSE_ENV=dev`: Validate the standalone development configuration.

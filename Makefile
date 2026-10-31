@@ -30,21 +30,21 @@ MESSAGE ?=
 ## Run setup, then start the selected Docker stack.
 all: setup run
 
-## Fetch/check out code, create server .env if absent, and build the selected image.
+## Fetch/check out code, create server .env if absent, and build the selected role images.
 setup: checkout env-init build
 
-## Build and start the selected bot, migration service, PostgreSQL and Valkey.
+## Build and start the selected bot, native workers, Beat, migration service, PostgreSQL and Valkey.
 run: build
 	$(DOCKER_COMPOSE) up -d --no-build
 
-## Fetch/check out code and build the selected image; leave running services unchanged.
+## Fetch/check out code and build the selected role images; leave running services unchanged.
 update: checkout build
 
 ## Build and recreate changed services in the selected stack; remove orphan containers.
 deploy: build
 	$(DOCKER_COMPOSE) up -d --no-build --remove-orphans
 
-## Build the image, start PostgreSQL if needed, and run Alembic upgrades.
+## Build the role images, start PostgreSQL if needed, and run Alembic upgrades.
 migrate: build
 	$(DOCKER_COMPOSE) run --rm migrate
 
@@ -218,12 +218,12 @@ lint-imports:
 check: lint type-check lint-imports test
 	@echo "All quality checks passed!"
 
-# Docker handles build caching; one application image is shared within each environment.
-## Print build metadata and build the selected application image using Docker cache.
+# Docker handles build caching; lean roles share one image identity and browser/import roles use their own target.
+## Print build metadata and build every role-specific application image using Docker cache.
 build: verify-build
-	$(DOCKER_COMPOSE) build bot
+	$(DOCKER_COMPOSE) build bot worker-media worker-browser worker-operations beat migrate import-sqlite
 
-## Build the production image regardless of COMPOSE_ENV.
+## Build the production role images regardless of COMPOSE_ENV.
 build-prod:
 	@$(MAKE) COMPOSE_ENV=prod build
 

@@ -31,6 +31,7 @@ async def test_server_environment_generation_is_private_and_preserves_existing_k
     assert password in values["DATABASE_URL"]
     assert "@postgres:5432/hovorun" in values["DATABASE_URL"]
     assert values["CACHE_ENCRYPTION_KEY"]
+    assert "OPENROUTER" not in values
     assert password.encode() not in output
     assert values["CACHE_ENCRYPTION_KEY"].encode() not in output
     assert (await asyncio.to_thread(path.stat)).st_mode & 0o777 == 0o600

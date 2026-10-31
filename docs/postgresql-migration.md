@@ -21,7 +21,8 @@ Do not commit `.env` or replace a working encryption key during database migrati
 Each Compose file defines the complete stack independently. `make run-dev` builds/starts
 only `docker-compose.dev.yml`; `make run` builds/starts only `docker-compose.prod.yml`.
 No base file, merge or production profile is needed. Core services include PostgreSQL,
-Valkey, the migration tool and the bot; `import-sqlite` is an explicitly invoked tool.
+Valkey, the migration tool, the bot, media/browser/operations workers and one Beat scheduler;
+`import-sqlite` is an explicitly invoked tool.
 
 ```bash
 make run-dev
@@ -35,14 +36,16 @@ including `migrate`, `compose-config` and `compose-run`. `APP_ENV_FILE=.env.dev`
 another private environment file consistently for interpolation and the bot container.
 The `make dev` shortcut starts only development PostgreSQL/Valkey for host-side tests.
 
-The standalone production file requires all PostgreSQL settings and has no development-password
-fallback. Its `DATABASE_URL` must use hostname `postgres`, the configured database/user,
-and the same password as `POSTGRES_PASSWORD`. Updating these variables does not change
+The standalone production file requires all PostgreSQL settings, `BOT_TOKEN` and
+`CACHE_ENCRYPTION_KEY`, and has no development-password fallback. Its `DATABASE_URL` must
+use hostname `postgres`, the configured database/user, and the same password as
+`POSTGRES_PASSWORD`. Updating these variables does not change
 passwords in an already initialized PostgreSQL volume; rotate an existing database role
 explicitly when needed.
 
 PostgreSQL 18 stores data in the named volume mounted at `/var/lib/postgresql`.
-Valkey has its own named volume with AOF enabled. Production keeps the original
+Valkey has its own named volume with AOF enabled; Beat stores its schedule in a separate
+named volume. Production keeps the original
 `hovorunv2` project name and its existing volume prefix. Development uses the separate
 `hovorunv2-dev` project, images and volumes; it cannot select production volumes by default.
 Old local volumes are retained rather than copied or deleted automatically. If an existing
@@ -76,7 +79,7 @@ image, but **do not run the normal migration service or new bot before importing
 schema must still be empty. With the old database at `data/bot.db`, run:
 
 ```bash
-make compose-run ARGS="--build --volume '$(pwd)/data:/source:ro' import-sqlite /source/bot.db"
+make compose-run ARGS="--build --volume '$(pwd)/data:/source:ro' import-sqlite uv run --no-sync hovorun-import-sqlite /source/bot.db"
 ```
 
 The importer starts PostgreSQL as its dependency and accesses no Telegram or Valkey services.
@@ -96,14 +99,15 @@ Prefer loading real credentials from private environment configuration rather th
 
 ## Fresh installations and independent restarts
 
-A dedicated `migrate` container upgrades the database before the bot starts. The shared image
-entrypoint only launches its command; it does not rerun migrations for every administration,
-import or future worker command. Fresh PostgreSQL installations use the preserved migration chain.
+A dedicated `migrate` container upgrades the database before the bot starts. Every service uses
+a direct command and no shared shell entrypoint; migration does not rerun for administration,
+import, worker or Beat starts. Fresh PostgreSQL installations use the preserved migration chain.
 The role CLI requires PostgreSQL access but no Telegram, browser or Valkey connection.
 
-Future Celery workers will run as separate services with process-local resources and shared
-PostgreSQL/Valkey addresses. Actual feature-worker startup remains pending the executor design;
-this database change does not register a placeholder task or start an unfinished worker.
+Native media, browser and operations workers run as separate services with process-local
+resources and shared PostgreSQL/Valkey addresses. Beat is a singleton service with a private
+schedule volume. Media/operations/Beat use the lean image; only the browser worker contains
+Chromium and DrissionPage and starts the browser lazily inside an execution child.
 
 ## Tests
 
@@ -121,6 +125,6 @@ using temporary SQLite files; transfer tests exercise real PostgreSQL upgrades, 
 bytes, full-content verification, sequence repair, refusal on replay and transactional rollback.
 
 
-The SQLite dependency belongs to the `legacy-import` installation extra, not live PostgreSQL persistence. Development installs include it for historical/import tests. Install tool dependencies with `uv sync --extra legacy-import`; container images currently include the tool extra until role-specific images are introduced. Standalone Alembic uses a synchronous tool connection; asynchronous callers pass a connection through `AsyncConnection.run_sync`. The importer uses its own schema-scoped exclusion key, independent of ordinary mutation locks.
+The SQLite dependency belongs to the `legacy-import` installation extra, not live PostgreSQL persistence. Development installs include it for historical/import tests. Install tool dependencies locally with `uv sync --extra legacy-import`; the one-shot importer image target installs that extra, while lean and browser runtime images exclude it. Standalone Alembic uses a synchronous tool connection; asynchronous callers pass a connection through `AsyncConnection.run_sync`. The importer uses its own schema-scoped exclusion key, independent of ordinary mutation locks.
 
 Revision inspection uses Alembic MigrationContext; PostgreSQL catalog functions use SQLAlchemy expressions. Remaining raw SQL is limited to SQLite integrity PRAGMA and transactional ALTER SEQUENCE RESTART. PostgreSQL has no SQLAlchemy public schema construct for the latter; setval is not a transactional substitute. The source database and existing encryption keys remain unchanged.
