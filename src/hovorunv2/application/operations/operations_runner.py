@@ -14,7 +14,6 @@ from hovorunv2.application.identity.membership import (
     MembershipEvidence,
     MembershipStatus,
 )
-from hovorunv2.application.operations.changelog import get_changelog_updates, get_current_version, parse_version
 from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
 from hovorunv2.application.operations.ports import (
     OperationsRunnerPort,
@@ -22,6 +21,7 @@ from hovorunv2.application.operations.ports import (
     WorkerOperationsPort,
     WorkerTelegramPort,
 )
+from hovorunv2.application.operations.release_updates import ReleaseUpdateService
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.user import UserDB
@@ -168,6 +168,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         settings: AppSettings,
         clock: Clock,
         delivery: NotificationDeliveryService,
+        release: ReleaseUpdateService,
     ) -> None:
         self._ops = ops
         self._client = client
@@ -177,6 +178,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         self._settings = settings
         self._clock = clock
         self._delivery = delivery
+        self._release = release
         self._bot_id = self._parse_bot_id(settings.bot_token)
 
     def _parse_bot_id(self, token: str) -> int:
@@ -344,52 +346,19 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         return deleted
 
     def broadcast_release_notifications(self) -> int:
-        """Broadcast user-facing updates to approved groups upon a version increment.
+        """Queue a release event for approved groups; returns queued recipients.
 
         Returns:
-            Number of groups notified; 0 when the broadcast lock is held.
+            Number of recipients queued; 0 when the broadcast lock is held or no update applies.
         """
         lock_key = f"{self._namespace.value}lock:maintenance:release_notifications"
         if not self._client.set(lock_key, "1", nx=True, ex=60):
             return 0
         try:
-            return self._execute_release_broadcast()
+            return self._release.publish()
         finally:
             self._client.delete(lock_key)
 
     def deliver_notifications(self) -> int:
         """Deliver bounded due notification receipts with preference and access checks."""
         return self._delivery.deliver_due()
-
-    def _execute_release_broadcast(self) -> int:
-        current_version = get_current_version()
-        last_notified = self._ops.get_last_notified_version()
-        if last_notified is None:
-            self._ops.set_last_notified_version(current_version)
-            return 0
-        if parse_version(current_version) <= parse_version(last_notified):
-            return 0
-        updates_text = get_changelog_updates(last_notified, current_version)
-        if not updates_text:
-            self._ops.set_last_notified_version(current_version)
-            return 0
-        groups = self._ops.approved_group_chats()
-        if not groups:
-            self._ops.set_last_notified_version(current_version)
-            return 0
-        message = self._render_release_message(current_version, updates_text)
-        sent = 0
-        for group in groups:
-            if self._api.send_message(group.chat_id, message, parse_mode="HTML") is not None:
-                sent += 1
-        self._ops.set_last_notified_version(current_version)
-        return sent
-
-    def _render_release_message(self, version: str, updates: str) -> str:
-        tag_name = f"v{version.lstrip('v')}"
-        tag_url = f"{self._settings.github_url.rstrip('/')}/releases/tag/{tag_name}"
-        return (
-            f"🚀 <b>Hovorun Updated to {tag_name}</b>\n\n"
-            f"{updates}\n\n"
-            f'📖 <a href="{tag_url}">Read full release notes on GitHub</a>'
-        )

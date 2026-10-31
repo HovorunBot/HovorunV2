@@ -65,6 +65,7 @@ encryption configuration before starting against the new database.
 
 ### Refactor
 
+- **updates**: use recipient-aware release notifications
 - **notifications**: track per-recipient delivery state
 - **architecture**: enforce the final package contracts and close
 - **bootstrap**: split composition providers by ownership

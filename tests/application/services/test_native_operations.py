@@ -19,6 +19,7 @@ from hovorunv2.application.jobs.http_ports import HTTPFiles, HTTPForm, HTTPHeade
 from hovorunv2.application.operations.changelog import get_current_version
 from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
 from hovorunv2.application.operations.operations_runner import WorkerOperationsRunner
+from hovorunv2.application.operations.release_updates import ReleaseUpdateService
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.container import AppProvider
@@ -34,6 +35,7 @@ from hovorunv2.infrastructure.queues.feature_queue import (
     RELEASE_NOTIFICATIONS_TASK,
     broadcast_release_notifications_task,
     build_beat_schedule,
+    deliver_notifications_task,
     reconcile_memberships_task,
     run_chat_maintenance_task,
     send_unauthorized_reminder_task,
@@ -60,6 +62,20 @@ def _delivery(
         ledger=db.notifications,
         payloads=WorkerPayloadClient(client, settings, clock, namespace, UsageSafetyCaps(), lambda: None),
         sender=api,
+        clock=clock,
+    )
+
+
+def _release(
+    db: WorkerDatabase, client: redis.Redis, settings: Settings, namespace: RuntimeNamespace
+) -> ReleaseUpdateService:
+    """Compose the real release publisher with the child-owned database and payload client."""
+    clock = ManualClock()
+    return ReleaseUpdateService(
+        ops=db.operations,
+        ledger=db.notifications,
+        bodies=WorkerPayloadClient(client, settings, clock, namespace, UsageSafetyCaps(), lambda: None),
+        settings=settings,
         clock=clock,
     )
 
@@ -202,6 +218,7 @@ async def test_membership_reconciliation_in_operations_worker(
             settings=settings,
             clock=ManualClock(),
             delivery=_delivery(db, client, settings, namespace, sync_telegram_api),
+            release=_release(db, client, settings, namespace),
         )
         set_operations_runner(runner)
         try:
@@ -256,6 +273,7 @@ async def test_chat_reminders_and_unauthorized_prompts_in_operations_worker(
             settings=settings,
             clock=ManualClock(),
             delivery=_delivery(db, client, settings, namespace, sync_telegram_api),
+            release=_release(db, client, settings, namespace),
         )
         set_operations_runner(runner)
         try:
@@ -304,6 +322,7 @@ async def test_cleanup_sweep_in_operations_worker(
             settings=settings,
             clock=ManualClock(),
             delivery=_delivery(db, client, settings, namespace, sync_telegram_api),
+            release=_release(db, client, settings, namespace),
         )
         set_operations_runner(runner)
         try:
@@ -352,6 +371,7 @@ async def test_release_notifications_in_operations_worker(
             settings=settings,
             clock=ManualClock(),
             delivery=_delivery(db, client, settings, namespace, sync_telegram_api),
+            release=_release(db, client, settings, namespace),
         )
         set_operations_runner(runner)
         try:
@@ -366,20 +386,23 @@ async def test_release_notifications_in_operations_worker(
             assert len(sync_http.calls) == 0
             assert db.operations.get_last_notified_version() == current_ver
 
-            # 2. Version upgrade
+            # 2. Version upgrade queues per-group receipts; delivery sends them.
             db.operations.set_last_notified_version("0.1.0")
             sync_http.calls.clear()
-            sent = broadcast_release_notifications_task()
-            assert sent >= 1
-            send_calls = [c for c in sync_http.calls if "sendMessage" in c[1]]
-            assert len(send_calls) >= 1
-            assert send_calls[0][2]["chat_id"] == approved_chat_id
+            queued = broadcast_release_notifications_task()
+            assert queued >= 1
+            assert not [c for c in sync_http.calls if "sendMessage" in c[1]]
             assert db.operations.get_last_notified_version() == current_ver
+            assert deliver_notifications_task() >= 1
+            send_calls = [c for c in sync_http.calls if "sendMessage" in c[1]]
+            assert send_calls
+            assert send_calls[0][2]["chat_id"] == approved_chat_id
 
-            # 3. Same version: no broadcast
+            # 3. Same version: no new event or receipt; delivery is a no-op.
             sync_http.calls.clear()
             assert broadcast_release_notifications_task() == 0
-            assert len(sync_http.calls) == 0
+            assert deliver_notifications_task() == 0
+            assert not [c for c in sync_http.calls if "sendMessage" in c[1]]
         finally:
             set_operations_runner(None)
             client.close()

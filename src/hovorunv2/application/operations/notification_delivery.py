@@ -7,6 +7,7 @@ from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.jobs.feature_jobs import PayloadState, SyncPayloadPort
 from hovorunv2.application.operations.notification_ledger import (
     DEFAULT_PENDING_LIMIT,
+    NotificationEvent,
     NotificationOutcome,
     NotificationReceipt,
 )
@@ -23,6 +24,10 @@ MAX_BACKOFF_SECONDS = 300
 
 class NotificationLedgerPort(Protocol):
     """Synchronous delivery ledger reads and audited outcome writes."""
+
+    def ensure_event(self, event: NotificationEvent, *, actor: ActorContext) -> bool:
+        """Create the immutable event once; an existing key is a no-op."""
+        ...
 
     def pending(self, limit: int = DEFAULT_PENDING_LIMIT) -> tuple[NotificationReceipt, ...]:
         """Return a bounded page of pending/retry receipts."""

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.operations.notification_ledger import (
     DEFAULT_PENDING_LIMIT,
+    NotificationEvent,
     NotificationOutcome,
     NotificationReceipt,
 )
@@ -57,6 +58,44 @@ class WorkerNotificationStore:
                 .limit(limit)
             ).all()
             return tuple(self._receipt(event, receipt, user, chat) for receipt, event, user, chat in rows)
+
+    def ensure_event(self, event: NotificationEvent, *, actor: ActorContext) -> bool:
+        """Create the immutable event once and append its audit event in one transaction."""
+        self._require_owner()
+        with self._sessions.begin() as session:
+            existing = session.scalar(
+                select(NotificationEventDB).where(NotificationEventDB.event_key == event.event_key)
+            )
+            if existing is not None:
+                return False
+            session.add(
+                NotificationEventDB(
+                    event_key=event.event_key,
+                    category=event.category.value,
+                    introduction=event.introduction,
+                    release_identity=event.release_identity,
+                    body_ref=event.body_ref,
+                    created_at=datetime.now(UTC),
+                )
+            )
+            changes: dict[str, object] = {
+                "event_key": event.event_key,
+                "category": event.category.value,
+            }
+            validate_audit_changes("notification_event", "create", changes)
+            session.add(
+                AuditEventDB(
+                    actor_origin=actor.origin,
+                    actor_id=actor.actor_id,
+                    target_type="notification_event",
+                    target_id=event.event_key,
+                    action="create",
+                    changed_fields=changes,
+                    reason=actor.reason,
+                    correlation_id=actor.correlation_id,
+                )
+            )
+        return True
 
     def preference_enabled(self, target: PermissionTarget, category: NotificationCategory) -> bool:
         """Return the active category switch; absence means enabled.

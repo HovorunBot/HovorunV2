@@ -24,6 +24,7 @@ from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
 from hovorunv2.application.operations.operations_runner import WorkerOperationsRunner
+from hovorunv2.application.operations.release_updates import ReleaseUpdateService
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace, WallClock
 from hovorunv2.application.usage.policies import UsageSafetyCaps
@@ -294,6 +295,13 @@ class WorkerChildContext:
             sender=api,
             clock=self._clock,
         )
+        release_updates = ReleaseUpdateService(
+            ops=self._db.operations,
+            ledger=self._db.notifications,
+            bodies=self._runtime.payloads,
+            settings=self._settings,
+            clock=self._clock,
+        )
         self._operations = WorkerOperationsRunner(
             ops=self._db.operations,
             client=self._runtime.client,
@@ -303,6 +311,7 @@ class WorkerChildContext:
             settings=self._settings,
             clock=self._clock,
             delivery=notification_delivery,
+            release=release_updates,
         )
         self._opened = True
         return self
