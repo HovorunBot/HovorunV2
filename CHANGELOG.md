@@ -38,6 +38,7 @@ encryption configuration before starting against the new database.
 
 ### Fix
 
+- **features**: clear queued work on emergency disablement
 - **admin**: preserve ban reason validation message
 - **tests**: isolate worker valkey databases away from db 0
 - **cache**: distinguish missing messages from storage failures

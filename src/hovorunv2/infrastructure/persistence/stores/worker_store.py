@@ -101,6 +101,13 @@ class WorkerPolicyStore:
                 return FeatureEmergencyState(key)
             return FeatureEmergencyState(row.feature_key, row.disabled, row.reason, row.epoch)
 
+    def disabled_features(self) -> tuple[FeatureEmergencyState, ...]:
+        """Return durably disabled features for bounded cleanup retries."""
+        self._require_owner()
+        with self._sessions() as session:
+            rows = session.scalars(select(FeatureEmergencyDB).where(FeatureEmergencyDB.disabled.is_(True))).all()
+            return tuple(FeatureEmergencyState(row.feature_key, row.disabled, row.reason, row.epoch) for row in rows)
+
     def active_target(self, target: PermissionTarget) -> bool:
         """Validate a queued reference without converting a prior decision into an access grant."""
         self._require_owner()

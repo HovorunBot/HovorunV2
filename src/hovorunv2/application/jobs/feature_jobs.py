@@ -216,3 +216,7 @@ class SyncPayloadPort(Protocol):
     def load(self, reference: str, job_id: str) -> LoadedPayload:
         """Return safe unavailable state when payload is missing, expired or undecryptable."""
         ...
+
+    def delete(self, reference: str) -> None:
+        """Remove the exact opaque payload reference during terminal cleanup."""
+        ...

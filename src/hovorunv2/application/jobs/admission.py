@@ -239,6 +239,10 @@ class SyncAdmissionPort(Protocol):
         """Rotate bounded subject/provider lanes without reclaiming active execution."""
         ...
 
+    def pending_for_feature(self, feature: str, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
+        """Return a bounded non-terminal page for one normalized provider family."""
+        ...
+
     def cancel(self, job_id: str) -> bool:
         """Retain running ownership until execution effects are verified terminal."""
         ...

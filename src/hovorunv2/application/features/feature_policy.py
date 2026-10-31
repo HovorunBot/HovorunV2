@@ -133,6 +133,10 @@ class SyncPolicyPort(Protocol):
         """Read the current authoritative emergency state for stale-envelope fencing."""
         ...
 
+    def disabled_features(self) -> tuple[FeatureEmergencyState, ...]:
+        """Return durably disabled features for bounded cleanup retries."""
+        ...
+
     def active_target(self, target: PermissionTarget) -> bool:
         """Validate a queued reference without converting a prior decision into an access grant."""
         ...

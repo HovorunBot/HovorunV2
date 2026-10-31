@@ -9,6 +9,7 @@ from redis.asyncio.client import Pipeline as AsyncPipeline
 from redis.client import Pipeline
 from redis.exceptions import RedisError, WatchError
 
+from hovorunv2.application.features.emergency import resolve_emergency_key
 from hovorunv2.application.jobs.admission import (
     RECOVERY_PAGE_LIMIT,
     AdmissionLimits,
@@ -533,6 +534,20 @@ class WorkerAdmissionClient:
             raise AdmissionUnavailableError(msg) from None
         else:
             return record.ticket
+
+    def pending_for_feature(self, feature: str, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
+        """Read a bounded pending page and keep one normalized provider family."""
+        self._require_owner()
+        if limit < 1:
+            return ()
+        key = resolve_emergency_key(feature)
+        ids = self._client.execute_command("ZRANGE", self._prefix + "pending", 0, limit - 1)
+        tickets = []
+        for raw in ids:
+            ticket = self.get(read_string(raw))
+            if ticket is not None and resolve_emergency_key(ticket.envelope.feature) == key:
+                tickets.append(ticket)
+        return tuple(tickets)
 
     def _apply(self, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         key = self._id(job_id)

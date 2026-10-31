@@ -426,8 +426,33 @@ class FeatureJobRunner:
         )
 
     def recover(self) -> int:
-        """Run one bounded fair waiting and settlement recovery sweep in the owning child."""
-        return self._lifecycle.recover(self._publisher)
+        """Run bounded recovery and clear durable work for disabled features."""
+        return self._lifecycle.recover(self._publisher) + self._clear_disabled_features()
+
+    def _clear_disabled_features(self) -> int:
+        """Retry per-feature cleanup from the durable disabled state each sweep."""
+        cleared = 0
+        for state in self._policies.disabled_features():
+            cleared += self._clear_feature(state.feature_key)
+        return cleared
+
+    def _clear_feature(self, feature: str) -> int:
+        """Cancel pending/running work, drop ciphertext and release reservations idempotently."""
+        cleared = 0
+        for ticket in self._admission.pending_for_feature(feature):
+            job_id = ticket.envelope.job_id
+            if ticket.state in {
+                TicketState.ACCEPTED,
+                TicketState.ENQUEUED,
+                TicketState.WAITING,
+                TicketState.RUNNING,
+            }:
+                self._admission.cancel(job_id)
+            self._payloads.delete(ticket.envelope.payload_ref)
+            if ticket.budget_reserved:
+                self._budgets.finish(job_id, (), self._clock.now())
+            cleared += 1
+        return cleared
 
     def _finish_ticket_safe(self, job_id: str, token: str, outcome: JobOutcome) -> None:
         try:
