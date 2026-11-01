@@ -15,6 +15,7 @@ from aiogram.types import Message
 
 from hovorunv2.application.media.downloader import MediaDownloader, NativeMediaDownloader
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
+from hovorunv2.application.media.rendering import MEDIA_UNAVAILABLE_TEXT
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.interface.telegram.transport.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.transport.sync_delivery import (
@@ -55,6 +56,33 @@ def _payload(count: int = 2, *, long_caption: bool = False) -> RichMediaPayload:
 
 def _methods(server: HTTPFixture) -> list[str]:
     return [request.path.rsplit("/", 1)[-1] for request in server.requests]
+
+
+def test_native_missing_video_sends_post_text_and_explanation() -> None:
+    """A metadata-only video produces a useful text reply without downloading its thumbnail."""
+    payload = _payload(0)
+    payload.video_unavailable = True
+    with _native_delivery({API_PREFIX + "sendMessage": _ack(_message(10))}) as (delivery, server):
+        assert delivery.deliver(42, 1, payload, "Synthetic", None) == (10,)
+        assert _methods(server) == ["sendMessage"]
+        fields = parse_qs(server.requests[0].body.decode())
+        assert "Caption" in fields["text"][0]
+        assert MEDIA_UNAVAILABLE_TEXT in fields["text"][0]
+        assert payload.original_url in fields["text"][0]
+
+
+async def test_async_missing_video_sends_post_text_and_explanation() -> None:
+    """The async transport preserves the same text-only video fallback as native workers."""
+    payload = _payload(0)
+    payload.video_unavailable = True
+    async with _async_delivery({API_PREFIX + "sendMessage": _ack(_message(10))}) as values:
+        delivery, bot, message, server = values
+        await delivery.deliver(bot, message, payload, "Synthetic")
+        assert _methods(server) == ["sendMessage"]
+        fields = parse_qs(server.requests[0].body.decode())
+        assert MEDIA_UNAVAILABLE_TEXT in fields["text"][0]
+        assert "Caption" in fields["text"][0]
+        assert payload.original_url in fields["text"][0]
 
 
 @contextmanager

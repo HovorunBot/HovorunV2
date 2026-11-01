@@ -14,6 +14,7 @@ QUOTE_TEMPLATE = (
 )
 METRICS_TEMPLATE = "{metrics}\n"
 FOOTER_TEMPLATE = '🔗 <a href="{url}">Open on {platform}</a>'
+MEDIA_UNAVAILABLE_TEXT = "⚠️ Media could not be extracted. View the original post using the link below."
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +50,8 @@ def build_caption(payload: RichMediaPayload, sender_label: str | None, platform_
         Assembled caption text.
     """
     content = payload.content + "\n\n" if payload.content else ""
+    if payload.video_unavailable:
+        content += MEDIA_UNAVAILABLE_TEXT + "\n\n"
     quote = ""
     if payload.quoted_payload:
         quote = QUOTE_TEMPLATE.format(

@@ -81,6 +81,7 @@ logger = logging.getLogger(__name__)
 DELAYED_NOTICE_SECONDS = 20.0
 DELAYED_NOTICE_TEXT = "⏳ This request is taking longer than usual. It is still queued."
 TIMEOUT_NOTICE_TEXT = "⌛ This request timed out before it could finish. Please try again."
+EXTRACTION_FAILURE_NOTICE_TEXT = "⚠️ Media could not be extracted. The post may be unavailable or require signing in."
 
 
 def default_media_clients(settings: AppSettings | None = None) -> dict[CommandName, BaseMediaClient]:
@@ -395,6 +396,7 @@ class FeatureJobRunner:
         except MediaExtractionError, BrowserError, HTTPTransportError:
             self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
             logger.exception("Worker media extraction failed")
+            self._notify(envelope, NoticeKind.TERMINAL, EXTRACTION_FAILURE_NOTICE_TEXT)
             return JobOutcome.FAILED.value
         return self._finish_extraction(envelope, raw_payload, client, loaded.sender_label, token, now)
 

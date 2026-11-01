@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **media**: preserve post text when video extraction fails
 - **usage**: preserve reservations across quota window rollover
 - **release**: commit changelog and lockfile before tagging
 

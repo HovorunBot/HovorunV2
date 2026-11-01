@@ -2,8 +2,9 @@
 
 import pytest
 
-from hovorunv2.application.media.provider_config import BrowserFallbackConfig
+from hovorunv2.application.media.provider_config import BrowserFallbackConfig, OGConfig
 from hovorunv2.application.media.provider_parsing import MediaParser
+from hovorunv2.application.media.rendering import MEDIA_UNAVAILABLE_TEXT, build_caption
 from hovorunv2.utils.formatting import format_number
 
 CONFIG = BrowserFallbackConfig("video", default_title="Synthetic post")
@@ -45,6 +46,37 @@ class TestProviderParsing(MediaParser):
         <script type="application/json">{"video_url":"later-video"}</script>
         """
         assert self._extract_from_json_scripts(html) == {"video": None, "image": "first-image"}
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("description", ["Post text &amp; details", ""])
+    def test_video_metadata_preserves_text_without_delivering_thumbnail(self, description: str) -> None:
+        """Keep video classification and explain missing media without substituting a thumbnail."""
+        document = (
+            '<meta property="og:type" content="video">'
+            f'<meta property="og:description" content="{description}">'
+            '<meta property="og:image" content="https://synthetic.invalid/thumbnail.jpg">'
+        )
+        payload = self._parse_og_html(document, SOURCE, OGConfig("Author", "author", SOURCE))
+        assert payload is not None
+        assert payload.content == description.replace("&amp;", "&")
+        assert payload.is_video
+        assert payload.video_unavailable
+        assert payload.media_items == []
+        caption = build_caption(payload, None, "Synthetic")
+        assert MEDIA_UNAVAILABLE_TEXT in caption
+        assert SOURCE in caption
+
+    @pytest.mark.unit
+    def test_text_only_post_does_not_claim_media_failed(self) -> None:
+        """Ordinary text posts retain their normal caption without a failure warning."""
+        payload = self._parse_og_html(
+            '<meta property="og:description" content="Text-only post">',
+            SOURCE,
+            OGConfig("Author", "author", SOURCE),
+        )
+        assert payload is not None
+        assert not payload.is_video
+        assert MEDIA_UNAVAILABLE_TEXT not in build_caption(payload, None, "Synthetic")
 
 
 @pytest.mark.parametrize(

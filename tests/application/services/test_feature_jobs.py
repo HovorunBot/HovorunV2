@@ -16,7 +16,7 @@ from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import JobStage
-from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
+from hovorunv2.application.jobs.feature_job_runner import EXTRACTION_FAILURE_NOTICE_TEXT, FeatureJobRunner
 from hovorunv2.application.jobs.feature_jobs import (
     EnqueueState,
     JobEnvelope,
@@ -26,6 +26,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     PayloadState,
 )
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
+from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient
@@ -79,6 +80,26 @@ class TimedOutMediaClient(VideoMediaClient):
     def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
         """Interrupt extraction before delivery or accounting can begin."""
         raise SoftTimeLimitExceeded
+
+
+class FailedMediaClient(VideoMediaClient):
+    """Exhaust extraction without usable post metadata."""
+
+    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+        """Fail before delivery so the worker must send terminal feedback."""
+        msg = "Synthetic extraction failure."
+        raise MediaExtractionError(msg)
+
+
+class MetadataVideoClient(VideoMediaClient):
+    """Return video metadata without downloadable media."""
+
+    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+        """Preserve video classification for post-extraction permission checks."""
+        payload = super().extract_media_sync(url, http, extractor)
+        payload.media_items.clear()
+        payload.video_unavailable = True
+        return payload
 
 
 class RecordingTelegram:
@@ -276,7 +297,12 @@ async def test_missing_encryption_and_actual_ciphertext_bound_fail_before_write(
 
 @pytest.mark.parametrize(
     ("client_type", "expected_outcome"),
-    [(VideoMediaClient, JobOutcome.COMPLETE), (TimedOutMediaClient, JobOutcome.EXPIRED)],
+    [
+        (VideoMediaClient, JobOutcome.COMPLETE),
+        (MetadataVideoClient, JobOutcome.COMPLETE),
+        (TimedOutMediaClient, JobOutcome.EXPIRED),
+        (FailedMediaClient, JobOutcome.FAILED),
+    ],
 )
 async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges_zero(
     test_container: AsyncContainer,
@@ -303,6 +329,7 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
         await admit_test_job(settings, cache, namespace, clock, envelope)
 
         delivery = RecordingDelivery()
+        telegram = RecordingTelegram()
         video_client = client_type()
         with (
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
@@ -329,13 +356,17 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
                 browser=browser,
                 publisher=publisher,
                 clients=[video_client],
-                telegram=RecordingTelegram(),
+                telegram=telegram,
                 feedback=AllowFeedback(),
                 gate=AllowGate(),
             )
             outcome = runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
             assert outcome == expected_outcome.value
             assert len(delivery.calls) == 0
+            if expected_outcome == JobOutcome.FAILED:
+                assert telegram.calls == [(envelope.target.telegram_id, EXTRACTION_FAILURE_NOTICE_TEXT)]
+                assert runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA) == JobOutcome.FAILED.value
+                assert len(telegram.calls) == 1
 
             ticket = runtime.admission.get(envelope.job_id)
             assert ticket is not None

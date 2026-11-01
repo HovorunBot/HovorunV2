@@ -14,7 +14,7 @@ class MediaItem:
 
 @dataclass
 class RichMediaPayload:
-    """Standard payload for rich media responses."""
+    """Carry post text and media, retaining video classification when extraction fails."""
 
     author_name: str
     author_handle: str
@@ -24,8 +24,9 @@ class RichMediaPayload:
     original_url: str = ""
     media_items: list[MediaItem] = field(default_factory=list)
     quoted_payload: RichMediaPayload | None = None
+    video_unavailable: bool = False
 
     @property
     def is_video(self) -> bool:
-        """Return whether any item is a video."""
-        return any(item.is_video for item in self.media_items)
+        """Return whether the post contains video, including unavailable video media."""
+        return self.video_unavailable or any(item.is_video for item in self.media_items)

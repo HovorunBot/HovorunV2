@@ -91,12 +91,9 @@ class MediaParser:
                 and (og_cfg.video_url_pattern.search(url) or og_cfg.video_url_pattern.search(og_url))
             )
         )
-        if is_video:
-            return None
-
         raw_content = metadata.get("description") or metadata.get("title") or ""
-        media_items = [MediaItem(url=metadata["image"], is_video=False)] if "image" in metadata else []
-        if not raw_content and not media_items:
+        media_items = [MediaItem(url=metadata["image"], is_video=False)] if "image" in metadata and not is_video else []
+        if not raw_content and not media_items and not is_video:
             return None
 
         title = metadata.get("title", "")
@@ -113,6 +110,7 @@ class MediaParser:
             content=raw_content,
             original_url=url,
             media_items=media_items,
+            video_unavailable=is_video,
         )
 
     def _build_metrics_footer(
