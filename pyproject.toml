@@ -161,14 +161,11 @@ skip_covered = false
 name = "cz_conventional_commits"
 tag_format = "v$version"
 version_scheme = "semver"
-version_provider = "pep621"
+version_provider = "uv"
 update_changelog_on_bump = true
 major_version_zero = true
 annotated_tag = true
 bump_message = "chore(release): bump version to $new_version"
-version_files = [
-    "uv.lock:version = \"$current_version\"",
-]
 
 
 

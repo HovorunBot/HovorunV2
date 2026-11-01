@@ -32,6 +32,20 @@ The hook refuses to overwrite local changelog edits or amend a tagged commit. A 
 failure leaves the original commit in place: resolve the reported issue, run `make changelog`,
 review the generated changes, and amend the commit before tagging or pushing.
 
+## Releases
+
+Commit pending work before running `make tag-release VERSION=vX.Y.Z`, or use `INCREMENT=patch`, `minor`, or `major`.
+Without either option, Commitizen derives the increment from Conventional Commits. `release-tag` is an alias;
+`TAG=vX.Y.Z` remains supported. `MESSAGE="Release notes"` supplies the annotated tag message as literal text.
+
+The command requires a clean workspace and index. Commitizen's `uv` version provider updates the project version in
+`pyproject.toml` and only the matching project package in `uv.lock`. It generates `CHANGELOG.md` for the target release,
+commits all three files together, then creates an annotated tag pointing at that commit. Unrelated dependency versions
+remain unchanged. The ordinary changelog amendment hook is skipped during this operation because the release changelog
+is already generated and the tag does not exist yet. Normal commits retain the usual changelog hook behavior.
+
+No release command pushes commits or tags automatically. Review the release commit and tag before pushing them.
+
 ## AI-assisted contributions
 
 AI tools are allowed. The commit author remains responsible for reviewing, understanding and testing the submitted code. Follow the same architecture, privacy and quality requirements for generated code.

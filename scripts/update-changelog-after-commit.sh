@@ -2,6 +2,10 @@
 # Generate from the new HEAD, then amend only the generated changelog.
 set -eu
 
+if [ "${HOVORUN_RELEASE_IN_PROGRESS:-}" = "1" ]; then
+    exit 0
+fi
+
 cd "$(git rev-parse --show-toplevel)"
 original_head=$(git rev-parse HEAD)
 

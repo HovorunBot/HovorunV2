@@ -2,6 +2,12 @@
 
 ### Fix
 
+- **release**: commit changelog and lockfile before tagging
+
+## v0.3.1 (2026-11-01)
+
+### Fix
+
 - **workers**: bound media extraction and trace failures
 - **notifications**: keep combined release notes within telegram limits
 - **settings**: keep notification callbacks within Telegram limits

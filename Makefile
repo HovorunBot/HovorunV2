@@ -126,33 +126,12 @@ verify-build:
 	@echo " Version: $(APP_VERSION)"
 	@echo "======================================================="
 
-## Create a release commit, changelog and annotated tag using VERSION or INCREMENT.
+## Create one release commit with version metadata/changelog, then an annotated tag.
+tag-release release-tag: export RELEASE_VERSION = $(VERSION)
+tag-release release-tag: export RELEASE_INCREMENT = $(INCREMENT)
+tag-release release-tag: export RELEASE_MESSAGE = $(value MESSAGE)
 tag-release release-tag:
-	@if [ -f CHANGES.md ] && [ -n "$(VERSION)" ]; then \
-		CLEAN_VER=$$(echo $(VERSION) | sed 's/^v*//'); \
-		if ! grep -q "## $$CLEAN_VER" CHANGES.md && ! grep -q "## v$$CLEAN_VER" CHANGES.md; then \
-			echo "Notice: CHANGES.md does not yet contain an entry for $$CLEAN_VER."; \
-			echo "        Consider adding user-friendly release notes to CHANGES.md before tagging."; \
-		fi; \
-	fi; \
-	ATM_FLAG=""; \
-	if [ -n "$(MESSAGE)" ]; then \
-		ATM_FLAG="--annotated-tag-message \"$(MESSAGE)\""; \
-	fi; \
-	if [ -n "$(VERSION)" ]; then \
-		CLEAN_VER=$$(echo $(VERSION) | sed 's/^v*//'); \
-		echo "Bumping version to $$CLEAN_VER with Commitizen..."; \
-		eval uv run cz bump --yes --no-verify $$ATM_FLAG $$CLEAN_VER; \
-	elif [ -n "$(INCREMENT)" ]; then \
-		echo "Bumping version ($$INCREMENT) with Commitizen..."; \
-		eval uv run cz bump --yes --no-verify $$ATM_FLAG --increment $(INCREMENT); \
-	else \
-		echo "Bumping version automatically based on Conventional Commits..."; \
-		eval uv run cz bump --yes --no-verify $$ATM_FLAG; \
-	fi
-	@echo ""
-	@echo "Successfully created release commit and annotated tag (not pushed)."
-	@echo "To push to remote when ready: git push --follow-tags origin main"
+	@sh scripts/tag-release.sh
 
 ## Preview user release notes and Commitizen version/changelog changes without releasing.
 release-dry-run release-preview:
