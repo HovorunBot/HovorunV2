@@ -1,5 +1,7 @@
 """Combine stable accounting baselines with atomic runtime execution reservations."""
 
+import logging
+
 from hovorunv2.application.usage.budgets import (
     BudgetPort,
     BudgetRequest,
@@ -8,6 +10,8 @@ from hovorunv2.application.usage.budgets import (
     UnitAmount,
 )
 from hovorunv2.application.usage.usage_ledger import AccountingSubject, UsageLedgerStore
+
+logger = logging.getLogger(__name__)
 
 
 class BudgetService:
@@ -35,7 +39,15 @@ class BudgetService:
                 for policy in request.usage.policies
             ]
         )
-        return await self._budgets.reserve(request, now, totals)
+        decision = await self._budgets.reserve(request, now, totals)
+        logger.debug(
+            "Execution budget reserved: reservation=%s subject=%s subject_id=%d state=%s",
+            request.reservation_id,
+            request.usage.subject.kind.value,
+            request.usage.subject.telegram_id,
+            decision.state.value,
+        )
+        return decision
 
     async def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...]) -> ReservationDecision:
         """Settle runtime counters after execution.
@@ -49,4 +61,6 @@ class BudgetService:
         Returns:
             The settlement decision.
         """
-        return await self._budgets.finish(reservation_id, actual, self._clock.now())
+        decision = await self._budgets.finish(reservation_id, actual, self._clock.now())
+        logger.debug("Execution budget settled: reservation=%s state=%s", reservation_id, decision.state.value)
+        return decision

@@ -1,7 +1,11 @@
 """Application orchestration for authoritative feature emergency stop state."""
 
+import logging
+
 from hovorunv2.application.features.emergency import FeatureEmergencyState, FeatureEmergencyStore
 from hovorunv2.domain.audit import ActorContext
+
+logger = logging.getLogger(__name__)
 
 
 class FeatureEmergencyService:
@@ -40,7 +44,7 @@ class FeatureEmergencyService:
         Returns:
             The persisted emergency state after the transition.
         """
-        return await self._store.set_state(
+        state = await self._store.set_state(
             feature_key,
             disabled=disabled,
             reason=self._validate_reason(reason),
@@ -48,6 +52,13 @@ class FeatureEmergencyService:
             actor=actor,
             transport_kind=transport_kind,
         )
+        logger.info(
+            "Feature emergency state updated: feature=%s disabled=%s epoch=%d",
+            feature_key,
+            state.disabled,
+            state.epoch,
+        )
+        return state
 
     def _validate_reason(self, reason: str) -> str:
         """Return the stripped internal reason, requiring it to be nonempty.

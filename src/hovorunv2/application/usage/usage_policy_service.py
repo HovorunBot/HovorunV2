@@ -1,5 +1,6 @@
 """Resolve direct-user and automatic-group policies without conflating safety or access."""
 
+import logging
 from dataclasses import replace
 
 from hovorunv2.application.access.permission_service import PermissionService
@@ -16,6 +17,8 @@ from hovorunv2.application.usage.policies import (
 )
 from hovorunv2.application.usage.usage_resolution import resolve_usage
 from hovorunv2.domain.enums import CommandName, TargetKind
+
+logger = logging.getLogger(__name__)
 
 
 class UsagePolicyService:
@@ -102,7 +105,7 @@ class UsagePolicyService:
             and actor_id is not None
             and await self._permissions.has_authority(actor_id, "bot:administer")
         )
-        return resolve_usage(
+        resolved = resolve_usage(
             definition,
             subject,
             await self._store.list_overrides(subject.target),
@@ -111,6 +114,17 @@ class UsagePolicyService:
             bypass=bypass,
             unit=unit,
         )
+        logger.debug(
+            "Usage policy resolved: feature=%s trigger=%s subject=%s subject_id=%d trusted=%s bypass=%s policies=%d",
+            feature,
+            trigger.value,
+            subject.kind.value,
+            subject.telegram_id,
+            trusted,
+            bypass,
+            len(resolved.policies),
+        )
+        return resolved
 
     async def resolve_media(
         self, provider: CommandName, trigger: TriggerKind, actor_id: int | None, *, group_id: int | None = None

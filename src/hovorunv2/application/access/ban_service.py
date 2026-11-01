@@ -1,10 +1,14 @@
 """Audited access restriction administration, separate from runtime evaluation."""
 
+import logging
+
 from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
+
+logger = logging.getLogger(__name__)
 
 
 class BanService:
@@ -56,7 +60,7 @@ class BanService:
             Whether the restriction changed.
         """
         await self._authorize(actor, transport_kind)
-        return await self._bans.set_ban(
+        changed = await self._bans.set_ban(
             target,
             telegram_id,
             kind,
@@ -64,6 +68,14 @@ class BanService:
             actor=actor,
             public_explanation=public_explanation,
         )
+        logger.info(
+            "Access restriction applied: target=%s target_id=%d kind=%s changed=%s",
+            target.value,
+            telegram_id,
+            kind.value,
+            changed,
+        )
+        return changed
 
     async def revoke(
         self,
@@ -87,4 +99,12 @@ class BanService:
             Whether the restriction changed.
         """
         await self._authorize(actor, transport_kind)
-        return await self._bans.set_ban(target, telegram_id, kind, active=False, actor=actor)
+        changed = await self._bans.set_ban(target, telegram_id, kind, active=False, actor=actor)
+        logger.info(
+            "Access restriction revoked: target=%s target_id=%d kind=%s changed=%s",
+            target.value,
+            telegram_id,
+            kind.value,
+            changed,
+        )
+        return changed

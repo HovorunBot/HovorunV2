@@ -1,6 +1,7 @@
 """Bounded refresh of policy-relevant membership evidence."""
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 
 from hovorunv2.application.identity.membership import MembershipPort
@@ -11,6 +12,7 @@ RECONCILIATION_CRON = "* * * * *"
 GROUP_BATCH_SIZE = 10
 MEMBER_BATCH_SIZE = 50
 CYCLE_TIMEOUT_SECONDS = 30
+logger = logging.getLogger(__name__)
 
 
 class MembershipReconciliationService:
@@ -61,6 +63,7 @@ class MembershipReconciliationService:
             Whether the group was refreshed; False when a refresh is already in progress.
         """
         if group.id in self._refreshing:
+            logger.debug("Membership refresh skipped: group=%d already running", group.id)
             return False
         self._refreshing.add(group.id)
         deadline = deadline if deadline is not None else asyncio.get_running_loop().time() + CYCLE_TIMEOUT_SECONDS
@@ -78,4 +81,10 @@ class MembershipReconciliationService:
                 await self._store.save_member(group.id, evidence, expected_user_id=user.id)
         finally:
             self._refreshing.discard(group.id)
+        logger.debug(
+            "Membership refreshed: group=%d administrators=%d members=%d",
+            group.id,
+            len(administrators.members),
+            len(users),
+        )
         return True

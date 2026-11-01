@@ -14,6 +14,7 @@ from hovorunv2.application.access.administration_service import AdministrationSe
 from hovorunv2.application.operations.audit_inspection import AuditInspectionService, AuditPage
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.access_arguments import AccessArgumentParser
 
 from .base import BaseCommand
@@ -23,6 +24,7 @@ AUDIT_HELP = (
 )
 AUDIT_UNAVAILABLE = "Audit inspection unavailable. Use /audit privately."
 DEFAULT_BOT_LIMIT = 5
+logger = get_logger(__name__)
 
 
 class AuditCommand(BaseCommand):
@@ -66,7 +68,9 @@ class AuditCommand(BaseCommand):
                 limit=args.limit,
             )
             await message.answer(self._text(page))
+            logger.info("Audit page served: actor=%d entries=%d", message.from_user.id, len(page.entries))
         except PermissionError, ValueError:
+            logger.warning("Audit command rejected: actor=%d", message.from_user.id)
             await message.answer(AUDIT_UNAVAILABLE)
 
     def _parser(self) -> AccessArgumentParser:

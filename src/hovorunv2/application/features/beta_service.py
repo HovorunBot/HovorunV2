@@ -1,10 +1,14 @@
 """Admin-controlled beta eligibility; trust and selected features remain independent."""
 
+import logging
+
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.features.beta import BetaEligibilityFacts, BetaEntitlementStore
 from hovorunv2.application.features.registry import FeatureChannel, FeatureRegistry, FeatureScope
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.beta import ALL_BETA
+
+logger = logging.getLogger(__name__)
 
 
 class BetaEligibilityService:
@@ -81,7 +85,18 @@ class BetaEligibilityService:
             if self._registry.require(feature).channel != FeatureChannel.BETA:
                 msg = "Eligibility grants require a beta feature."
                 raise ValueError(msg)
-        return await self._store.set_grant(target, feature, granted=granted, actor=actor, transport_kind=transport_kind)
+        changed = await self._store.set_grant(
+            target, feature, granted=granted, actor=actor, transport_kind=transport_kind
+        )
+        feature_label = "all" if feature == ALL_BETA else feature
+        logger.info(
+            "Beta grant updated: target=%s feature=%s granted=%s changed=%s",
+            target.kind,
+            feature_label,
+            granted,
+            changed,
+        )
+        return changed
 
     def _validate_scope(self, target: PermissionTarget, feature: str) -> None:
         """Validate that the feature supports the target scope.

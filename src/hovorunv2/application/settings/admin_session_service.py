@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import secrets
 import time
 
@@ -16,6 +17,8 @@ from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.settings.settings_session_service import SETTINGS_SESSION_TTL
 from hovorunv2.domain.user import UserDB
 from hovorunv2.utils.crypto import decrypt_payload, encrypt_payload
+
+logger = logging.getLogger(__name__)
 
 
 class AdminConfirmation(BaseModel):
@@ -73,12 +76,41 @@ class AdminSessionService:
         await self._cache.set(
             f"admin:confirmation:{token}", {"salt": salt, "payload": payload}, expire=SETTINGS_SESSION_TTL
         )
+        logger.debug(
+            "Admin confirmation issued: actor=%d target=%s target_id=%s",
+            actor_id,
+            target.kind.value,
+            target.telegram_id,
+        )
         return token
 
     async def resolve(
         self, token: str, actor_id: int, message_id: int, *, consume: bool = False
     ) -> AdminConfirmation | None:
         """Resolve a confirmation token, rejecting stale or cross-actor reuse.
+
+        Args:
+            token: Opaque confirmation token.
+            actor_id: Telegram ID of the resolving actor.
+            message_id: Message bound to the confirmation.
+            consume: True to delete the token on successful resolution.
+
+        Returns:
+            The confirmation, or None when invalid, expired or already consumed.
+        """
+        confirmation = await self._resolve_confirmation(token, actor_id, message_id, consume=consume)
+        logger.debug(
+            "Admin confirmation resolved: actor=%d message=%d accepted=%s",
+            actor_id,
+            message_id,
+            confirmation is not None,
+        )
+        return confirmation
+
+    async def _resolve_confirmation(
+        self, token: str, actor_id: int, message_id: int, *, consume: bool
+    ) -> AdminConfirmation | None:
+        """Validate one encrypted confirmation without logging its token or payload.
 
         Args:
             token: Opaque confirmation token.

@@ -8,7 +8,10 @@ from hovorunv2.application.identity.identity import GroupIdentityStore
 from hovorunv2.application.identity.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.domain.audit import ActorContext
+from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.transport.membership import MEMBERSHIP_FRESHNESS, membership_status
+
+logger = get_logger(__name__)
 
 
 class MembershipEventHandler:
@@ -70,8 +73,13 @@ class MembershipEventHandler:
             return
         group = await self._identities.ingest_group(event.chat.id, event.chat.title, event.chat.type)
         if group is not None:
-            await self._memberships.save_member(
-                group.id, self._evidence(event), ActorContext.telegram(event.from_user.id)
+            evidence = self._evidence(event)
+            await self._memberships.save_member(group.id, evidence, ActorContext.telegram(event.from_user.id))
+            logger.debug(
+                "Membership evidence saved: group=%d user=%d status=%s",
+                event.chat.id,
+                event.new_chat_member.user.id,
+                evidence.status.value,
             )
 
     async def handle_bot(self, event: ChatMemberUpdated, bot: Bot) -> None:
@@ -85,8 +93,12 @@ class MembershipEventHandler:
             return
         group = await self._identities.ingest_group(event.chat.id, event.chat.title, event.chat.type)
         if group is not None:
-            await self._memberships.save_bot(
-                group.id, self._bot_evidence(event), ActorContext.telegram(event.from_user.id)
+            evidence = self._bot_evidence(event)
+            await self._memberships.save_bot(group.id, evidence, ActorContext.telegram(event.from_user.id))
+            logger.debug(
+                "Bot capability evidence saved: group=%d status=%s",
+                event.chat.id,
+                evidence.membership.status.value,
             )
 
     def register(self, router: Router) -> None:

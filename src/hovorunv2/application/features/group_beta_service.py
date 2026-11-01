@@ -1,5 +1,6 @@
 """Whole-group beta activation independent of trust and durable group approval."""
 
+import logging
 from datetime import UTC, datetime
 
 from hovorunv2.application.access.permissions import PermissionTarget
@@ -7,6 +8,8 @@ from hovorunv2.application.features.group_beta import GroupBetaFacts, GroupBetaS
 from hovorunv2.application.features.registry import FeatureChannel, FeatureRegistry, FeatureScope
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.domain.audit import ActorContext
+
+logger = logging.getLogger(__name__)
 
 
 class GroupBetaService:
@@ -117,10 +120,18 @@ class GroupBetaService:
             True if the durable selection changed.
         """
         self._validate(target, feature)
-        return await self._store.set_enabled(
+        changed = await self._store.set_enabled(
             target,
             feature,
             enabled=enabled,
             actor=actor,
             transport_kind=transport_kind,
         )
+        logger.info(
+            "Group beta activation updated: feature=%s group=%s enabled=%s changed=%s",
+            feature,
+            target.telegram_id,
+            enabled,
+            changed,
+        )
+        return changed

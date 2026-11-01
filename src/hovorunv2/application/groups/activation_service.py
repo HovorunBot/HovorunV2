@@ -1,5 +1,7 @@
 """Resolve activation targets and obtain only required current administrator evidence."""
 
+import logging
+
 from hovorunv2.application.access.permissions import GroupAdminEvidence, PermissionFacts, PermissionTarget
 from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.groups.activation import (
@@ -12,6 +14,8 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import MembershipPort, MembershipStatus
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.user import UserDB
+
+logger = logging.getLogger(__name__)
 
 
 class GroupActivationService:
@@ -57,7 +61,9 @@ class GroupActivationService:
             Activation result from the atomic store.
         """
         evidence = await self._group_admin_evidence(actor_id, target, transport_kind)
-        return await self._store.execute(ActivationRequest(actor_id, target, transport_kind, group_admin=evidence))
+        result = await self._store.execute(ActivationRequest(actor_id, target, transport_kind, group_admin=evidence))
+        self._record(ActivationAction.ENABLE, target, result)
+        return result
 
     async def _group_admin_evidence(
         self, actor_id: int, target: PermissionTarget, transport_kind: str
@@ -96,4 +102,22 @@ class GroupActivationService:
         self, actor_id: int, target: PermissionTarget, request_id: int, action: ActivationAction, transport_kind: str
     ) -> ActivationResult:
         """Recheck private administrative decisions against the durable pending request."""
-        return await self._store.execute(ActivationRequest(actor_id, target, transport_kind, action, request_id))
+        result = await self._store.execute(ActivationRequest(actor_id, target, transport_kind, action, request_id))
+        self._record(action, target, result)
+        return result
+
+    def _record(self, action: ActivationAction, target: PermissionTarget, result: ActivationResult) -> None:
+        """Record a payload-free activation outcome for the selected group generation.
+
+        Args:
+            action: Activation action that was executed.
+            target: Group target the action applied to.
+            result: Durable activation result to report.
+        """
+        logger.info(
+            "Group activation decided: action=%s group=%s request=%s outcome=%s",
+            action.value,
+            target.telegram_id,
+            result.request_id,
+            result.outcome.value,
+        )

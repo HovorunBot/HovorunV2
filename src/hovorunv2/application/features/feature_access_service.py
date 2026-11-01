@@ -1,5 +1,6 @@
 """Shared feature discovery, configuration and execution policy."""
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -23,6 +24,8 @@ from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.domain.membership import GroupMembershipStateDB
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +137,7 @@ class FeatureAccessService:
         """
         definition = self.registry.get(feature_key)
         if definition is None:
+            logger.debug("Feature evaluated: feature=%s chat=%d actor=%s unknown", feature_key, chat_id, actor_id)
             return FeatureDecision()
         facts = await self._facts.feature_facts(
             definition,
@@ -143,7 +147,18 @@ class FeatureAccessService:
             configure=configure,
             now=datetime.now(UTC),
         )
-        return evaluate_feature(definition, facts, trigger=trigger, configure=configure)
+        decision = evaluate_feature(definition, facts, trigger=trigger, configure=configure)
+        logger.debug(
+            "Feature evaluated: feature=%s chat=%d actor=%s trigger=%s allowed=%s selected=%s visible=%s",
+            feature_key,
+            chat_id,
+            actor_id if actor_id is not None else "none",
+            trigger.value,
+            decision.allowed,
+            decision.selected,
+            decision.visible,
+        )
+        return decision
 
     async def group_settings_status(self, chat_id: int, actor_id: int) -> GroupSettingsStatus | None:
         """Return group-settings guidance, restricted to managers and inspectors.
@@ -205,10 +220,18 @@ class FeatureAccessService:
         if chat is None or definition.channel != FeatureChannel.BETA or FeatureScope.GROUP not in definition.scopes:
             msg = "Group beta selection requires an active group and group-scoped beta feature."
             raise ValueError(msg)
-        return await self._group_beta.set_enabled(
+        changed = await self._group_beta.set_enabled(
             PermissionTarget("group", chat.id, chat.generation, chat_id),
             key,
             enabled=enabled,
             actor=ActorContext.telegram(actor_id),
             transport_kind=transport_kind,
         )
+        logger.info(
+            "Group beta selection updated: feature=%s chat=%d enabled=%s changed=%s",
+            key,
+            chat_id,
+            enabled,
+            changed,
+        )
+        return changed

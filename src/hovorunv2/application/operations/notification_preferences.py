@@ -1,5 +1,6 @@
 """Category-specific notification preferences with enabled defaults and current authority."""
 
+import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -14,6 +15,7 @@ from hovorunv2.domain.enums import ActorOrigin, TargetKind
 
 MESSAGE = "Notification preferences require current subject authority."
 AUTHORITY_ACTION = "bot:administer"
+logger = logging.getLogger(__name__)
 
 
 class NotificationCategory(StrEnum):
@@ -136,7 +138,16 @@ class NotificationPreferenceService:
             True when the store reported a change, False for a no-op.
         """
         await self._authorize(target, actor, transport_kind)
-        return await self._store.set(target, category, enabled=enabled, actor=actor)
+        changed = await self._store.set(target, category, enabled=enabled, actor=actor)
+        logger.info(
+            "Notification preference updated: target=%s target_id=%s category=%s enabled=%s changed=%s",
+            target.kind,
+            target.telegram_id,
+            category.value,
+            enabled,
+            changed,
+        )
+        return changed
 
     async def _authorize(self, target: PermissionTarget, actor: ActorContext, transport_kind: str | None) -> None:
         """Allow own private preferences, current group managers, or a current bot administrator.

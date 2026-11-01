@@ -1,5 +1,7 @@
 """Current private/CLI authority and shared audited access administration."""
 
+import logging
+
 from hovorunv2.application.access.administration import AdminAction, AdminRequest, AdminTarget
 from hovorunv2.application.access.ban_service import BanService
 from hovorunv2.application.access.permission_service import PermissionService
@@ -17,6 +19,7 @@ from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
 
 MAX_TELEGRAM_ID = (1 << 63) - 1
+logger = logging.getLogger(__name__)
 
 
 class AdministrationService:
@@ -64,9 +67,16 @@ class AdministrationService:
             or actor.actor_id is None
             or not await self._permissions.has_authority(actor.actor_id, "bot:administer")
         ):
+            logger.warning(
+                "Access administration denied: actor_origin=%s actor=%s transport=%s",
+                actor.origin.value,
+                actor.actor_id,
+                transport,
+            )
             msg = "Access administration requires a bot administrator in private chat or CLI."
             raise PermissionError(msg)
         if await self._bans.list_active(TargetKind.USER, actor.actor_id):
+            logger.warning("Access administration denied for restricted actor: actor=%s", actor.actor_id)
             msg = "Administrative access is restricted."
             raise PermissionError(msg)
 
@@ -180,11 +190,28 @@ class AdministrationService:
             msg = "Target kind changed."
             raise ValueError(msg)
         permission_target = PermissionTarget(target.kind.value, target.entity_id, target.generation, target.telegram_id)
+        logger.info(
+            "Administration operation started: action=%s target=%s target_id=%d",
+            request.action.value,
+            target.kind.value,
+            target.telegram_id,
+        )
         match request.action:
             case AdminAction.INSPECT | AdminAction.REQUESTS:
+                logger.info(
+                    "Administration inspection completed: target=%s target_id=%d",
+                    target.kind.value,
+                    target.telegram_id,
+                )
                 return state
             case AdminAction.LIMITS:
-                return await self._inspect_limits(permission_target, request)
+                view = await self._inspect_limits(permission_target, request)
+                logger.info(
+                    "Administration limits inspected: target=%s target_id=%d",
+                    target.kind.value,
+                    target.telegram_id,
+                )
+                return view
             case AdminAction.LIMIT_SET:
                 changed = await self._usage.set_override(
                     permission_target,
@@ -223,7 +250,22 @@ class AdministrationService:
                     transport_kind=transport,
                 )
             case AdminAction.APPROVE | AdminAction.ACCEPT | AdminAction.REJECT:
-                return await self._execute_activation(request, permission_target, actor, transport)
+                result = await self._execute_activation(request, permission_target, actor, transport)
+                logger.info(
+                    "Administration operation completed: action=%s target=%s target_id=%d outcome=%s",
+                    request.action.value,
+                    target.kind.value,
+                    target.telegram_id,
+                    result["outcome"],
+                )
+                return result
+        logger.info(
+            "Administration operation completed: action=%s target=%s target_id=%d changed=%s",
+            request.action.value,
+            target.kind.value,
+            target.telegram_id,
+            changed,
+        )
         return {"changed": changed}
 
     async def _inspect_limits(self, target: PermissionTarget, request: AdminRequest) -> dict[str, object]:

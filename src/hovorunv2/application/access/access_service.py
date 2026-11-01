@@ -1,5 +1,6 @@
 """Application service for unified access control and permissions."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -16,6 +17,8 @@ from hovorunv2.domain.enums import TargetKind
 
 if TYPE_CHECKING:
     from aiogram import Bot
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +176,36 @@ class AccessService:
         command_name: str | None = None,
     ) -> bool:
         """Return whether the action is allowed under the given policy.
+
+        Args:
+            user_id: Platform-specific user ID.
+            chat_id: Platform-specific chat or group ID.
+            policy: Command policy to validate against.
+            bot: Bot instance required for group administrator checks.
+            command_name: Optional name of the command being executed.
+
+        Returns:
+            Whether the action is allowed.
+        """
+        allowed = await self._evaluate_is_allowed(user_id, chat_id, policy, bot, command_name)
+        logger.debug(
+            "Access policy evaluated: command=%s chat=%d actor=%s allowed=%s",
+            command_name or "none",
+            chat_id,
+            user_id if user_id is not None else "none",
+            allowed,
+        )
+        return allowed
+
+    async def _evaluate_is_allowed(
+        self,
+        user_id: int | None,
+        chat_id: int,
+        policy: CommandPolicy,
+        bot: Bot | None,
+        command_name: str | None,
+    ) -> bool:
+        """Evaluate toggles, blockers, bans and authority without logging decisions.
 
         Args:
             user_id: Platform-specific user ID.

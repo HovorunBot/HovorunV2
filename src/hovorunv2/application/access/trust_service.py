@@ -1,5 +1,7 @@
 """Audited boolean trust administration, independent of authority roles."""
 
+import logging
+
 from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
 from hovorunv2.application.access.ports import AuthorizationPolicy
@@ -8,6 +10,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, TargetKind
 
 MAX_USER_ID = (1 << 63) - 1
+logger = logging.getLogger(__name__)
 
 
 class TrustService:
@@ -45,7 +48,9 @@ class TrustService:
         """
         await self._authorize(actor, transport_kind)
         user_id = await self._resolve_user(target)
-        return await self._users.set_trust(user_id, is_trusted=is_trusted, actor=actor)
+        changed = await self._users.set_trust(user_id, is_trusted=is_trusted, actor=actor)
+        logger.info("Trust flag updated: user=%d trusted=%s changed=%s", user_id, is_trusted, changed)
+        return changed
 
     async def _authorize(self, actor: ActorContext, transport_kind: str | None) -> None:
         """Require current bot administration when the actor is not the CLI.

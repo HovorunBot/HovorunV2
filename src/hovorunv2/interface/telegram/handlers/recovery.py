@@ -18,6 +18,7 @@ from hovorunv2.application.identity.recovery import (
 )
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.infrastructure.logger import get_logger
 
 from .base import BaseCommand
 
@@ -26,6 +27,7 @@ RECOVERY_UNAVAILABLE = "Recovery inspection unavailable. Use /recover privately.
 SECONDS_PER_HOUR = 3600
 RECOVERY_ARGUMENTS = 3
 RECOVERY_EXECUTION_ARGUMENTS = 5
+logger = get_logger(__name__)
 
 
 class RecoveryCommand(BaseCommand):
@@ -70,7 +72,9 @@ class RecoveryCommand(BaseCommand):
                 await message.answer(self._user_text(await self._recovery.preview_user(target, actor=actor)))
             else:
                 await message.answer(self._group_text(await self._recovery.preview_group(target, actor=actor)))
+            logger.info("Recovery preview served: actor=%d target=%s target_id=%d", actor.actor_id, words[1], target)
         except PermissionError, ValueError:
+            logger.warning("Recovery command rejected: actor=%d", actor.actor_id)
             await message.answer(RECOVERY_UNAVAILABLE)
 
     async def _execute(
@@ -89,6 +93,15 @@ class RecoveryCommand(BaseCommand):
         )
         action = "Restored" if option == RecoveryOption.RESTORE else "Created fresh"
         ban = "yes" if result.banned else "no"
+        logger.info(
+            "Recovery executed: actor=%d target=%s target_id=%d option=%s generation=%d banned=%s",
+            actor.actor_id,
+            target_kind,
+            result.telegram_id,
+            option.value,
+            result.generation,
+            result.banned,
+        )
         await message.answer(
             f"{action} {target_kind} {result.telegram_id} (generation {result.generation}).\nActive ban: {ban}"
         )

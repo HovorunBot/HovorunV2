@@ -1,5 +1,6 @@
 """Application service for managing chat access status and group access decisions."""
 
+import logging
 from datetime import UTC, datetime
 
 from hovorunv2.application.access.ban_ports import BanStore
@@ -12,6 +13,8 @@ from hovorunv2.application.identity.membership import MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ChatStatus, TargetKind
+
+logger = logging.getLogger(__name__)
 
 
 def evidence_time(value: datetime) -> datetime:
@@ -71,6 +74,7 @@ class ChatStatusService:
     async def set_status(self, chat_id: int, status: ChatStatus) -> None:
         """Update the lifecycle status of a chat."""
         await self._chat_service.update_status(chat_id, status)
+        logger.info("Chat lifecycle status updated: chat=%d status=%s", chat_id, status.value)
 
     async def approve(self, chat_id: int) -> None:
         """Approve a chat and enable its default command set.
@@ -107,7 +111,7 @@ class ChatStatusService:
         blocker = await self._membership_store.full_banned_admin_status(chat.id, current_time)
         approvals = await self._grant_store.approvals(chat.id)
         revoked = await self._grant_store.has_revoked_approval(chat.id)
-        return group_access(
+        decision = group_access(
             GroupAccessFacts(
                 active=chat.deleted_at is None,
                 banned=chat.status == ChatStatus.BANNED or any(b.kind == BanKind.FULL for b in bans),
@@ -117,6 +121,13 @@ class ChatStatusService:
                 approved=bool(approvals) or (not revoked and chat.status == ChatStatus.APPROVED),
             )
         )
+        logger.debug(
+            "Group access evaluated: chat=%d allowed=%s reason=%s",
+            chat_id,
+            decision.allowed,
+            decision.reason.value,
+        )
+        return decision
 
     async def is_approved(self, chat_id: int) -> bool:
         """Return whether the chat is approved and free of active blockers.

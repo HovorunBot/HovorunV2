@@ -1,5 +1,6 @@
 """Valkey-backed per-target delayed feedback coalescing with a bounded fallback."""
 
+import logging
 import time
 from collections.abc import Callable
 
@@ -9,6 +10,7 @@ from hovorunv2.application.jobs.http_ports import SyncFeedbackGate
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 
 MAX_LOCAL_ENTRIES = 1024
+logger = logging.getLogger(__name__)
 
 
 class ValkeyFeedbackGate(SyncFeedbackGate):
@@ -31,9 +33,12 @@ class ValkeyFeedbackGate(SyncFeedbackGate):
         """Claim one delayed notice for the target within the ttl window."""
         key = f"{self._namespace.value}feedback:delayed:{target_key}"
         try:
-            return bool(self._client.set(key, "1", nx=True, ex=ttl))
+            claimed = bool(self._client.set(key, "1", nx=True, ex=ttl))
         except redis.RedisError, OSError:
+            logger.warning("Feedback gate unavailable; using bounded local fallback")
             return self._local_claim(target_key, ttl)
+        logger.debug("Feedback gate claim: target=%s claimed=%s", target_key, claimed)
+        return claimed
 
     def _local_claim(self, target_key: str, ttl: int) -> bool:
         now = self._clock()

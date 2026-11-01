@@ -853,9 +853,21 @@ class SettingsCommand(BaseCommand):
             callback_data.token, operation, query.from_user.id, msg.chat.id, msg.message_id
         )
         if context is None or not await self._authorized(query.from_user.id, context, query.bot):
+            logger.warning(
+                "Settings callback rejected: actor=%d chat=%d menu=%s",
+                query.from_user.id,
+                msg.chat.id,
+                callback_data.menu.value,
+            )
             await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
             return
         context = context.model_copy(update={"token": callback_data.token})
+        logger.debug(
+            "Settings callback handled: actor=%d chat=%d menu=%s",
+            query.from_user.id,
+            msg.chat.id,
+            callback_data.menu.value,
+        )
         await self._dispatch_callback(query, callback_data, context)
         if callback_data.menu == SettingsMenu.CLOSE:
             await self._sessions.consume(callback_data.token)

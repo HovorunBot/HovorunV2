@@ -1,5 +1,6 @@
 """Valkey-owned admission with bounded optimistic transactions and shared pure transitions."""
 
+import logging
 import math
 from collections.abc import Callable
 from dataclasses import replace
@@ -53,6 +54,7 @@ from hovorunv2.infrastructure.runtime.cache import CacheService
 
 MAX_ADMISSION_ATTEMPTS = 32
 SORTED_SET_ENTRY_SIZE = 2
+logger = logging.getLogger(__name__)
 
 
 def _validate_payload(envelope: JobEnvelope, payload: SealedPayload, now: float) -> None:
@@ -208,9 +210,12 @@ class ValkeyAdmissionStore(AdmissionPort):
         _validate_payload(envelope, payload, now)
         keys = admission_keys(self._namespace, envelope)
         try:
-            return await self._admit_with_retries(keys, envelope, payload, limits, now)
+            result = await self._admit_with_retries(keys, envelope, payload, limits, now)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
+            logger.debug("Admission evaluated: job=%s state=%s", envelope.job_id, AdmissionState.UNAVAILABLE.value)
             return AdmissionResult(AdmissionState.UNAVAILABLE)
+        logger.debug("Admission evaluated: job=%s state=%s", envelope.job_id, result.state.value)
+        return result
 
     async def _admit_with_retries(
         self, keys: AdmissionKeys, envelope: JobEnvelope, payload: SealedPayload, limits: AdmissionLimits, now: float
@@ -325,10 +330,18 @@ class ValkeyAdmissionStore(AdmissionPort):
     async def _apply(self, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         key = self._id(job_id)
         try:
-            return await self._apply_with_retries(key, job_id, request)
+            change = await self._apply_with_retries(key, job_id, request)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
             msg = "Admission runtime state is unavailable."
             raise AdmissionUnavailableError(msg) from None
+        logger.debug(
+            "Admission transition applied: job=%s operation=%s stage=%s success=%s",
+            job_id,
+            request.operation.value,
+            request.stage.value,
+            change.success if change is not None else None,
+        )
+        return change
 
     async def _apply_with_retries(self, key: str, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         for _attempt in range(MAX_ADMISSION_ATTEMPTS):
@@ -569,10 +582,18 @@ class WorkerAdmissionClient:
     def _apply(self, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         key = self._id(job_id)
         try:
-            return self._apply_with_retries(key, job_id, request)
+            change = self._apply_with_retries(key, job_id, request)
         except RedisError, OSError, UnicodeError, AdmissionUnavailableError:
             msg = "Admission runtime state is unavailable."
             raise AdmissionUnavailableError(msg) from None
+        logger.debug(
+            "Admission transition applied: job=%s operation=%s stage=%s success=%s",
+            job_id,
+            request.operation.value,
+            request.stage.value,
+            change.success if change is not None else None,
+        )
+        return change
 
     def _apply_with_retries(self, key: str, job_id: str, request: AdmissionTransition) -> AdmissionChange | None:
         for _attempt in range(MAX_ADMISSION_ATTEMPTS):

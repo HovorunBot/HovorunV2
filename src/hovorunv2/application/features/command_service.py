@@ -1,5 +1,7 @@
 """Application service for managing allowed commands per chat."""
 
+import logging
+
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import COMMAND_PRESENTATION, FEATURE_REGISTRY
 from hovorunv2.domain.audit import ActorContext
@@ -7,6 +9,8 @@ from hovorunv2.domain.enums import (
     PROVIDER_SPLIT_COMMANDS,
     CommandName,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _provider_split(command_name: str) -> tuple[CommandName, CommandName] | None:
@@ -154,9 +158,12 @@ class CommandService:
         is_allowed = await self.is_command_allowed(chat_id, command_name)
         if is_allowed:
             await self.disable_command(chat_id, command_name, actor=actor)
-            return False
-        await self.enable_command(chat_id, command_name, actor=actor)
-        return True
+            enabled = False
+        else:
+            await self.enable_command(chat_id, command_name, actor=actor)
+            enabled = True
+        logger.info("Command toggled: chat=%d command=%s enabled=%s", chat_id, command_name, enabled)
+        return enabled
 
     async def get_allowed_commands(self, chat_id: int) -> set[str]:
         """Return all enabled commands for a chat, including active parent providers.

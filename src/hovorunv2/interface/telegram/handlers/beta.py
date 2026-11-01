@@ -17,12 +17,14 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, CommandName
+from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.settings.callbacks import BetaAction, BetaCallback
 
 from .base import BaseCommand
 
 BETA_UNAVAILABLE = "Beta activation unavailable."
 BETA_FEATURES_HINT = "Use /settings to choose features."
+logger = get_logger(__name__)
 
 
 class BetaPromptCommand(BaseCommand):
@@ -67,6 +69,7 @@ class BetaPromptCommand(BaseCommand):
             await message.answer(BETA_UNAVAILABLE)
             return
         queued = await self._prompts.announce_new()
+        logger.info("Queued beta introduction recipients: count=%d", queued)
         await message.answer(f"Queued {queued} beta introduction recipient(s).")
 
     async def handle_callback(self, query: CallbackQuery, callback_data: BetaCallback) -> None:
@@ -79,6 +82,7 @@ class BetaPromptCommand(BaseCommand):
             return
         target = await self._target(message, query.from_user.id)
         if target is None:
+            logger.warning("Beta decision rejected: actor=%d chat=%d", query.from_user.id, message.chat.id)
             await query.answer(BETA_UNAVAILABLE, show_alert=True)
             return
         decision = BetaDecision.ACTIVE if callback_data.action == BetaAction.ACTIVATE else BetaDecision.DECLINED
@@ -91,8 +95,23 @@ class BetaPromptCommand(BaseCommand):
                 transport_kind=message.chat.type,
             )
         except PermissionError, ValueError:
+            logger.warning(
+                "Beta decision failed: actor=%d target=%s target_id=%s feature=%s",
+                query.from_user.id,
+                target.kind,
+                target.telegram_id,
+                callback_data.feature,
+            )
             await query.answer(BETA_UNAVAILABLE, show_alert=True)
             return
+        logger.info(
+            "Beta decision recorded: actor=%d target=%s target_id=%s feature=%s decision=%s",
+            query.from_user.id,
+            target.kind,
+            target.telegram_id,
+            callback_data.feature,
+            decision.value,
+        )
         await query.answer("Activated" if decision == BetaDecision.ACTIVE else "Declined")
         with contextlib.suppress(Exception):
             await message.edit_reply_markup(reply_markup=None)

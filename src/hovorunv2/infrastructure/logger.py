@@ -8,16 +8,30 @@ import sys
 import traceback
 from contextvars import ContextVar, Token
 from copy import copy
+from enum import Enum
 from types import TracebackType
 from typing import TYPE_CHECKING, Final
 
-from hovorunv2.application.jobs.admission import JobStage, TicketState
-from hovorunv2.application.jobs.feature_jobs import JobOutcome
+from hovorunv2.application.access.administration import AdminAction
+from hovorunv2.application.access.permissions import DecisionReason
+from hovorunv2.application.features.beta_prompts import BetaDecision
+from hovorunv2.application.features.registry import FeatureChannel, FeatureScope, TriggerKind
+from hovorunv2.application.groups.activation import ActivationAction, ActivationOutcome
+from hovorunv2.application.identity.membership import MembershipStatus
+from hovorunv2.application.identity.recovery import RecoveryOption
+from hovorunv2.application.jobs.admission import AdmissionState, JobStage, NoticeKind, TicketState
+from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome, JobStatus, PayloadState
 from hovorunv2.application.jobs.http_ports import HTTPFailure, TelegramRejection
 from hovorunv2.application.media.backend_logging import MediaBackendFailure
 from hovorunv2.application.media.errors import MediaFailure
+from hovorunv2.application.operations.notification_ledger import NotificationOutcome
+from hovorunv2.application.operations.notification_preferences import NotificationCategory
 from hovorunv2.application.usage.budgets import ReservationState
-from hovorunv2.domain.enums import ChatStatus, CommandName, Role
+from hovorunv2.application.usage.policies import UsageUnit
+from hovorunv2.domain.announcement import AnnouncementAudience
+from hovorunv2.domain.ban import BanKind
+from hovorunv2.domain.enums import ActorOrigin, ChatStatus, CommandName, Platform, Role, TargetKind
+from hovorunv2.domain.group_grant import ApprovalBasis, RequestStatus
 from hovorunv2.utils.job_logging import current_job_id, current_job_stage
 
 if TYPE_CHECKING:
@@ -32,25 +46,107 @@ LOG_FORMAT: Final = (
 
 MAX_TB_LINES: Final = 8
 MAX_TELEGRAM_MESSAGE_LENGTH: Final = 4096
-SAFE_LOG_LABELS: Final = frozenset(
-    str(value)
-    for enum in (
-        CommandName,
-        ChatStatus,
-        JobStage,
-        TicketState,
-        JobOutcome,
-        MediaFailure,
-        MediaBackendFailure,
-        HTTPFailure,
-        TelegramRejection,
-        ReservationState,
+CLI_OPERATIONAL_LABELS: Final = frozenset(
+    {
+        "role",
+        "access",
+        "trust",
+        "feature",
+        "lifecycle",
+        "audit",
+        "add",
+        "remove",
+        "list",
+        "grant",
+        "revoke",
+        "disable",
+        "enable",
+        "delete-user",
+        "delete-group",
+        "restore-user",
+        "restore-group",
+        "fresh-user",
+        "fresh-group",
+        "updated",
+        "unchanged",
+        "user",
+        "admin",
+        "owner",
+        "start",
+        "stop",
+        "success",
+        "failed",
+        "denied",
+        "allowed",
+        "true",
+        "false",
+        "group",
+        "bot",
+        "Message",
+        "CallbackQuery",
+        "ChatMemberUpdated",
+        "Update",
+        "none",
+        "all",
+        "unknown",
+    }
+)
+PERMISSION_ACTION_LABELS: Final = frozenset({"bot:own", "bot:administer", "group:settings"})
+SAFE_LOG_LABELS: Final = (
+    frozenset(
+        str(value)
+        for enum in (
+            CommandName,
+            ChatStatus,
+            JobStage,
+            TicketState,
+            JobOutcome,
+            MediaFailure,
+            MediaBackendFailure,
+            HTTPFailure,
+            TelegramRejection,
+            ReservationState,
+            Role,
+            Platform,
+            ActorOrigin,
+            TargetKind,
+            BanKind,
+            AnnouncementAudience,
+            ApprovalBasis,
+            RequestStatus,
+            DecisionReason,
+            AdminAction,
+            ActivationAction,
+            ActivationOutcome,
+            BetaDecision,
+            FeatureChannel,
+            FeatureScope,
+            TriggerKind,
+            MembershipStatus,
+            RecoveryOption,
+            NoticeKind,
+            AdmissionState,
+            PayloadState,
+            EnqueueState,
+            JobStatus,
+            NotificationOutcome,
+            NotificationCategory,
+            UsageUnit,
+        )
+        for value in enum
     )
-    for value in enum
+    | {role.name.lower() for role in Role}
+    | CLI_OPERATIONAL_LABELS
+    | PERMISSION_ACTION_LABELS
 )
 BOT_TOKEN_PATTERN: Final = re.compile(r"(bot)\d+:[A-Za-z0-9_-]+")
 BEARER_PATTERN: Final = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]+")
 URL_PATTERN: Final = re.compile(r"https?://\S+")
+SAFE_IDENTIFIER_PATTERNS: Final = (
+    re.compile(r"[0-9a-f]{32}"),
+    re.compile(r"\d+\.\d+(?:\.\d+)*(?:[-+][A-Za-z0-9.]+)?"),
+    re.compile(r"(?:feature|family):[a-z0-9_-]+"),
+)
 
 current_user_id: ContextVar[int | None] = ContextVar("current_user_id", default=None)
 current_chat_id: ContextVar[int | None] = ContextVar("current_chat_id", default=None)
@@ -114,10 +210,16 @@ class PrivacyFormatter(logging.Formatter):
 
 
 def safe_log_argument(value: object) -> object:
-    """Keep numeric metadata, known command/status labels and exception types."""
+    """Keep numeric metadata, known labels, exception types and safe internal identifiers."""
     if isinstance(value, type) and issubclass(value, BaseException):
         return value.__name__
+    if isinstance(value, Enum):
+        candidate = str(value.value)
+        if candidate in SAFE_LOG_LABELS:
+            return candidate
     if isinstance(value, str) and value in SAFE_LOG_LABELS:
+        return value
+    if isinstance(value, str) and any(pattern.fullmatch(value) for pattern in SAFE_IDENTIFIER_PATTERNS):
         return value
     return value if value is None or isinstance(value, (bool, int, float)) else "[omitted]"
 

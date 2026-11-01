@@ -63,3 +63,4 @@ class LanguageService:
         await self._chat_service.update_translation_settings(
             chat_id=chat_id, target_lang=target_lang, ignored_langs=ignored_langs, actor=actor
         )
+        logger.info("Language settings updated: chat=%d ignored=%d", chat_id, len(ignored_langs))

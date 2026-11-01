@@ -1,5 +1,6 @@
 """Private group discovery and current target-specific management authorization."""
 
+import logging
 from dataclasses import dataclass
 from typing import Final
 
@@ -14,6 +15,7 @@ from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import TargetKind
 
 GROUPS_PER_PAGE: Final = 8
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +115,25 @@ class GroupManagementService:
         Returns:
             Whether current bot administration or live group-administrator evidence authorizes management.
         """
+        allowed = await self._evaluate_can_manage(actor_id, target)
+        logger.debug(
+            "Group management evaluated: group=%s actor=%d allowed=%s",
+            target.telegram_id,
+            actor_id,
+            allowed,
+        )
+        return allowed
+
+    async def _evaluate_can_manage(self, actor_id: int, target: PermissionTarget) -> bool:
+        """Evaluate bot authority or live group-administrator evidence without logging.
+
+        Args:
+            actor_id: Numeric Telegram identity of the actor.
+            target: Permission target of the group to manage.
+
+        Returns:
+            Whether management is currently authorized.
+        """
         if target.kind != "group" or target.telegram_id is None or not await self._actor_available(actor_id):
             return False
         group = await self._chats.get_chat(target.telegram_id)
@@ -152,6 +173,7 @@ class GroupManagementService:
             Page of authorized groups and the next page cursor.
         """
         if after_id < 0 or not await self._actor_available(actor_id):
+            logger.debug("Group discovery skipped: actor=%d after=%d", actor_id, after_id)
             return ManagedGroupPage((), None)
         bot_admin = await self._permissions.has_authority(actor_id, "bot:administer")
         candidates = await self._chats.list_groups(after_id, GROUPS_PER_PAGE + 1, present_only=not bot_admin)
@@ -161,4 +183,10 @@ class GroupManagementService:
             if await self.can_manage(actor_id, target):
                 groups.append(ManagedGroup(candidate.id, candidate.generation, candidate.chat_id, candidate.title))
         next_after = candidates[GROUPS_PER_PAGE - 1].id if len(candidates) > GROUPS_PER_PAGE else None
+        logger.debug(
+            "Group discovery page served: actor=%d after=%d groups=%d",
+            actor_id,
+            after_id,
+            len(groups),
+        )
         return ManagedGroupPage(tuple(groups), next_after)

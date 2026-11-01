@@ -51,3 +51,37 @@ def test_exception_values_are_omitted() -> None:
     assert "ValueError" in output
     assert "private payload" not in output
     assert "example.com" not in output
+
+
+def test_safe_internal_identifiers_survive() -> None:
+    """Job IDs, versions, permission actions and exception types remain diagnosable."""
+    job_id = "0123456789abcdef0123456789abcdef"
+    record = _record(
+        "hovorunv2.application.jobs.feature_job_runner",
+        "ticket %s version %s action %s detail %s failure %s",
+        (job_id, "0.3.1", "bot:administer", "private message", KeyError),
+    )
+    output = PrivacyFormatter(FORMAT).format(record)
+    assert job_id in output
+    assert "0.3.1" in output
+    assert "bot:administer" in output
+    assert "KeyError" in output
+    assert "private message" not in output
+    assert "[omitted]" in output
+
+
+def test_usage_and_access_decision_labels_survive() -> None:
+    """Operational targets, buckets, units and decisions stay readable without payloads."""
+    record = _record(
+        "hovorunv2.application.usage.usage_administration",
+        "target=%s target_id=%s bucket=%s unit=%s changed=%s detail=%s",
+        ("group", -100123, "feature:youtube", "requests", True, "private caption"),
+    )
+    output = PrivacyFormatter(FORMAT).format(record)
+    assert "target=group" in output
+    assert "target_id=-100123" in output
+    assert "bucket=feature:youtube" in output
+    assert "unit=requests" in output
+    assert "changed=True" in output
+    assert "private caption" not in output
+    assert "[omitted]" in output

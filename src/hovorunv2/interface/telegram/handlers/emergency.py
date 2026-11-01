@@ -18,6 +18,7 @@ from hovorunv2.application.jobs.admission import AdmissionPort
 from hovorunv2.application.operations.feature_status import FeatureStatusNotifier
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.access_arguments import AccessArgumentParser
 
 from .base import BaseCommand
@@ -28,6 +29,7 @@ EMERGENCY_HELP = (
     "Queued work is cleared by the bounded recovery sweep; partial purges are never reported as complete."
 )
 EMERGENCY_UNAVAILABLE = "Emergency controls unavailable. Use /emergency privately."
+logger = get_logger(__name__)
 
 
 class EmergencyCommand(BaseCommand):
@@ -88,8 +90,17 @@ class EmergencyCommand(BaseCommand):
             )
             queued = await self._notifier.publish(state, actor=actor, transport_kind=message.chat.type)
             pending = len(await self._admission.pending_for_feature(arguments.feature))
+            logger.info(
+                "Feature emergency transition applied: feature=%s disabled=%s epoch=%d pending=%d queued=%d",
+                state.feature_key,
+                state.disabled,
+                state.epoch,
+                pending,
+                queued,
+            )
             await message.answer(html.escape(self._summary(state, pending, queued)))
         except PermissionError, ValueError:
+            logger.warning("Feature emergency command rejected: actor=%d", actor.actor_id)
             await message.answer(EMERGENCY_UNAVAILABLE)
 
     def _parse(self, words: list[str]) -> argparse.Namespace | None:

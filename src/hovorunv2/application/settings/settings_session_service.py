@@ -1,5 +1,6 @@
 """Bounded, single-use settings windows independent of Telegram callback fields."""
 
+import logging
 import secrets
 import time
 from typing import Final
@@ -11,6 +12,7 @@ from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.messaging.ports import CachePort
 
 SETTINGS_SESSION_TTL: Final = 30
+logger = logging.getLogger(__name__)
 
 
 class SettingsTarget(BaseModel):
@@ -153,6 +155,12 @@ class SettingsSessionService:
             expire=remaining,
         )
         await self._cache.set(window_key, token, expire=remaining)
+        logger.debug(
+            "Settings session issued: transport=%d actor=%s remaining=%ds",
+            context.transport_chat_id,
+            context.actor_id,
+            remaining,
+        )
         return token
 
     async def resolve(
@@ -166,6 +174,38 @@ class SettingsSessionService:
         consume: bool = False,
     ) -> SettingsContext | None:
         """Resolve one permitted operation against live identity and transport.
+
+        Args:
+            token: Opaque session token.
+            operation: Operation being attempted.
+            actor_id: Telegram ID of the requesting actor.
+            transport_chat_id: Chat where the operation is requested.
+            message_id: Message bound to the session.
+            consume: True to delete the token on successful resolution.
+
+        Returns:
+            The validated settings context, or None when invalid or mismatched.
+        """
+        context = await self._resolve_window(token, operation, actor_id, transport_chat_id, message_id, consume=consume)
+        logger.debug(
+            "Settings session resolved: transport=%d actor=%d accepted=%s",
+            transport_chat_id,
+            actor_id,
+            context is not None,
+        )
+        return context
+
+    async def _resolve_window(
+        self,
+        token: str,
+        operation: str,
+        actor_id: int,
+        transport_chat_id: int,
+        message_id: int,
+        *,
+        consume: bool,
+    ) -> SettingsContext | None:
+        """Validate the stored window, identity and transport without logging.
 
         Args:
             token: Opaque session token.

@@ -1,5 +1,6 @@
 """Immutable notification events and per-recipient delivery outcomes."""
 
+import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -9,6 +10,7 @@ from hovorunv2.application.operations.notification_preferences import Notificati
 from hovorunv2.domain.audit import ActorContext
 
 DEFAULT_PENDING_LIMIT = 100
+logger = logging.getLogger(__name__)
 
 
 class NotificationOutcome(StrEnum):
@@ -96,7 +98,9 @@ class NotificationLedgerService:
 
     async def ensure_event(self, event: NotificationEvent, *, actor: ActorContext) -> bool:
         """Create the immutable event once; duplicates cannot create logical receipts."""
-        return await self._store.ensure_event(event, actor=actor)
+        changed = await self._store.ensure_event(event, actor=actor)
+        logger.info("Notification event ensured: category=%s changed=%s", event.category.value, changed)
+        return changed
 
     async def receipt(self, event_key: str, target: PermissionTarget) -> NotificationReceipt | None:
         """Read one recipient outcome."""
@@ -137,4 +141,6 @@ class NotificationLedgerService:
 
     async def cancel(self, event_key: str, *, actor: ActorContext) -> int:
         """Dismiss pending/retry receipts for exactly this event; report the count."""
-        return await self._store.cancel(event_key, actor=actor)
+        cancelled = await self._store.cancel(event_key, actor=actor)
+        logger.info("Notification event cancelled: receipts=%d", cancelled)
+        return cancelled

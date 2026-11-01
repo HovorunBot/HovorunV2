@@ -1,9 +1,13 @@
 """Application service for role evaluation and CLI-managed role assignment."""
 
+import logging
+
 from hovorunv2.application.access.ports import RoleStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ActorOrigin, Platform, Role
 from hovorunv2.domain.user import UserDB
+
+logger = logging.getLogger(__name__)
 
 
 class RoleService:
@@ -71,4 +75,6 @@ class RoleService:
         if actor.origin != ActorOrigin.CLI:
             msg = "Role assignment is strictly restricted to CLI origin."
             raise PermissionError(msg)
-        return await self._role_store.set_role(telegram_id, role, actor, platform)
+        changed = await self._role_store.set_role(telegram_id, role, actor, platform)
+        logger.info("Role assignment completed: user=%d role=%s changed=%s", telegram_id, role.name.lower(), changed)
+        return changed

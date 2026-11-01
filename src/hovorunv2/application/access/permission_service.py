@@ -1,5 +1,6 @@
 """Collect current facts and enforce domain guards before permission evaluation."""
 
+import logging
 from datetime import UTC, datetime
 
 from hovorunv2.application.access.ban_ports import BanStore
@@ -14,6 +15,8 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.enums import ChatStatus, TargetKind
+
+logger = logging.getLogger(__name__)
 
 
 class PermissionService:
@@ -42,7 +45,9 @@ class PermissionService:
             Whether the actor's active role permits the action.
         """
         user = await self._users.get_by_telegram_id(actor_id)
-        return authority_allowed(self._policy, user.role if user is not None else None, action)
+        allowed = authority_allowed(self._policy, user.role if user is not None else None, action)
+        logger.debug("Authority evaluated: action=%s actor=%d allowed=%s", action, actor_id, allowed)
+        return allowed
 
     async def _evaluate_target(self, request: PermissionRequest) -> AccessDecision:
         """Return the transport and resource availability decision for the target.
@@ -93,11 +98,13 @@ class PermissionService:
         """
         user = await self._users.get_by_telegram_id(request.actor_id, request.platform.value)
         if user is None:
-            return AccessDecision(allowed=False, reason=DecisionReason.ENTITY_UNAVAILABLE)
+            return self._record_decision(
+                request, AccessDecision(allowed=False, reason=DecisionReason.ENTITY_UNAVAILABLE)
+            )
         target_decision = await self._evaluate_target(request)
         if not target_decision.allowed:
-            return target_decision
-        return permission_decision(
+            return self._record_decision(request, target_decision)
+        decision = permission_decision(
             request,
             user.role,
             self._policy,
@@ -105,3 +112,25 @@ class PermissionService:
             target_active=True,
             group_banned=False,
         )
+        return self._record_decision(request, decision)
+
+    def _record_decision(self, request: PermissionRequest, decision: AccessDecision) -> AccessDecision:
+        """Log decision facts without payloads and return the decision unchanged.
+
+        Args:
+            request: Evaluated permission request.
+            decision: Deterministic access decision.
+
+        Returns:
+            The same decision, after emitting a payload-free debug event.
+        """
+        logger.debug(
+            "Permission evaluated: action=%s target=%s target_id=%s actor=%d allowed=%s reason=%s",
+            request.action,
+            request.target.kind,
+            request.target.telegram_id,
+            request.actor_id,
+            decision.allowed,
+            decision.reason.value,
+        )
+        return decision

@@ -1,5 +1,6 @@
 """Authorized, bounded inspection of append-only administrative audit history."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -12,6 +13,7 @@ from hovorunv2.domain.enums import ActorOrigin, TargetKind
 
 DEFAULT_AUDIT_PAGE = 20
 MAX_AUDIT_PAGE = 50
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +106,12 @@ class AuditInspectionService:
         )
         entries = tuple(self._entry(record) for record in records)
         next_cursor = self._cursor(entries[-1]) if len(entries) == bounded else None
+        logger.info(
+            "Audit history queried: target_type=%s action=%s entries=%d",
+            target_type or "all",
+            action or "all",
+            len(entries),
+        )
         return AuditPage(entries, next_cursor)
 
     async def _require_admin(self, actor: ActorContext) -> None:
@@ -114,6 +122,7 @@ class AuditInspectionService:
             or not await self._permissions.has_authority(actor.actor_id, "bot:administer")
             or bool(await self._bans.list_active(TargetKind.USER, actor.actor_id))
         ):
+            logger.warning("Audit inspection denied: actor=%s", actor.actor_id)
             msg = "Audit inspection requires a current bot administrator."
             raise PermissionError(msg)
 

@@ -1,5 +1,6 @@
 """Encrypted announcement draft composition with faithful audience previews."""
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -18,6 +19,8 @@ from hovorunv2.application.operations.notifications import NOTIFICATION_BODY_TTL
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.announcement import AnnouncementAudience
 from hovorunv2.domain.audit import ActorContext
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,7 +214,7 @@ class AnnouncementService:
         author_user_id = await self._author_user_id(author)
         targets = await self._resolve(audience, target_ids)
         counts = await self._store.count(category, audience, targets)
-        return await self._store.create(
+        draft = await self._store.create(
             author=author,
             author_user_id=author_user_id,
             category=category,
@@ -221,6 +224,15 @@ class AnnouncementService:
             preview=AnnouncementPreview(1, *counts),
             transport_kind=transport_kind,
         )
+        logger.info(
+            "Announcement draft created: draft=%d category=%s audience=%s revision=%d recipients=%d",
+            draft.id,
+            category.value,
+            audience.value,
+            draft.revision,
+            draft.preview_count,
+        )
+        return draft
 
     async def update(
         self,
@@ -239,7 +251,7 @@ class AnnouncementService:
             self._validate_body(body)
         targets = await self._resolve(audience, target_ids)
         counts = await self._store.count(category, audience, targets)
-        return await self._store.update(
+        updated = await self._store.update(
             draft.id,
             author=author,
             category=category,
@@ -249,6 +261,15 @@ class AnnouncementService:
             preview=AnnouncementPreview(draft.revision + 1, *counts),
             transport_kind=transport_kind,
         )
+        logger.info(
+            "Announcement draft updated: draft=%d category=%s audience=%s revision=%d recipients=%d",
+            updated.id,
+            category.value,
+            audience.value,
+            updated.revision,
+            updated.preview_count,
+        )
+        return updated
 
     async def preview(self, draft_id: int) -> AnnouncementPreview:
         """Recompute the current revision's count without changing the draft."""
@@ -281,7 +302,7 @@ class AnnouncementService:
         if not recipients:
             msg = "No eligible announcement recipients."
             raise ValueError(msg)
-        return await self._store.confirm(
+        confirmation = await self._store.confirm(
             draft,
             actor=actor,
             actor_user_id=actor_user_id,
@@ -291,6 +312,14 @@ class AnnouncementService:
             urgent_reason=reason.strip() if reason is not None and reason.strip() else None,
             transport_kind=transport_kind,
         )
+        logger.info(
+            "Announcement confirmed: draft=%d revision=%d recipients=%d urgent=%s",
+            confirmation.draft_id,
+            confirmation.revision,
+            len(confirmation.recipients),
+            confirmation.urgent,
+        )
+        return confirmation
 
     async def dispatch(
         self,
@@ -341,6 +370,13 @@ class AnnouncementService:
                 attempts=0,
                 actor=actor,
             )
+        logger.info(
+            "Announcement dispatched: draft=%d revision=%d recipients=%d urgent=%s",
+            draft.id,
+            confirmation.revision,
+            len(confirmation.recipients),
+            confirmation.urgent,
+        )
         return await self.status(draft.id)
 
     async def cancel(
@@ -352,7 +388,7 @@ class AnnouncementService:
         changed = await self._store.cancel(draft_id, actor=actor, transport_kind=transport_kind)
         if current is not None and current.status == "dispatched":
             await self._ledger.cancel(self._event_key(draft.id, current.revision), actor=actor)
-        _ = changed
+        logger.info("Announcement cancelled: draft=%d changed=%s", draft.id, changed)
         return await self.status(draft.id)
 
     async def status(self, draft_id: int) -> AnnouncementStatus:

@@ -11,6 +11,9 @@ from hovorunv2.application.identity.identity import GroupIdentityStore
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
+from hovorunv2.infrastructure.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class IdentityMiddleware(BaseMiddleware):
@@ -73,13 +76,17 @@ class IdentityMiddleware(BaseMiddleware):
         if user is not None and not user.is_bot:
             active_user = await self._users.ingest_user(user.id, actor=actor)
             if active_user is None:
+                logger.warning("Identity ingest rejected: kind=user user=%d", user.id)
                 return False
             await self._handles.sync_handle(TargetKind.USER, user.id, user.username, actor)
+            logger.debug("Identity observed: kind=user user=%d", user.id)
         if chat is not None and chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
             active_group = await self._groups.ingest_group(chat.id, chat.title, chat.type)
             if active_group is None or active_group.chat_id != chat.id:
+                logger.warning("Identity ingest rejected: kind=group chat=%d", chat.id)
                 return False
             await self._handles.sync_handle(TargetKind.GROUP, chat.id, chat.username, actor)
+            logger.debug("Identity observed: kind=group chat=%d", chat.id)
         return True
 
     async def _migrate(self, message: Message) -> None:
@@ -98,4 +105,6 @@ class IdentityMiddleware(BaseMiddleware):
             await self._migrations.migrate(old_id, new_id)
         except ValueError:
             # Conflicting or deleted identities require operator review; never merge grants.
+            logger.warning("Group migration conflict requires review: old=%d new=%d", old_id, new_id)
             return
+        logger.info("Group migration observed: old=%d new=%d", old_id, new_id)

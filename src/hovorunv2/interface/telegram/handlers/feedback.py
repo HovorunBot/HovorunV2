@@ -107,6 +107,7 @@ class FeedbackCommand(BaseCommand):
             return
         cooldown_key = f"feedback:cooldown:{user.id}"
         if await self._cache.get(cooldown_key):
+            logger.debug("Feedback cooldown active: user=%d", user.id)
             await message.answer("Please wait a moment before sending more feedback.")
             return
         await self._cache.set(cooldown_key, 1, expire=FEEDBACK_COOLDOWN_SECONDS)

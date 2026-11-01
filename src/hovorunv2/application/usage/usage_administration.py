@@ -1,5 +1,6 @@
 """Audited scoped usage-limit inspection and overrides for administrators."""
 
+import logging
 from dataclasses import dataclass
 
 from hovorunv2.application.access.permissions import PermissionTarget
@@ -17,6 +18,7 @@ from hovorunv2.domain.enums import TargetKind
 
 DEFAULT_SOURCE = "default"
 OVERRIDE_SOURCE = "override"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +144,7 @@ class UsageAdministrationService:
             )
             for policy in resolved.policies
         )
-        return UsageLimitsView(
+        view = UsageLimitsView(
             target.kind,
             target.telegram_id or 0,
             feature,
@@ -151,6 +153,15 @@ class UsageAdministrationService:
             resolved.safety,
             views,
         )
+        logger.debug(
+            "Usage limits inspected: target=%s target_id=%s feature=%s unit=%s policies=%d",
+            target.kind,
+            target.telegram_id,
+            feature,
+            unit.value,
+            len(views),
+        )
+        return view
 
     async def _resolve(self, target: PermissionTarget, feature: str, unit: UsageUnit) -> ResolvedUsage:
         """Resolve usage through the same charged-subject rules as execution.
@@ -194,7 +205,18 @@ class UsageAdministrationService:
         Returns:
             True if the override changed durable state.
         """
-        return await self._store.set_override(target, policy, actor=actor, transport_kind=transport_kind)
+        changed = await self._store.set_override(target, policy, actor=actor, transport_kind=transport_kind)
+        logger.info(
+            "Usage limit override set: target=%s target_id=%s bucket=%s unit=%s window=%ds limit=%d changed=%s",
+            target.kind,
+            target.telegram_id,
+            policy.bucket,
+            policy.unit.value,
+            policy.window.seconds,
+            policy.limit,
+            changed,
+        )
+        return changed
 
     async def reset_override(
         self,
@@ -215,4 +237,16 @@ class UsageAdministrationService:
         Returns:
             True if the override removal changed durable state.
         """
-        return await self._store.set_override(target, policy, actor=actor, transport_kind=transport_kind, remove=True)
+        changed = await self._store.set_override(
+            target, policy, actor=actor, transport_kind=transport_kind, remove=True
+        )
+        logger.info(
+            "Usage limit override reset: target=%s target_id=%s bucket=%s unit=%s window=%ds changed=%s",
+            target.kind,
+            target.telegram_id,
+            policy.bucket,
+            policy.unit.value,
+            policy.window.seconds,
+            changed,
+        )
+        return changed

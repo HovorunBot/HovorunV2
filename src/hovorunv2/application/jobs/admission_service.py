@@ -1,5 +1,7 @@
 """Revalidate access before bounded admission and recover an idempotent queue handoff."""
 
+import logging
+
 from hovorunv2.application.features.emergency_service import FeatureEmergencyService
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
@@ -28,6 +30,8 @@ from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.application.usage.policies import ResolvedUsage
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, SPLIT_TO_PROVIDER_COMMAND, CommandName, TargetKind
+
+logger = logging.getLogger(__name__)
 
 
 class AdmissionService:
@@ -88,12 +92,30 @@ class AdmissionService:
         """
         now = self._clock.now()
         if now >= envelope.deadline:
-            return AdmissionResult(AdmissionState.EXPIRED)
+            return self._record_admission(envelope, AdmissionResult(AdmissionState.EXPIRED))
         if not self._dedupe_matches(envelope):
-            return AdmissionResult(AdmissionState.DENIED)
+            return self._record_admission(envelope, AdmissionResult(AdmissionState.DENIED))
         if not await self._current(envelope):
-            return AdmissionResult(AdmissionState.DENIED)
-        return await self._admit_current(envelope, payload, now)
+            return self._record_admission(envelope, AdmissionResult(AdmissionState.DENIED))
+        return self._record_admission(envelope, await self._admit_current(envelope, payload, now))
+
+    def _record_admission(self, envelope: JobEnvelope, result: AdmissionResult) -> AdmissionResult:
+        """Record the admission outcome without payload contents.
+
+        Args:
+            envelope: Job envelope that was admitted.
+            result: Admission result to report.
+
+        Returns:
+            The same result after emitting a payload-free event.
+        """
+        logger.info(
+            "Job admission decided: job=%s feature=%s state=%s",
+            envelope.job_id,
+            envelope.feature,
+            result.state.value,
+        )
+        return result
 
     def _dedupe_matches(self, envelope: JobEnvelope) -> bool:
         """Bind acceptance to stable incoming metadata, never URL or processing time."""
@@ -176,15 +198,28 @@ class AdmissionService:
         try:
             ticket = await self._admission.get(job_id)
             if ticket is None:
-                return AdmissionResult(AdmissionState.UNAVAILABLE)
+                return self._record_handoff(job_id, AdmissionResult(AdmissionState.UNAVAILABLE))
             if ticket.state != TicketState.ACCEPTED:
                 state = AdmissionState.TERMINAL if ticket.state == TicketState.TERMINAL else AdmissionState.ENQUEUED
-                return AdmissionResult(state, ticket)
+                return self._record_handoff(job_id, AdmissionResult(state, ticket))
             if ticket.envelope.deadline <= self._clock.now():
-                return AdmissionResult(AdmissionState.EXPIRED, ticket)
-            return await self._enqueue_ticket(ticket)
+                return self._record_handoff(job_id, AdmissionResult(AdmissionState.EXPIRED, ticket))
+            return self._record_handoff(job_id, await self._enqueue_ticket(ticket))
         except AdmissionUnavailableError:
-            return AdmissionResult(AdmissionState.UNAVAILABLE, ticket)
+            return self._record_handoff(job_id, AdmissionResult(AdmissionState.UNAVAILABLE, ticket))
+
+    def _record_handoff(self, job_id: str, result: AdmissionResult) -> AdmissionResult:
+        """Record the queue handoff outcome without payload contents.
+
+        Args:
+            job_id: Job whose handoff completed.
+            result: Admission result to report.
+
+        Returns:
+            The same result after emitting a payload-free event.
+        """
+        logger.info("Job handoff completed: job=%s state=%s", job_id, result.state.value)
+        return result
 
     async def _enqueue_ticket(self, ticket: AdmissionTicket) -> AdmissionResult:
         enqueued = await self._queue.enqueue(ticket.envelope)
@@ -210,4 +245,6 @@ class AdmissionService:
             tickets = await self._admission.recoverable(self._clock.now(), limit)
         except AdmissionUnavailableError:
             return (AdmissionResult(AdmissionState.UNAVAILABLE),)
-        return tuple([await self.handoff(ticket.envelope.job_id) for ticket in tickets])
+        results = tuple([await self.handoff(ticket.envelope.job_id) for ticket in tickets])
+        logger.info("Job recovery completed: recovered=%d", len(results))
+        return results

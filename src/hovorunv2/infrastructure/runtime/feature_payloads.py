@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import math
 import re
 import secrets
@@ -27,6 +28,7 @@ from hovorunv2.infrastructure.runtime.cache import CacheService
 
 REFERENCE_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 MAX_SENDER_LABEL_LEN = 256
+logger = logging.getLogger(__name__)
 
 
 def pack_payload(data: bytes, sender_label: str | None = None) -> bytes:
@@ -170,11 +172,14 @@ class ValkeyPayloadStore(PayloadPort):
         master = _require_sealable_input(master, job_id, data, deadline, now, safety, sender_label)
         reference, salt = secrets.token_hex(16), secrets.token_hex(16)
         fernet = await asyncio.to_thread(get_fernet_for_chat, master, salt)
-        return _seal_payload(reference, salt, job_id, deadline, data, sender_label, fernet, safety)
+        sealed = _seal_payload(reference, salt, job_id, deadline, data, sender_label, fernet, safety)
+        logger.debug("Payload sealed: job=%s reference=%s bytes=%d", job_id, sealed.reference, len(data))
+        return sealed
 
     async def put(self, payload: SealedPayload) -> PayloadState:
         """Do not renew retention when the same prepared payload is written again."""
         if payload.deadline <= self._clock.now():
+            logger.debug("Payload put expired: reference=%s", payload.reference)
             return PayloadState.EXPIRED
         ttl = math.ceil(payload.deadline - self._clock.now()) + PAYLOAD_CLEANUP_SECONDS
         try:
@@ -184,8 +189,11 @@ class ValkeyPayloadStore(PayloadPort):
                 current = await self._cache.client.get(key)
                 stored = current == payload.blob.encode()
         except RedisError, OSError:
+            logger.debug("Payload put unavailable: reference=%s", payload.reference)
             return PayloadState.UNAVAILABLE
-        return PayloadState.READY if stored == 1 else PayloadState.UNREADABLE
+        state = PayloadState.READY if stored == 1 else PayloadState.UNREADABLE
+        logger.debug("Payload put completed: reference=%s state=%s", payload.reference, state.value)
+        return state
 
     async def load(self, reference: str, job_id: str) -> LoadedPayload:
         """Never propagate malformed ciphertext, missing encryption or backend exception contents."""
@@ -210,6 +218,7 @@ class ValkeyPayloadStore(PayloadPort):
         """Delete only an opaque technical reference, not an arbitrary cache key."""
         validate_reference(reference)
         await self._cache.delete(self._prefix + reference)
+        logger.debug("Payload deleted: reference=%s", reference)
 
 
 class WorkerPayloadClient:
@@ -250,12 +259,15 @@ class WorkerPayloadClient:
         master = _require_sealable_input(master, job_id, data, deadline, now, safety, sender_label)
         reference, salt = secrets.token_hex(16), secrets.token_hex(16)
         fernet = get_fernet_for_chat(master, salt)
-        return _seal_payload(reference, salt, job_id, deadline, data, sender_label, fernet, safety)
+        sealed = _seal_payload(reference, salt, job_id, deadline, data, sender_label, fernet, safety)
+        logger.debug("Payload sealed: job=%s reference=%s bytes=%d", job_id, sealed.reference, len(data))
+        return sealed
 
     def put(self, payload: SealedPayload) -> PayloadState:
         """Store prepared ciphertext synchronously."""
         self._require_owner()
         if payload.deadline <= self._clock.now():
+            logger.debug("Payload put expired: reference=%s", payload.reference)
             return PayloadState.EXPIRED
         ttl = math.ceil(payload.deadline - self._clock.now()) + PAYLOAD_CLEANUP_SECONDS
         try:
@@ -265,8 +277,11 @@ class WorkerPayloadClient:
                 current = self._client.get(key)
                 stored = current in (payload.blob, payload.blob.encode())
         except RedisError, OSError:
+            logger.debug("Payload put unavailable: reference=%s", payload.reference)
             return PayloadState.UNAVAILABLE
-        return PayloadState.READY if stored == 1 else PayloadState.UNREADABLE
+        state = PayloadState.READY if stored == 1 else PayloadState.UNREADABLE
+        logger.debug("Payload put completed: reference=%s state=%s", payload.reference, state.value)
+        return state
 
     def load(self, reference: str, job_id: str) -> LoadedPayload:
         """Decrypt and unpack payload synchronously; never leak undecryptable data."""
@@ -293,3 +308,4 @@ class WorkerPayloadClient:
         self._require_owner()
         validate_reference(reference)
         self._client.delete(self._prefix + reference)
+        logger.debug("Payload deleted: reference=%s", reference)

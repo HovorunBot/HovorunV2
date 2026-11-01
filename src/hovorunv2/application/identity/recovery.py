@@ -1,5 +1,6 @@
 """Authorized preview of identity recovery choices; no restoration happens here."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -16,6 +17,7 @@ from hovorunv2.domain.enums import ActorOrigin, ChatStatus, Role, TargetKind
 from hovorunv2.domain.user import UserDB
 
 RECOMMENDATION_THRESHOLD_SECONDS = 24 * 60 * 60
+logger = logging.getLogger(__name__)
 
 
 class RecoveryOption(StrEnum):
@@ -201,6 +203,13 @@ class RecoveryPreviewService:
         else:
             generation = await self._store.fresh_user(telegram_id, actor)
         banned = bool(await self._bans.list_active(TargetKind.USER, telegram_id))
+        logger.info(
+            "User identity recovered: user=%d option=%s generation=%d banned=%s",
+            telegram_id,
+            option.value,
+            generation,
+            banned,
+        )
         return RecoveryExecution(telegram_id, option, generation, banned)
 
     async def execute_group(
@@ -226,6 +235,13 @@ class RecoveryPreviewService:
         else:
             generation = await self._store.fresh_group(telegram_id, actor)
         banned = bool(await self._bans.list_active(TargetKind.GROUP, telegram_id))
+        logger.info(
+            "Group identity recovered: group=%d option=%s generation=%d banned=%s",
+            telegram_id,
+            option.value,
+            generation,
+            banned,
+        )
         return RecoveryExecution(telegram_id, option, generation, banned)
 
     async def _require_admin(self, actor: ActorContext) -> None:
@@ -236,6 +252,7 @@ class RecoveryPreviewService:
             or not await self._permissions.has_authority(actor.actor_id, "bot:administer")
             or bool(await self._bans.list_active(TargetKind.USER, actor.actor_id))
         ):
+            logger.warning("Recovery inspection denied: actor=%s", actor.actor_id)
             msg = "Recovery inspection requires a current bot administrator."
             raise PermissionError(msg)
 

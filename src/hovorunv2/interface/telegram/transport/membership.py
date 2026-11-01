@@ -20,9 +20,11 @@ from hovorunv2.application.identity.membership import (
     MembershipEvidence,
     MembershipStatus,
 )
+from hovorunv2.infrastructure.logger import get_logger
 
 MEMBERSHIP_FRESHNESS = timedelta(minutes=5)
 MEMBERSHIP_REQUEST_TIMEOUT = 10
+logger = get_logger(__name__)
 
 
 def membership_status(member: ChatMemberUnion) -> MembershipStatus:
@@ -78,6 +80,7 @@ class TelegramMembershipAdapter:
                 group_telegram_id, user_telegram_id, request_timeout=MEMBERSHIP_REQUEST_TIMEOUT
             )
         except TelegramAPIError:
+            logger.warning("Membership verification unavailable: group=%d", group_telegram_id)
             status = MembershipStatus.UNKNOWN
         else:
             status = membership_status(member) if member.user.id == user_telegram_id else MembershipStatus.UNKNOWN
@@ -98,6 +101,7 @@ class TelegramMembershipAdapter:
                 group_telegram_id, request_timeout=MEMBERSHIP_REQUEST_TIMEOUT
             )
         except TelegramAPIError:
+            logger.warning("Administrator lookup unavailable: group=%d", group_telegram_id)
             return AdministratorEvidence(
                 group_telegram_id, known=False, members=(), verified_at=now, expires_at=now + MEMBERSHIP_FRESHNESS
             )
@@ -125,6 +129,7 @@ class TelegramMembershipAdapter:
                 group_telegram_id, self._bot.id, request_timeout=MEMBERSHIP_REQUEST_TIMEOUT
             )
         except TelegramAPIError:
+            logger.warning("Bot capability lookup unavailable: group=%d", group_telegram_id)
             member = None
         status = membership_status(member) if member is not None else MembershipStatus.UNKNOWN
         if member is not None and member.user.id != self._bot.id:
