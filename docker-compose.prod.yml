@@ -112,6 +112,7 @@ services:
 
   worker-browser:
     <<: *browser
+    restart: unless-stopped
     environment:
       <<: *app-environment
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
