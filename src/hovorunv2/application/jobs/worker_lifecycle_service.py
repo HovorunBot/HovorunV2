@@ -105,12 +105,14 @@ class WorkerLifecycleService:
             Number of tickets recovered.
         """
         recovered = 0
+        logger.info("Starting worker lifecycle recovery sweep (limit=%d)", limit)
         for ticket in self._admission.recovery_page(limit):
             try:
                 recovered += self._recover_ticket(ticket, publisher)
             except Exception:
                 # Backend exceptions may contain credentials or private request details.
                 logger.warning("Worker lifecycle reconciliation deferred")
+        logger.info("Worker lifecycle recovery sweep finished: recovered %d ticket(s)", recovered)
         return recovered
 
     def _recover_ticket(self, ticket: AdmissionTicket, publisher: SyncQueuePublisherPort) -> int:

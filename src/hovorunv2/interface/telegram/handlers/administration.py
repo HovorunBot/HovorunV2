@@ -2,6 +2,7 @@
 
 import html
 import json
+import logging
 import shlex
 from collections.abc import Mapping
 from typing import ClassVar
@@ -20,6 +21,8 @@ from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.access_arguments import parse_access
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.settings.callbacks import AdminCallback
+
+logger = logging.getLogger(__name__)
 
 ADMIN_HELP = (
     "Use /admin ACTION user|group ID|@known_username [options].\n"
@@ -75,6 +78,12 @@ class AdministrationCommand(BaseCommand):
                 await message.answer(ADMIN_HELP)
                 return
             request = parse_access(words)
+            logger.info(
+                "Processing /admin command from user %d: action=%s kind=%s",
+                message.from_user.id,
+                request.action.value,
+                request.kind.value,
+            )
             target = await self._administration.resolve(request.kind, request.target)
             state = await self._administration.inspect(target, actor, message.chat.type)
             if request.action in {AdminAction.INSPECT, AdminAction.REQUESTS}:
@@ -135,10 +144,16 @@ class AdministrationCommand(BaseCommand):
                 return
             if callback_data.cancel:
                 result: dict[str, object] = {"cancelled": True}
+                logger.info("Admin callback cancelled by user %d", query.from_user.id)
             else:
                 actor = ActorContext.telegram(query.from_user.id, reason=confirmation.request.reason)
                 result = await self._administration.execute(
                     confirmation.request, confirmation.target, actor, message.chat.type
+                )
+                logger.info(
+                    "Admin callback executed action: action=%s outcome=%s",
+                    confirmation.request.action.value,
+                    result.get("outcome", "success"),
                 )
             await message.edit_text(html.escape(json.dumps(result, ensure_ascii=False)), reply_markup=None)
             await query.answer()

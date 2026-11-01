@@ -1,6 +1,7 @@
 """Private bot-administrator announcement draft composition and previews."""
 
 import html
+import logging
 import shlex
 from typing import ClassVar
 
@@ -19,6 +20,8 @@ from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.access_arguments import AccessArgumentParser
 
 from .base import BaseCommand
+
+logger = logging.getLogger(__name__)
 
 ANNOUNCE_HELP = (
     "Use /announce draft --category CATEGORY --audience all|users|groups|selected "
@@ -67,6 +70,7 @@ class AnnounceCommand(BaseCommand):
             if len(words) < MIN_ANNOUNCE_TOKENS:
                 await message.answer(ANNOUNCE_HELP)
                 return
+            logger.info("Processing /announce command from user %d (mode: %s)", message.from_user.id, words[1])
             await self._dispatch(message, actor, words[1], words[2:])
         except PermissionError, ValueError:
             await message.answer(ANNOUNCE_UNAVAILABLE)

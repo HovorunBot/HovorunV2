@@ -121,6 +121,7 @@ class AdmissionRecord(BaseModel):
     terminal_notice_requested: bool = False
     delayed_notice_claimed: bool = False
     terminal_notice_claimed: bool = False
+    failure_notice_claimed: bool = False
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> Self:
@@ -515,6 +516,8 @@ def _acknowledge(record: AdmissionRecord, request: AdmissionTransition) -> Admis
 
 
 def _notice(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if request.notice == NoticeKind.FAILURE:
+        return _failure_notice(record)
     if request.notice == NoticeKind.DELAYED:
         if record.state != TicketState.WAITING or not record.delayed_notice_requested or record.delayed_notice_claimed:
             return AdmissionChange(record)
@@ -531,6 +534,17 @@ def _notice(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionC
         return AdmissionChange(claimed, write=True, success=True)
     msg = "Feedback requires a typed notice kind."
     raise TypeError(msg)
+
+
+def _failure_notice(record: AdmissionRecord) -> AdmissionChange:
+    if record.failure_notice_claimed or record.terminal_notice_claimed:
+        return AdmissionChange(record)
+    if record.state in {TicketState.DELIVERY_UNCERTAIN, TicketState.SETTLING, TicketState.CANCELLING}:
+        return AdmissionChange(record)
+    if record.outcome in {JobOutcome.COMPLETE, JobOutcome.CANCELLED}:
+        return AdmissionChange(record)
+    claimed = record.model_copy(update={"failure_notice_claimed": True})
+    return AdmissionChange(claimed, write=True, success=True)
 
 
 def _republish(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:

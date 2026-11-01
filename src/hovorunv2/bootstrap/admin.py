@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import sys
 from datetime import UTC, datetime
 
@@ -37,6 +38,7 @@ from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.authorization.casbin_policy import load_authorization_policy
 from hovorunv2.infrastructure.config import DatabaseSettings
+from hovorunv2.infrastructure.logger import setup_logging
 from hovorunv2.infrastructure.persistence import (
     SQLAlchemyAuditedTransaction,
     SQLAlchemyPublicHandleStore,
@@ -54,6 +56,8 @@ from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAl
 from hovorunv2.infrastructure.persistence.stores.user_store import SQLAlchemyUserStore
 from hovorunv2.interface.cli.access import AccessCLI
 from hovorunv2.interface.cli.roles import RoleArguments, RoleCLI, build_parser
+
+logger = logging.getLogger(__name__)
 
 
 class AdminProvider(DatabaseProvider):
@@ -128,6 +132,7 @@ class AdminProvider(DatabaseProvider):
 
 async def _execute_access_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
     """Validate and execute access administration request."""
+    logger.info("Admin access command executing: action=%s kind=%s", arguments.action, arguments.kind)
     request = AdminRequest.model_validate(
         {
             "action": arguments.action,
@@ -152,6 +157,7 @@ async def _execute_access_admin(container: AsyncContainer, arguments: RoleArgume
 
 async def _execute_feature_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
     """Apply one CLI-origin feature emergency transition and report its durable state."""
+    logger.info("Admin feature command executing: feature=%s operation=%s", arguments.feature, arguments.operation)
     service = await container.get(FeatureEmergencyService)
     state = await service.set_state(
         arguments.feature,
@@ -169,6 +175,7 @@ async def _execute_feature_admin(container: AsyncContainer, arguments: RoleArgum
 
 async def _execute_audit_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
     """Return one bounded audit page for CLI inspection."""
+    logger.info("Admin audit query executing: limit=%d", arguments.limit or 20)
     service = await container.get(AuditInspectionService)
     page = await service.query(
         actor=ActorContext.cli(),
@@ -199,6 +206,7 @@ def _parse_timestamp(value: str | None) -> datetime | None:
 
 async def _execute_lifecycle_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
     """Apply one CLI-authorized identity soft-deletion and report the new generation."""
+    logger.info("Admin lifecycle command executing: operation=%s", arguments.operation)
     if arguments.target is None or arguments.reason is None:
         msg = "Lifecycle deletion requires --target and --reason."
         raise ValueError(msg)
@@ -228,6 +236,7 @@ async def _execute_lifecycle_admin(container: AsyncContainer, arguments: RoleArg
 
 async def _execute_trust_admin(container: AsyncContainer, arguments: RoleArguments) -> str:
     """Validate target user and update trust state."""
+    logger.info("Admin trust command executing: operation=%s", arguments.operation)
     if arguments.target is None:
         msg = "A target user is required."
         raise ValueError(msg)
@@ -246,26 +255,31 @@ async def _execute_trust_admin(container: AsyncContainer, arguments: RoleArgumen
 
 async def run_admin(arguments: RoleArguments) -> str:
     """Execute once and close all owned resources without polling or starting workers."""
+    logger.info("Admin command started (topic: %s)", arguments.topic)
     container = make_async_container(AdminProvider())
     try:
         if arguments.topic == "access":
-            return await _execute_access_admin(container, arguments)
-        if arguments.topic == "trust":
-            return await _execute_trust_admin(container, arguments)
-        if arguments.topic == "feature":
-            return await _execute_feature_admin(container, arguments)
-        if arguments.topic == "lifecycle":
-            return await _execute_lifecycle_admin(container, arguments)
-        if arguments.topic == "audit":
-            return await _execute_audit_admin(container, arguments)
-        cli = await container.get(RoleCLI)
-        return await cli.execute(arguments)
+            result = await _execute_access_admin(container, arguments)
+        elif arguments.topic == "trust":
+            result = await _execute_trust_admin(container, arguments)
+        elif arguments.topic == "feature":
+            result = await _execute_feature_admin(container, arguments)
+        elif arguments.topic == "lifecycle":
+            result = await _execute_lifecycle_admin(container, arguments)
+        elif arguments.topic == "audit":
+            result = await _execute_audit_admin(container, arguments)
+        else:
+            cli = await container.get(RoleCLI)
+            result = await cli.execute(arguments)
+        logger.info("Admin command completed successfully (topic: %s)", arguments.topic)
+        return result
     finally:
         await container.close()
 
 
 def main() -> None:
     """Run the standalone administration command with safe operator-facing errors."""
+    setup_logging()
     parser = build_parser()
     arguments = parser.parse_args(namespace=RoleArguments())
     try:

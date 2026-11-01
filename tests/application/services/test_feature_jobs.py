@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import secrets
 import sys
 import time
 from dataclasses import replace
@@ -16,7 +17,14 @@ from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import JobStage
-from hovorunv2.application.jobs.feature_job_runner import EXTRACTION_FAILURE_NOTICE_TEXT, FeatureJobRunner
+from hovorunv2.application.jobs.feature_job_runner import (
+    APPLICATION_FAILURE_NOTICE_TEXT,
+    EXTRACTION_FAILURE_NOTICE_TEXT,
+    LIMIT_FAILURE_NOTICE_TEXT,
+    LIMIT_WAIT_NOTICE_TEXT,
+    TIMEOUT_NOTICE_TEXT,
+    FeatureJobRunner,
+)
 from hovorunv2.application.jobs.feature_jobs import (
     EnqueueState,
     JobEnvelope,
@@ -32,6 +40,7 @@ from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.media.providers.instagram import INSTAGRAM_CONFIG
 from hovorunv2.application.translation.native_translation import NativeTranslationService
+from hovorunv2.application.usage.budgets import ReservationDecision, ReservationState
 from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AccountingSubject
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -100,6 +109,14 @@ class MetadataVideoClient(VideoMediaClient):
         payload.media_items.clear()
         payload.video_unavailable = True
         return payload
+
+
+class BrokenMediaClient(VideoMediaClient):
+    """Raise an application defect without exposing exception details to users."""
+
+    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+        """Interrupt application execution with synthetic private diagnostic text."""
+        raise ValueError(PRIVATE_URL)
 
 
 class RecordingTelegram:
@@ -296,12 +313,13 @@ async def test_missing_encryption_and_actual_ciphertext_bound_fail_before_write(
 
 
 @pytest.mark.parametrize(
-    ("client_type", "expected_outcome"),
+    ("client_type", "expected_outcome", "expected_notice"),
     [
-        (VideoMediaClient, JobOutcome.COMPLETE),
-        (MetadataVideoClient, JobOutcome.COMPLETE),
-        (TimedOutMediaClient, JobOutcome.EXPIRED),
-        (FailedMediaClient, JobOutcome.FAILED),
+        (VideoMediaClient, JobOutcome.COMPLETE, None),
+        (MetadataVideoClient, JobOutcome.COMPLETE, None),
+        (TimedOutMediaClient, JobOutcome.EXPIRED, TIMEOUT_NOTICE_TEXT),
+        (FailedMediaClient, JobOutcome.FAILED, EXTRACTION_FAILURE_NOTICE_TEXT),
+        (BrokenMediaClient, JobOutcome.FAILED, APPLICATION_FAILURE_NOTICE_TEXT),
     ],
 )
 async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges_zero(
@@ -309,6 +327,7 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
     postgres_database_url: str,
     client_type: type[VideoMediaClient],
     expected_outcome: JobOutcome,
+    expected_notice: str | None,
 ) -> None:
     """Disabled capture and soft timeouts both settle without delivery or consumption."""
     settings = await test_container.get(Settings)
@@ -363,18 +382,86 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
             outcome = runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
             assert outcome == expected_outcome.value
             assert len(delivery.calls) == 0
+            if expected_notice is not None:
+                assert telegram.calls == [(envelope.target.telegram_id, expected_notice)]
+                assert PRIVATE_URL not in telegram.calls[0][1]
             if expected_outcome == JobOutcome.FAILED:
-                assert telegram.calls == [(envelope.target.telegram_id, EXTRACTION_FAILURE_NOTICE_TEXT)]
                 assert runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA) == JobOutcome.FAILED.value
                 assert len(telegram.calls) == 1
 
             ticket = runtime.admission.get(envelope.job_id)
             assert ticket is not None
-            assert ticket.outcome == expected_outcome
+            if client_type is BrokenMediaClient:
+                assert ticket.outcome is None
+                assert ticket.budget_reserved
+            else:
+                assert ticket.outcome == expected_outcome
 
             subject = AccountingSubject(envelope.target.kind, envelope.target.telegram_id)
             total = database.ledger.total(subject, MEDIA_BUCKET, UsageUnit.REQUESTS, UsageWindow(), int(clock.now()))
             assert total == 0
+
+
+@pytest.mark.parametrize(
+    ("state", "retry_delay", "expected_notice"),
+    [
+        (ReservationState.WAITING, 10, LIMIT_WAIT_NOTICE_TEXT),
+        (ReservationState.WAITING, 400, LIMIT_FAILURE_NOTICE_TEXT),
+        (ReservationState.IMPOSSIBLE, None, LIMIT_FAILURE_NOTICE_TEXT),
+        (ReservationState.EXPIRED, None, TIMEOUT_NOTICE_TEXT),
+        (ReservationState.UNAVAILABLE, None, APPLICATION_FAILURE_NOTICE_TEXT),
+    ],
+)
+async def test_denied_budget_reports_limits_separately_from_application_failure(
+    test_container: AsyncContainer,
+    postgres_database_url: str,
+    state: ReservationState,
+    retry_delay: int | None,
+    expected_notice: str,
+) -> None:
+    """Explain delayed, rejected and unavailable budget decisions through real admission notice claims."""
+    settings = await test_container.get(Settings)
+    settings = settings.model_copy(update={"database_url": postgres_database_url})
+    clock = ManualClock(time.time())
+    chat_id, generation = await _seed_entities(test_container, 390001, -390001)
+    async with runtime_cache(test_container) as (cache, namespace):
+        envelope = job_envelope(
+            "b" * 32,
+            clock,
+            target=JobTarget(kind=TargetKind.GROUP, entity_id=chat_id, generation=generation, telegram_id=-390001),
+        )
+        await admit_test_job(settings, cache, namespace, clock, envelope)
+        telegram = RecordingTelegram()
+        with (
+            WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
+            WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
+            NativeHTTPClient() as http,
+        ):
+            runner = FeatureJobRunner(
+                admission=runtime.admission,
+                payloads=runtime.payloads,
+                budgets=runtime.budgets,
+                policies=database.policies,
+                ledger=database.ledger,
+                http=http,
+                delivery=RecordingDelivery(),
+                translation=NativeTranslationService(http, settings, database.policies),
+                extractor=NativeMediaExtractor(),
+                clock=clock,
+                settings=settings,
+                registry=FEATURE_REGISTRY,
+                browser=LazyBrowserService(),
+                publisher=WorkerQueuePublisher(settings.valkey_url, namespace, UsageSafetyCaps(), clock),
+                clients=[VideoMediaClient()],
+                telegram=telegram,
+                feedback=AllowFeedback(),
+                gate=AllowGate(),
+            )
+            token = secrets.token_hex(16)
+            assert runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), token) is not None
+            retry_at = clock.now() + retry_delay if retry_delay is not None else None
+            runner._handle_denied_reservation(envelope, token, ReservationDecision(state, retry_at))  # noqa: SLF001
+            assert telegram.calls == [(envelope.target.telegram_id, expected_notice)]
 
 
 async def test_repeated_tasks_cannot_invoke_second_execution_and_stale_owner_fenced(

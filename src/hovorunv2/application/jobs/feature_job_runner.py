@@ -22,6 +22,7 @@ from hovorunv2.application.jobs.admission import (
     TicketState,
 )
 from hovorunv2.application.jobs.feature_jobs import (
+    APPLICATION_FAILURE_NOTICE_TEXT,
     JobEnvelope,
     JobOutcome,
     LoadedPayload,
@@ -82,6 +83,8 @@ DELAYED_NOTICE_SECONDS = 20.0
 DELAYED_NOTICE_TEXT = "⏳ This request is taking longer than usual. It is still queued."
 TIMEOUT_NOTICE_TEXT = "⌛ This request timed out before it could finish. Please try again."
 EXTRACTION_FAILURE_NOTICE_TEXT = "⚠️ Media could not be extracted. The post may be unavailable or require signing in."
+LIMIT_WAIT_NOTICE_TEXT = "⏳ Request limits are currently reached. Your request is queued until capacity is available."
+LIMIT_FAILURE_NOTICE_TEXT = "⚠️ This request could not run within the current usage limits. Please try again later."
 
 
 def default_media_clients(settings: AppSettings | None = None) -> dict[CommandName, BaseMediaClient]:
@@ -181,6 +184,7 @@ class FeatureJobRunner:
             return self._run_envelope(envelope, stage)
         except Exception:
             logger.exception("Feature job execution deferred")
+            self._notify_application_failure(envelope)
             return JobOutcome.FAILED.value
         finally:
             reset_job_log_context(tokens)
@@ -254,6 +258,7 @@ class FeatureJobRunner:
             return self._execute_reserved(envelope, loaded, stage, token, now)
         except Exception:
             logger.exception("Claimed execution reconciliation deferred")
+            self._notify_application_failure(envelope)
             return JobOutcome.FAILED.value
 
     def _execute_reserved(
@@ -291,6 +296,7 @@ class FeatureJobRunner:
             logger.error("Worker encrypted payload is unavailable")
             outcome = JobOutcome.EXPIRED if loaded.state == PayloadState.EXPIRED else JobOutcome.PAYLOAD_UNAVAILABLE
             self._finish_ticket_safe(envelope.job_id, token, outcome)
+            self._notify_application_failure(envelope)
             return None
         return loaded
 
@@ -321,6 +327,13 @@ class FeatureJobRunner:
             for policy in usage.policies
         )
         return self._budgets.reserve(request, now, totals)
+
+    def _notify_application_failure(self, envelope: JobEnvelope) -> None:
+        """Attempt authorized failure feedback without interrupting task recovery."""
+        try:
+            self._notify(envelope, NoticeKind.FAILURE, APPLICATION_FAILURE_NOTICE_TEXT)
+        except Exception:
+            logger.warning("Application failure feedback unavailable")
 
     def _notify(self, envelope: JobEnvelope, kind: NoticeKind, text: str) -> None:
         """Send one deduplicated progress notice only to a still-authorized target."""
@@ -359,11 +372,11 @@ class FeatureJobRunner:
                 if deferred is None:
                     self._finish_ticket_safe(envelope.job_id, token, JobOutcome.CANCELLED)
                     return JobOutcome.CANCELLED.value
-                if retry - envelope.accepted_at >= DELAYED_NOTICE_SECONDS:
-                    self._notify(envelope, NoticeKind.DELAYED, DELAYED_NOTICE_TEXT)
+                self._notify(envelope, NoticeKind.DELAYED, LIMIT_WAIT_NOTICE_TEXT)
                 return ReservationState.WAITING.value
         if reservation.state == ReservationState.UNAVAILABLE:
             # A lost reserve acknowledgement can hide a live reservation; do not refund it.
+            self._notify_application_failure(envelope)
             return JobOutcome.FAILED.value
         outcome = (
             JobOutcome.EXPIRED
@@ -371,8 +384,13 @@ class FeatureJobRunner:
             else JobOutcome.FAILED
         )
         self._finish_ticket_safe(envelope.job_id, token, outcome)
-        if outcome == JobOutcome.EXPIRED:
-            self._notify(envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
+        notices = {
+            ReservationState.EXPIRED: TIMEOUT_NOTICE_TEXT,
+            ReservationState.WAITING: LIMIT_FAILURE_NOTICE_TEXT,
+            ReservationState.IMPOSSIBLE: LIMIT_FAILURE_NOTICE_TEXT,
+        }
+        notice = notices.get(reservation.state, APPLICATION_FAILURE_NOTICE_TEXT)
+        self._notify(envelope, NoticeKind.TERMINAL, notice)
         return outcome.value
 
     def _extract_and_deliver(

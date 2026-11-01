@@ -10,7 +10,7 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.jobs.admission import JobStage, NoticeKind
 from hovorunv2.application.jobs.feature_job_runner import (
     DELAYED_NOTICE_SECONDS,
-    DELAYED_NOTICE_TEXT,
+    LIMIT_WAIT_NOTICE_TEXT,
     TIMEOUT_NOTICE_TEXT,
     FeatureJobRunner,
 )
@@ -189,9 +189,9 @@ async def test_delayed_job_sends_one_notice_and_skips_banned_target(
             assert runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), token) is not None
             waiting = ReservationDecision(ReservationState.WAITING, clock.now() + DELAYED_NOTICE_SECONDS + 1)
             runner._handle_denied_reservation(envelope, token, waiting)  # noqa: SLF001
-            assert telegram.calls == [(GROUP, DELAYED_NOTICE_TEXT)]
+            assert telegram.calls == [(GROUP, LIMIT_WAIT_NOTICE_TEXT)]
             assert telegram.replies == [envelope.message_id]
-            runner._notify(envelope, NoticeKind.DELAYED, DELAYED_NOTICE_TEXT)  # noqa: SLF001
+            runner._notify(envelope, NoticeKind.DELAYED, LIMIT_WAIT_NOTICE_TEXT)  # noqa: SLF001
             assert len(telegram.calls) == 1
     await (await test_container.get(BanStore)).set_ban(
         TargetKind.GROUP, GROUP, BanKind.FULL, active=True, actor=ActorContext.cli(reason="ban")

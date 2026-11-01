@@ -208,6 +208,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
     def _execute_reconciliation(self, now: datetime | None) -> int:
         current_time = now or datetime.now(UTC)
         groups = self._ops.due_groups(current_time, limit=GROUP_BATCH_SIZE)
+        logger.info("Starting membership reconciliation for %d due group(s)", len(groups))
         refreshed = 0
         for group in groups:
             group_lock = f"{self._namespace.value}lock:reconcile_group:{group.id}"
@@ -218,11 +219,13 @@ class WorkerOperationsRunner(OperationsRunnerPort):
                 refreshed += 1
             finally:
                 self._client.delete(group_lock)
+        logger.info("Membership reconciliation sweep finished: refreshed %d group(s)", refreshed)
         return refreshed
 
     def _reconcile_single_group(self, group: ChatDB, current_time: datetime) -> None:
         group_id = group.id
         chat_id = group.chat_id
+        logger.info("Reconciling group membership (group_id=%d chat_id=%d)", group_id, chat_id)
         bot_member = self._api.get_chat_member(chat_id, self._bot_id)
         bot_evidence = bot_capability_from_api(bot_member, self._bot_id, chat_id, current_time)
         self._ops.save_bot(group_id, bot_evidence)
@@ -255,6 +258,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
             self._client.delete(lock_key)
 
     def _execute_chat_reminders(self) -> int:
+        logger.info("Starting periodic chat reminders maintenance sweep")
         count = 0
         for chat in self._ops.unauthorized_group_chats():
             if self.send_unauthorized_reminder(chat.chat_id, force=False):
@@ -262,6 +266,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         owners = self._ops.list_owners()
         for chat in self._ops.pending_chats():
             count += self._remind_pending_chat(chat.chat_id, owners)
+        logger.info("Periodic chat reminders sweep finished: dispatched %d reminder(s)", count)
         return count
 
     def _remind_pending_chat(self, chat_id: int, owners: Sequence[UserDB]) -> int:
@@ -280,6 +285,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
                 sent = True
         if sent:
             self._client.set(key, "1", ex=DEFAULT_REMINDER_COOLDOWN_SECONDS)
+            logger.info("Dispatched pending approval reminder for chat %d to %d owner(s)", chat_id, len(owners))
             return 1
         return 0
 
@@ -301,6 +307,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
             return False
         if self._prompt_sender.send(chat_id, chat.id, chat.generation):
             self._client.set(key, "1", ex=DEFAULT_REMINDER_COOLDOWN_SECONDS)
+            logger.info("Dispatched unauthorized reminder prompt to chat %d", chat_id)
             return True
         return False
 
@@ -334,6 +341,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         )
         if not expired_list:
             return 0
+        logger.info("Expired cleanup sweep candidates found: %d", len(expired_list))
         deleted = 0
         removed: list[str | bytes] = []
         for raw_member in expired_list:
@@ -348,6 +356,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
             removed.append(raw_member)
         if removed:
             self._client.zrem(cleanup_index, *removed)
+        logger.info("Expired cleanup sweep finished: deleted %d message(s)", deleted)
         return deleted
 
     def broadcast_release_notifications(self) -> int:
@@ -360,10 +369,16 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         if not self._client.set(lock_key, "1", nx=True, ex=60):
             return 0
         try:
-            return self._release.publish()
+            logger.info("Broadcasting release notifications...")
+            queued = self._release.publish()
+            logger.info("Broadcast release notifications finished: queued %d recipient(s)", queued)
+            return queued
         finally:
             self._client.delete(lock_key)
 
     def deliver_notifications(self) -> int:
         """Deliver bounded due notification receipts with preference and access checks."""
-        return self._delivery.deliver_due()
+        logger.info("Delivering pending notifications...")
+        delivered = self._delivery.deliver_due()
+        logger.info("Pending notifications delivery finished: delivered %d notification(s)", delivered)
+        return delivered

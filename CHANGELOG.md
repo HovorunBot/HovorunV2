@@ -2,9 +2,14 @@
 
 ### Fix
 
+- **media**: report request limits and application failures
 - **media**: preserve post text when video extraction fails
 - **usage**: preserve reservations across quota window rollover
 - **release**: commit changelog and lockfile before tagging
+
+### Refactor
+
+- **logging**: extend privacy-safe operational logs across the application
 
 ## v0.3.1 (2026-11-01)
 

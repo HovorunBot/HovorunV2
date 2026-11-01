@@ -1,5 +1,6 @@
 """Publish release updates as recipient events instead of direct broadcasts."""
 
+import logging
 from typing import Protocol
 
 from hovorunv2.application.access.permissions import PermissionTarget
@@ -16,6 +17,7 @@ from hovorunv2.domain.audit import ActorContext
 
 BODY_TTL_SECONDS = NOTIFICATION_BODY_TTL_SECONDS
 RELEASE_ACTOR = ActorContext.system("release notification")
+logger = logging.getLogger(__name__)
 
 
 class NotificationBodyPort(Protocol):
@@ -92,6 +94,7 @@ class ReleaseUpdateService:
             )
             queued += 1
         self._ops.set_last_notified_version(current)
+        logger.info("Queued release update notifications for %d approved group(s)", queued)
         return queued
 
     def _message(self, version: str, updates: str) -> str:

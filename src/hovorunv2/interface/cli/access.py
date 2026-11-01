@@ -1,10 +1,13 @@
 """Offline access administration using the same commands as private Telegram."""
 
 import json
+import logging
 
 from hovorunv2.application.access.administration import AdminRequest
 from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.domain.audit import ActorContext
+
+logger = logging.getLogger(__name__)
 
 
 class AccessCLI:
@@ -27,7 +30,10 @@ class AccessCLI:
         """
         actor = ActorContext.cli(reason=request.reason)
         target = await self._administration.resolve(request.kind, request.target)
+        logger.info("Access CLI executing request: action=%s kind=%s", request.action, request.kind)
         result = await self._administration.execute(request, target, actor, None)
+        outcome = result.get("outcome", "success")
+        logger.info("Access CLI executed request: action=%s outcome=%s", request.action, outcome)
         if result.get("outcome") in {"denied", "unavailable", "group_banned", "stale_request"}:
             msg = f"Access operation refused: {result['outcome']}."
             raise ValueError(msg)

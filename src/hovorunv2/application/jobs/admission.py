@@ -58,10 +58,11 @@ class TicketState(StrEnum):
 
 
 class NoticeKind(StrEnum):
-    """At most one delayed or terminal feedback dispatch claim per admission ticket."""
+    """Deduplicate delayed, application failure and terminal feedback per admission ticket."""
 
     DELAYED = "delayed"
     TERMINAL = "terminal"
+    FAILURE = "failure"
 
 
 class JobStage(StrEnum):

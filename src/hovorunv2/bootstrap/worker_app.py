@@ -1,5 +1,7 @@
 """Celery application for independently deployed native worker and Beat containers."""
 
+import logging
+
 from celery import Celery
 from kombu import Queue
 
@@ -15,6 +17,8 @@ from hovorunv2.infrastructure.queues.feature_queue import (
     build_beat_schedule,
     register_feature_tasks,
 )
+
+logger = logging.getLogger(__name__)
 
 WORKER_APP_NAME = "hovorun_workers"
 MEDIA_QUEUE_NAME = "media"
@@ -61,6 +65,7 @@ def build_worker_application(settings: BrokerSettings, namespace: RuntimeNamespa
         },
     )
     register_feature_tasks(app)
+    logger.info("Configured Celery worker application: app=%s", WORKER_APP_NAME)
     return app
 
 

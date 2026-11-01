@@ -96,9 +96,11 @@ class NotificationDeliveryService:
             Number of receipts delivered.
         """
         delivered = 0
+        logger.info("Starting pending notification delivery (limit=%d)", limit)
         for receipt in self._ledger.pending(limit):
             if self._deliver(receipt):
                 delivered += 1
+        logger.info("Pending notification delivery finished: delivered %d notification(s)", delivered)
         return delivered
 
     def _deliver(self, receipt: NotificationReceipt) -> bool:
@@ -128,6 +130,8 @@ class NotificationDeliveryService:
             attempts=attempts,
             telegram_message_id=message_id,
         )
+        category_label = receipt.category.value if receipt.category else "unknown"
+        logger.info("Delivered notification to chat %d (category=%s)", telegram_id, category_label)
         return True
 
     def _eligible(self, receipt: NotificationReceipt) -> bool:

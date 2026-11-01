@@ -46,6 +46,7 @@ class LogContextMiddleware(BaseMiddleware):
         """
         user_id, chat_id = self._extract_ids(event, data)
         set_log_context(user_id=user_id, chat_id=chat_id)
+        logger.info("Received Telegram event: %s", type(event).__name__)
         return await handler(event, data)
 
     def _extract_ids(self, event: TelegramObject, data: dict[str, object]) -> tuple[int | None, int | None]:
@@ -107,6 +108,7 @@ class MessageCacheMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             try:
                 await self._message_service.cache_message(event)
+                logger.info("Cached message %d for chat %d", event.message_id, event.chat.id)
             except Exception:
                 logger.warning("Message caching failed")
         return await handler(event, data)
@@ -152,10 +154,12 @@ class AccessMiddleware(BaseMiddleware):
             Handler result when allowed, otherwise None after denial.
         """
         if not user_id or await self._access_service.is_banned(user_id):
+            logger.info("Private chat access denied (banned or missing user)")
             await self._deny_private_chat(event)
             return None
 
         if await self._access_service.is_admin(user_id):
+            logger.info("Private chat access granted for admin (command: %s)", command_name or "none")
             return await handler(event, data)
 
         settings_entry = (
@@ -165,15 +169,19 @@ class AccessMiddleware(BaseMiddleware):
             and not policy.requires_admin
         )
         if policy.requires_admin or (policy.requires_group_admin and not settings_entry):
+            logger.info("Private chat access denied: admin required (command: %s)", command_name or "none")
             await self._deny_private_chat(event)
             return None
         if settings_entry:
             # Only the real settings entry dispatches; the handler verifies every selected target.
+            logger.info("Private chat access granted for settings entry")
             return await handler(event, data)
 
         if await self._access_service.is_trusted(user_id):
+            logger.info("Private chat access granted for trusted user (command: %s)", command_name or "none")
             return await handler(event, data)
 
+        logger.info("Private chat access denied for user (command: %s)", command_name or "none")
         await self._deny_private_chat(event)
         return None
 
@@ -222,6 +230,7 @@ class AccessMiddleware(BaseMiddleware):
         )
 
         if is_allowed:
+            logger.info("Group chat access granted for %s in chat %d", command_name or "callback", chat_id)
             return await handler(event, data)
 
         logger.info("Access denied for %s in chat %d by user %s", command_name or "callback", chat_id, user_id)
@@ -298,6 +307,13 @@ class AccessMiddleware(BaseMiddleware):
         user_id, chat_id, is_private = self._extract_event_context(event)
         if not chat_id:
             return None
+
+        logger.info(
+            "Evaluating access: command=%s is_private=%s is_toggleable=%s",
+            command_name or "none",
+            is_private,
+            policy.is_toggleable,
+        )
 
         feature_allowed = await self._feature_allowed(event, chat_id, user_id, command_name, policy)
         if feature_allowed is False:

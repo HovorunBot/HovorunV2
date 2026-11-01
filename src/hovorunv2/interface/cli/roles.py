@@ -1,6 +1,7 @@
 """Offline role command parsing and application-service orchestration."""
 
 import argparse
+import logging
 
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.identity.ports import PublicHandleStore
@@ -9,6 +10,7 @@ from hovorunv2.domain.enums import Role, TargetKind
 from hovorunv2.interface.access_arguments import add_access_arguments
 
 MAX_USER_ID = (1 << 63) - 1
+logger = logging.getLogger(__name__)
 
 
 class RoleArguments(argparse.Namespace):
@@ -164,9 +166,12 @@ class RoleCLI:
                 missing or unresolvable, or the operation is unsupported.
         """
         if arguments.operation == "list":
+            logger.info("Role CLI listing roles: filter=%s", arguments.role or "all")
             users = await self._roles.list_roles(Role[arguments.role.upper()] if arguments.role else None)
             if not users:
+                logger.info("Role CLI found no active owner/admin assignments")
                 return "No active owner/admin assignments."
+            logger.info("Role CLI found %d active assignment(s)", len(users))
             return "\n".join(f"{user.telegram_id}\t{user.role.name.lower()}" for user in users)
         if arguments.operation == "remove" and not arguments.yes:
             msg = "Role removal requires --yes to explicitly confirm demotion to USER."
@@ -192,4 +197,6 @@ class RoleCLI:
         if not changed and await self._roles.get_role(user_id) is None:
             msg = "Deleted identities require explicit recovery before role assignment."
             raise ValueError(msg)
-        return f"{user_id}\t{role.name.lower()}\t{'updated' if changed else 'unchanged'}"
+        status_label = "updated" if changed else "unchanged"
+        logger.info("Role CLI operation completed: user=%d role=%s status=%s", user_id, role.name.lower(), status_label)
+        return f"{user_id}\t{role.name.lower()}\t{status_label}"

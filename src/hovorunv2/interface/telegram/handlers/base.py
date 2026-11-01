@@ -18,6 +18,7 @@ from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import AdmissionState, incoming_action_key
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_jobs import (
+    APPLICATION_FAILURE_NOTICE_TEXT,
     MAX_JOB_LIFETIME_SECONDS,
     JobEnvelope,
     JobTarget,
@@ -325,6 +326,16 @@ class RichMediaCommand(BaseCommand):
             )
         except Exception:
             logger.exception("Failed to admit %s link", self.name)
+            await self._reply_application_failure(message)
+
+    async def _reply_application_failure(self, message: Message) -> None:
+        """Send bounded failure feedback without allowing Telegram failure to escape the handler."""
+        if not self._busy_gate.should_notify(message.chat.id, self._clock.now()):
+            return
+        try:
+            await message.answer(APPLICATION_FAILURE_NOTICE_TEXT)
+        except Exception:
+            logger.warning("Media admission failure feedback unavailable")
 
     async def _admit_and_enqueue(
         self,
@@ -376,7 +387,11 @@ class RichMediaCommand(BaseCommand):
         )
         result = await self._admission.admit(envelope, sealed)
         if result.state == AdmissionState.ACCEPTED:
-            await self._admission.handoff(envelope.job_id)
+            handoff = await self._admission.handoff(envelope.job_id)
+            if handoff.state == AdmissionState.UNAVAILABLE:
+                await self._reply_application_failure(message)
+        elif result.state == AdmissionState.UNAVAILABLE:
+            await self._reply_application_failure(message)
         elif result.state == AdmissionState.FULL:
             logger.info("Media admission denied for %s (full)", self.name)
             if self._busy_gate.should_notify(message.chat.id, self._clock.now()):

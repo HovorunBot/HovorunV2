@@ -74,9 +74,11 @@ async def _teardown_services(
     container: AsyncContainer,
 ) -> None:
     """Ensure complete cleanup of logging handler and DI container."""
+    logger.info("Tearing down application services...")
     if telegram_log_handler:
         await telegram_log_handler.shutdown()
     await container.close()
+    logger.info("Application teardown complete.")
 
 
 async def run_bot() -> None:
@@ -89,13 +91,16 @@ async def run_bot() -> None:
 
     try:
         session_maker = await container.get(async_sessionmaker)
+        logger.info("Setting up database fixtures...")
         await setup_fixtures(session_maker)
 
         settings = await container.get(Settings)
         verify_encryption_key(settings.cache_encryption_key)
         bot = await container.get(Bot)
+        logger.info("Checking new beta announcements...")
         await (await container.get(BetaPromptService)).announce_new()
 
+        logger.info("Building Telegram router and dispatcher...")
         router = await _build_bot_router(container, settings)
         dp = _configure_dispatcher(container, router)
 

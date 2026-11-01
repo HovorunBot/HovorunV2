@@ -1,6 +1,7 @@
 """Intentional group activation and private approval decisions."""
 
 import html
+import logging
 from collections.abc import Mapping
 from typing import ClassVar
 
@@ -19,6 +20,8 @@ from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
 
 from .base import BaseCommand
+
+logger = logging.getLogger(__name__)
 
 RESULT_TEXT = {
     ActivationOutcome.APPROVED: "✅ Group approval saved. Processing remains subject to current access checks.",
@@ -77,11 +80,13 @@ class AccessCommand(BaseCommand):
             return
         if message.from_user is None or message.from_user.is_bot or message.sender_chat is not None:
             return
+        logger.info("Processing /allow_chat command in chat %d from user %d", message.chat.id, message.from_user.id)
         target = await self._activation.target(message.chat.id)
         if target is None:
             await message.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE])
             return
         result = await self._enable(message, message.from_user, bot, target)
+        logger.info("Allow chat result in chat %d: outcome=%s", message.chat.id, result.outcome.value)
         await message.answer(RESULT_TEXT[result.outcome])
 
     async def _enable(self, message: Message, actor: User, bot: Bot, target: PermissionTarget) -> ActivationResult:
@@ -142,6 +147,12 @@ class AccessCommand(BaseCommand):
         if callback_data.group_id <= 0 or callback_data.generation <= 0:
             await query.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE], show_alert=True)
             return
+        logger.info(
+            "Processing access callback in chat %d: action=%s group_id=%d",
+            callback_data.chat_id,
+            callback_data.action.value,
+            callback_data.group_id,
+        )
         target = PermissionTarget("group", callback_data.group_id, callback_data.generation, callback_data.chat_id)
         if callback_data.action == AccessAction.REQUEST:
             if (

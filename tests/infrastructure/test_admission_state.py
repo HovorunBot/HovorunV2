@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 from pydantic import ValidationError
 
-from hovorunv2.application.jobs.admission import AdmissionUnavailableError, JobStage, TicketState
+from hovorunv2.application.jobs.admission import AdmissionUnavailableError, JobStage, NoticeKind, TicketState
 from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome
 from hovorunv2.infrastructure.runtime.admission_state import (
     AdmissionCapacity,
@@ -38,6 +38,30 @@ RECORD = AdmissionRecord(
     dedupe_key=KEYS.dedupe,
 )
 CAPACITY = AdmissionCapacity(1, RECORD.byte_size, 1, 1)
+
+
+@pytest.mark.unit
+def test_application_failure_feedback_does_not_finish_or_release_pending_work() -> None:
+    """Claim failure feedback once while preserving work that still requires recovery."""
+    record = RECORD.model_copy(update={"state": TicketState.RUNNING, "token": OTHER_OWNER, "attempt": 1})
+    request = AdmissionTransition(AdmissionOperation.NOTICE, notice=NoticeKind.FAILURE)
+    result = calculate_change(record, request)
+    assert result.success
+    assert not result.release
+    assert result.record is not None
+    assert result.record.state == TicketState.RUNNING
+    assert result.record.outcome is None
+    assert not calculate_change(result.record, request).success
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("state", [TicketState.DELIVERY_UNCERTAIN, TicketState.SETTLING, TicketState.CANCELLING])
+def test_application_failure_feedback_does_not_interrupt_uncertain_delivery(state: TicketState) -> None:
+    """Do not add delivery side effects during acceptance uncertainty or settlement."""
+    record = RECORD.model_copy(update={"state": state, "token": OTHER_OWNER, "attempt": 1})
+    result = calculate_change(record, AdmissionTransition(AdmissionOperation.NOTICE, notice=NoticeKind.FAILURE))
+    assert not result.success
+    assert not result.write
 
 
 @pytest.mark.parametrize(

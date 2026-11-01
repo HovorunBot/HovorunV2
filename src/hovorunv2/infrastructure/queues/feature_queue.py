@@ -1,6 +1,7 @@
 """Celery feature publication with Valkey-owned execution facts and exclusive runner claims."""
 
 import asyncio
+import logging
 import math
 import secrets
 from collections.abc import Callable
@@ -64,6 +65,7 @@ RELEASE_NOTIFICATIONS_TASK = "broadcast_release_notifications"
 NOTIFICATION_DELIVERY_TASK = "deliver_notifications"
 UNAUTHORIZED_REMINDER_TASK = "send_unauthorized_reminder"
 OPERATIONS_QUEUE_NAME = "operations"
+logger = logging.getLogger(__name__)
 
 TaskRunner = Callable[[dict[str, object], JobStage], str]
 _task_runner: TaskRunner | None = None
@@ -99,40 +101,61 @@ def get_operations_runner() -> OperationsRunnerPort:
 
 def recover_feature_jobs() -> int:
     """Run one bounded native lifecycle sweep without private task inputs or results."""
+    logger.info("Worker executing scheduled maintenance: %s", RECOVERY_TASK_FUNCTION)
     if _recovery_runner is None:
         msg = "Worker lifecycle recovery is not initialized."
         raise ValueError(msg)
-    return _recovery_runner()
+    count = _recovery_runner()
+    logger.info("Worker completed scheduled maintenance: %s (count=%d)", RECOVERY_TASK_FUNCTION, count)
+    return count
 
 
 def reconcile_memberships_task() -> int:
     """Run membership reconciliation sweep on native operations worker."""
-    return get_operations_runner().reconcile_memberships()
+    logger.info("Worker executing scheduled maintenance: %s", MEMBERSHIP_RECONCILIATION_TASK)
+    count = get_operations_runner().reconcile_memberships()
+    logger.info("Worker completed scheduled maintenance: %s (count=%d)", MEMBERSHIP_RECONCILIATION_TASK, count)
+    return count
 
 
 def run_chat_maintenance_task() -> int:
     """Run periodic chat reminders and maintenance sweep."""
-    return get_operations_runner().run_chat_reminders()
+    logger.info("Worker executing scheduled maintenance: %s", CHAT_MAINTENANCE_TASK)
+    count = get_operations_runner().run_chat_reminders()
+    logger.info("Worker completed scheduled maintenance: %s (count=%d)", CHAT_MAINTENANCE_TASK, count)
+    return count
 
 
 def sweep_expired_cleanups_task() -> int:
     """Sweep and delete expired cleanup window messages."""
-    return get_operations_runner().sweep_expired_cleanups()
+    logger.info("Worker executing scheduled maintenance: %s", CLEANUP_SWEEP_TASK)
+    count = get_operations_runner().sweep_expired_cleanups()
+    logger.info("Worker completed scheduled maintenance: %s (count=%d)", CLEANUP_SWEEP_TASK, count)
+    return count
 
 
 def broadcast_release_notifications_task() -> int:
     """Broadcast release notifications to approved group chats upon version upgrade."""
-    return get_operations_runner().broadcast_release_notifications()
+    logger.info("Worker executing scheduled maintenance: %s", RELEASE_NOTIFICATIONS_TASK)
+    count = get_operations_runner().broadcast_release_notifications()
+    logger.info("Worker completed scheduled maintenance: %s (count=%d)", RELEASE_NOTIFICATIONS_TASK, count)
+    return count
 
 
 def deliver_notifications_task() -> int:
     """Deliver bounded due notification receipts through the operations worker."""
-    return get_operations_runner().deliver_notifications()
+    logger.info("Worker executing scheduled maintenance: %s", NOTIFICATION_DELIVERY_TASK)
+    count = get_operations_runner().deliver_notifications()
+    logger.info("Worker completed scheduled maintenance: %s (count=%d)", NOTIFICATION_DELIVERY_TASK, count)
+    return count
 
 
 def send_unauthorized_reminder_task(chat_id: int) -> bool:
     """Send guidance prompt to unauthorized group chat."""
-    return get_operations_runner().send_unauthorized_reminder(chat_id)
+    logger.info("Worker executing reminder task for chat %d", chat_id)
+    sent = get_operations_runner().send_unauthorized_reminder(chat_id)
+    logger.info("Worker completed reminder task for chat %d (sent=%s)", chat_id, sent)
+    return sent
 
 
 def get_feature_task_runner() -> TaskRunner:
@@ -312,6 +335,7 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
         if remaining <= 0:
             return False
         queue = queue_name or self._media_queue
+        logger.info("Publishing feature job task to broker (stage=%s)", stage.value)
         with self._app.connection_for_write() as connection, self._app.amqp.Producer(connection) as producer:
             self._app.send_task(
                 FEATURE_JOB_FUNCTION,
