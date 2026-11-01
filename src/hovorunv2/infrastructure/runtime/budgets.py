@@ -30,6 +30,7 @@ from hovorunv2.infrastructure.runtime.budget_state import (
     validate_finish_args,
     validate_reserve_args,
     verify_active_ownership,
+    verify_previous_window,
 )
 from hovorunv2.infrastructure.runtime.cache import CacheService
 
@@ -78,7 +79,8 @@ class ValkeyBudgetStore(BudgetPort):
                 if record.deadline <= record.now:
                     return ReservationDecision(ReservationState.EXPIRED)
                 hashes, members = await self._snapshot(pipe, record)
-                mutation = calculate_reserve(record, hashes, members)
+                previous_windows = await self._verify_previous_windows(pipe, record, hashes, members)
+                mutation = calculate_reserve(record, hashes, members, previous_windows)
                 if mutation.record is None:
                     return mutation.decision
                 self._write_reservation_mutation(pipe, key, record, mutation)
@@ -90,6 +92,30 @@ class ValkeyBudgetStore(BudgetPort):
                 raise
             else:
                 return mutation.decision
+
+    async def _verify_previous_windows(
+        self,
+        pipe: AsyncPipeline,
+        record: BudgetRecord,
+        hashes: dict[str, dict[str, str]],
+        members: dict[str, frozenset[str]],
+    ) -> frozenset[str]:
+        verified = set()
+        for quota, scope in zip(record.quotas, record.concurrency[1:], strict=True):
+            holders = members[scope.key]
+            if hashes[quota.key] or not holders:
+                continue
+            if len(holders) > record.concurrency[0].limit:
+                raise BudgetStateUnavailableError
+            for holder in holders:
+                key = self._prefix + "reservation:" + holder
+                await pipe.watch(key)
+                previous = parse_record(await pipe.get(key), self._prefix, holder)
+                old_hashes, old_members = await self._snapshot(pipe, previous, require_active=True)
+                verify_active_ownership(previous, old_hashes, old_members)
+                verify_previous_window(record, quota, scope, previous)
+            verified.add(quota.key)
+        return frozenset(verified)
 
     async def _replay_reservation(self, pipe: AsyncPipeline, record: BudgetRecord, raw: object) -> ReservationDecision:
         old = parse_record(raw, self._prefix, record.id)
@@ -221,7 +247,8 @@ class WorkerBudgetClient:
                 if record.deadline <= record.now:
                     return ReservationDecision(ReservationState.EXPIRED)
                 hashes, members = self._snapshot(pipe, record)
-                mutation = calculate_reserve(record, hashes, members)
+                previous_windows = self._verify_previous_windows(pipe, record, hashes, members)
+                mutation = calculate_reserve(record, hashes, members, previous_windows)
                 if mutation.record is None:
                     return mutation.decision
                 self._write_reservation_mutation(pipe, key, record, mutation)
@@ -233,6 +260,30 @@ class WorkerBudgetClient:
                 raise
             else:
                 return mutation.decision
+
+    def _verify_previous_windows(
+        self,
+        pipe: Pipeline,
+        record: BudgetRecord,
+        hashes: dict[str, dict[str, str]],
+        members: dict[str, frozenset[str]],
+    ) -> frozenset[str]:
+        verified = set()
+        for quota, scope in zip(record.quotas, record.concurrency[1:], strict=True):
+            holders = members[scope.key]
+            if hashes[quota.key] or not holders:
+                continue
+            if len(holders) > record.concurrency[0].limit:
+                raise BudgetStateUnavailableError
+            for holder in holders:
+                key = self._prefix + "reservation:" + holder
+                pipe.watch(key)
+                previous = parse_record(pipe.get(key), self._prefix, holder)
+                old_hashes, old_members = self._snapshot(pipe, previous, require_active=True)
+                verify_active_ownership(previous, old_hashes, old_members)
+                verify_previous_window(record, quota, scope, previous)
+            verified.add(quota.key)
+        return frozenset(verified)
 
     def _replay_reservation(self, pipe: Pipeline, record: BudgetRecord, raw: object) -> ReservationDecision:
         old = parse_record(raw, self._prefix, record.id)

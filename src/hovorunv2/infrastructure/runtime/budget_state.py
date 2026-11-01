@@ -355,15 +355,18 @@ def calculate_reserve(
     record: BudgetRecord,
     hashes: dict[str, dict[str, str]],
     members: dict[str, frozenset[str]],
+    previous_windows: frozenset[str] = frozenset(),
 ) -> BudgetMutation:
     """Compute all-or-nothing window, burst and concurrency reservations from watched snapshots."""
     retry = record.now
     updates = []
-    for quota in record.quotas:
+    for quota, concurrency in zip(record.quotas, record.concurrency[1:], strict=True):
         if quota.amount > min(quota.burst, quota.limit):
             return BudgetMutation(ReservationDecision(ReservationState.IMPOSSIBLE))
         window, rate = hashes[quota.key], hashes[quota.rate]
-        if (window and not rate) or (not window and any(members[item.key] for item in record.concurrency[1:])):
+        if window and not rate:
+            raise BudgetStateUnavailableError
+        if not window and members[concurrency.key] and quota.key not in previous_windows:
             raise BudgetStateUnavailableError
         used = max(_integer(window, "used") if window else 0, quota.baseline)
         held = _integer(window, "held") if window else 0
@@ -383,6 +386,33 @@ def calculate_reserve(
     if retry > record.now:
         return BudgetMutation(ReservationDecision(ReservationState.WAITING, retry))
     return BudgetMutation(ReservationDecision(ReservationState.RESERVED), tuple(updates), record)
+
+
+def verify_previous_window(
+    current: BudgetRecord, quota: QuotaSpec, concurrency: ConcurrencySpec, previous: BudgetRecord
+) -> None:
+    """Require a verified holder to belong to an older window of this exact policy dimension.
+
+    Args:
+        current: New reservation whose quota window may be absent.
+        quota: New quota window being established.
+        concurrency: Concurrency dimension containing the prior holder.
+        previous: Validated reservation still owning its original runtime resources.
+
+    Raises:
+        BudgetStateUnavailableError: If the holder cannot explain a legitimate new window.
+    """
+    if previous.state != ReservationState.RESERVED:
+        raise BudgetStateUnavailableError
+    for old_quota, old_scope in zip(previous.quotas, previous.concurrency[1:], strict=True):
+        if old_scope.key != concurrency.key:
+            continue
+        if old_quota.key == quota.key:
+            raise BudgetStateUnavailableError
+        if old_quota.ends > current.now:
+            raise BudgetStateUnavailableError
+        return
+    raise BudgetStateUnavailableError
 
 
 def verify_active_ownership(
