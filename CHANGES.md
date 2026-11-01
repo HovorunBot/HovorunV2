@@ -1,3 +1,11 @@
+## 0.3.2
+
+🛠️ **Hovorun v0.3.2: More Reliable Media Downloads**
+
+* 🔗 **Reliable Link Processing:** Fixed an issue that could leave your media links unanswered.
+* 📝 **Useful Video Fallbacks:** When video extraction fails, the bot preserves available post text and provides the original link.
+* 💬 **Clearer Request Updates:** The bot now lets you know when your request is queued, cannot run within current limits, or encounters a processing problem.
+
 ## 0.3.1
 
 🛠️ **Hovorun v0.3.1: Settings & Update Notification Fixes**
