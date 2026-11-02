@@ -736,7 +736,7 @@ wheels = [
 
 [[package]]
 name = "hovorunv2"
-version = "0.3.2.2"
+version = "0.3.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "aiogram" },
