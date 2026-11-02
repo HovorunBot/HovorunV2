@@ -194,7 +194,7 @@ def extract_info(url: str, cookies: dict[str, str] | None = None) -> object:
                 _add_cookies(ydl, url, cookies)
             return ydl.extract_info(url, download=False)
     except yt_dlp.utils.YoutubeDLError, OSError, ValueError:
-        logger.warning("Media extraction failed")
+        logger.exception("Media extraction failed")
         msg = "Media extraction failed."
         raise MediaExtractionError(msg) from None
 

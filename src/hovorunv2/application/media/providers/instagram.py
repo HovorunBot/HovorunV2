@@ -3,10 +3,14 @@
 import asyncio
 import logging
 import re
+from collections.abc import Callable
+from functools import partial
+from time import monotonic
 from typing import ClassVar, Self
 
 import aiohttp
 import instaloader
+import requests
 
 from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
@@ -19,6 +23,34 @@ from hovorunv2.domain.enums import CommandName
 from hovorunv2.utils.text import clean_caption_text
 
 logger = logging.getLogger(__name__)
+
+
+def _bounded_request(
+    context: PrivateInstaloaderContext,
+    request: Callable[..., requests.Response],
+    *args: object,
+    **kwargs: object,
+) -> requests.Response:
+    """Cap one instaloader request by the context's remaining extraction budget.
+
+    Args:
+        context: Instaloader context owning the shared request deadline.
+        request: Original session request callable.
+        *args: Positional request arguments forwarded unchanged.
+        **kwargs: Keyword request arguments with the timeout narrowed to the remaining budget.
+
+    Returns:
+        The backend response.
+
+    Raises:
+        instaloader.exceptions.ConnectionException: When the extraction budget is exhausted.
+    """
+    remaining = context.remaining_request_budget()
+    if remaining <= 0:
+        msg = "Instagram extraction request budget expired."
+        raise instaloader.exceptions.ConnectionException(msg)
+    kwargs["timeout"] = min(remaining, context.request_timeout)
+    return request(*args, **kwargs)
 
 
 class FailFastRateController(instaloader.RateController):
@@ -39,6 +71,7 @@ class PrivateInstaloaderContext(instaloader.InstaloaderContext):
     """Keep backend retry diagnostics out of stderr and retained error strings."""
 
     def __init__(self, *, quiet: bool = True, user_agent: str | None = None) -> None:
+        self._request_deadline: float | None = None
         super().__init__(
             quiet=quiet,
             user_agent=user_agent,
@@ -51,6 +84,22 @@ class PrivateInstaloaderContext(instaloader.InstaloaderContext):
     def error(self, msg: str, repeat_at_end: bool = True) -> None:  # noqa: FBT001, FBT002
         """Emit a stable operation identifier without the backend payload."""
         logger.warning("Instagram backend request failed")
+
+    def arm_request_budget(self, budget_seconds: float) -> None:
+        """Bound this context's cumulative request time to one extraction budget."""
+        self._request_deadline = monotonic() + budget_seconds
+
+    def remaining_request_budget(self) -> float:
+        """Return remaining request time, or the per-request timeout before arming."""
+        if self._request_deadline is None:
+            return self.request_timeout
+        return self._request_deadline - monotonic()
+
+    def get_anonymous_session(self) -> requests.Session:
+        """Return the default session with every request sharing one extraction deadline."""
+        session = super().get_anonymous_session()
+        session.request = partial(_bounded_request, self, session.request)
+        return session
 
 
 INSTAGRAM_JS_EXTRACTOR = """
@@ -214,9 +263,11 @@ class InstagramService(BaseMediaClient):
         if self._settings and self._settings.instagram_sessionid:
             self._ensure_session_sync(self._settings.instagram_sessionid)
 
+        self._context.arm_request_budget(EXTRACTION_TIMEOUT_SECONDS)
         try:
             post = instaloader.Post.from_shortcode(self._context, shortcode)
         except instaloader.exceptions.InstaloaderException, OSError, ValueError:
+            logger.exception("Provider backend extraction failed")
             msg = "Provider backend extraction failed."
             raise MediaExtractionError(msg) from None
 
@@ -266,9 +317,11 @@ class InstagramService(BaseMediaClient):
         if self._settings and self._settings.instagram_sessionid:
             await self._ensure_session(self._settings.instagram_sessionid)
 
+        self._context.arm_request_budget(EXTRACTION_TIMEOUT_SECONDS)
         try:
             post = await asyncio.to_thread(instaloader.Post.from_shortcode, self._context, shortcode)
         except instaloader.exceptions.InstaloaderException, OSError:
+            logger.exception("Provider backend extraction failed")
             msg = "Provider backend extraction failed."
             raise MediaExtractionError(msg) from None
 

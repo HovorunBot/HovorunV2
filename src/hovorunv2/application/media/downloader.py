@@ -267,7 +267,7 @@ class MediaDownloader:
         except MediaDownloadError:
             raise
         except aiohttp.ClientError, OSError, TimeoutError, ValueError:
-            logger.warning("Media download failed")
+            logger.exception("Media download failed")
             raise MediaDownloadError from None
 
     async def _perform_download(

@@ -2,6 +2,7 @@
 
 import instaloader
 import pytest
+import requests
 import yt_dlp
 
 from hovorunv2.application.media.backend_logging import MediaBackendFailure, MediaBackendLogger
@@ -22,6 +23,22 @@ def test_instagram_rate_limit_wait_fails_fast() -> None:
     try:
         with pytest.raises(instaloader.exceptions.ConnectionException, match="rate-limit wait"):
             FailFastRateController(context).sleep(120)
+    finally:
+        context.close()
+
+
+def test_instagram_request_budget_stops_slow_request_and_prevents_another() -> None:
+    """Instaloader's cumulative requests share one deadline instead of one slow request each."""
+    context = PrivateInstaloaderContext(quiet=True)
+    try:
+        context.arm_request_budget(EXTRACTION_BUDGET_SECONDS)
+        session = context.get_anonymous_session()
+        with HTTPFixture({"/slow": HTTPReply(disconnect=True, delay_seconds=SLOW_REQUEST_SECONDS)}) as server:
+            with pytest.raises(requests.exceptions.RequestException):
+                session.get(server.url("/slow"))
+            with pytest.raises(instaloader.exceptions.ConnectionException, match="budget expired"):
+                session.get(server.url("/slow"))
+        assert len(server.requests) == 1
     finally:
         context.close()
 

@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **media**: bound instaloader extraction time and trace backend failures
+
 ## v0.3.3 (2026-11-02)
 
 ### Feat
