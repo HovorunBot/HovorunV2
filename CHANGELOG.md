@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **runtime**: increase worker task timeout for browser extraction
 - **logging**: preserve library diagnostics and capture stacktraces on errors
 - **release**: prevent technical changelog fallback and user notification leak
 

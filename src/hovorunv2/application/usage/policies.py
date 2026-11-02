@@ -136,7 +136,7 @@ class UsageSafetyCaps:
     payload_bytes: int = 64 * 1024
     total_payload_bytes: int = 32 * 1024 * 1024
     deadline_seconds: int = 5 * MINUTE_SECONDS
-    execution_seconds: int = 120
+    execution_seconds: int = 180
 
     def __post_init__(self) -> None:
         """Safety configuration cannot disable ceilings using zero or negative values."""
