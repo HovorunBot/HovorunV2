@@ -143,8 +143,10 @@ def test_get_changelog_updates_prefers_client_notes(monkeypatch: MonkeyPatch, tm
     assert "<b>/feedback Command:</b>" in updates
 
 
-def test_get_changelog_updates_fallback_when_client_notes_missing(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
-    """Test fallback to technical changelog when CHANGES.md has no entry for target version."""
+def test_get_changelog_updates_does_not_leak_technical_changelog_when_client_notes_missing(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ensure technical CHANGELOG.md is never leaked to users when CHANGES.md lacks entries."""
     client_file = tmp_path / "CHANGES.md"
     # Client notes only has 0.1.0 and 0.2.0, missing 0.2.1
     client_file.write_text("## 0.2.0\n\nExisting notes\n", encoding="utf-8")
@@ -156,7 +158,4 @@ def test_get_changelog_updates_fallback_when_client_notes_missing(monkeypatch: M
     monkeypatch.setattr(changelog, "get_technical_changelog_path", lambda: tech_file)
 
     updates = get_changelog_updates("0.2.0", "0.2.1")
-    assert updates is not None
-    # Fell back to technical changelog user-facing items
-    assert "<b>Notification:</b> Add direct GitHub release tag link" in updates
-    assert "<b>Queue:</b> Implement SAQ task queue and /feedback command" in updates
+    assert updates is None

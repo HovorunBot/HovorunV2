@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **release**: prevent technical changelog fallback and user notification leak
+
 ## v0.3.4 (2026-11-02)
 
 ### Fix

@@ -79,8 +79,8 @@ def _version_from_pyproject() -> str | None:
             clean_line = line.strip()
             if clean_line.startswith("version = "):
                 return clean_line.split("=")[1].strip().strip('"').strip("'").lstrip("v")
-    except Exception as exc:
-        logger.debug("Failed to read pyproject.toml: %s", type(exc))
+    except Exception:
+        logger.exception("Failed to read pyproject.toml")
     return None
 
 
@@ -233,33 +233,28 @@ def extract_fallback_notes(technical_content: str, last_version: str, current_ve
 def get_changelog_updates(last_version: str, current_version: str) -> str | None:
     """Extract formatted user-facing release notes between last_version and current_version.
 
-    Prioritizes curated client notes from CHANGES.md, falling back to filtered CHANGELOG.md.
+    Only reads curated client notes from CHANGES.md; never leaks technical CHANGELOG.md.
 
     Args:
         last_version: Lower version bound.
         current_version: Upper version bound.
 
     Returns:
-        Formatted user-facing notes, or None when no lines apply.
+        Formatted user-facing notes, or None when no client notes apply.
 
     """
-    # 1. Primary: Curated client notes in CHANGES.md
     if client_path := get_client_changelog_path():
         try:
             content = client_path.read_text(encoding="utf-8")
             if notes := extract_release_notes(content, last_version, current_version):
                 return format_markdown_for_telegram(notes)
-        except Exception as exc:
-            logger.warning("Failed to read client notes: %s", type(exc))
+        except Exception:
+            logger.exception("Failed to read client notes from %s", client_path)
 
-    # 2. Fallback: Filtered technical notes from CHANGELOG.md
-    if tech_path := get_technical_changelog_path():
-        try:
-            content = tech_path.read_text(encoding="utf-8")
-            if fallback := extract_fallback_notes(content, last_version, current_version):
-                return fallback
-        except Exception as exc:
-            logger.warning("Failed to read technical changelog: %s", type(exc))
-
-    logger.warning("No release notes found between %s and %s", last_version, current_version)
+    logger.info(
+        "No user-facing release notes found between %s and %s in %s",
+        last_version,
+        current_version,
+        CLIENT_NOTES_FILENAME,
+    )
     return None
