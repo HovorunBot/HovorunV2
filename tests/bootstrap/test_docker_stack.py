@@ -108,6 +108,49 @@ async def test_failed_build_removes_builder_and_preserves_failure_status(tmp_pat
     assert scenario.calls()[-1][:3] == ["buildx", "rm", "--force"]
 
 
+async def test_build_skips_when_all_images_already_exist(tmp_path: Path) -> None:
+    """Skip creating builders and building images when all configured targets exist."""
+    scenario = _scenario(tmp_path, "True")
+    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = "hovorunv2-dev:test\nhovorunv2-dev-browser:test\n"
+    assert await scenario.run("build") == 0
+    calls = scenario.calls()
+    inspects = [call for call in calls if call[:2] == ["image", "inspect"]]
+    assert len(inspects) == 2
+    assert not any(call[:1] == ["buildx"] for call in calls)
+
+
+async def test_build_builds_only_missing_image_when_one_exists(tmp_path: Path) -> None:
+    """Build only the absent image target when another role is already present."""
+    scenario = _scenario(tmp_path, "True")
+    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = "hovorunv2-dev:test\n"
+    assert await scenario.run("build") == 0
+    calls = scenario.calls()
+    builds = [call for call in calls if call[:2] == ["buildx", "build"]]
+    assert len(builds) == 1
+    assert builds[0][builds[0].index("--target") + 1] == "browser"
+
+
+async def test_build_force_rebuilds_all_existing_images(tmp_path: Path) -> None:
+    """Force flag rebuilds all role targets even when images already exist locally."""
+    scenario = _scenario(tmp_path, "True")
+    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = "hovorunv2-dev:test\nhovorunv2-dev-browser:test\n"
+    assert await scenario.run("build", "--force") == 0
+    calls = scenario.calls()
+    builds = [call for call in calls if call[:2] == ["buildx", "build"]]
+    assert [call[call.index("--target") + 1] for call in builds] == ["lean", "browser"]
+
+
+async def test_build_force_via_environment_rebuilds_all_existing_images(tmp_path: Path) -> None:
+    """Environment FORCE variable rebuilds role targets even when images already exist."""
+    scenario = _scenario(tmp_path, "True")
+    scenario.environment["FORCE"] = "1"
+    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = "hovorunv2-dev:test\nhovorunv2-dev-browser:test\n"
+    assert await scenario.run("build") == 0
+    calls = scenario.calls()
+    builds = [call for call in calls if call[:2] == ["buildx", "build"]]
+    assert [call[call.index("--target") + 1] for call in builds] == ["lean", "browser"]
+
+
 @pytest.mark.parametrize("enabled", ["False", "True"])
 async def test_startup_selects_profile_and_removes_disabled_browser(tmp_path: Path, enabled: str) -> None:
     """A deployment toggle controls both the new service set and any previously running browser worker."""
