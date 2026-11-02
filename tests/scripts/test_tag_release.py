@@ -11,7 +11,7 @@ import pytest
 import tomlkit
 
 ROOT = Path(__file__).resolve().parents[2]
-pytestmark = [pytest.mark.unit, pytest.mark.subprocess]
+pytestmark = [pytest.mark.unit, pytest.mark.subprocess, pytest.mark.scripts]
 EXPECTED_VERSION = "0.3.2"
 
 

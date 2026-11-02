@@ -337,11 +337,9 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Mark pure tests and reject infrastructure fixture dependencies before execution."""
     pure_modules = {
         "test_provider_parsing",
-        "test_http_responses",
         "test_changelog",
         "test_telegram_delivery_contracts",
         "test_media_finalization",
-        "test_suite_hygiene",
         "test_threads_metrics_extraction",
     }
     forbidden = {

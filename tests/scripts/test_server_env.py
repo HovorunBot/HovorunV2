@@ -9,7 +9,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-pytestmark = [pytest.mark.subprocess]
+pytestmark = [pytest.mark.subprocess, pytest.mark.scripts]
 
 
 async def test_server_environment_generation_is_private_and_preserves_existing_keys(tmp_path: Path) -> None:

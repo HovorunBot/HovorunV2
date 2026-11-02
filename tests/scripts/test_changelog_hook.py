@@ -9,7 +9,7 @@ import pytest
 
 HOOK = Path(__file__).resolve().parents[2] / "scripts" / "update-changelog-after-commit.sh"
 
-pytestmark = [pytest.mark.subprocess]
+pytestmark = [pytest.mark.subprocess, pytest.mark.scripts]
 
 
 async def run_command(repo: Path, *args: str) -> tuple[int, str]:

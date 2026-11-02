@@ -141,6 +141,7 @@ markers = [
     "subprocess: tests spawning separate OS processes or genuine forks",
     "vcr: tests using pytest-recording VCR cassette replay or recording",
     "fresh_schema: integration tests mutating schema DDL requiring a disposable PostgreSQL schema",
+    "scripts: operator/tooling script tests (dev workflow, release, deployment CLI)",
 ]
 
 [tool.coverage.run]
