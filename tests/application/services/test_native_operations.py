@@ -407,10 +407,10 @@ async def test_release_notifications_in_operations_worker(
             client.close()
 
 
-async def test_bot_startup_does_not_start_scheduler_or_duplicate_notifications(
+async def test_bot_startup_builds_dispatchers_without_http_calls(
     test_container: AsyncContainer, sync_http: RecordingSyncHTTP
 ) -> None:
-    """Verify multiple bot instances start with zero embedded schedulers or background loops."""
+    """Building routers and dispatchers for multiple bot instances triggers no external HTTP and tears down cleanly."""
     container1 = make_async_container(InfrastructureProvider(), AppProvider())
     container2 = make_async_container(InfrastructureProvider(), AppProvider())
     try:

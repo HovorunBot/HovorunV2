@@ -8,7 +8,14 @@ import pytest
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.bootstrap.worker_app import build_worker_application
 from hovorunv2.infrastructure.config import BrokerSettings
-from hovorunv2.infrastructure.queues.feature_queue import build_beat_schedule
+from hovorunv2.infrastructure.queues.feature_queue import (
+    CHAT_MAINTENANCE_TASK,
+    CLEANUP_SWEEP_TASK,
+    MEMBERSHIP_RECONCILIATION_TASK,
+    NOTIFICATION_DELIVERY_TASK,
+    RECOVERY_TASK_FUNCTION,
+    RELEASE_NOTIFICATIONS_TASK,
+)
 
 
 def _settings() -> BrokerSettings:
@@ -33,15 +40,31 @@ def test_worker_application_uses_namespaced_role_queues() -> None:
 
 
 @pytest.mark.unit
-def test_worker_beat_schedule_targets_namespaced_operations_queue() -> None:
-    """The singleton Beat publishes every maintenance and recovery sweep to operations."""
+def test_worker_beat_schedule_routes_all_sweeps_to_operations() -> None:
+    """The singleton Beat schedules every maintenance and recovery sweep onto operations with the expected cadence."""
     namespace = RuntimeNamespace()
     app = build_worker_application(_settings(), namespace)
     try:
-        assert app.conf.beat_schedule == build_beat_schedule(namespace.value)
-        assert {entry["options"]["queue"] for entry in app.conf.beat_schedule.values()} == {
-            namespace.value + "operations"
+        schedule = app.conf.beat_schedule
+        assert set(schedule) == {
+            "membership_reconciliation",
+            "chat_maintenance",
+            "cleanup_sweep",
+            "release_notifications",
+            "notification_delivery",
+            "recovery_sweeps",
         }
+        assert {entry["task"] for entry in schedule.values()} == {
+            MEMBERSHIP_RECONCILIATION_TASK,
+            CHAT_MAINTENANCE_TASK,
+            CLEANUP_SWEEP_TASK,
+            RELEASE_NOTIFICATIONS_TASK,
+            NOTIFICATION_DELIVERY_TASK,
+            RECOVERY_TASK_FUNCTION,
+        }
+        assert {entry["options"]["queue"] for entry in schedule.values()} == {namespace.value + "operations"}
+        assert schedule["chat_maintenance"]["schedule"].minute == 0
+        assert schedule["chat_maintenance"]["schedule"].hour == "*"
     finally:
         app.close()
 

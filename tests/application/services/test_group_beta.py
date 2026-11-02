@@ -1,6 +1,6 @@
 """Whole-group beta support, current authority and atomic audit on real PostgreSQL."""
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -10,24 +10,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.access.ban_ports import BanStore
-from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.access.role_service import RoleService
-from hovorunv2.application.features.beta import BetaEntitlementStore
-from hovorunv2.application.features.beta_service import BetaEligibilityService
-from hovorunv2.application.features.group_beta import GroupBetaStore
-from hovorunv2.application.features.group_beta_service import GroupBetaService
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import (
     FEATURE_REGISTRY,
-    FeatureChannel,
-    FeatureDefinition,
-    FeatureRegistry,
-    FeatureScope,
 )
-from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
-from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import AdministratorEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
@@ -35,74 +24,26 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import ChatStatus, Role, TargetKind
+from hovorunv2.domain.enums import Role, TargetKind
 from hovorunv2.domain.group_beta import GroupBetaEnablerDB, GroupBetaFeatureDB
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
 from tests.conftest import provision_role
 from tests.utils.postgres import reject_audit
-
-GROUP = -100290001
-FIRST = 290001
-SECOND = 290002
-MEMBER = 290003
-BOT_ADMIN = 290010
-BETA = FeatureDefinition("synthetic_group_beta", "Synthetic group beta", channel=FeatureChannel.BETA)
-FUTURE = FeatureDefinition("later_group_beta", "Later group beta", channel=FeatureChannel.BETA, introduction="later")
-PRIVATE = FeatureDefinition(
-    "private_beta", "Private beta", channel=FeatureChannel.BETA, scopes=frozenset({FeatureScope.PRIVATE})
+from tests.utils.runtimes.beta import (
+    BETA,
+    BOT_ADMIN,
+    FIRST,
+    FUTURE,
+    GROUP,
+    GROUP_ONLY,
+    MEMBER,
+    PRIVATE,
+    SECOND,
+    GroupBetaRuntime,
+    group_beta_runtime,
+    user_target,
 )
-GROUP_ONLY = FeatureDefinition(
-    "group_only_beta", "Group-only beta", channel=FeatureChannel.BETA, scopes=frozenset({FeatureScope.GROUP})
-)
-REGISTRY = FeatureRegistry((*FEATURE_REGISTRY.all(), BETA, FUTURE, PRIVATE, GROUP_ONLY))
-
-
-@dataclass(frozen=True)
-class GroupBetaRuntime:
-    """Real services and exact lifecycle identities for one synthetic approved group."""
-
-    service: GroupBetaService
-    eligibility: BetaEligibilityService
-    target: PermissionTarget
-    first: PermissionTarget
-    second: PermissionTarget
-
-
-async def user_target(container: AsyncContainer, telegram_id: int) -> PermissionTarget:
-    """Create a synthetic identity through the actual ingestion store."""
-    users = await container.get(UserStore)
-    await users.ingest_user(telegram_id)
-    user = await users.get_by_telegram_id(telegram_id)
-    assert user is not None
-    return PermissionTarget("user", user.id, user.generation, user.telegram_id)
-
-
-async def group_beta_runtime(container: AsyncContainer) -> GroupBetaRuntime:
-    """Seed approval and fresh administrator evidence without internal service doubles."""
-    chats = await container.get(ChatStore)
-    chat = await chats.get_or_create_chat(GROUP)
-    await chats.update_status(GROUP, ChatStatus.APPROVED)
-    grants = await container.get(GroupGrantStore)
-    await grants.approve(chat.id, ActorContext.cli())
-    first = await user_target(container, FIRST)
-    second = await user_target(container, SECOND)
-    await user_target(container, MEMBER)
-    target = PermissionTarget("group", chat.id, chat.generation, GROUP)
-    now = datetime.now(UTC) - timedelta(minutes=1)
-    memberships = await container.get(MembershipStore)
-    members = tuple(
-        MembershipEvidence(GROUP, user_id, MembershipStatus.ADMIN, now, now + timedelta(minutes=5))
-        for user_id in (FIRST, SECOND)
-    )
-    await memberships.save_admins(
-        chat.id, AdministratorEvidence(GROUP, True, members, now, now + timedelta(minutes=5)), ActorContext.cli()
-    )
-    service = GroupBetaService(await container.get(GroupBetaStore), REGISTRY, await container.get(ChatStatusService))
-    eligibility = BetaEligibilityService(await container.get(BetaEntitlementStore), REGISTRY)
-    await eligibility.set_grant(first, ALL_BETA, granted=True, actor=ActorContext.cli())
-    await eligibility.set_grant(second, BETA.key, granted=True, actor=ActorContext.cli())
-    return GroupBetaRuntime(service, eligibility, target, first, second)
 
 
 async def enable_local(runtime: GroupBetaRuntime, actor_id: int = FIRST) -> bool:

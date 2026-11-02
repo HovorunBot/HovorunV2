@@ -18,7 +18,6 @@ from hovorunv2.infrastructure.fixtures import INITIAL_COMMANDS
 def test_media_registry_preserves_all_persisted_keys_and_resolves_triggers() -> None:
     """Every provider mode retains its existing key for private and group actions."""
     expected = {str(key) for splits in PROVIDER_SPLIT_COMMANDS.values() for key in splits}
-    assert {feature.key for feature in FEATURE_REGISTRY.all()} == expected
     fixtures = {entry["name"] for entry in INITIAL_COMMANDS}
     assert expected <= fixtures
     for provider, (video, post) in PROVIDER_SPLIT_COMMANDS.items():

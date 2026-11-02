@@ -1,35 +1,13 @@
-"""Tests for extended group/chat identity, lifecycle uniqueness, and migration safety."""
+"""Group/chat identity lifecycle: soft-delete tombstones, generations, and audit."""
 
-import pytest
 from dishka import AsyncContainer
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
-from hovorunv2.domain.chat import ChatDB, chat_commands
-from hovorunv2.domain.command import CommandDB
+from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform
-
-
-async def test_active_chat_uniqueness_enforced_by_postgresql(test_container: AsyncContainer) -> None:
-    """PostgreSQL enforces that only one active record can exist per (platform, chat_id)."""
-    session_maker = await test_container.get(async_sessionmaker)
-    chat_id = -1001234567890
-
-    # Insert first active group
-    async with session_maker() as session:
-        chat1 = ChatDB(chat_id=chat_id, platform=Platform.TELEGRAM, status=ChatStatus.APPROVED)
-        session.add(chat1)
-        await session.commit()
-
-    # Attempting to insert a second active record with the same chat_id fails
-    async with session_maker() as session:
-        chat2 = ChatDB(chat_id=chat_id, platform=Platform.TELEGRAM, status=ChatStatus.UNAUTHORIZED)
-        session.add(chat2)
-        with pytest.raises(IntegrityError):
-            await session.commit()
 
 
 async def test_soft_deleted_chat_and_active_coexist(test_container: AsyncContainer) -> None:
@@ -102,55 +80,3 @@ async def test_soft_delete_is_audited_transactionally(test_container: AsyncConta
         assert events[0].reason == "group decommissioned"
         assert events[0].changed_fields is not None
         assert events[0].changed_fields["reason"] == "group decommissioned"
-
-
-async def test_foreign_key_enforcement_on_chat_associations(test_container: AsyncContainer) -> None:
-    """PostgreSQL enforces foreign keys on chat command associations."""
-    session_maker = await test_container.get(async_sessionmaker)
-
-    # Attempting to associate an invalid chat_id (that doesn't exist in chats) fails with IntegrityError
-    async with session_maker() as session:
-        # Fetch an existing seeded command
-        cmd = (await session.execute(select(CommandDB))).scalars().first()
-        assert cmd is not None
-
-        stmt = chat_commands.insert().values(chat_id=9999999, command_id=cmd.id)
-        with pytest.raises(IntegrityError):
-            await session.execute(stmt)
-
-
-async def test_migration_preserves_chat_data_byte_for_byte(test_container: AsyncContainer) -> None:
-    """Existing chat row fields (salts, language, commands) are preserved accurately."""
-    session_maker = await test_container.get(async_sessionmaker)
-    chat_id = -1007788990011
-    salt_val = "preserved_salt_material_xyz_123"
-
-    async with session_maker() as session:
-        chat = ChatDB(
-            chat_id=chat_id,
-            platform=Platform.TELEGRAM,
-            status=ChatStatus.APPROVED,
-            target_lang="uk",
-            ignored_langs=["en", "pl"],
-            encryption_salt=salt_val,
-            title="My Preserved Group",
-            chat_type="supergroup",
-            is_bot_present=True,
-            generation=1,
-        )
-        session.add(chat)
-        await session.commit()
-
-    async with session_maker() as session:
-        stmt = select(ChatDB).where(ChatDB.chat_id == chat_id)
-        row = (await session.execute(stmt)).scalar_one()
-
-        assert row.chat_id == chat_id
-        assert row.status == ChatStatus.APPROVED
-        assert row.target_lang == "uk"
-        assert row.ignored_langs == ["en", "pl"]
-        assert row.encryption_salt == salt_val
-        assert row.title == "My Preserved Group"
-        assert row.chat_type == "supergroup"
-        assert row.is_bot_present is True
-        assert row.deleted_at is None

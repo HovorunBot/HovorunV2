@@ -55,7 +55,6 @@ async def test_notify_updates_fresh_install_silent(
 
     # Must not fetch changelog or send any message on fresh install
     assert bot.session.calls == []
-    assert bot.session.calls == []
 
     # Must update last_notified_version in DB
     assert await system_service.get_last_notified_version() == "0.1.0"
@@ -120,13 +119,13 @@ async def test_notify_updates_no_new_version(
     assert bot.session.calls == []
 
 
-async def test_notify_updates_retry_uses_html_and_recovers(
+async def test_notify_updates_retries_rate_limited_send_and_advances_version(
     notification_service: NotificationService,
     test_container: AsyncContainer,
     recording_bot: Bot,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test that retry after rate limit sends HTML formatted message and catches errors."""
+    """A rate-limited send retries once with HTML and disabled previews; the failed retry stays contained."""
     system_service = await test_container.get(SystemStore)
     chat_status_service = await test_container.get(ChatStatusService)
 
@@ -152,3 +151,4 @@ async def test_notify_updates_retry_uses_html_and_recovers(
     for call in bot.session.calls:
         assert call.model_dump()["parse_mode"] == "HTML"
         assert call.model_dump()["disable_web_page_preview"] is True
+    assert await system_service.get_last_notified_version() == "0.2.0"

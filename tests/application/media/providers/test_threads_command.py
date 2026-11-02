@@ -160,3 +160,44 @@ def test_threads_sync_browser_stage_fallback_to_og() -> None:
     assert payload.content == "OpenGraph Content description"
     assert len(payload.media_items) == 1
     assert payload.media_items[0].url == "https://threads.net/og_image.jpg"
+
+
+@pytest.mark.unit
+def test_threads_parse_nested_metrics_json() -> None:
+    """Nested text_post_app_info metrics render into the footer with K formatting."""
+    service = ThreadsService.sync()
+    post_id = "DX9HWZiiE2Q"
+    url = f"https://www.threads.net/@user/post/{post_id}"
+    html_content = """
+    <html>
+    <head>
+        <meta property="og:title" content="User (@user) on Threads"/>
+        <meta property="og:description" content="Post content"/>
+    </head>
+    <body>
+        <article>
+            <div dir="auto">Post content</div>
+        </article>
+        <script type="application/json">
+        {
+            "require": [],
+            "data": {
+                "media": {
+                    "code": "DX9HWZiiE2Q",
+                    "like_count": 2864,
+                    "text_post_app_info": {
+                        "direct_reply_count": 77,
+                        "repost_count": 20
+                    }
+                }
+            }
+        }
+        </script>
+    </body>
+    </html>
+    """
+    payload = service._parse_browser_post(html_content, url, "net", post_id)  # noqa: SLF001
+    assert payload is not None
+    assert "💬 77" in payload.footer_text
+    assert "🔄 20" in payload.footer_text
+    assert "❤️ 2.9K" in payload.footer_text

@@ -31,3 +31,11 @@ def test_busy_notice_gate_evicts_oldest_entry() -> None:
     assert gate.should_notify(2, 0) is True
     assert gate.should_notify(3, 0) is True
     assert gate.should_notify(1, 1) is True
+
+
+def test_busy_notice_gate_suppresses_within_cooldown() -> None:
+    """A recently notified target is suppressed until the cooldown window elapses."""
+    gate = BusyNoticeGate(cooldown=10, max_entries=2)
+    assert gate.should_notify(1, 0) is True
+    assert gate.should_notify(1, 5) is False
+    assert gate.should_notify(1, 10) is True

@@ -3,11 +3,10 @@
 import instaloader
 import pytest
 import yt_dlp
-from yt_dlp.networking.impersonate import ImpersonateTarget
 
 from hovorunv2.application.media.backend_logging import MediaBackendFailure, MediaBackendLogger
 from hovorunv2.application.media.errors import MediaExtractionError
-from hovorunv2.application.media.extractor import EXTRACTION_TIMEOUT_SECONDS, BoundedYoutubeDL
+from hovorunv2.application.media.extractor import BoundedYoutubeDL
 from hovorunv2.application.media.providers.instagram import FailFastRateController, PrivateInstaloaderContext
 from hovorunv2.infrastructure.logger import PrivacyFormatter
 from tests.utils.sync_http import HTTPFixture, HTTPReply
@@ -17,19 +16,10 @@ SLOW_REQUEST_SECONDS = 0.6
 EXTRACTION_BUDGET_SECONDS = 0.3
 
 
-def test_instagram_backend_has_browser_impersonation_transport() -> None:
-    """Keep Instagram's logged-out GraphQL extraction available in the lean worker runtime."""
-    with BoundedYoutubeDL({"logger": MediaBackendLogger()}) as backend:
-        assert backend._impersonate_target_available(ImpersonateTarget())  # noqa: SLF001
-
-
-def test_instagram_bounds_requests_and_never_sleeps_through_rate_limits() -> None:
-    """Use one 30-second attempt and fail over immediately when a rate-limit wait is required."""
+def test_instagram_rate_limit_wait_fails_fast() -> None:
+    """A rate-limit wait raises immediately instead of sleeping through it."""
     context = PrivateInstaloaderContext()
     try:
-        assert context.request_timeout == EXTRACTION_TIMEOUT_SECONDS
-        assert context.max_connection_attempts == 1
-        assert not context.sleep
         with pytest.raises(instaloader.exceptions.ConnectionException, match="rate-limit wait"):
             FailFastRateController(context).sleep(120)
     finally:

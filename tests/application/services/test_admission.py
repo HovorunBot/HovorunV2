@@ -8,17 +8,12 @@ import pytest
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
-from hovorunv2.application.features.emergency_service import FeatureEmergencyService
-from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import TriggerKind
-from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import AdmissionLimits, AdmissionState, TicketState, incoming_action_key
-from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_jobs import JobOutcome, JobStatus, JobTarget, PayloadState
 from hovorunv2.application.usage.policies import UsageSafetyCaps
-from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.config import Settings
@@ -27,6 +22,7 @@ from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.identities import FEATURE
 from tests.utils.jobs import PRIVATE_BODY, job_envelope
+from tests.utils.jobs.admission import admission_service
 from tests.utils.runtime import ManualClock, runtime_cache
 from tests.utils.usage import USER, usage_subjects
 
@@ -151,22 +147,6 @@ async def test_automatic_group_ingress_is_per_sender_and_shared_across_features(
             result = await store.admit(envelope, sealed, limits, clock.now())
             assert result.state == (AdmissionState.FULL if index == 1 else AdmissionState.ACCEPTED)
         assert len(await store.recoverable(clock.now())) == 3
-
-
-async def admission_service(
-    container: AsyncContainer, store: ValkeyAdmissionStore, queue: CeleryFeatureQueue, clock: ManualClock
-) -> AdmissionService:
-    """Compose the real application service and its real stores/adapters."""
-    return AdmissionService(
-        store,
-        queue,
-        await container.get(UsagePolicyService),
-        await container.get(FeatureAccessService),
-        await container.get(FeatureEmergencyService),
-        await container.get(UserStore),
-        await container.get(ChatStore),
-        clock,
-    )
 
 
 async def test_handoff_recovers_crashes_before_enqueue_and_before_acknowledgement(

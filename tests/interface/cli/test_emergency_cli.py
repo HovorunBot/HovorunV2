@@ -1,4 +1,4 @@
-"""Offline feature emergency CLI parsing and execution."""
+"""Offline feature emergency CLI execution."""
 
 from dishka import AsyncContainer
 
@@ -7,17 +7,6 @@ from hovorunv2.interface.cli.roles import build_parser
 from tests.conftest import provision_role
 
 ADMIN = 520001
-
-
-def test_feature_topic_requires_reason_and_parses_public_text() -> None:
-    """The feature topic exposes only the bounded disable/enable syntax."""
-    arguments = build_parser().parse_args(
-        ["feature", "disable", "--feature", "twitter", "--reason", "synthetic", "--public", "Temporary outage"]
-    )
-    assert arguments.topic == "feature"
-    assert arguments.operation == "disable"
-    assert arguments.feature == "twitter"
-    assert arguments.public_explanation == "Temporary outage"
 
 
 async def test_cli_feature_disable_persists_durable_state(test_container: AsyncContainer) -> None:

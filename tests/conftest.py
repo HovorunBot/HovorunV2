@@ -340,7 +340,6 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         "test_changelog",
         "test_telegram_delivery_contracts",
         "test_media_finalization",
-        "test_threads_metrics_extraction",
     }
     forbidden = {
         "test_container",
