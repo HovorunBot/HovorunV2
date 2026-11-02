@@ -70,6 +70,8 @@ def test_compose_files_wire_independent_application_roles() -> None:
             assert f"--queues={namespace.value}{role}" in compose, f"{filename}: {role} queue"
         assert "entrypoint:" not in compose
         assert "ERROR_DM_ENABLED: ${ERROR_DM_ENABLED:-False}" in compose
+        assert "BROWSER_ENABLED: ${BROWSER_ENABLED:-False}" in compose
+        assert "profiles: [browser]" in compose
 
 
 @pytest.mark.unit
@@ -84,6 +86,10 @@ def test_image_targets_keep_browser_dependencies_out_of_lean_runtime() -> None:
     assert "--extra browser" not in lean
     assert "chromium" in browser
     assert "--extra browser" in browser
+    assert "--mount=type=cache" not in dockerfile
+    assert "UV_NO_CACHE=1" in lean
+    assert "COPY --from=builder /app/.venv /app/.venv" in lean
+    assert "gcc" not in lean
 
 
 @pytest.mark.unit

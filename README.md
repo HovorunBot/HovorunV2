@@ -41,7 +41,7 @@ make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role add 123
 make run
 ```
 
-A dedicated migration container applies schema upgrades before the bot starts. Bot, media worker, browser worker, operations worker and one Beat scheduler run as independent services and restart independently. Media, operations and Beat use the lean application image; only the browser worker includes Chromium and DrissionPage. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
+A dedicated migration container applies schema upgrades before the bot starts. Bot, media worker, operations worker and one Beat scheduler run as independent services and restart independently. Browser fallback is disabled by default. Set `BROWSER_ENABLED=True` in the selected environment file to build and start the separate browser worker with Chromium and DrissionPage. With `BROWSER_ENABLED=False` or an absent setting, Make builds only the lean image and stops any previously running browser worker on startup. Direct extraction remains available; requests requiring browser fallback fail promptly without queuing an unavailable worker or consuming quota. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
 
 | Command | Purpose |
 | --- | --- |
@@ -52,8 +52,15 @@ A dedicated migration container applies schema upgrades before the bot starts. B
 | `make dev` | Start development PostgreSQL/Valkey for host-side tests |
 | `make update` | Pull changes and rebuild |
 | `make migrate` | Apply database migrations in Docker |
+| `make clean` | Remove unused application images, stopped stack containers, build caches and local artifacts; preserve volumes |
 
 Each environment has one complete Compose file: `docker-compose.dev.yml` or `docker-compose.prod.yml`. Make selects production by default; `COMPOSE_ENV=dev` selects development for any Docker target. There is no base file or overlay. Use `APP_ENV_FILE=.env.dev` when keeping separate local/server settings.
+
+Builds require Docker Buildx. They use a temporary `docker-container` builder with `--no-cache`, then remove that builder and its cache on success or failure. The multi-stage runtime image excludes compilers, apt download lists and uv caches. Builds remove unused images belonging to the selected stack before starting; successful application startup repeats that cleanup. Docker logs rotate at three 10 MB files per container.
+
+Run `make clean` to reclaim artifacts from older deployments, or `make COMPOSE_ENV=dev clean` locally. It also clears the selected Docker builder's unused cache, which may include cache from other projects using that builder. It does not stop running application containers or remove PostgreSQL, Valkey, Beat volumes, `.env`, `data/` or `.venv/`. Cleanup removes unused application images, so rebuilding is required to use a removed version again. No cleanup can remove the disk space required by live images, persistent data or the build currently in progress.
+
+Use Make to apply the `.env` browser switch. Raw `docker compose` commands require `--profile browser` when enabling the browser service; explicitly naming a profiled service bypasses profile selection.
 
 See [administration](docs/administration.md) for role and trust commands, access rules and troubleshooting.
 

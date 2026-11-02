@@ -12,6 +12,11 @@ class AppSettings(Protocol):
     """Protocol for application configuration properties needed by application services."""
 
     @property
+    def browser_enabled(self) -> bool:
+        """Return whether browser extraction and continuation are enabled."""
+        ...
+
+    @property
     def bot_token(self) -> str:
         """Return the Telegram bot token."""
         ...

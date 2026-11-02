@@ -53,6 +53,7 @@ class Settings(BrokerSettings, DatabaseSettings, ErrorLoggingSettings):
     bot_token: str
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
+    browser_enabled: bool = False
     browser_max_tabs: int = 4
     browser_idle_timeout: int = 600  # 10 minutes
     instagram_sessionid: str | None = None

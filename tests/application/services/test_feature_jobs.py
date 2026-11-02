@@ -5,6 +5,7 @@ import json
 import secrets
 import sys
 import time
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 
@@ -33,14 +34,14 @@ from hovorunv2.application.jobs.feature_jobs import (
     JobTarget,
     PayloadState,
 )
-from hovorunv2.application.jobs.http_ports import SyncHTTPPort
-from hovorunv2.application.media.errors import MediaExtractionError
+from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort
+from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.media.providers.instagram import INSTAGRAM_CONFIG
 from hovorunv2.application.translation.native_translation import NativeTranslationService
-from hovorunv2.application.usage.budgets import ReservationDecision, ReservationState
+from hovorunv2.application.usage.budgets import ReservationDecision, ReservationState, UnitAmount
 from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AccountingSubject
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -98,6 +99,18 @@ class FailedMediaClient(VideoMediaClient):
         """Fail before delivery so the worker must send terminal feedback."""
         msg = "Synthetic extraction failure."
         raise MediaExtractionError(msg)
+
+
+class BrowserRequiredMediaClient(VideoMediaClient):
+    """Require browser continuation after non-browser extraction is exhausted."""
+
+    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+        """Request continuation without launching or importing a browser."""
+        raise BrowserContinuationRequired
+
+    def extract_browser_media_sync(self, url: str, http: SyncHTTPPort, browser: SyncBrowserPort) -> RichMediaPayload:
+        """Return controlled media after the browser stage is explicitly enabled."""
+        return super().extract_media_sync(url, http, NativeMediaExtractor())
 
 
 class MetadataVideoClient(VideoMediaClient):
@@ -313,13 +326,15 @@ async def test_missing_encryption_and_actual_ciphertext_bound_fail_before_write(
 
 
 @pytest.mark.parametrize(
-    ("client_type", "expected_outcome", "expected_notice"),
+    ("client_type", "expected_outcome", "expected_notice", "browser_enabled"),
     [
-        (VideoMediaClient, JobOutcome.COMPLETE, None),
-        (MetadataVideoClient, JobOutcome.COMPLETE, None),
-        (TimedOutMediaClient, JobOutcome.EXPIRED, TIMEOUT_NOTICE_TEXT),
-        (FailedMediaClient, JobOutcome.FAILED, EXTRACTION_FAILURE_NOTICE_TEXT),
-        (BrokenMediaClient, JobOutcome.FAILED, APPLICATION_FAILURE_NOTICE_TEXT),
+        (VideoMediaClient, JobOutcome.COMPLETE, None, False),
+        (MetadataVideoClient, JobOutcome.COMPLETE, None, False),
+        (TimedOutMediaClient, JobOutcome.EXPIRED, TIMEOUT_NOTICE_TEXT, False),
+        (FailedMediaClient, JobOutcome.FAILED, EXTRACTION_FAILURE_NOTICE_TEXT, False),
+        (BrowserRequiredMediaClient, JobOutcome.FAILED, EXTRACTION_FAILURE_NOTICE_TEXT, False),
+        (BrowserRequiredMediaClient, JobOutcome.COMPLETE, None, True),
+        (BrokenMediaClient, JobOutcome.FAILED, APPLICATION_FAILURE_NOTICE_TEXT, False),
     ],
 )
 async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges_zero(
@@ -328,10 +343,12 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
     client_type: type[VideoMediaClient],
     expected_outcome: JobOutcome,
     expected_notice: str | None,
+    *,
+    browser_enabled: bool,
 ) -> None:
     """Disabled capture and soft timeouts both settle without delivery or consumption."""
     settings = await test_container.get(Settings)
-    settings = settings.model_copy(update={"database_url": postgres_database_url})
+    settings = settings.model_copy(update={"database_url": postgres_database_url, "browser_enabled": browser_enabled})
     clock = ManualClock(time.time())
     chat_id, generation = await _seed_entities(test_container, 390001, -390001)
     async with runtime_cache(test_container) as (cache, namespace):
@@ -354,11 +371,11 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
             NativeHTTPClient() as http,
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, UsageSafetyCaps(), clock)) as publisher,
         ):
             translation = NativeTranslationService(http, settings, database.policies)
             extractor = NativeMediaExtractor()
             browser = LazyBrowserService()
-            publisher = WorkerQueuePublisher(settings.valkey_url, namespace, UsageSafetyCaps(), clock)
             runner = FeatureJobRunner(
                 admission=runtime.admission,
                 payloads=runtime.payloads,
@@ -380,6 +397,14 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
                 gate=AllowGate(),
             )
             outcome = runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
+            if browser_enabled:
+                messages = broker_envelopes(settings, namespace.value, "browser")
+                assert len(messages) == 1
+                waiting = runtime.admission.get(envelope.job_id)
+                assert waiting is not None
+                assert waiting.stage == JobStage.BROWSER
+                assert waiting.budget_reserved
+                outcome = runner.run(messages[0], JobStage.BROWSER)
             assert outcome == expected_outcome.value
             assert len(delivery.calls) == 0
             if expected_notice is not None:
@@ -400,6 +425,12 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
             subject = AccountingSubject(envelope.target.kind, envelope.target.telegram_id)
             total = database.ledger.total(subject, MEDIA_BUCKET, UsageUnit.REQUESTS, UsageWindow(), int(clock.now()))
             assert total == 0
+            if client_type is BrowserRequiredMediaClient:
+                assert broker_envelopes(settings, namespace.value, "browser") == []
+                assert (
+                    runtime.budgets.finish(envelope.job_id, (UnitAmount(UsageUnit.REQUESTS, 0),), clock.now()).state
+                    == ReservationState.RELEASED
+                )
 
 
 @pytest.mark.parametrize(

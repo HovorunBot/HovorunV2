@@ -1,6 +1,13 @@
 name: hovorunv2
 
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-app: &app
+  logging: *logging
   image: hovorunv2:${APP_VERSION:-local}
   build:
     context: .
@@ -9,6 +16,7 @@ x-app: &app
       APP_VERSION: ${APP_VERSION:-}
 
 x-browser: &browser
+  logging: *logging
   image: hovorunv2-browser:${APP_VERSION:-local}
   build:
     context: .
@@ -23,6 +31,7 @@ x-app-environment: &app-environment
   CACHE_ENCRYPTION_KEY: ${CACHE_ENCRYPTION_KEY:?Generate the server .env with make env-init}
   APP_VERSION: ${APP_VERSION:-}
   ERROR_DM_ENABLED: ${ERROR_DM_ENABLED:-False}
+  BROWSER_ENABLED: ${BROWSER_ENABLED:-False}
 
 x-worker: &worker
   <<: *app
@@ -37,6 +46,7 @@ x-worker: &worker
 
 services:
   postgres:
+    logging: *logging
     image: postgres:18
     restart: unless-stopped
     environment:
@@ -52,6 +62,7 @@ services:
       retries: 10
 
   valkey:
+    logging: *logging
     image: valkey/valkey:8.0
     restart: unless-stopped
     command: ["valkey-server", "--appendonly", "yes"]
@@ -112,6 +123,7 @@ services:
 
   worker-browser:
     <<: *browser
+    profiles: [browser]
     restart: unless-stopped
     environment:
       <<: *app-environment

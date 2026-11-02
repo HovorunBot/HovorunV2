@@ -487,6 +487,10 @@ class FeatureJobRunner:
         try:
             raw_payload = client.extract_media_sync(url, self._http, self._extractor)
         except BrowserContinuationRequired:
+            if not self._settings.browser_enabled:
+                logger.info("Browser continuation disabled by deployment configuration")
+                msg = "Browser fallback is disabled for this deployment."
+                raise MediaExtractionError(msg) from None
             self._handoff_to_browser(envelope, token)
             raise
         else:
@@ -494,6 +498,9 @@ class FeatureJobRunner:
             return raw_payload, client
 
     def _extract_browser_stage(self, url: str, client: BaseMediaClient) -> tuple[RichMediaPayload, BaseMediaClient]:
+        if not self._settings.browser_enabled:
+            msg = "Browser extraction is disabled for this deployment."
+            raise BrowserError(msg)
         if self._browser is None:
             msg = "Browser service is not available for browser stage."
             raise BrowserError(msg)

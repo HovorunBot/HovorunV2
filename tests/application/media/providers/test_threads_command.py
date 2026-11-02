@@ -11,6 +11,7 @@ from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.application.media.providers.threads import ThreadsService
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_browser import FakeSyncBrowser
@@ -62,6 +63,8 @@ async def test_handle_threads_post(
     </body>
     </html>
     """
+    settings = await test_container.get(Settings)
+    settings.browser_enabled = True
     fake_browser = FakeSyncBrowser(html_responses={url: html_content})
 
     await threads_command.handle(message, recording_bot)

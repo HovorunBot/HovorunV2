@@ -273,7 +273,8 @@ class WorkerChildContext:
         delivery = self._custom_delivery or NativeTelegramDelivery(api, downloader)
         translation = NativeTranslationService(self._http, self._settings, self._db.policies)
         extractor = NativeMediaExtractor()
-        self._browser = self._custom_browser or LazyBrowserService()
+        if self._settings.browser_enabled:
+            self._browser = self._custom_browser or LazyBrowserService()
         self._publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
         self._runner = FeatureJobRunner(
             admission=self._runtime.admission,

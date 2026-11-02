@@ -14,7 +14,7 @@ ifeq ($(filter $(COMPOSE_ENV),dev prod),)
 $(error COMPOSE_ENV must be dev or prod)
 endif
 
-DOCKER_COMPOSE = docker compose --env-file $(if $(wildcard $(APP_ENV_FILE)),"$(APP_ENV_FILE)",/dev/null) --file docker-compose.$(COMPOSE_ENV).yml
+DOCKER_COMPOSE = python3 scripts/docker-stack.py --environment "$(COMPOSE_ENV)" --env-file "$(APP_ENV_FILE)" --version "$(APP_VERSION)" --
 
 # Optional target tag/version/increment/message overrides
 TAG ?=
@@ -199,10 +199,14 @@ check: lint type-check lint-imports test
 
 # Build one representative per image sequentially to avoid concurrent exports to the same tag.
 # Bot, media/operations workers, Beat and migrations share the lean image.
-## Print build metadata and build each distinct application image once using Docker cache.
+## Build selected images without cache reuse; remove the temporary builder afterward.
 build: verify-build
-	$(DOCKER_COMPOSE) build bot
-	$(DOCKER_COMPOSE) build worker-browser
+	$(DOCKER_COMPOSE) build
+
+.PHONY: clean
+## Remove stopped stack containers, unused application images and local build artifacts; preserve volumes.
+clean:
+	$(DOCKER_COMPOSE) clean
 
 ## Build the production role images regardless of COMPOSE_ENV.
 build-prod:
