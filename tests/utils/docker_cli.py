@@ -2,6 +2,7 @@
 
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -13,6 +14,12 @@ def main() -> None:
         output.write(json.dumps(arguments) + "\n")
     if "config" in arguments and "--format" in arguments:
         sys.stdout.write(os.environ["DOCKER_TEST_CONFIG"])
+    elif arguments[:2] == ["buildx", "ls"]:
+        sys.stdout.write(os.environ.get("DOCKER_TEST_BUILDERS", ""))
+    elif "up" in arguments and os.environ.get("DOCKER_TEST_UP_FAIL"):
+        sys.exit(8)
+    elif arguments[:2] == ["buildx", "build"] and os.environ.get("DOCKER_TEST_TERMINATE"):
+        os.kill(os.getppid(), signal.SIGTERM)
     elif arguments[:2] == ["image", "ls"]:
         if "--quiet" in arguments:
             sys.stdout.write(os.environ.get("DOCKER_TEST_LABELLED", ""))

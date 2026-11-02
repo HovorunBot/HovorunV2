@@ -11,6 +11,10 @@ from hovorunv2.application.usage.policies import ResolvedUsage, UsageUnit
 
 TECHNICAL_ID = re.compile(r"[A-Za-z0-9_.-]{1,96}\Z")
 RUNTIME_RETENTION_SECONDS = 3600
+# Feature tasks start before their deadline and Celery's hard time limit kills them after at most
+# the execution allowance, so a reservation this far past its deadline has no live owner left.
+STALE_RESERVATION_GRACE_SECONDS: Final = 10 * 60
+STALE_RESERVATION_PAGE_LIMIT: Final = 100
 _INVALID_RESERVATION_MESSAGE: Final = (
     "Reservation requires a technical ID, positive estimates for every policy unit and a finite deadline."
 )
@@ -171,6 +175,18 @@ class BudgetPort(Protocol):
         """Commit actual consumption or release with zero amounts; repeated settlement cannot credit twice."""
         ...
 
+    async def expire_stale(self, now: float, limit: int = STALE_RESERVATION_PAGE_LIMIT) -> int:
+        """Reclaim reservations whose owning task was terminated without settlement.
+
+        Args:
+            now: Current Unix time.
+            limit: Maximum number of reservations to reclaim in one sweep.
+
+        Returns:
+            Number of reservations marked expired.
+        """
+        ...
+
 
 class SyncBudgetPort(Protocol):
     """Synchronous worker execution budget reservation and settlement contract."""
@@ -181,4 +197,16 @@ class SyncBudgetPort(Protocol):
 
     def finish(self, reservation_id: str, actual: tuple[UnitAmount, ...], now: float) -> ReservationDecision:
         """Reconcile actual consumption only after every held resource can be verified."""
+        ...
+
+    def expire_stale(self, now: float, limit: int = STALE_RESERVATION_PAGE_LIMIT) -> int:
+        """Reclaim reservations whose owning task was terminated without settlement.
+
+        Args:
+            now: Current Unix time.
+            limit: Maximum number of reservations to reclaim in one sweep.
+
+        Returns:
+            Number of reservations marked expired.
+        """
         ...

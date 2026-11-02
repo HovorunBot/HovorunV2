@@ -3,6 +3,7 @@
 import logging
 
 from hovorunv2.application.usage.budgets import (
+    STALE_RESERVATION_PAGE_LIMIT,
     BudgetPort,
     BudgetRequest,
     Clock,
@@ -64,3 +65,17 @@ class BudgetService:
         decision = await self._budgets.finish(reservation_id, actual, self._clock.now())
         logger.debug("Execution budget settled: reservation=%s state=%s", reservation_id, decision.state.value)
         return decision
+
+    async def expire_stale(self, limit: int = STALE_RESERVATION_PAGE_LIMIT) -> int:
+        """Reclaim execution budget reservations whose worker was terminated.
+
+        Args:
+            limit: Maximum reservations to expire in this sweep.
+
+        Returns:
+            Number of expired reservations.
+        """
+        reclaimed = await self._budgets.expire_stale(self._clock.now(), limit)
+        if reclaimed:
+            logger.info("Reclaimed %d stale execution budget reservation(s)", reclaimed)
+        return reclaimed

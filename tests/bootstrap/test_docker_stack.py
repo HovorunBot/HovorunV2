@@ -1,12 +1,15 @@
 """Exercise build selection, failure cleanup and scoped artifact removal through the operator CLI."""
 
 import asyncio
+import fcntl
 import json
 import os
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -57,7 +60,7 @@ def _scenario(root: Path, browser_enabled: str) -> StackScenario:
     executable.write_text(f"#!{sys.executable}\n{source}")
     executable.chmod(0o700)
     configuration = {
-        "name": "hovorunv2-dev",
+        "name": f"test-{uuid4().hex}",
         "services": {
             "bot": {"image": "hovorunv2-dev:test", "build": {"target": "lean"}},
             "worker-browser": {"image": "hovorunv2-dev-browser:test", "build": {"target": "browser"}},
@@ -113,6 +116,7 @@ async def test_startup_selects_profile_and_removes_disabled_browser(tmp_path: Pa
     calls = scenario.calls()
     startup = next(call for call in calls if "up" in call)
     assert ("browser" in startup) == (enabled == "True")
+    assert startup[-3:] == ["--wait", "--wait-timeout", "180"]
     stops = [call for call in calls if "--stop" in call]
     assert bool(stops) == (enabled == "False")
     if stops:
@@ -167,3 +171,52 @@ async def test_disabled_browser_cannot_be_started_explicitly(tmp_path: Path) -> 
     scenario = _scenario(tmp_path, "False")
     assert await scenario.run("run", "--rm", "worker-browser") != 0
     assert len(scenario.calls()) == 1
+
+
+async def test_termination_releases_builder_and_lock(tmp_path: Path) -> None:
+    """A real SIGTERM unwinds the running Docker child and frees stack ownership."""
+    scenario = _scenario(tmp_path, "False")
+    scenario.environment["DOCKER_TEST_TERMINATE"] = "1"
+    assert await scenario.run("build") == 143
+    assert scenario.calls()[-1][:3] == ["buildx", "rm", "--force"]
+    del scenario.environment["DOCKER_TEST_TERMINATE"]
+    assert await scenario.run("build") == 0
+
+
+async def test_abandoned_builder_is_removed_before_new_build(tmp_path: Path) -> None:
+    """Recover a known builder left by an uncatchable kill without removing unrelated builders."""
+    scenario = _scenario(tmp_path, "False")
+    project = json.loads(scenario.environment["DOCKER_TEST_CONFIG"])["name"]
+    builder = f"{project}-managed-builder"
+    scenario.environment["DOCKER_TEST_BUILDERS"] = f"default\nforeign-builder\n{builder}\n"
+    assert await scenario.run("build") == 0
+    removals = [call for call in scenario.calls() if call[:2] == ["buildx", "rm"]]
+    assert removals == [["buildx", "rm", "--force", builder]] * 2
+    assert not any(call[:2] == ["image", "rm"] for call in scenario.calls())
+
+
+async def test_active_stack_lock_blocks_cleanup(tmp_path: Path) -> None:
+    """A second process cannot clean the active project's builder or images."""
+    scenario = _scenario(tmp_path, "False")
+    project = json.loads(scenario.environment["DOCKER_TEST_CONFIG"])["name"]
+    lock_path = Path(tempfile.gettempdir()) / f"{project}-{os.getuid()}-docker.lock"
+    with lock_path.open("a") as guard:
+        fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert await scenario.run("clean") != 0
+    assert len(scenario.calls()) == 1
+
+
+async def test_failed_readiness_preserves_previous_images(tmp_path: Path) -> None:
+    """Failed Compose readiness prevents all automatic image deletion."""
+    scenario = _scenario(tmp_path, "False")
+    scenario.environment["DOCKER_TEST_UP_FAIL"] = "1"
+    assert await scenario.run("up", "-d", "--no-build") == 8
+    assert not any(call[:1] == ["image"] for call in scenario.calls())
+
+
+async def test_invalidate_runtime_dispatches_valkey_cleanup(tmp_path: Path) -> None:
+    """Invalidate runtime state flushes Valkey or removes transient volumes."""
+    scenario = _scenario(tmp_path, "False")
+    assert await scenario.run("invalidate-runtime") == 0
+    calls = scenario.calls()
+    assert any("flushall" in call for call in calls)

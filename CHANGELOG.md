@@ -1,9 +1,13 @@
-## v0.3.2.3 (2026-11-02)
+## Unreleased
 
 ### Feat
 
 - **deployment**: make browser builds optional and reduce disk usage
 - **media**: clarify shared quotas and improve extraction diagnostics
+
+### Fix
+
+- **runtime**: expire stale execution budgets and optimize container lifecycle
 
 ## v0.3.2 (2026-11-01)
 

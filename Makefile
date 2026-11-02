@@ -21,8 +21,9 @@ TAG ?=
 VERSION ?= $(TAG)
 INCREMENT ?=
 MESSAGE ?=
+INVALIDATE ?= 0
 
-.PHONY: all setup run stop update deploy help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
+.PHONY: all setup run stop restart restart-dev restart-clean invalidate-runtime update deploy help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
         test test-fast test-profile test-coverage lint format type-check lint-imports check install-hooks ai agy gemini codex claude ai-check ai-next
 
@@ -35,7 +36,29 @@ setup: checkout env-init build
 
 ## Build and start the selected bot, native workers, Beat, migration service, PostgreSQL and Valkey.
 run: build
+ifneq ($(filter $(INVALIDATE),1 true yes on TRUE YES ON),)
+	@$(MAKE) invalidate-runtime
+endif
 	$(DOCKER_COMPOSE) up -d --no-build
+
+## Restart the selected stack; set INVALIDATE=1 to purge stale Valkey runtime state before starting.
+restart: stop
+ifneq ($(filter $(INVALIDATE),1 true yes on TRUE YES ON),)
+	@$(MAKE) invalidate-runtime
+endif
+	@$(MAKE) run
+
+## Restart the development Docker stack; set INVALIDATE=1 to purge stale Valkey runtime state.
+restart-dev:
+	@$(MAKE) COMPOSE_ENV=dev restart
+
+## Restart the selected stack and invalidate transient Valkey runtime state.
+restart-clean:
+	@$(MAKE) INVALIDATE=1 restart
+
+## Invalidate transient Valkey runtime state (stale budget reservations, queues, cache); preserves database volumes.
+invalidate-runtime:
+	$(DOCKER_COMPOSE) invalidate-runtime
 
 ## Fetch/check out code and build the selected role images; leave running services unchanged.
 update: checkout build
@@ -68,6 +91,7 @@ help:
 	@printf '  VERSION=vX.Y.Z                     Select a setup/update version or explicit release version.\n'
 	@printf '  INCREMENT=patch|minor|major         Choose the release increment instead of VERSION.\n'
 	@printf '  MESSAGE="Release notes"             Set the annotated release-tag message.\n'
+	@printf '  INVALIDATE=1                       Invalidate transient Valkey runtime state on restart/run (default: 0).\n'
 
 # 1. Check whether git is installed.
 ## Check that Git is installed; fail if it is unavailable.
@@ -226,7 +250,7 @@ dev:
 
 ## Build and start the complete development Docker stack.
 run-dev:
-	@$(MAKE) COMPOSE_ENV=dev run
+	@$(MAKE) COMPOSE_ENV=dev INVALIDATE="$(INVALIDATE)" run
 
 ## Remove development containers/network and orphans; preserve data volumes.
 stop-dev:

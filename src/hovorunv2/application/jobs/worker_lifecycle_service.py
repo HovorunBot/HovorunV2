@@ -112,6 +112,13 @@ class WorkerLifecycleService:
             except Exception:
                 # Backend exceptions may contain credentials or private request details.
                 logger.warning("Worker lifecycle reconciliation deferred")
+        try:
+            reclaimed = self._budgets.expire_stale(self._clock.now())
+            if reclaimed:
+                logger.info("Reclaimed %d stale execution budget reservation(s)", reclaimed)
+                recovered += reclaimed
+        except Exception:
+            logger.warning("Stale budget expiration deferred")
         logger.info("Worker lifecycle recovery sweep finished: recovered %d ticket(s)", recovered)
         return recovered
 

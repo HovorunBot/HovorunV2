@@ -25,7 +25,11 @@ from hovorunv2.application.jobs.admission import (
 )
 from hovorunv2.application.jobs.feature_jobs import JobEnvelope, JobOutcome, JobTarget, PayloadState
 from hovorunv2.application.jobs.worker_lifecycle_service import WorkerLifecycleService
-from hovorunv2.application.usage.budgets import BudgetRequest, ReservationState
+from hovorunv2.application.usage.budgets import (
+    STALE_RESERVATION_GRACE_SECONDS,
+    BudgetRequest,
+    ReservationState,
+)
 from hovorunv2.application.usage.policies import UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AccountingSubject
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -401,3 +405,35 @@ async def test_runner_defers_real_quota_denial_without_holding_execution_claim(
             assert runtime.admission.cancel(waiting.job_id)
             lifecycle = WorkerLifecycleService(runtime.admission, runtime.budgets, database.ledger, clock)
             lifecycle.complete(blocker.job_id, OWNER, SettlementIntent(outcome=JobOutcome.CANCELLED, actual=ZERO))
+
+
+async def test_lifecycle_recovery_reclaims_stale_execution_budgets(
+    test_container: AsyncContainer,
+    postgres_database_url: str,
+) -> None:
+    """Recovery sweep reclaims execution budget reservations abandoned past deadline and grace."""
+    settings = (await test_container.get(Settings)).model_copy(update={"database_url": postgres_database_url})
+    users = await test_container.get(UserStore)
+    await users.ingest_user(390001, actor=ActorContext.cli(reason="synthetic recovery"))
+    clock = ManualClock(time.time())
+    safety = UsageSafetyCaps()
+    async with runtime_cache(test_container) as (cache, namespace):
+        store = ValkeyAdmissionStore(cache, namespace)
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        envelope = await _admit(store, payloads, clock, "abandoned-job", feature=FEATURE)
+        publisher = WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)
+        with (
+            closing(publisher),
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+        ):
+            lifecycle = WorkerLifecycleService(runtime.admission, runtime.budgets, database.ledger, clock)
+            assert runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), OWNER)
+            _reserve(runtime, database, envelope, clock)
+
+            clock.value = envelope.deadline + 1
+            assert lifecycle.recover(publisher) == 0
+
+            clock.value = envelope.deadline + STALE_RESERVATION_GRACE_SECONDS + 1
+            assert lifecycle.recover(publisher) == 1
+            assert await cache.client.zscore(namespace.value + "budget:active", envelope.job_id) is None

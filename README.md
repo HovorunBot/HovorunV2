@@ -47,6 +47,7 @@ A dedicated migration container applies schema upgrades before the bot starts. B
 | --- | --- |
 | `make run` | Start the bot, native workers, Beat, PostgreSQL and Valkey |
 | `make stop` | Stop production services and preserve volumes |
+| `make restart` | Restart services (optional `INVALIDATE=1` to clear transient runtime state) |
 | `make run-dev` | Start the complete development stack in Docker |
 | `make stop-dev` | Stop development services and preserve volumes |
 | `make dev` | Start development PostgreSQL/Valkey for host-side tests |
@@ -56,9 +57,11 @@ A dedicated migration container applies schema upgrades before the bot starts. B
 
 Each environment has one complete Compose file: `docker-compose.dev.yml` or `docker-compose.prod.yml`. Make selects production by default; `COMPOSE_ENV=dev` selects development for any Docker target. There is no base file or overlay. Use `APP_ENV_FILE=.env.dev` when keeping separate local/server settings.
 
-Builds require Docker Buildx. They use a temporary `docker-container` builder with `--no-cache`, then remove that builder and its cache on success or failure. The multi-stage runtime image excludes compilers, apt download lists and uv caches. Builds remove unused images belonging to the selected stack before starting; successful application startup repeats that cleanup. Docker logs rotate at three 10 MB files per container.
+Builds require Docker Buildx. They use a temporary builder with `--no-cache`, cleaning up build cache upon completion. The multi-stage runtime image excludes compilers, apt download lists and uv caches. Previous application images stay available during builds and startup checks. Docker logs rotate at three 10 MB files per container.
 
-Run `make clean` to reclaim artifacts from older deployments, or `make COMPOSE_ENV=dev clean` locally. It also clears the selected Docker builder's unused cache, which may include cache from other projects using that builder. It does not stop running application containers or remove PostgreSQL, Valkey, Beat volumes, `.env`, `data/` or `.venv/`. Cleanup removes unused application images, so rebuilding is required to use a removed version again. No cleanup can remove the disk space required by live images, persistent data or the build currently in progress.
+Run `make clean` to reclaim artifacts from older deployments, or `make COMPOSE_ENV=dev clean` locally. It also clears the selected Docker builder's unused cache. It does not stop running application containers or remove PostgreSQL, Valkey, Beat volumes, `.env`, `data/` or `.venv/`.
+
+Default resource caps, memory ceilings, and operational settings can be customized via the variables documented in `example.env`. Base images and tools are pinned by digest; builds remain local and target the host architecture.
 
 Use Make to apply the `.env` browser switch. Raw `docker compose` commands require `--profile browser` when enabling the browser service; explicitly naming a profiled service bypasses profile selection.
 

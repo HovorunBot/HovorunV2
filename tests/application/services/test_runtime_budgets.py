@@ -14,7 +14,13 @@ from hovorunv2.application.identity.membership import AdministratorEvidence, Mem
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.usage.budget_service import BudgetService
-from hovorunv2.application.usage.budgets import BudgetRequest, ReservationDecision, ReservationState, UnitAmount
+from hovorunv2.application.usage.budgets import (
+    STALE_RESERVATION_GRACE_SECONDS,
+    BudgetRequest,
+    ReservationDecision,
+    ReservationState,
+    UnitAmount,
+)
 from hovorunv2.application.usage.policies import UsageUnit
 from hovorunv2.application.usage.usage_ledger import AccountingSubject, UsageCharge, UsageEvent, UsageLedgerStore
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
@@ -120,6 +126,12 @@ async def _finish_budget(
     if isinstance(store, WorkerBudgetClient):
         return await asyncio.to_thread(store.finish, reservation_id, actual, now)
     return await store.finish(reservation_id, actual, now)
+
+
+async def _expire_budget(store: ValkeyBudgetStore | WorkerBudgetClient, now: float) -> int:
+    if isinstance(store, WorkerBudgetClient):
+        return await asyncio.to_thread(store.expire_stale, now)
+    return await store.expire_stale(now)
 
 
 async def test_concurrent_reservations_observe_capacity_and_replay(test_container: AsyncContainer) -> None:
@@ -333,3 +345,47 @@ async def test_rollover_does_not_hide_missing_prior_ownership(
             decision = await _reserve_budget(store, BudgetRequest("new-minute", usage, ONE, 400), 180)
             assert decision.state == ReservationState.UNAVAILABLE
             assert await cache.client.get(namespace.value + "budget:reservation:new-minute") is None
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("window_expired", [False, True])
+async def test_stale_reservation_reclaimed_after_grace_and_unblocks_future_window(
+    test_container: AsyncContainer, *, native: bool, window_expired: bool
+) -> None:
+    """Terminated tasks past their deadline and grace are expired, unblocking new window reservations."""
+    await usage_subjects(test_container)
+    usage = await (await test_container.get(UsagePolicyService)).resolve(FEATURE, TriggerKind.DIRECT, USER)
+    settings = await test_container.get(Settings)
+    async with runtime_cache(test_container) as (cache, namespace):
+        with WorkerRuntime(settings, ManualClock(), namespace, usage.safety) as runtime:
+            store = runtime.budgets if native else ValkeyBudgetStore(cache, namespace)
+            request = BudgetRequest("stuck-job", usage, ONE, 200)
+            assert (await _reserve_budget(store, request, 120)).allowed
+            reservation_key = namespace.value + "budget:reservation:stuck-job"
+            record = json.loads(await cache.client.get(reservation_key))
+
+            assert await _expire_budget(store, 201) == 0
+            assert await cache.client.zscore(namespace.value + "budget:active", "stuck-job") is not None
+
+            if window_expired:
+                await cache.client.delete(record["quotas"][0]["key"])
+
+            now = 200 + STALE_RESERVATION_GRACE_SECONDS + 1
+            assert await _expire_budget(store, now) == 1
+            assert await cache.client.zscore(namespace.value + "budget:active", "stuck-job") is None
+
+            global_members = await cache.client.smembers(namespace.value + "budget:global")
+            assert b"stuck-job" not in global_members
+            concurrency_members = await cache.client.smembers(record["concurrency"][1]["key"])
+            assert b"stuck-job" not in concurrency_members
+
+            settled_record = json.loads(await cache.client.get(reservation_key))
+            assert settled_record["state"] == ReservationState.EXPIRED.value
+            assert settled_record["actual"] is None
+
+            assert (await _reserve_budget(store, request, now)).state == ReservationState.EXPIRED
+
+            new_request = BudgetRequest("new-job", usage, ONE, now + 300)
+            decision = await _reserve_budget(store, new_request, now)
+            assert decision.allowed
+            assert (await _finish_budget(store, "new-job", ONE, now)).state == ReservationState.COMMITTED

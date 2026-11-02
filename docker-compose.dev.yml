@@ -33,7 +33,16 @@ x-app-environment: &app-environment
   ERROR_DM_ENABLED: ${ERROR_DM_ENABLED:-False}
   BROWSER_ENABLED: ${BROWSER_ENABLED:-False}
 
+x-worker-health: &worker-health
+  test: ["CMD-SHELL", "uv run --no-sync celery -A hovorunv2.bootstrap.worker_app:app inspect ping --destination celery@$$HOSTNAME --timeout 5"]
+  interval: 60s
+  timeout: 15s
+  start_period: 30s
+  retries: 3
+
 x-worker: &worker
+  stop_grace_period: 150s
+  healthcheck: *worker-health
   <<: *app
   restart: unless-stopped
   environment:
@@ -46,8 +55,10 @@ x-worker: &worker
 
 services:
   postgres:
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-1g}
+    pids_limit: 128
     logging: *logging
-    image: postgres:18
+    image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
     restart: unless-stopped
     environment:
       POSTGRES_DB: hovorun
@@ -64,10 +75,12 @@ services:
       retries: 10
 
   valkey:
+    mem_limit: ${VALKEY_MEMORY_LIMIT:-1g}
+    pids_limit: 128
     logging: *logging
-    image: valkey/valkey:8.0
+    image: valkey/valkey:8.0@sha256:04b9002ae24bbe66687fb025052ed9bcebb54f8da3937338eb718d98d362887f
     restart: unless-stopped
-    command: ["valkey-server", "--appendonly", "yes"]
+    command: ["valkey-server", "--appendonly", "yes", "--maxmemory", "${VALKEY_MAXMEMORY:-384mb}", "--maxmemory-policy", "noeviction"]
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -79,6 +92,8 @@ services:
       retries: 10
 
   migrate:
+    mem_limit: ${MIGRATE_MEMORY_LIMIT:-512m}
+    pids_limit: 128
     <<: *app
     environment:
       DATABASE_URL: postgresql+psycopg://hovorun:hovorun@postgres:5432/hovorun
@@ -89,6 +104,14 @@ services:
     restart: "no"
 
   bot:
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "from pathlib import Path; raise SystemExit(not Path('/tmp/hovorun-bot-ready').is_file())"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    mem_limit: ${BOT_MEMORY_LIMIT:-512m}
+    pids_limit: 128
     <<: *app
     restart: unless-stopped
     depends_on:
@@ -103,6 +126,8 @@ services:
       <<: *app-environment
 
   worker-media:
+    mem_limit: ${WORKER_MEDIA_MEMORY_LIMIT:-1536m}
+    pids_limit: 256
     <<: *worker
     environment:
       <<: *app-environment
@@ -118,7 +143,7 @@ services:
       - hovorunv2.bootstrap.worker_app:app
       - worker
       - --pool=prefork
-      - --concurrency=2
+      - --concurrency=${MEDIA_CONCURRENCY:-1}
       - --loglevel=INFO
       - --without-gossip
       - --without-mingle
@@ -126,8 +151,12 @@ services:
       - "--queues=work:{work}:media"
 
   worker-browser:
+    mem_limit: ${WORKER_BROWSER_MEMORY_LIMIT:-1536m}
+    pids_limit: 512
     <<: *browser
     profiles: [browser]
+    stop_grace_period: 150s
+    healthcheck: *worker-health
     restart: unless-stopped
     environment:
       <<: *app-environment
@@ -157,6 +186,8 @@ services:
       - "--queues=work:{work}:browser"
 
   worker-operations:
+    mem_limit: ${WORKER_OPERATIONS_MEMORY_LIMIT:-512m}
+    pids_limit: 128
     <<: *worker
     command:
       - uv
@@ -175,6 +206,8 @@ services:
       - "--queues=work:{work}:operations"
 
   beat:
+    mem_limit: ${BEAT_MEMORY_LIMIT:-256m}
+    pids_limit: 64
     <<: *app
     restart: unless-stopped
     environment:

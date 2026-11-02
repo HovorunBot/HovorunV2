@@ -235,7 +235,12 @@ def _require_record_binding(record: BudgetRecord, reservation_id: str) -> None:
         raise BudgetStateUnavailableError
     if not record.quotas and not record.subject.startswith("user:"):
         raise BudgetStateUnavailableError
-    if record.state not in {ReservationState.RESERVED, ReservationState.COMMITTED, ReservationState.RELEASED}:
+    if record.state not in {
+        ReservationState.RESERVED,
+        ReservationState.COMMITTED,
+        ReservationState.RELEASED,
+        ReservationState.EXPIRED,
+    }:
         raise BudgetStateUnavailableError
 
 
@@ -259,6 +264,10 @@ def _require_settlement(record: BudgetRecord) -> None:
     if record.state == ReservationState.RESERVED:
         return
     actual = record.actual
+    if record.state == ReservationState.EXPIRED:
+        if actual is not None:
+            raise BudgetStateUnavailableError
+        return
     if actual is None:
         raise BudgetStateUnavailableError
     if actual.keys() != record.estimates.keys():
@@ -306,7 +315,8 @@ def _require_quota_window(quota: QuotaSpec, now: float, start: int) -> None:
         raise BudgetStateUnavailableError
 
 
-def _text(value: object) -> str:
+def decode_text(value: object) -> str:
+    """Decode a Redis bytes or string value safely."""
     if isinstance(value, bytes):
         try:
             return value.decode()
@@ -321,14 +331,14 @@ def parse_hash(raw: object) -> dict[str, str]:
     """Decode a Redis hash while rejecting unexpected protocol shapes."""
     if not isinstance(raw, dict):
         raise BudgetStateUnavailableError
-    return {_text(key): _text(value) for key, value in raw.items()}
+    return {decode_text(key): decode_text(value) for key, value in raw.items()}
 
 
 def parse_members(raw: object) -> frozenset[str]:
     """Decode set membership used to verify reservation ownership."""
     if not isinstance(raw, set | frozenset):
         raise BudgetStateUnavailableError
-    return frozenset(_text(value) for value in raw)
+    return frozenset(decode_text(value) for value in raw)
 
 
 def _integer(values: dict[str, str], key: str) -> int:
@@ -476,3 +486,54 @@ def calculate_finish(
     state = ReservationState.COMMITTED if any(actual.values()) else ReservationState.RELEASED
     settled = record.model_copy(update={"actual": actual, "state": state})
     return BudgetMutation(ReservationDecision(state), tuple(updates), settled)
+
+
+def calculate_expire(
+    record: BudgetRecord,
+    now: float,
+    hashes: dict[str, dict[str, str]],
+) -> BudgetMutation:
+    """Plan an expiration settlement without requiring missing quota windows.
+
+    Args:
+        record: Active reservation to expire.
+        now: Current Unix time.
+        hashes: Resource snapshots for existing quotas and rate keys.
+
+    Returns:
+        Mutation with updates for any surviving quota and rate keys.
+
+    Raises:
+        BudgetStateUnavailableError: If stored counter values or snapshots are malformed.
+    """
+    if record.state != ReservationState.RESERVED:
+        return BudgetMutation(ReservationDecision(record.state), (), record)
+    updates = []
+    for quota in record.quotas:
+        window = hashes.get(quota.key, {})
+        rate = hashes.get(quota.rate, {})
+        if not window:
+            continue
+        used = _integer(window, "used")
+        held = _integer(window, "held")
+        tokens = float(quota.burst)
+        if rate:
+            rate_tokens = _number(rate, "tokens")
+            rate_at = _number(rate, "at")
+            tokens = min(
+                quota.burst,
+                rate_tokens + max(0, now - rate_at) * quota.limit / quota.seconds + quota.amount,
+            )
+        if not math.isfinite(tokens):
+            raise BudgetStateUnavailableError
+        updates.append(
+            QuotaUpdate(
+                quota,
+                used,
+                max(0, held - quota.amount),
+                tokens,
+                now,
+            )
+        )
+    settled = record.model_copy(update={"actual": None, "state": ReservationState.EXPIRED})
+    return BudgetMutation(ReservationDecision(ReservationState.EXPIRED), tuple(updates), settled)

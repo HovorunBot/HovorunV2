@@ -3,6 +3,8 @@
 import asyncio
 import signal
 from contextlib import suppress
+from pathlib import Path
+from tempfile import gettempdir
 
 from aiogram import Bot, Dispatcher, Router
 from dishka import AsyncContainer, make_async_container
@@ -28,6 +30,7 @@ from hovorunv2.interface.telegram.middlewares import LogContextMiddleware
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 
 logger = get_logger(__name__)
+BOT_READY_PATH = Path(gettempdir()) / "hovorun-bot-ready"
 
 
 def _setup_signal_handlers() -> None:
@@ -83,6 +86,7 @@ async def _teardown_services(
 
 async def run_bot() -> None:
     """Initialize app and start polling."""
+    await asyncio.to_thread(BOT_READY_PATH.unlink, missing_ok=True)
     setup_logging()
     logger.info("Starting application...")
 
@@ -109,12 +113,17 @@ async def run_bot() -> None:
 
         _setup_signal_handlers()
 
+        await bot.me()
+        await asyncio.to_thread(BOT_READY_PATH.touch)
         logger.info("Bot started and polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     except asyncio.CancelledError:
         logger.info("Bot shutdown requested via signal.")
     finally:
-        await _teardown_services(telegram_log_handler, container)
+        try:
+            await asyncio.to_thread(BOT_READY_PATH.unlink, missing_ok=True)
+        finally:
+            await _teardown_services(telegram_log_handler, container)
 
 
 def main() -> None:

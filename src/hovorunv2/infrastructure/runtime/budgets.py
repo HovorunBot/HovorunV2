@@ -10,6 +10,8 @@ from redis.client import Pipeline
 from redis.exceptions import RedisError, WatchError
 
 from hovorunv2.application.usage.budgets import (
+    STALE_RESERVATION_GRACE_SECONDS,
+    STALE_RESERVATION_PAGE_LIMIT,
     BudgetPort,
     BudgetRequest,
     ReservationDecision,
@@ -23,8 +25,10 @@ from hovorunv2.infrastructure.runtime.budget_state import (
     BudgetRecord,
     BudgetStateUnavailableError,
     build_record,
+    calculate_expire,
     calculate_finish,
     calculate_reserve,
+    decode_text,
     parse_hash,
     parse_members,
     parse_record,
@@ -217,6 +221,70 @@ class ValkeyBudgetStore(BudgetPort):
         logger.warning("Execution budget settlement contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
 
+    async def expire_stale(self, now: float, limit: int = STALE_RESERVATION_PAGE_LIMIT) -> int:
+        """Reclaim reservations whose owning task was terminated without settlement."""
+        threshold = now - STALE_RESERVATION_GRACE_SECONDS
+        raw_ids = await self._cache.client.zrangebyscore(self._prefix + "active", "-inf", threshold, start=0, num=limit)
+        expired = 0
+        for raw_id in raw_ids:
+            try:
+                reservation_id = decode_text(raw_id)
+                if await self._expire_single(reservation_id, now):
+                    expired += 1
+            except Exception:
+                logger.warning("Failed to expire stale reservation %s", raw_id, exc_info=True)
+        return expired
+
+    async def _expire_single(self, reservation_id: str, now: float) -> bool:
+        for _ in range(TRANSACTION_ATTEMPTS):
+            try:
+                return await self._expire_stale_attempt(reservation_id, now)
+            except WatchError:
+                continue
+            except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
+                logger.warning("Stale budget expiration attempt failed: %s", reservation_id, exc_info=True)
+                return False
+        return False
+
+    async def _expire_stale_attempt(self, reservation_id: str, now: float) -> bool:
+        key = self._prefix + "reservation:" + reservation_id
+        active_key = self._prefix + "active"
+        async with self._cache.client.pipeline() as pipe:
+            await pipe.watch(key, active_key)
+            raw = await pipe.get(key)
+            if raw is None:
+                pipe.multi()
+                pipe.zrem(active_key, reservation_id)
+                await pipe.execute()
+                return True
+            try:
+                record = parse_record(raw, self._prefix, reservation_id)
+            except BudgetStateUnavailableError:
+                pipe.multi()
+                pipe.zrem(active_key, reservation_id)
+                pipe.delete(key)
+                await pipe.execute()
+                return True
+            if record.deadline > now - STALE_RESERVATION_GRACE_SECONDS:
+                return False
+            if record.state != ReservationState.RESERVED:
+                pipe.multi()
+                pipe.zrem(active_key, reservation_id)
+                await pipe.execute()
+                return True
+            await pipe.watch(*record.resource_keys())
+            hashes = {}
+            for quota in record.quotas:
+                hashes[quota.key] = parse_hash(await pipe.execute_command("HGETALL", quota.key))
+                hashes[quota.rate] = parse_hash(await pipe.execute_command("HGETALL", quota.rate))
+            mutation = calculate_expire(record, now, hashes)
+            settled = mutation.record
+            if settled is None:
+                return False
+            self._write_settlement_mutation(pipe, key, record, settled, mutation)
+            await pipe.execute()
+            return True
+
 
 class WorkerBudgetClient:
     """Use native synchronous optimistic transactions inside the resource-owning worker child."""
@@ -391,3 +459,70 @@ class WorkerBudgetClient:
                 return ReservationDecision(ReservationState.UNAVAILABLE)
         logger.warning("Execution budget settlement contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
+
+    def expire_stale(self, now: float, limit: int = STALE_RESERVATION_PAGE_LIMIT) -> int:
+        """Reclaim reservations whose owning task was terminated without settlement."""
+        self._require_owner()
+        threshold = now - STALE_RESERVATION_GRACE_SECONDS
+        raw_ids = self._client.zrangebyscore(self._prefix + "active", "-inf", threshold, start=0, num=limit)
+        if not isinstance(raw_ids, list | tuple):
+            return 0
+        expired = 0
+        for raw_id in raw_ids:
+            try:
+                reservation_id = decode_text(raw_id)
+                if self._expire_single(reservation_id, now):
+                    expired += 1
+            except Exception:
+                logger.warning("Failed to expire stale reservation %s", raw_id, exc_info=True)
+        return expired
+
+    def _expire_single(self, reservation_id: str, now: float) -> bool:
+        for _ in range(TRANSACTION_ATTEMPTS):
+            try:
+                return self._expire_stale_attempt(reservation_id, now)
+            except WatchError:
+                continue
+            except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
+                logger.warning("Stale budget expiration attempt failed: %s", reservation_id, exc_info=True)
+                return False
+        return False
+
+    def _expire_stale_attempt(self, reservation_id: str, now: float) -> bool:
+        key = self._prefix + "reservation:" + reservation_id
+        active_key = self._prefix + "active"
+        with self._client.pipeline() as pipe:
+            pipe.watch(key, active_key)
+            raw = pipe.get(key)
+            if raw is None:
+                pipe.multi()
+                pipe.zrem(active_key, reservation_id)
+                pipe.execute()
+                return True
+            try:
+                record = parse_record(raw, self._prefix, reservation_id)
+            except BudgetStateUnavailableError:
+                pipe.multi()
+                pipe.zrem(active_key, reservation_id)
+                pipe.delete(key)
+                pipe.execute()
+                return True
+            if record.deadline > now - STALE_RESERVATION_GRACE_SECONDS:
+                return False
+            if record.state != ReservationState.RESERVED:
+                pipe.multi()
+                pipe.zrem(active_key, reservation_id)
+                pipe.execute()
+                return True
+            pipe.watch(*record.resource_keys())
+            hashes = {}
+            for quota in record.quotas:
+                hashes[quota.key] = parse_hash(pipe.hgetall(quota.key))
+                hashes[quota.rate] = parse_hash(pipe.hgetall(quota.rate))
+            mutation = calculate_expire(record, now, hashes)
+            settled = mutation.record
+            if settled is None:
+                return False
+            self._write_settlement_mutation(pipe, key, record, settled, mutation)
+            pipe.execute()
+            return True
