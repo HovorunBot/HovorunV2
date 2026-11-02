@@ -50,7 +50,7 @@ class IdentityLifecycleService:
         try:
             await self._handles.release_handle(kind, entity_id, actor, Platform.TELEGRAM)
         except Exception:
-            logger.warning(
+            logger.exception(
                 "Handle release deferred for %s %d; inactive-target validation remains authoritative", kind, entity_id
             )
 

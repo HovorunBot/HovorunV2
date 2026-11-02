@@ -118,7 +118,7 @@ class NotificationDeliveryService:
         try:
             message_id = self._sender.send_message(telegram_id, text, reply_markup=receipt.body_markup)
         except Exception:
-            logger.warning("Notification delivery deferred")
+            logger.exception("Notification delivery deferred")
             outcome = (
                 NotificationOutcome.UNREACHABLE if attempts >= MAX_DELIVERY_ATTEMPTS else NotificationOutcome.RETRY
             )

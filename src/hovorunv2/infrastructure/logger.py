@@ -174,8 +174,17 @@ def redact_sensitive_text(text: str) -> str:
     return URL_PATTERN.sub("[url]", redacted)
 
 
+def sanitize_library_argument(value: object) -> object:
+    """Sanitize third-party library log arguments without dropping technical diagnostics."""
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    if isinstance(value, type) and issubclass(value, BaseException):
+        return value.__name__
+    return redact_sensitive_text(str(value))
+
+
 class PrivacyFormatter(logging.Formatter):
-    """Keep operation templates and numeric metadata, never exception values or payload arguments."""
+    """Keep operation templates and technical diagnostics, redacting sensitive tokens and payloads."""
 
     def format(self, record: logging.LogRecord) -> str:
         """Format a copy so another handler cannot supply cached unsanitized exception text."""
@@ -184,29 +193,36 @@ class PrivacyFormatter(logging.Formatter):
         safe.job_stage = current_job_stage.get()
         safe.exc_text = None
         safe.stack_info = None
+        safe.msg = redact_sensitive_text(str(record.msg))
         if not record.name.startswith("hovorunv2."):
-            safe.msg = "External library event"
-            safe.args = ()
-        else:
-            safe.msg = redact_sensitive_text(str(record.msg))
             if isinstance(record.args, dict):
-                safe.args = {key: safe_log_argument(value) for key, value in record.args.items()}
+                safe.args = {key: sanitize_library_argument(value) for key, value in record.args.items()}
             elif record.args:
-                safe.args = tuple(safe_log_argument(value) for value in record.args)
+                safe.args = tuple(sanitize_library_argument(value) for value in record.args)
+        elif isinstance(record.args, dict):
+            safe.args = {key: safe_log_argument(value) for key, value in record.args.items()}
+        elif record.args:
+            safe.args = tuple(safe_log_argument(value) for value in record.args)
         return super().format(safe)
 
     def formatException(  # noqa: N802
         self, ei: tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None]
     ) -> str:
-        """Use exception type and code locations without values, source text, locals, or chains."""
-        exception_type, _value, tb = ei
+        """Format exception type, sanitized message and code locations."""
+        exception_type, value, tb = ei
         if exception_type is None:
             return ""
         frames = [
             f"{frame.f_globals.get('__name__', 'unknown')}:{frame.f_code.co_name}:{line}"
             for frame, line in traceback.walk_tb(tb)
         ]
-        return "\n".join([exception_type.__name__, *frames[-MAX_TB_LINES:]])
+        detail = ""
+        if value and str(value):
+            clean = redact_sensitive_text(str(value))
+            if not any(marker in clean.lower() for marker in ("private", "secret", "token")):
+                detail = f": {clean}"
+        header = f"{exception_type.__name__}{detail}" if detail else exception_type.__name__
+        return "\n".join([header, *frames[-MAX_TB_LINES:]])
 
 
 def safe_log_argument(value: object) -> object:

@@ -161,7 +161,7 @@ class ValkeyBudgetStore(BudgetPort):
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                logger.warning("Execution budget reservation unavailable", exc_info=True)
+                logger.exception("Execution budget reservation unavailable")
                 return ReservationDecision(ReservationState.UNAVAILABLE)
         logger.warning("Execution budget reservation contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
@@ -216,7 +216,7 @@ class ValkeyBudgetStore(BudgetPort):
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                logger.warning("Execution budget settlement unavailable", exc_info=True)
+                logger.exception("Execution budget settlement unavailable")
                 return ReservationDecision(ReservationState.UNAVAILABLE)
         logger.warning("Execution budget settlement contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
@@ -232,7 +232,7 @@ class ValkeyBudgetStore(BudgetPort):
                 if await self._expire_single(reservation_id, now):
                     expired += 1
             except Exception:
-                logger.warning("Failed to expire stale reservation %s", raw_id, exc_info=True)
+                logger.exception("Failed to expire stale reservation %s", raw_id)
         return expired
 
     async def _expire_single(self, reservation_id: str, now: float) -> bool:
@@ -242,7 +242,7 @@ class ValkeyBudgetStore(BudgetPort):
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                logger.warning("Stale budget expiration attempt failed: %s", reservation_id, exc_info=True)
+                logger.exception("Stale budget expiration attempt failed: %s", reservation_id)
                 return False
         return False
 
@@ -399,7 +399,7 @@ class WorkerBudgetClient:
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                logger.warning("Execution budget reservation unavailable", exc_info=True)
+                logger.exception("Execution budget reservation unavailable")
                 return ReservationDecision(ReservationState.UNAVAILABLE)
         logger.warning("Execution budget reservation contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
@@ -455,7 +455,7 @@ class WorkerBudgetClient:
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                logger.warning("Execution budget settlement unavailable", exc_info=True)
+                logger.exception("Execution budget settlement unavailable")
                 return ReservationDecision(ReservationState.UNAVAILABLE)
         logger.warning("Execution budget settlement contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
@@ -474,7 +474,7 @@ class WorkerBudgetClient:
                 if self._expire_single(reservation_id, now):
                     expired += 1
             except Exception:
-                logger.warning("Failed to expire stale reservation %s", raw_id, exc_info=True)
+                logger.exception("Failed to expire stale reservation %s", raw_id)
         return expired
 
     def _expire_single(self, reservation_id: str, now: float) -> bool:
@@ -484,7 +484,7 @@ class WorkerBudgetClient:
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                logger.warning("Stale budget expiration attempt failed: %s", reservation_id, exc_info=True)
+                logger.exception("Stale budget expiration attempt failed: %s", reservation_id)
                 return False
         return False
 

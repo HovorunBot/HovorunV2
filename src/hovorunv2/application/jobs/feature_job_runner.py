@@ -229,7 +229,7 @@ class FeatureJobRunner:
         try:
             self._admission.finish(envelope.job_id, JobOutcome.EXPIRED)
         except Exception:
-            logger.warning("Expired ticket reconciliation deferred")
+            logger.exception("Expired ticket reconciliation deferred")
         self._notify(envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
 
     def _resolve_unclaimed(self, envelope: JobEnvelope) -> str:
@@ -333,7 +333,7 @@ class FeatureJobRunner:
         try:
             self._notify(envelope, NoticeKind.FAILURE, APPLICATION_FAILURE_NOTICE_TEXT)
         except Exception:
-            logger.warning("Application failure feedback unavailable")
+            logger.exception("Application failure feedback unavailable")
 
     def _notify(self, envelope: JobEnvelope, kind: NoticeKind, text: str) -> None:
         """Send one deduplicated progress notice only to a still-authorized target."""
@@ -358,7 +358,7 @@ class FeatureJobRunner:
             if message_id is None:
                 self._telegram.send_message(envelope.target.telegram_id, text)
         except Exception:
-            logger.warning("Request progress feedback deferred")
+            logger.exception("Request progress feedback deferred")
 
     def _handle_denied_reservation(self, envelope: JobEnvelope, token: str, reservation: ReservationDecision) -> str:
         logger.info("Worker execution budget was not granted: %s", reservation.state)
@@ -644,7 +644,7 @@ class FeatureJobRunner:
                 return
             self._admission.finish(job_id, outcome, token=token)
         except AdmissionConflictError:
-            logger.warning("Admission conflict finishing ticket %s", job_id)
+            logger.exception("Admission conflict finishing ticket %s", job_id)
 
     def _find_client(self, feature: str, url: str) -> BaseMediaClient | None:
         provider = self._resolve_provider_command(feature)

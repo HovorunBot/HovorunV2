@@ -120,6 +120,7 @@ class AccessService:
         try:
             member = await bot.get_chat_member(chat_id, user_id)
         except Exception:
+            logger.exception("Failed to check chat member status for user %s in chat %s", user_id, chat_id)
             return False
         return member.status in ("administrator", "creator")
 

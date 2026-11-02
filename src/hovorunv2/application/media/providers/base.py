@@ -477,7 +477,7 @@ class BaseMediaClient(MediaParser):
                 if isinstance(js_results, dict) and (js_results.get("video") or js_results.get("image")):
                     return self._build_browser_payload(js_results, url, b_cfg)
             except BrowserError, OSError, ValueError, TypeError:
-                logger.warning("JS extraction failed for %s", self.name)
+                logger.exception("JS extraction failed for %s", self.name)
 
         return None
 

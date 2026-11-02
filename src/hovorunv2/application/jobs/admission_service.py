@@ -206,6 +206,7 @@ class AdmissionService:
                 return self._record_handoff(job_id, AdmissionResult(AdmissionState.EXPIRED, ticket))
             return self._record_handoff(job_id, await self._enqueue_ticket(ticket))
         except AdmissionUnavailableError:
+            logger.exception("Admission store unavailable during handoff for job %s", job_id)
             return self._record_handoff(job_id, AdmissionResult(AdmissionState.UNAVAILABLE, ticket))
 
     def _record_handoff(self, job_id: str, result: AdmissionResult) -> AdmissionResult:
@@ -244,6 +245,7 @@ class AdmissionService:
         try:
             tickets = await self._admission.recoverable(self._clock.now(), limit)
         except AdmissionUnavailableError:
+            logger.exception("Admission store unavailable during recovery")
             return (AdmissionResult(AdmissionState.UNAVAILABLE),)
         results = tuple([await self.handoff(ticket.envelope.job_id) for ticket in tickets])
         logger.info("Job recovery completed: recovered=%d", len(results))

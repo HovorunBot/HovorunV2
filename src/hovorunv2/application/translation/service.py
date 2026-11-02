@@ -68,7 +68,7 @@ class TranslationService:
         try:
             result = await self._provider.translate(actual_session, text, target_lang)
         except HTTPTransportError:
-            logger.info("Translation provider is unavailable")
+            logger.exception("Translation provider is unavailable")
             return None
         return select_translation(result, target_lang, ignored_langs)
 

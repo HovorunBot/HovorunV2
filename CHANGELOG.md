@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **logging**: preserve library diagnostics and capture stacktraces on errors
 - **release**: prevent technical changelog fallback and user notification leak
 
 ## v0.3.4 (2026-11-02)

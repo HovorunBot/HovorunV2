@@ -29,10 +29,13 @@ def test_payload_arguments_are_omitted() -> None:
     assert "[omitted]" in output
 
 
-def test_external_library_messages_are_replaced() -> None:
-    """Third-party loggers cannot emit their message or arguments."""
+def test_external_library_messages_preserve_library_info_and_redact_sensitive_text() -> None:
+    """Third-party loggers retain operational diagnostics while redacting sensitive tokens and URLs."""
     record = _record("aiohttp.access", "GET https://api.telegram.org/bot123:ABC/sendMessage")
-    assert PrivacyFormatter(FORMAT).format(record) == "External library event"
+    output = PrivacyFormatter(FORMAT).format(record)
+    assert "GET" in output
+    assert "123:ABC" not in output
+    assert "[url]" in output
 
 
 def _raise_sensitive_error() -> None:
@@ -51,6 +54,23 @@ def test_exception_values_are_omitted() -> None:
     assert "ValueError" in output
     assert "private payload" not in output
     assert "example.com" not in output
+
+
+def _raise_connection_error() -> None:
+    msg = "Connection refused by redis://default:bot123:ABC@localhost:6379"
+    raise ConnectionError(msg)
+
+
+def test_operational_exception_messages_are_retained() -> None:
+    """Operational exception messages are retained while redacting tokens and URLs."""
+    try:
+        _raise_connection_error()
+    except ConnectionError:
+        exc_info = sys.exc_info()
+    record = _record("hovorunv2.test", "connection failed", (), exc_info)
+    output = PrivacyFormatter(FORMAT).format(record)
+    assert "ConnectionError: Connection refused by redis://default:bot[redacted]@localhost:6379" in output
+    assert "123:ABC" not in output
 
 
 def test_safe_internal_identifiers_survive() -> None:

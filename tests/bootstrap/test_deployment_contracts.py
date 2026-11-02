@@ -63,8 +63,8 @@ def test_worker_beat_schedule_routes_all_sweeps_to_operations() -> None:
             RECOVERY_TASK_FUNCTION,
         }
         assert {entry["options"]["queue"] for entry in schedule.values()} == {namespace.value + "operations"}
-        assert schedule["chat_maintenance"]["schedule"].minute == 0
-        assert schedule["chat_maintenance"]["schedule"].hour == "*"
+        assert schedule["chat_maintenance"]["schedule"].minute == {0}
+        assert schedule["chat_maintenance"]["schedule"].hour == set(range(24))
     finally:
         app.close()
 

@@ -110,7 +110,7 @@ class MessageCacheMiddleware(BaseMiddleware):
                 await self._message_service.cache_message(event)
                 logger.info("Cached message %d for chat %d", event.message_id, event.chat.id)
             except Exception:
-                logger.warning("Message caching failed")
+                logger.exception("Message caching failed")
         return await handler(event, data)
 
 

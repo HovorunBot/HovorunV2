@@ -335,7 +335,7 @@ class RichMediaCommand(BaseCommand):
         try:
             await message.answer(APPLICATION_FAILURE_NOTICE_TEXT)
         except Exception:
-            logger.warning("Media admission failure feedback unavailable")
+            logger.exception("Media admission failure feedback unavailable")
 
     async def _admit_and_enqueue(
         self,
