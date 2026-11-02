@@ -27,11 +27,29 @@ ARTIFACT_DIRECTORIES = ("build", "dist", ".pytest_cache", ".ruff_cache", ".impor
 SOURCE_DIRECTORIES = ("src", "tests", "alembic", "scripts")
 
 
+def _image_tag() -> str:
+    """Return a content-addressed image tag from the current commit."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    return f"g{result.stdout.strip()}" if result.returncode == 0 and result.stdout.strip() else "local"
+
+
 class DockerStack:
     """Own Compose selection, temporary builders and project-scoped image cleanup."""
 
     def __init__(self, environment: str, env_file: str, version: str) -> None:
-        self._environment = os.environ | {"APP_ENV_FILE": env_file, "APP_VERSION": version, "COMPOSE_PROFILES": ""}
+        self._environment = os.environ | {
+            "APP_ENV_FILE": env_file,
+            "APP_VERSION": version,
+            "APP_TAG": _image_tag(),
+            "COMPOSE_PROFILES": "",
+        }
         self._compose = [
             "docker",
             "compose",
@@ -74,8 +92,46 @@ class DockerStack:
             text=True,
         ).stdout
 
-    def build(self) -> None:
-        """Build selected images and always remove the dedicated builder and its cache."""
+    def _image_exists(self, image: str) -> bool:
+        """Check whether a Docker image already exists locally in the daemon."""
+        return (
+            subprocess.run(  # noqa: S603
+                ["docker", "image", "inspect", image],  # noqa: S607
+                cwd=PROJECT_ROOT,
+                env=self._environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            ).returncode
+            == 0
+        )
+
+    def _roles_to_build(self, *, force: bool) -> list[str]:
+        """Determine which configured image roles require building.
+
+        Args:
+            force: Rebuild images even when target tags already exist locally.
+
+        Returns:
+            List of service role names that must be built.
+        """
+        required_roles = [role for role in BUILD_ROLES if not (role == "worker-browser" and not self._browser_enabled)]
+        if force:
+            return list(required_roles)
+        return [
+            role for role in required_roles if not self._image_exists(self._configuration["services"][role]["image"])
+        ]
+
+    def build(self, *, force: bool = False) -> None:
+        """Build selected images and always remove the dedicated builder and its cache.
+
+        Args:
+            force: Rebuild images even when target tags already exist locally.
+        """
+        roles = self._roles_to_build(force=force)
+        if not roles:
+            sys.stdout.write("All required images are already built. Use FORCE=1 to rebuild.\n")
+            return
         self._remove_abandoned_builder()
         builder = f"{self._project}-managed-builder"
         try:
@@ -96,9 +152,7 @@ class DockerStack:
                     "memory-swap=1g",
                 ]
             )
-            for role in BUILD_ROLES:
-                if role == "worker-browser" and not self._browser_enabled:
-                    continue
+            for role in roles:
                 service = self._configuration["services"][role]
                 self._run(
                     [
@@ -186,8 +240,11 @@ class DockerStack:
 
     def _execute_locked(self, command: list[str]) -> None:
         """Dispatch one operation after exclusive ownership has been established."""
-        if command == ["build"]:
-            self.build()
+        if command[0] == "build":
+            force = any(argument in {"--force", "-f"} for argument in command[1:]) or (
+                os.environ.get("FORCE", "").lower() in TRUE_VALUES
+            )
+            self.build(force=force)
             return
         if command == ["clean"]:
             self.clean()

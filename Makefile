@@ -22,10 +22,13 @@ VERSION ?= $(TAG)
 INCREMENT ?=
 MESSAGE ?=
 INVALIDATE ?= 0
+FORCE ?= 0
 
 .PHONY: all setup run stop restart restart-dev restart-clean invalidate-runtime update deploy help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
-        test test-fast test-profile test-coverage lint format type-check lint-imports check install-hooks ai agy gemini codex claude ai-check ai-next
+        test test-unit test-fast test-profile test-coverage lint format type-check lint-imports check install-hooks \
+        clean backup logs status \
+        ai agy gemini codex claude ai-check ai-next
 
 # Each command uses one complete environment file, never an overlay.
 ## Run setup, then start the selected Docker stack.
@@ -92,6 +95,10 @@ help:
 	@printf '  INCREMENT=patch|minor|major         Choose the release increment instead of VERSION.\n'
 	@printf '  MESSAGE="Release notes"             Set the annotated release-tag message.\n'
 	@printf '  INVALIDATE=1                       Invalidate transient Valkey runtime state on restart/run (default: 0).\n'
+	@printf '  FORCE=1                            Force rebuilding images even if they already exist (default: 0).\n'
+	@printf '  BACKUP_KEEP=n                      Number of backups to retain (default: 7).\n'
+	@printf '  BROWSER_ENABLED=True               Enable the browser fallback worker (default: False).\n'
+	@printf '  VALKEY_MAXMEMORY=512mb             Valkey memory ceiling, noeviction (default: 512mb).\n'
 
 # 1. Check whether git is installed.
 ## Check that Git is installed; fail if it is unavailable.
@@ -160,7 +167,7 @@ tag-release release-tag:
 ## Preview user release notes and Commitizen version/changelog changes without releasing.
 release-dry-run release-preview:
 	@echo "=== Client-Side Release Notes Preview (CHANGES.md) ==="
-	@uv run python -c "from hovorunv2.application.operations.changelog import get_changelog_updates, get_current_version; curr = '$(if $(VERSION),$(VERSION),0.2.1)'; print(get_changelog_updates('0.2.0', curr) or 'No client entry found in CHANGES.md for ' + curr)"
+	@uv run python -c "from hovorunv2.application.operations.changelog import get_changelog_updates, get_current_version; curr = get_current_version(); target = '$(VERSION)'.lstrip('v'); print(get_changelog_updates(curr, target or curr) or 'No client entry found.')"
 	@echo ""
 	@echo "=== Commitizen Technical Changelog Preview (CHANGELOG.md) ==="
 	@if [ -n "$(VERSION)" ]; then \
@@ -183,7 +190,6 @@ test:
 	@PYTHONPATH=src uv run pytest
 
 ## Run pure tests without PostgreSQL or Valkey.
-.PHONY: test-unit
 test-unit:
 	@PYTHONPATH=src uv run pytest -n 0 -m unit
 
@@ -223,18 +229,40 @@ check: lint type-check lint-imports test
 
 # Build one representative per image sequentially to avoid concurrent exports to the same tag.
 # Bot, media/operations workers, Beat and migrations share the lean image.
-## Build selected images without cache reuse; remove the temporary builder afterward.
+## Build selected images without cache reuse; set FORCE=1 to rebuild existing images.
 build: verify-build
+ifeq ($(filter $(FORCE),1 true yes on TRUE YES ON),)
 	$(DOCKER_COMPOSE) build
+else
+	$(DOCKER_COMPOSE) build --force
+endif
 
-.PHONY: clean
 ## Remove stopped stack containers, unused application images and local build artifacts; preserve volumes.
 clean:
 	$(DOCKER_COMPOSE) clean
 
-## Build the production role images regardless of COMPOSE_ENV.
+## Snapshot Postgres, Valkey, and Beat state with rotation; BACKUP_KEEP=n controls retention.
+backup:
+	@sh scripts/backup.sh $(DOCKER_COMPOSE)
+
+## Follow service logs from the last 200 lines.
+logs:
+	$(DOCKER_COMPOSE) logs -f --tail=200
+
+## Print service health, Valkey memory and queue depth.
+status:
+	$(DOCKER_COMPOSE) ps
+	@echo "--- Valkey memory ---"
+	$(DOCKER_COMPOSE) exec -T valkey valkey-cli INFO memory | grep -E "used_memory_human|maxmemory_human|maxmemory_policy"
+	@echo "--- Queue depth ---"
+	@for queue in media browser operations; do \
+		printf 'work:{work}:%s: ' "$$queue"; \
+		$(DOCKER_COMPOSE) exec -T valkey valkey-cli LLEN "work:{work}:$$queue"; \
+	done
+
+## Build the production role images regardless of COMPOSE_ENV; set FORCE=1 to rebuild.
 build-prod:
-	@$(MAKE) COMPOSE_ENV=prod build
+	@$(MAKE) COMPOSE_ENV=prod FORCE="$(FORCE)" build
 
 ## Remove selected stack containers/network and orphans; preserve data volumes.
 stop:
@@ -250,7 +278,7 @@ dev:
 
 ## Build and start the complete development Docker stack.
 run-dev:
-	@$(MAKE) COMPOSE_ENV=dev INVALIDATE="$(INVALIDATE)" run
+	@$(MAKE) COMPOSE_ENV=dev INVALIDATE="$(INVALIDATE)" FORCE="$(FORCE)" run
 
 ## Remove development containers/network and orphans; preserve data volumes.
 stop-dev:

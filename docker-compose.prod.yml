@@ -8,7 +8,7 @@ x-logging: &logging
 
 x-app: &app
   logging: *logging
-  image: hovorunv2:${APP_VERSION:-local}
+  image: hovorunv2:${APP_TAG:-local}
   build:
     context: .
     target: lean
@@ -17,7 +17,7 @@ x-app: &app
 
 x-browser: &browser
   logging: *logging
-  image: hovorunv2-browser:${APP_VERSION:-local}
+  image: hovorunv2-browser:${APP_TAG:-local}
   build:
     context: .
     target: browser
@@ -34,7 +34,7 @@ x-app-environment: &app-environment
   BROWSER_ENABLED: ${BROWSER_ENABLED:-False}
 
 x-worker-health: &worker-health
-  test: ["CMD-SHELL", "uv run --no-sync celery -A hovorunv2.bootstrap.worker_app:app inspect ping --destination celery@$$HOSTNAME --timeout 5"]
+  test: ["CMD-SHELL", "/app/.venv/bin/celery -A hovorunv2.bootstrap.worker_app:app inspect ping --destination celery@$$HOSTNAME --timeout 5"]
   interval: 60s
   timeout: 15s
   start_period: 30s
@@ -78,7 +78,7 @@ services:
     logging: *logging
     image: valkey/valkey:8.0@sha256:04b9002ae24bbe66687fb025052ed9bcebb54f8da3937338eb718d98d362887f
     restart: unless-stopped
-    command: ["valkey-server", "--appendonly", "yes", "--maxmemory", "${VALKEY_MAXMEMORY:-384mb}", "--maxmemory-policy", "noeviction"]
+    command: ["valkey-server", "--appendonly", "yes", "--maxmemory", "${VALKEY_MAXMEMORY:-512mb}", "--maxmemory-policy", "noeviction"]
     volumes:
       - valkey_data:/data
     healthcheck:
@@ -131,15 +131,13 @@ services:
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
     command:
-      - uv
-      - run
-      - --no-sync
-      - celery
+      - /app/.venv/bin/celery
       - -A
       - hovorunv2.bootstrap.worker_app:app
       - worker
       - --pool=prefork
       - --concurrency=${MEDIA_CONCURRENCY:-1}
+      - --max-tasks-per-child=10
       - --loglevel=INFO
       - --without-gossip
       - --without-mingle
@@ -165,10 +163,7 @@ services:
       valkey:
         condition: service_healthy
     command:
-      - uv
-      - run
-      - --no-sync
-      - celery
+      - /app/.venv/bin/celery
       - -A
       - hovorunv2.bootstrap.worker_app:app
       - worker
@@ -186,10 +181,7 @@ services:
     pids_limit: 128
     <<: *worker
     command:
-      - uv
-      - run
-      - --no-sync
-      - celery
+      - /app/.venv/bin/celery
       - -A
       - hovorunv2.bootstrap.worker_app:app
       - worker
@@ -215,10 +207,7 @@ services:
       valkey:
         condition: service_healthy
     command:
-      - uv
-      - run
-      - --no-sync
-      - celery
+      - /app/.venv/bin/celery
       - -A
       - hovorunv2.bootstrap.worker_app:app
       - beat

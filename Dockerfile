@@ -6,9 +6,10 @@ ENV UV_NO_CACHE=1 UV_LINK_MODE=copy
 RUN apt-get update \
     && apt-get -o Acquire::Queue-Mode=access -o Acquire::Retries=3 install -y --no-install-recommends gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
-COPY pyproject.toml uv.lock ./
+# Install dependencies first so the layer is cached independently of source changes.
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
-COPY README.md CHANGES.md* CHANGELOG.md* ./
 RUN uv sync --frozen --no-dev --no-editable
 
 # Lean image for the bot, media/operations workers, Beat, migrations and administration.
@@ -38,7 +39,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 RUN uv sync --frozen --no-dev --no-editable --extra browser
 ENV BROWSER_PATH=/usr/bin/chromium
-CMD ["uv", "run", "--no-sync", "celery", "-A", "hovorunv2.bootstrap.worker_app:app", "worker", "--pool=prefork", "--concurrency=1", "--queues=work:{work}:browser"]
+CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:app", "worker", "--pool=prefork", "--concurrency=1", "--queues=work:{work}:browser"]
 
 # An untargeted build remains lean.
 FROM lean AS default
