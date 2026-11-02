@@ -1,5 +1,6 @@
 """Native Valkey optimistic transactions for quota, burst and concurrency reservations."""
 
+import logging
 import math
 from collections.abc import Callable
 
@@ -33,6 +34,8 @@ from hovorunv2.infrastructure.runtime.budget_state import (
     verify_previous_window,
 )
 from hovorunv2.infrastructure.runtime.cache import CacheService
+
+logger = logging.getLogger(__name__)
 
 
 def _require_index_type(raw: object) -> None:
@@ -154,7 +157,9 @@ class ValkeyBudgetStore(BudgetPort):
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                break
+                logger.warning("Execution budget reservation unavailable", exc_info=True)
+                return ReservationDecision(ReservationState.UNAVAILABLE)
+        logger.warning("Execution budget reservation contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
 
     async def _finish_attempt(self, reservation_id: str, actual: dict[str, int], now: float) -> ReservationDecision:
@@ -164,6 +169,7 @@ class ValkeyBudgetStore(BudgetPort):
                 await pipe.watch(key)
                 raw = await pipe.get(key)
                 if raw is None:
+                    logger.warning("Execution budget settlement unavailable: reservation record missing")
                     return ReservationDecision(ReservationState.UNAVAILABLE)
                 record = parse_record(raw, self._prefix, reservation_id)
                 hashes, members = (
@@ -206,7 +212,9 @@ class ValkeyBudgetStore(BudgetPort):
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                break
+                logger.warning("Execution budget settlement unavailable", exc_info=True)
+                return ReservationDecision(ReservationState.UNAVAILABLE)
+        logger.warning("Execution budget settlement contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
 
 
@@ -323,7 +331,9 @@ class WorkerBudgetClient:
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                break
+                logger.warning("Execution budget reservation unavailable", exc_info=True)
+                return ReservationDecision(ReservationState.UNAVAILABLE)
+        logger.warning("Execution budget reservation contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)
 
     def _finish_attempt(self, reservation_id: str, actual: dict[str, int], now: float) -> ReservationDecision:
@@ -333,6 +343,7 @@ class WorkerBudgetClient:
                 pipe.watch(key)
                 raw = pipe.get(key)
                 if raw is None:
+                    logger.warning("Execution budget settlement unavailable: reservation record missing")
                     return ReservationDecision(ReservationState.UNAVAILABLE)
                 record = parse_record(raw, self._prefix, reservation_id)
                 hashes, members = (
@@ -376,5 +387,7 @@ class WorkerBudgetClient:
             except WatchError:
                 continue
             except RedisError, OSError, UnicodeError, BudgetStateUnavailableError:
-                break
+                logger.warning("Execution budget settlement unavailable", exc_info=True)
+                return ReservationDecision(ReservationState.UNAVAILABLE)
+        logger.warning("Execution budget settlement contention exhausted (%d attempts)", TRANSACTION_ATTEMPTS)
         return ReservationDecision(ReservationState.UNAVAILABLE)

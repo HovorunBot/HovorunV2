@@ -26,7 +26,7 @@ dependencies = [
     "sqlalchemy",
     "greenlet",
     "alembic",
-    "yt-dlp",
+    "yt-dlp[curl-cffi]",
     "instaloader",
     "beautifulsoup4",
     "dishka",

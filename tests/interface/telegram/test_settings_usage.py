@@ -1,6 +1,7 @@
 """Settings usage views for own and group scopes through the real Telegram transport."""
 
 from aiogram import Bot
+from aiogram.methods import EditMessageText
 from aioresponses import aioresponses
 from dishka import AsyncContainer
 
@@ -13,6 +14,7 @@ from tests.conftest import provision_role, verify_group_admins
 from tests.utils.activation import sent_fields
 from tests.utils.settings import bind_settings_callback, query_for, settings_http, settings_message
 from tests.utils.telegram import BOT_CREDENTIAL
+from tests.utils.telegram.session import RecordingSession
 
 GROUP = -480001
 ACTOR = 480002
@@ -61,4 +63,25 @@ async def test_private_usage_view_distinguishes_unlimited_admin_quota(test_conta
             text = sent_fields(http, "editMessageText")[-1]["text"]
     assert "Your usage" in text
     assert "personal quota unlimited" in text
+    assert "Safety caps" in text
+
+
+async def test_group_usage_lists_shared_media_quota_once(test_container: AsyncContainer, recording_bot: Bot) -> None:
+    """Show one shared allowance instead of independent allowances per provider."""
+    await _approved_group(test_container)
+    command = await test_container.get(SettingsCommand)
+    message = settings_message(chat_id=GROUP, actor_id=ACTOR)
+    callback = await bind_settings_callback(
+        test_container, message, ACTOR, SettingsCallback(menu=SettingsMenu.USAGE, value="group")
+    )
+    await command.handle_callback(query_for(message, recording_bot, ACTOR), callback)
+    transport = recording_bot.session
+    assert isinstance(transport, RecordingSession)
+    edits = [call for call in transport.calls if isinstance(call, EditMessageText)]
+    assert len(edits) == 1
+    text = edits[0].text
+    assert text.count("Media uploads — shared across all providers") == 1
+    assert "0/12 requests" in text
+    assert "Youtube video links" not in text
+    assert "Instagram video links" not in text
     assert "Safety caps" in text

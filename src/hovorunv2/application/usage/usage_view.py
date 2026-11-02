@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from hovorunv2.application.features.registry import FeatureRegistry, TriggerKind
 from hovorunv2.application.usage.budgets import Clock
-from hovorunv2.application.usage.policies import UsageSafetyCaps, UsageUnit
+from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsagePolicy, UsageSafetyCaps, UsageUnit
 from hovorunv2.application.usage.usage_ledger import AccountingSubject, UsageLedgerStore
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.domain.enums import TargetKind
@@ -12,7 +12,7 @@ from hovorunv2.domain.enums import TargetKind
 
 @dataclass(frozen=True, slots=True)
 class FeatureUsage:
-    """One feature's current-window total and effective remaining allowance."""
+    """One distinct quota bucket and window with its current allowance."""
 
     feature: str
     display_name: str
@@ -104,25 +104,50 @@ class UsageViewService:
         """
         observed = int(self._clock.now())
         features: list[FeatureUsage] = []
+        seen: set[tuple[str, UsageUnit, int]] = set()
         unlimited = False
         for definition in self._registry.all():
             if UsageUnit.REQUESTS not in definition.units:
                 continue
-            resolved = await self._policies.resolve(definition.key, trigger, actor_id, group_id=group_id)
+            if definition.provider is not None:
+                resolved = await self._policies.resolve_media(definition.provider, trigger, actor_id, group_id=group_id)
+            else:
+                resolved = await self._policies.resolve(definition.key, trigger, actor_id, group_id=group_id)
             unlimited = resolved.bypass_personal_quota
-            totals = [
-                await self._ledger.total(subject, policy.bucket, policy.unit, policy.window, observed)
-                for policy in resolved.policies
-            ]
-            features.append(
-                FeatureUsage(
-                    definition.key,
-                    definition.display_name,
-                    UsageUnit.REQUESTS,
-                    min(policy.window.seconds for policy in resolved.policies),
-                    max(totals),
-                    min(policy.limit for policy in resolved.policies),
-                    max(0, min(policy.limit - total for policy, total in zip(resolved.policies, totals, strict=True))),
+            for policy in resolved.policies:
+                dimension = (policy.bucket, policy.unit, policy.window.seconds)
+                if dimension in seen:
+                    continue
+                seen.add(dimension)
+                name = (
+                    "Media uploads — shared across all providers"
+                    if policy.bucket == MEDIA_BUCKET
+                    else definition.display_name
                 )
-            )
+                features.append(await self._quota_entry(subject, policy, name, observed))
         return UsageSummary(subject.kind, subject.telegram_id, unlimited, self._safety, tuple(features))
+
+    async def _quota_entry(
+        self, subject: AccountingSubject, policy: UsagePolicy, display_name: str, observed: int
+    ) -> FeatureUsage:
+        """Read consumption for one actual quota bucket and window.
+
+        Args:
+            subject: Charged accounting subject.
+            policy: Effective quota policy.
+            display_name: User-facing label for the shared or feature quota.
+            observed: Timestamp used consistently throughout the summary.
+
+        Returns:
+            Consumption and remaining allowance for the exact policy dimension.
+        """
+        consumed = await self._ledger.total(subject, policy.bucket, policy.unit, policy.window, observed)
+        return FeatureUsage(
+            policy.bucket,
+            display_name,
+            policy.unit,
+            policy.window.seconds,
+            consumed,
+            policy.limit,
+            max(0, policy.limit - consumed),
+        )

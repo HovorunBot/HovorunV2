@@ -4,9 +4,16 @@ import time
 
 from dishka import AsyncContainer
 
-from hovorunv2.application.features.registry import FEATURE_REGISTRY
+from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.identity.ports import UserStore
-from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
+from hovorunv2.application.usage.policies import (
+    MEDIA_BUCKET,
+    UsagePolicy,
+    UsagePolicyStore,
+    UsageSafetyCaps,
+    UsageUnit,
+    UsageWindow,
+)
 from hovorunv2.application.usage.usage_ledger import (
     AccountingSubject,
     UsageCharge,
@@ -20,7 +27,7 @@ from tests.conftest import provision_role
 from tests.utils.usage import GROUP, USER, usage_subjects
 
 WINDOW_SECONDS = 60
-FEATURE = FEATURE_REGISTRY.all()[0].key
+FEATURE = MEDIA_BUCKET
 ADMIN = 360020
 
 
@@ -57,7 +64,9 @@ async def test_user_summary_reports_consumed_and_remaining(test_container: Async
     assert summary.subject_kind == TargetKind.USER
     assert summary.subject_telegram_id == USER
     assert summary.unlimited_personal_quota is False
+    assert len(summary.features) == 1
     feature = _feature_entry(summary, FEATURE)
+    assert "shared across all providers" in feature.display_name
     assert feature.unit == UsageUnit.REQUESTS
     assert feature.window_seconds == WINDOW_SECONDS
     assert feature.consumed == 2
@@ -88,6 +97,8 @@ async def test_group_scope_never_includes_member_personal_usage(test_container: 
     await _charge(test_container, AccountingSubject(TargetKind.USER, USER), amount=5)
     group_summary = await views.for_group(GROUP)
     personal_summary = await views.for_user(USER)
+    assert len(group_summary.features) == 1
+    assert _feature_entry(group_summary, FEATURE).limit == 12
     assert group_summary.subject_kind == TargetKind.GROUP
     assert personal_summary.subject_kind == TargetKind.USER
     assert _feature_entry(group_summary, FEATURE).consumed == 2
@@ -114,3 +125,23 @@ async def test_usage_survives_entity_generation_change(test_container: AsyncCont
     user_store = await test_container.get(UserStore)
     await user_store.soft_delete_user(USER, actor=ActorContext.cli(), reason="synthetic generation change")
     assert await ledger.total(subject, MEDIA_BUCKET, UsageUnit.REQUESTS, UsageWindow(WINDOW_SECONDS), observed) == 3
+
+
+async def test_shared_quota_keeps_distinct_windows(test_container: AsyncContainer) -> None:
+    """Deduplicate shared buckets without merging independent time-window limits."""
+    await usage_subjects(test_container)
+    user = await (await test_container.get(UserStore)).get_by_telegram_id(USER)
+    assert user is not None
+    store = await test_container.get(UsagePolicyStore)
+    hourly_seconds = 3600
+    hourly_limit = 30
+    await store.set_override(
+        PermissionTarget(TargetKind.USER.value, user.id, user.generation, USER),
+        UsagePolicy(MEDIA_BUCKET, hourly_limit, 3, 1, 10, window=UsageWindow(hourly_seconds)),
+        actor=ActorContext.cli(),
+    )
+    summary = await (await test_container.get(UsageViewService)).for_user(USER)
+    assert {(entry.feature, entry.window_seconds, entry.limit) for entry in summary.features} == {
+        (MEDIA_BUCKET, WINDOW_SECONDS, 6),
+        (MEDIA_BUCKET, hourly_seconds, hourly_limit),
+    }

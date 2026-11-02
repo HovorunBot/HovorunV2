@@ -3,6 +3,7 @@
 import instaloader
 import pytest
 import yt_dlp
+from yt_dlp.networking.impersonate import ImpersonateTarget
 
 from hovorunv2.application.media.backend_logging import MediaBackendFailure, MediaBackendLogger
 from hovorunv2.application.media.errors import MediaExtractionError
@@ -14,6 +15,12 @@ from tests.utils.sync_http import HTTPFixture, HTTPReply
 pytestmark = pytest.mark.unit
 SLOW_REQUEST_SECONDS = 0.6
 EXTRACTION_BUDGET_SECONDS = 0.3
+
+
+def test_instagram_backend_has_browser_impersonation_transport() -> None:
+    """Keep Instagram's logged-out GraphQL extraction available in the lean worker runtime."""
+    with BoundedYoutubeDL({"logger": MediaBackendLogger()}) as backend:
+        assert backend._impersonate_target_available(ImpersonateTarget())  # noqa: SLF001
 
 
 def test_instagram_bounds_requests_and_never_sleeps_through_rate_limits() -> None:

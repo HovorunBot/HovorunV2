@@ -3,29 +3,106 @@
 import asyncio
 import json
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from dishka import AsyncContainer
 
+from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.features.registry import TriggerKind
+from hovorunv2.application.identity.membership import AdministratorEvidence, MembershipEvidence, MembershipStatus
+from hovorunv2.application.identity.membership_store import MembershipStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.usage.budget_service import BudgetService
 from hovorunv2.application.usage.budgets import BudgetRequest, ReservationDecision, ReservationState, UnitAmount
 from hovorunv2.application.usage.policies import UsageUnit
 from hovorunv2.application.usage.usage_ledger import AccountingSubject, UsageCharge, UsageEvent, UsageLedgerStore
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
+from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.domain.enums import TargetKind
+from hovorunv2.domain.enums import Role, TargetKind
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.budgets import ValkeyBudgetStore, WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.cache import CacheService
 from tests.utils.identities import FEATURE
 from tests.utils.runtime import ManualClock, runtime_cache
-from tests.utils.usage import USER, usage_subjects
+from tests.utils.usage import GROUP, USER, usage_subjects
 
 ONE = (UnitAmount(UsageUnit.REQUESTS, 1),)
 ZERO = (UnitAmount(UsageUnit.REQUESTS, 0),)
 GROUP_REQUESTS_PER_MINUTE = 60
+OWNER = USER + 1
+DEFAULT_GROUP_BURST = 6
+DEFAULT_GROUP_REQUEST_LIMIT = 12
+
+
+async def _record_group_owner_membership(container: AsyncContainer, group_id: int, *, admin: bool) -> None:
+    """Persist a bot owner's actual Telegram membership independently of application authority."""
+    users = await container.get(UserStore)
+    await users.ingest_user(OWNER)
+    await (await container.get(RoleService)).set_role(OWNER, Role.OWNER, actor=ActorContext.cli())
+    now = datetime.now(UTC)
+    evidence = MembershipEvidence(
+        GROUP, OWNER, MembershipStatus.ADMIN if admin else MembershipStatus.MEMBER, now, now + timedelta(minutes=5)
+    )
+    memberships = await container.get(MembershipStore)
+    await memberships.save_admins(
+        group_id,
+        AdministratorEvidence(GROUP, True, (evidence,) if admin else (), now, evidence.expires_at),
+        ActorContext.cli(),
+    )
+    await memberships.save_member(group_id, evidence, ActorContext.cli())
+
+
+@pytest.mark.parametrize("owner_admin", [False, True])
+@pytest.mark.parametrize("actor_id", [USER, OWNER, None])
+async def test_default_group_budget_accepts_first_request_and_shares_sender_limits(
+    test_container: AsyncContainer,
+    postgres_database_url: str,
+    actor_id: int | None,
+    *,
+    owner_admin: bool,
+) -> None:
+    """Group quotas accept initial work and remain shared regardless of sender role or owner administration."""
+    _, group = await usage_subjects(test_container)
+    await _record_group_owner_membership(test_container, group.entity_id, admin=owner_admin)
+    policies = await test_container.get(UsagePolicyService)
+    usage = await policies.resolve(FEATURE, TriggerKind.AUTOMATIC, actor_id, group_id=GROUP)
+    assert usage.subject == group
+    assert not usage.bypass_personal_quota
+    assert {(item.limit, item.burst) for item in usage.policies} == {(DEFAULT_GROUP_REQUEST_LIMIT, DEFAULT_GROUP_BURST)}
+    settings = (await test_container.get(Settings)).model_copy(update={"database_url": postgres_database_url})
+    clock = ManualClock()
+    async with runtime_cache(test_container) as (cache, namespace):
+        with WorkerDatabase(settings) as database, WorkerRuntime(settings, clock, namespace, usage.safety) as runtime:
+            for index in range(DEFAULT_GROUP_BURST):
+                sender = actor_id if index == 0 else OWNER if index % 2 else USER
+                worker_usage = database.policies.resolve(FEATURE, TriggerKind.AUTOMATIC, sender, group_id=GROUP)
+                assert worker_usage == usage
+                request = BudgetRequest(f"group-default-{index}", worker_usage, ONE, 400)
+                assert (await _reserve_budget(runtime.budgets, request, clock.now())).state == ReservationState.RESERVED
+                assert (await _finish_budget(runtime.budgets, request.reservation_id, ONE, clock.now())).state == (
+                    ReservationState.COMMITTED
+                )
+            waiting_request = BudgetRequest("group-default-wait", usage, ONE, 400)
+            waiting = await ValkeyBudgetStore(cache, namespace).reserve(waiting_request, clock.now(), (0, 0))
+            assert waiting.state == ReservationState.WAITING
+            assert waiting.next_eligible_at == clock.now() + 5
+            for index in range(DEFAULT_GROUP_BURST):
+                clock.value += 5
+                request = replace(waiting_request, reservation_id=f"group-refilled-{index}")
+                assert (await _reserve_budget(runtime.budgets, request, clock.now())).allowed
+                assert (await _finish_budget(runtime.budgets, request.reservation_id, ONE, clock.now())).state == (
+                    ReservationState.COMMITTED
+                )
+            exhausted = await _reserve_budget(runtime.budgets, waiting_request, clock.now())
+            assert exhausted.state == ReservationState.WAITING
+            assert exhausted.next_eligible_at == 180
+            assert (await _reserve_budget(runtime.budgets, waiting_request, 180)).allowed
+            assert (await _finish_budget(runtime.budgets, waiting_request.reservation_id, ZERO, 180)).state == (
+                ReservationState.RELEASED
+            )
 
 
 async def _reserve_budget(

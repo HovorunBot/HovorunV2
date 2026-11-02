@@ -1,4 +1,8 @@
-## v0.3.2.1 (2026-11-01)
+## Unreleased
+
+### Feat
+
+- **media**: clarify shared quotas and improve extraction diagnostics
 
 ## v0.3.2 (2026-11-01)
 
