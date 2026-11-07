@@ -36,9 +36,9 @@ administration; the CLI does not create schema or restore deleted users.
 To administer the persistent database without starting the bot or Valkey:
 
 ```bash
-make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role add 123456789 --role owner"
-make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role list"
-make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role remove 123456789 --yes"
+make compose-run ARGS="--no-deps bot hovorun-admin role add 123456789 --role owner"
+make compose-run ARGS="--no-deps bot hovorun-admin role list"
+make compose-run ARGS="--no-deps bot hovorun-admin role remove 123456789 --yes"
 ```
 
 The dedicated `migrate` service applies migrations first. The one-off command works whether or not the bot is running. Add `COMPOSE_ENV=dev` for development. Live administrator and owner checks use these database roles through Casbin. No owner/admin IDs are imported from

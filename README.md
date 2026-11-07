@@ -37,11 +37,11 @@ The generator creates database credentials and an encryption passphrase. Preserv
 
 ```bash
 make migrate
-make compose-run ARGS="--no-deps bot uv run --no-sync hovorun-admin role add 123456789 --role owner"
+make compose-run ARGS="--no-deps bot hovorun-admin role add 123456789 --role owner"
 make run
 ```
 
-A dedicated migration container applies schema upgrades before the bot starts. Bot, media worker, operations worker and one Beat scheduler run as independent services and restart independently. Browser fallback is disabled by default. Set `BROWSER_ENABLED=True` in the selected environment file to build and start the separate browser worker with Chromium and DrissionPage. With `BROWSER_ENABLED=False` or an absent setting, Make builds only the lean image and stops any previously running browser worker on startup. Direct extraction remains available; requests requiring browser fallback fail promptly without queuing an unavailable worker or consuming quota. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
+A dedicated migration container applies schema upgrades before the bot starts. Bot, media worker, operations worker and one Beat scheduler run as independent services from dedicated, role-optimized container images and restart independently. Browser fallback is disabled by default. Set `BROWSER_ENABLED=True` in the selected environment file to build and start the separate browser worker with Chromium and DrissionPage. With `BROWSER_ENABLED=False` or an absent setting, Make builds the four standard role images (`hovorunv2-migrate`, `hovorunv2-bot`, `hovorunv2-worker-ops`, `hovorunv2-worker-media`) and stops any previously running browser worker on startup. Direct extraction remains available; requests requiring browser fallback fail promptly without queuing an unavailable worker or consuming quota. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
 
 | Command | Purpose |
 | --- | --- |
@@ -57,9 +57,9 @@ A dedicated migration container applies schema upgrades before the bot starts. B
 
 Each environment has one complete Compose file: `docker-compose.dev.yml` or `docker-compose.prod.yml`. Make selects production by default; `COMPOSE_ENV=dev` selects development for any Docker target. There is no base file or overlay. Use `APP_ENV_FILE=.env.dev` when keeping separate local/server settings.
 
-Builds require Docker Buildx. They use a temporary builder with `--no-cache`, cleaning up build cache upon completion. The multi-stage runtime image excludes compilers, apt download lists and uv caches. Previous application images stay available during builds and startup checks. Docker logs rotate at three 10 MB files per container.
+Builds require Docker Buildx with BuildKit enabled (`DOCKER_BUILDKIT=1`). Builds leverage persistent daemon BuildKit layer caching and package caches across invocations. Passing `FORCE=1` rebuilds images without cache. The multi-stage runtime images exclude compilers, build tools, package managers, and duplicate source files, executing directly via `/app/.venv/bin/*` as a non-root `appuser`. Previous application images stay available during builds and startup checks. Docker logs rotate at three 10 MB files per container.
 
-Run `make clean` to reclaim artifacts from older deployments, or `make COMPOSE_ENV=dev clean` locally. It also clears the selected Docker builder's unused cache. It does not stop running application containers or remove PostgreSQL, Valkey, Beat volumes, `.env`, `data/` or `.venv/`.
+Run `make clean` to reclaim artifacts from older deployments, or `make COMPOSE_ENV=dev clean` locally. It prunes dangling images (`docker image prune -f`), prunes BuildKit build cache (`docker builder prune -f`), and removes local build artifacts. It does not stop running application containers or remove PostgreSQL, Valkey, Beat volumes, `.env`, `data/` or `.venv/`.
 
 Default resource caps, memory ceilings, and operational settings can be customized via the variables documented in `example.env`. Base images and tools are pinned by digest; builds remain local and target the host architecture.
 

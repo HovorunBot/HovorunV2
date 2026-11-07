@@ -162,3 +162,19 @@ def test_compose_role_targets_and_direct_entrypoints(compose_file: str) -> None:
         assert command, f"{service_name} must specify a command"
         cmd_str = " ".join(command) if isinstance(command, list) else str(command)
         assert "/app/.venv/bin/" in cmd_str, f"{service_name} command must execute from /app/.venv/bin/: {cmd_str}"
+
+
+@pytest.mark.unit
+def test_docker_stack_build_roles_match_compose_build_services() -> None:
+    """Every role configured for building in docker-stack.py matches a distinct Compose build target."""
+    script_path = Path(__file__).resolve().parents[2] / "scripts/docker-stack.py"
+    content = script_path.read_text(encoding="utf-8")
+    expected_roles = {"migrate", "bot", "worker-operations", "worker-media", "worker-browser"}
+    for role in expected_roles:
+        assert f'"{role}"' in content or f"'{role}'" in content
+
+    for compose_file in ["docker-compose.prod.yml", "docker-compose.dev.yml"]:
+        compose_path = Path(__file__).resolve().parents[2] / compose_file
+        services = yaml.safe_load(compose_path.read_text(encoding="utf-8"))["services"]
+        build_targets = {svc["build"]["target"] for svc in services.values() if "build" in svc}
+        assert build_targets == expected_roles
