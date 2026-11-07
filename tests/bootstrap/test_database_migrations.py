@@ -1,5 +1,6 @@
 """Verify that production migrations create the current PostgreSQL schema."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -27,11 +28,19 @@ def _verify_schema(connection: Connection) -> None:
 
 
 @pytest.mark.fresh_schema
-async def test_migrations_create_current_postgres_schema(postgres_database_url: str) -> None:
-    """Create the deployed schema from an empty, isolated PostgreSQL schema."""
+async def test_migrations_create_current_postgres_schema(
+    postgres_database_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Create the isolated deployed schema without replacing the caller's logging configuration."""
     engine = create_async_engine(postgres_database_url, hide_parameters=True)
+    logger = logging.getLogger("hovorunv2.migration_probe")
+    handlers = tuple(logging.getLogger().handlers)
     try:
-        async with engine.begin() as connection:
-            await connection.run_sync(_verify_schema)
+        with caplog.at_level(logging.INFO, logger=logger.name):
+            async with engine.begin() as connection:
+                await connection.run_sync(_verify_schema)
+            logger.info("Migration caller diagnostics remain enabled")
+        assert tuple(logging.getLogger().handlers) == handlers
+        assert any(record.name == logger.name for record in caplog.records)
     finally:
         await engine.dispose()
