@@ -8,7 +8,7 @@ import yt_dlp
 from hovorunv2.application.media.backend_logging import MediaBackendFailure, MediaBackendLogger
 from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import MediaExtractionError
-from hovorunv2.application.media.extractor import BoundedYoutubeDL, extract_info
+from hovorunv2.application.media.extractor import BoundedYoutubeDL, _load_selected_extractor, extract_info
 from hovorunv2.infrastructure.logger import PrivacyFormatter
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 
@@ -27,12 +27,13 @@ TIMING_TOLERANCE_SECONDS = 0.7
 )
 def test_native_ytdlp_total_deadline_bounds_slow_headers_and_drip_body(reply: HTTPReply) -> None:
     """Bound the complete native extraction call even while response bytes keep arriving."""
-    with BoundedYoutubeDL({"logger": MediaBackendLogger()}) as backend:
-        backend.get_info_extractor("Generic")
     with HTTPFixture({"/slow": reply}) as server:
+        target_url = server.url("/slow")
+        with BoundedYoutubeDL({"logger": MediaBackendLogger()}) as backend:
+            _load_selected_extractor(backend, target_url)
         started = time.monotonic()
         with pytest.raises(MediaExtractionError):
-            extract_info(server.url("/slow"), deadline=ExtractionDeadline.after(EXTRACTION_BUDGET_SECONDS))
+            extract_info(target_url, deadline=ExtractionDeadline.after(EXTRACTION_BUDGET_SECONDS))
         assert time.monotonic() - started < EXTRACTION_BUDGET_SECONDS + TIMING_TOLERANCE_SECONDS
         assert len(server.requests) == 1
 

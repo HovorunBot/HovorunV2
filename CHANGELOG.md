@@ -8,6 +8,7 @@
 
 ### Fix
 
+- **media**: reuse resolved extractor key and silence timeout broken pipe
 - **instagram**: bound stage extraction, retain best candidates, and strip comment URLs
 - **instagram**: degrade gracefully on retained-candidate storage failure
 - **instagram**: continue past text-only generic results

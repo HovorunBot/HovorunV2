@@ -166,12 +166,14 @@ def _add_cookies(ydl: yt_dlp.YoutubeDL, url: str, cookies: dict[str, str]) -> No
         )
 
 
-def _load_selected_extractor(backend: BoundedYoutubeDL, url: str) -> None:
+def _load_selected_extractor(backend: BoundedYoutubeDL, url: str) -> str | None:
     """Resolve backend modules before arming an interrupt that could leave imports half initialized."""
     for extractor_class in gen_extractor_classes():
         if extractor_class.suitable(url):
-            backend.get_info_extractor(extractor_class.ie_key())
-            return
+            key = extractor_class.ie_key()
+            backend.get_info_extractor(key)
+            return key
+    return None
 
 
 def extract_info(
@@ -205,12 +207,12 @@ def extract_info(
     timeout = allowance.remaining() if allowance is not None else EXTRACTION_TIMEOUT_SECONDS
     try:
         with BoundedYoutubeDL(options, timeout) as ydl:
-            _load_selected_extractor(ydl, url)
+            ie_key = _load_selected_extractor(ydl, url)
             if cookies:
                 _add_cookies(ydl, url, cookies)
             guard = OperationTimeout(allowance.expires_at) if allowance is not None else nullcontext()
             with guard:
-                return ydl.extract_info(url, download=False)
+                return ydl.extract_info(url, download=False, ie_key=ie_key)
     except yt_dlp.utils.YoutubeDLError, OSError, ValueError:
         logger.warning("Media extraction failed")
         msg = "Media extraction failed."

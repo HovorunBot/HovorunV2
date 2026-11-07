@@ -71,14 +71,17 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             self.connection.close()
             return
         body = b"".join(response.chunks) if response.chunks else response.body
-        self.send_response(response.status)
-        for name, value in response.headers.items():
-            self.send_header(name, value)
-        if "Content-Length" not in response.headers:
-            self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self._write_body(response, body)
+        try:
+            self.send_response(response.status)
+            for name, value in response.headers.items():
+                self.send_header(name, value)
+            if "Content-Length" not in response.headers:
+                self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self._write_body(response, body)
+        except BrokenPipeError, ConnectionResetError:
+            return
         self._fixture.complete(request)
 
     def _write_body(self, response: HTTPReply, body: bytes) -> None:
