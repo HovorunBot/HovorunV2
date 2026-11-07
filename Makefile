@@ -95,7 +95,7 @@ help:
 	@printf '  INCREMENT=patch|minor|major         Choose the release increment instead of VERSION.\n'
 	@printf '  MESSAGE="Release notes"             Set the annotated release-tag message.\n'
 	@printf '  INVALIDATE=1                       Invalidate transient Valkey runtime state on restart/run (default: 0).\n'
-	@printf '  FORCE=1                            Force rebuilding images even if they already exist (default: 0).\n'
+	@printf '  FORCE=1                            Force rebuilding images without cache even if they already exist (default: 0).\n'
 	@printf '  BACKUP_KEEP=n                      Number of backups to retain (default: 7).\n'
 	@printf '  BROWSER_ENABLED=True               Enable the browser fallback worker (default: False).\n'
 	@printf '  VALKEY_MAXMEMORY=512mb             Valkey memory ceiling, noeviction (default: 512mb).\n'
@@ -227,9 +227,9 @@ lint-imports:
 check: lint type-check lint-imports test
 	@echo "All quality checks passed!"
 
-# Build one representative per image sequentially to avoid concurrent exports to the same tag.
-# Bot, media/operations workers, Beat and migrations share the lean image.
-## Build selected images without cache reuse; set FORCE=1 to rebuild existing images.
+# Build role images sequentially with persistent BuildKit caching.
+# When FORCE=1, bypasses cache and rebuilds all role targets.
+## Build selected role images with persistent BuildKit caching; set FORCE=1 to rebuild without cache.
 build: verify-build
 ifeq ($(filter $(FORCE),1 true yes on TRUE YES ON),)
 	$(DOCKER_COMPOSE) build

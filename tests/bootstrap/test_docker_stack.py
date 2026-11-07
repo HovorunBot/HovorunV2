@@ -62,14 +62,18 @@ def _scenario(root: Path, browser_enabled: str) -> StackScenario:
     configuration = {
         "name": f"test-{uuid4().hex}",
         "services": {
-            "bot": {"image": "hovorunv2-dev:test", "build": {"target": "lean"}},
-            "worker-browser": {"image": "hovorunv2-dev-browser:test", "build": {"target": "browser"}},
+            "migrate": {"image": "hovorunv2-dev-migrate:test", "build": {"target": "migrate"}},
+            "bot": {"image": "hovorunv2-dev-bot:test", "build": {"target": "bot"}},
+            "worker-operations": {"image": "hovorunv2-dev-ops:test", "build": {"target": "worker-operations"}},
             "worker-media": {
+                "image": "hovorunv2-dev-media:test",
+                "build": {"target": "worker-media"},
                 "environment": {
                     "BROWSER_ENABLED": browser_enabled,
                     "BOT_TOKEN": "synthetic-private-credential",
-                }
+                },
             },
+            "worker-browser": {"image": "hovorunv2-dev-browser:test", "build": {"target": "worker-browser"}},
         },
     }
     return StackScenario(
@@ -84,71 +88,109 @@ def _scenario(root: Path, browser_enabled: str) -> StackScenario:
 
 
 @pytest.mark.parametrize("enabled", ["False", "True"])
-async def test_build_selects_browser_and_always_removes_its_builder(tmp_path: Path, enabled: str) -> None:
-    """Build only selected targets without cache reuse and discard temporary builder state."""
+async def test_build_selects_browser_and_uses_persistent_caching(tmp_path: Path, enabled: str) -> None:
+    """Build selected targets with persistent BuildKit cache and load into daemon."""
     scenario = _scenario(tmp_path, enabled)
     assert await scenario.run("build") == 0
     calls = scenario.calls()
     builds = [call for call in calls if call[:2] == ["buildx", "build"]]
-    assert [call[call.index("--target") + 1] for call in builds] == (
-        ["lean", "browser"] if enabled == "True" else ["lean"]
+    expected_targets = (
+        ["migrate", "bot", "worker-operations", "worker-media", "worker-browser"]
+        if enabled == "True"
+        else ["migrate", "bot", "worker-operations", "worker-media"]
     )
-    assert all("--no-cache" in call and "--load" in call for call in builds)
-    creation = next(call for call in calls if call[:2] == ["buildx", "create"])
-    builder = creation[creation.index("--name") + 1]
-    assert calls[-1] == ["buildx", "rm", "--force", builder]
-    assert "--keep-state" not in calls[-1]
+    assert [call[call.index("--target") + 1] for call in builds] == expected_targets
+    assert all("--load" in call for call in builds)
+    assert not any("--no-cache" in call for call in builds)
+    assert not any(call[:2] == ["buildx", "create"] for call in calls)
+    assert not any(call[:2] == ["buildx", "rm"] for call in calls)
 
 
-async def test_failed_build_removes_builder_and_preserves_failure_status(tmp_path: Path) -> None:
-    """Failed image builds cannot leave temporary build caches behind."""
+async def test_failed_build_preserves_failure_status(tmp_path: Path) -> None:
+    """Failed image builds propagate the nonzero exit status directly."""
     scenario = _scenario(tmp_path, "False")
     scenario.environment["DOCKER_TEST_FAIL"] = "1"
     assert await scenario.run("build") == 7
-    assert scenario.calls()[-1][:3] == ["buildx", "rm", "--force"]
+    calls = scenario.calls()
+    assert not any(call[:2] == ["buildx", "create"] for call in calls)
+    assert not any(call[:2] == ["buildx", "rm"] for call in calls)
 
 
 async def test_build_skips_when_all_images_already_exist(tmp_path: Path) -> None:
-    """Skip creating builders and building images when all configured targets exist."""
+    """Skip building images when all configured targets exist."""
     scenario = _scenario(tmp_path, "True")
-    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = "hovorunv2-dev:test\nhovorunv2-dev-browser:test\n"
+    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
+        "hovorunv2-dev-migrate:test\n"
+        "hovorunv2-dev-bot:test\n"
+        "hovorunv2-dev-ops:test\n"
+        "hovorunv2-dev-media:test\n"
+        "hovorunv2-dev-browser:test\n"
+    )
     assert await scenario.run("build") == 0
     calls = scenario.calls()
     inspects = [call for call in calls if call[:2] == ["image", "inspect"]]
-    assert len(inspects) == 2
+    assert len(inspects) == 5
     assert not any(call[:1] == ["buildx"] for call in calls)
 
 
 async def test_build_builds_only_missing_image_when_one_exists(tmp_path: Path) -> None:
     """Build only the absent image target when another role is already present."""
     scenario = _scenario(tmp_path, "True")
-    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = "hovorunv2-dev:test\n"
+    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
+        "hovorunv2-dev-migrate:test\nhovorunv2-dev-bot:test\nhovorunv2-dev-ops:test\nhovorunv2-dev-media:test\n"
+    )
     assert await scenario.run("build") == 0
     calls = scenario.calls()
     builds = [call for call in calls if call[:2] == ["buildx", "build"]]
     assert len(builds) == 1
-    assert builds[0][builds[0].index("--target") + 1] == "browser"
+    assert builds[0][builds[0].index("--target") + 1] == "worker-browser"
 
 
 async def test_build_force_rebuilds_all_existing_images(tmp_path: Path) -> None:
-    """Force flag rebuilds all role targets even when images already exist locally."""
+    """Force flag rebuilds all role targets without cache even when images already exist locally."""
     scenario = _scenario(tmp_path, "True")
-    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = "hovorunv2-dev:test\nhovorunv2-dev-browser:test\n"
+    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
+        "hovorunv2-dev-migrate:test\n"
+        "hovorunv2-dev-bot:test\n"
+        "hovorunv2-dev-ops:test\n"
+        "hovorunv2-dev-media:test\n"
+        "hovorunv2-dev-browser:test\n"
+    )
     assert await scenario.run("build", "--force") == 0
     calls = scenario.calls()
     builds = [call for call in calls if call[:2] == ["buildx", "build"]]
-    assert [call[call.index("--target") + 1] for call in builds] == ["lean", "browser"]
+    assert [call[call.index("--target") + 1] for call in builds] == [
+        "migrate",
+        "bot",
+        "worker-operations",
+        "worker-media",
+        "worker-browser",
+    ]
+    assert all("--no-cache" in call and "--load" in call for call in builds)
 
 
 async def test_build_force_via_environment_rebuilds_all_existing_images(tmp_path: Path) -> None:
-    """Environment FORCE variable rebuilds role targets even when images already exist."""
+    """Environment FORCE variable rebuilds role targets without cache even when images already exist."""
     scenario = _scenario(tmp_path, "True")
     scenario.environment["FORCE"] = "1"
-    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = "hovorunv2-dev:test\nhovorunv2-dev-browser:test\n"
+    scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
+        "hovorunv2-dev-migrate:test\n"
+        "hovorunv2-dev-bot:test\n"
+        "hovorunv2-dev-ops:test\n"
+        "hovorunv2-dev-media:test\n"
+        "hovorunv2-dev-browser:test\n"
+    )
     assert await scenario.run("build") == 0
     calls = scenario.calls()
     builds = [call for call in calls if call[:2] == ["buildx", "build"]]
-    assert [call[call.index("--target") + 1] for call in builds] == ["lean", "browser"]
+    assert [call[call.index("--target") + 1] for call in builds] == [
+        "migrate",
+        "bot",
+        "worker-operations",
+        "worker-media",
+        "worker-browser",
+    ]
+    assert all("--no-cache" in call and "--load" in call for call in builds)
 
 
 @pytest.mark.parametrize("enabled", ["False", "True"])
@@ -172,11 +214,11 @@ async def test_cleanup_preserves_live_images_foreign_images_and_application_data
     """Remove unused application images and build artifacts without touching state or other projects."""
     scenario = _scenario(tmp_path, "False")
     images = [
-        {"ID": "sha256:old", "Repository": "hovorunv2-dev", "Tag": "old"},
-        {"ID": "sha256:old", "Repository": "hovorunv2-dev", "Tag": "older"},
-        {"ID": "sha256:running", "Repository": "hovorunv2-dev", "Tag": "current"},
+        {"ID": "sha256:old", "Repository": "hovorunv2-dev-bot", "Tag": "old"},
+        {"ID": "sha256:old", "Repository": "hovorunv2-dev-bot", "Tag": "older"},
+        {"ID": "sha256:running", "Repository": "hovorunv2-dev-bot", "Tag": "current"},
         {"ID": "sha256:foreign", "Repository": "other-app", "Tag": "latest"},
-        {"ID": "sha256:shared", "Repository": "hovorunv2-dev", "Tag": "shared"},
+        {"ID": "sha256:shared", "Repository": "hovorunv2-dev-bot", "Tag": "shared"},
         {"ID": "sha256:shared", "Repository": "other-app", "Tag": "shared"},
     ]
     scenario.environment["DOCKER_TEST_IMAGES"] = "\n".join(json.dumps(item) for item in images)
@@ -190,9 +232,10 @@ async def test_cleanup_preserves_live_images_foreign_images_and_application_data
     removals = [call for call in scenario.calls() if call[:2] == ["image", "rm"]]
     assert removals == [
         ["image", "rm", "sha256:dangling"],
-        ["image", "rm", "hovorunv2-dev:old", "hovorunv2-dev:older"],
+        ["image", "rm", "hovorunv2-dev-bot:old", "hovorunv2-dev-bot:older"],
     ]
-    assert ["buildx", "prune", "--all", "--force"] in scenario.calls()
+    assert ["image", "prune", "-f"] in scenario.calls()
+    assert ["builder", "prune", "-f"] in scenario.calls()
     assert not (tmp_path / "build").exists()
     assert not (tmp_path / "dist").exists()
     assert not (tmp_path / "src/__pycache__").exists()
@@ -216,26 +259,22 @@ async def test_disabled_browser_cannot_be_started_explicitly(tmp_path: Path) -> 
     assert len(scenario.calls()) == 1
 
 
-async def test_termination_releases_builder_and_lock(tmp_path: Path) -> None:
+async def test_termination_releases_lock(tmp_path: Path) -> None:
     """A real SIGTERM unwinds the running Docker child and frees stack ownership."""
     scenario = _scenario(tmp_path, "False")
     scenario.environment["DOCKER_TEST_TERMINATE"] = "1"
     assert await scenario.run("build") == 143
-    assert scenario.calls()[-1][:3] == ["buildx", "rm", "--force"]
     del scenario.environment["DOCKER_TEST_TERMINATE"]
     assert await scenario.run("build") == 0
 
 
-async def test_abandoned_builder_is_removed_before_new_build(tmp_path: Path) -> None:
-    """Recover a known builder left by an uncatchable kill without removing unrelated builders."""
+async def test_build_executes_with_buildkit_enabled(tmp_path: Path) -> None:
+    """Build executes with DOCKER_BUILDKIT=1 in the subprocess environment."""
     scenario = _scenario(tmp_path, "False")
-    project = json.loads(scenario.environment["DOCKER_TEST_CONFIG"])["name"]
-    builder = f"{project}-managed-builder"
-    scenario.environment["DOCKER_TEST_BUILDERS"] = f"default\nforeign-builder\n{builder}\n"
     assert await scenario.run("build") == 0
-    removals = [call for call in scenario.calls() if call[:2] == ["buildx", "rm"]]
-    assert removals == [["buildx", "rm", "--force", builder]] * 2
-    assert not any(call[:2] == ["image", "rm"] for call in scenario.calls())
+    calls = scenario.calls()
+    builds = [call for call in calls if call[:2] == ["buildx", "build"]]
+    assert len(builds) == 4
 
 
 async def test_active_stack_lock_blocks_cleanup(tmp_path: Path) -> None:

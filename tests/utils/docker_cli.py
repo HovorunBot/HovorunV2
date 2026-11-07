@@ -51,6 +51,8 @@ def _handle_buildx_command(arguments: list[str]) -> bool:
         sys.stdout.write(os.environ.get("DOCKER_TEST_BUILDERS", ""))
         return True
     if arguments[1] == "build":
+        if os.environ.get("DOCKER_BUILDKIT") != "1":
+            sys.exit(99)
         if os.environ.get("DOCKER_TEST_TERMINATE"):
             os.kill(os.getppid(), signal.SIGTERM)
         if os.environ.get("DOCKER_TEST_FAIL"):

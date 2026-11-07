@@ -1,4 +1,4 @@
-"""Build optional Docker roles without retained caches and clean application artifacts."""
+"""Build Docker roles with persistent BuildKit caching and clean application artifacts."""
 
 # Standalone operator script; this directory is not an application package.
 # ruff: noqa: INP001
@@ -18,9 +18,14 @@ from types import FrameType
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STACK_LABEL = "io.hovorunv2.stack"
-BUILDKIT_IMAGE = "moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea"
 CHILD_STOP_SECONDS = 10
-BUILD_ROLES = ("bot", "worker-browser")
+BUILD_ROLES = (
+    "migrate",
+    "bot",
+    "worker-operations",
+    "worker-media",
+    "worker-browser",
+)
 TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
 FALSE_VALUES = frozenset({"false", "0", "no", "off"})
 ARTIFACT_DIRECTORIES = ("build", "dist", ".pytest_cache", ".ruff_cache", ".import_linter_cache", "htmlcov")
@@ -49,6 +54,7 @@ class DockerStack:
             "APP_VERSION": version,
             "APP_TAG": _image_tag(),
             "COMPOSE_PROFILES": "",
+            "DOCKER_BUILDKIT": "1",
         }
         self._compose = [
             "docker",
@@ -123,59 +129,39 @@ class DockerStack:
         ]
 
     def build(self, *, force: bool = False) -> None:
-        """Build selected images and always remove the dedicated builder and its cache.
+        """Build selected images with persistent BuildKit caching.
 
         Args:
-            force: Rebuild images even when target tags already exist locally.
+            force: Rebuild images without cache even when target tags already exist locally.
         """
         roles = self._roles_to_build(force=force)
         if not roles:
             sys.stdout.write("All required images are already built. Use FORCE=1 to rebuild.\n")
             return
-        self._remove_abandoned_builder()
-        builder = f"{self._project}-managed-builder"
-        try:
-            self._run(
+        for role in roles:
+            service = self._configuration["services"][role]
+            command = [
+                "docker",
+                "buildx",
+                "build",
+                "--load",
+            ]
+            if force:
+                command.append("--no-cache")
+            command.extend(
                 [
-                    "docker",
-                    "buildx",
-                    "create",
-                    "--name",
-                    builder,
-                    "--driver",
-                    "docker-container",
-                    "--driver-opt",
-                    f"image={BUILDKIT_IMAGE}",
-                    "--driver-opt",
-                    "memory=1g",
-                    "--driver-opt",
-                    "memory-swap=1g",
+                    "--target",
+                    service["build"]["target"],
+                    "--tag",
+                    service["image"],
+                    "--label",
+                    f"{STACK_LABEL}={self._project}",
+                    "--build-arg",
+                    f"APP_VERSION={self._environment['APP_VERSION']}",
+                    ".",
                 ]
             )
-            for role in roles:
-                service = self._configuration["services"][role]
-                self._run(
-                    [
-                        "docker",
-                        "buildx",
-                        "build",
-                        "--builder",
-                        builder,
-                        "--load",
-                        "--no-cache",
-                        "--target",
-                        service["build"]["target"],
-                        "--tag",
-                        service["image"],
-                        "--label",
-                        f"{STACK_LABEL}={self._project}",
-                        "--build-arg",
-                        f"APP_VERSION={self._environment['APP_VERSION']}",
-                        ".",
-                    ]
-                )
-        finally:
-            self._run(["docker", "buildx", "rm", "--force", builder])
+            self._run(command)
 
     def compose(self, arguments: list[str]) -> None:
         """Run Compose with browser selection and clean obsolete images after startup.
@@ -205,19 +191,11 @@ class DockerStack:
         if starting:
             self.clean_images()
 
-    def _remove_abandoned_builder(self) -> None:
-        """Remove the known project builder while holding the exclusive stack lock."""
-        builder = f"{self._project}-managed-builder"
-        names = self._capture(["docker", "buildx", "ls", "--format", "{{.Name}}"])
-        if builder in names.splitlines():
-            self._run(["docker", "buildx", "rm", "--force", builder])
-
     def execute(self, command: list[str]) -> None:
-        """Serialize mutations so cleanup cannot remove an active managed builder.
+        """Serialize mutations so cleanup and builds cannot conflict.
 
         Args:
             command: Requested stack command and arguments.
-
         """
         if command[0] not in {
             "build",
@@ -297,11 +275,11 @@ class DockerStack:
             self._run(["docker", "image", "rm", *references.get(image_id, [image_id])])
 
     def clean(self) -> None:
-        """Remove project artifacts and the selected Docker builder's unused cache."""
-        self._remove_abandoned_builder()
+        """Remove project artifacts, unused images, and prune builder cache."""
         self._run([*self._compose, "--profile", "*", "rm", "--force"])
         self.clean_images()
-        self._run(["docker", "buildx", "prune", "--all", "--force"])
+        self._run(["docker", "image", "prune", "-f"])
+        self._run(["docker", "builder", "prune", "-f"])
         _clean_local_artifacts()
 
     def invalidate_runtime(self) -> None:
