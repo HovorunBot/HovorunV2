@@ -739,7 +739,7 @@ dependencies = [
     { name = "pycountry" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "sqlalchemy" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
 [package.optional-dependencies]
@@ -833,7 +833,7 @@ requires-dist = [
     { name = "redis", marker = "extra == 'migrate'", specifier = ">=7.4,<8" },
     { name = "redis", marker = "extra == 'worker-ops'", specifier = ">=7.4,<8" },
     { name = "requests", marker = "extra == 'worker-ops'" },
-    { name = "sqlalchemy" },
+    { name = "sqlalchemy", extras = ["asyncio"] },
     { name = "yt-dlp", extras = ["curl-cffi"], marker = "extra == 'worker-media'" },
 ]
 provides-extras = ["bot", "migrate", "worker-ops", "worker-media", "worker-browser", "browser"]
@@ -1603,6 +1603,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/8e/362e7ac1bc6e8a69d72620cc2acbda80a592021509dcc0c3abb2fcfe4c3a/sqlalchemy-2.1.8-cp315-cp315t-win_amd64.whl", hash = "sha256:ffe69b75459d90529f603d9594255c41d6a503f69220740510373374198735f6", size = 2515542, upload-time = "2026-11-04T01:54:55.764Z" },
     { url = "https://files.pythonhosted.org/packages/35/0f/f7afff708c464e9a35d429e3faaaebdc4d253b7230f8942a0acc4a4e0283/sqlalchemy-2.1.8-cp315-cp315t-win_arm64.whl", hash = "sha256:105a13be11045347a78e1599adbcdad895c32067696bca9ba02754ac32f82699", size = 2433845, upload-time = "2026-11-04T02:24:08.211Z" },
     { url = "https://files.pythonhosted.org/packages/a3/1e/6eba6770b626a991e58de306385d414b9f3ae780ae60c61aa1d0841dcaaf/sqlalchemy-2.1.8-py3-none-any.whl", hash = "sha256:69aea77b5d8a64e95d01fd7ec54985c84b4a8ef3cac3108e9271145441400c1b", size = 2067639, upload-time = "2026-11-04T01:30:31.914Z" },
+]
+
+[package.optional-dependencies]
+asyncio = [
+    { name = "greenlet" },
 ]
 
 [[package]]

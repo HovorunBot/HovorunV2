@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **deps**: upgrade missing sqlalchemy dependency
+
 ## v0.3.5 (2026-11-07)
 
 ### Feat

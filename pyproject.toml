@@ -24,7 +24,7 @@ dependencies = [
     "pycountry",
     "pydantic",
     "pydantic-settings",
-    "sqlalchemy",
+    "sqlalchemy[asyncio]",
 ]
 
 [project.optional-dependencies]
