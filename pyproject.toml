@@ -95,7 +95,7 @@ ignore = [
     "PLR0917",
     "D104",
     "BLE001",
-    "TC",
+    "TC", # Runtime-required DI annotations: https://github.com/astral-sh/ruff/issues/14140
     "ARG001",
     "ARG002",
     "ANN401",

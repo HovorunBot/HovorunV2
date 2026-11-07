@@ -2,6 +2,8 @@
 
 Project conventions, privacy constraints and assistant instructions live in [AGENTS.md](AGENTS.md). Keep that file canonical instead of duplicating its rules. See [architecture](docs/architecture.md) for layer boundaries and application contracts.
 
+Contributors and LLM assistants must follow the [modern Python requirements](AGENTS.md#modern-python-requirements-for-contributors-and-llms), including selective native lazy imports, runtime annotation compatibility and the intentional Ruff `TC` exclusion.
+
 ## Development
 
 Use Linux, WSL2, or a Linux container for development and worker execution. Native Windows execution is unsupported; native macOS is not a supported worker runtime.
