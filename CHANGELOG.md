@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Feat
+
+- **instagram**: extract complete browser carousels
+
 ### Fix
 
 - **media**: bound Instagram fallback execution

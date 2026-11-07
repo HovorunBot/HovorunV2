@@ -12,10 +12,13 @@ import requests
 
 from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
+from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.extractor import EXTRACTION_TIMEOUT_SECONDS
+from hovorunv2.application.media.instagram.browser_extraction import extract_browser_post
+from hovorunv2.application.media.instagram.results import InstagramPost
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.application.media.provider_config import INSTAGRAM_CONFIG, ProviderConfig
+from hovorunv2.application.media.provider_config import INSTAGRAM_CONFIG, BrowserFallbackConfig, ProviderConfig
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.utils.text import clean_caption_text
 
@@ -162,6 +165,14 @@ class InstagramService(BaseMediaClient):
         if match := self._config.pattern.search(url):
             return self._extract_via_instaloader_sync(url, match)
         return None
+
+    def _extract_from_browser_tab(
+        self, tab: BrowserTab, url: str, b_cfg: BrowserFallbackConfig
+    ) -> RichMediaPayload | None:
+        """Extract the full ordered carousel using structured data and bounded traversal."""
+        self._dismiss_gate_buttons(tab, b_cfg)
+        post = InstagramPost.from_url(url)
+        return extract_browser_post(tab, post).to_payload()
 
     def _extract_via_instaloader_sync(
         self,
