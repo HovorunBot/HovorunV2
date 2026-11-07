@@ -14,6 +14,7 @@ from hovorunv2.interface.telegram.settings.callbacks import (
     SettingsCallback,
     SettingsMenu,
 )
+from hovorunv2.interface.telegram.transport.sync_prompts import format_access_request_callback
 
 TELEGRAM_CALLBACK_BYTES = 64
 SESSION_TOKEN = secrets.token_urlsafe(9)
@@ -62,3 +63,19 @@ def test_access_and_beta_callbacks_fit_within_telegram_limit() -> None:
     assert len(access.pack().encode()) <= TELEGRAM_CALLBACK_BYTES
     beta = BetaCallback(action=BetaAction.ACTIVATE, feature="twitter_video")
     assert len(beta.pack().encode()) <= TELEGRAM_CALLBACK_BYTES
+
+
+@pytest.mark.unit
+def test_sync_unauthorized_prompt_callback_wire_compatibility() -> None:
+    """The pure callback string emitted by sync worker prompt senders unpacks into AccessCallback."""
+    chat_id = -1001234567890
+    group_id = 42
+    generation = 3
+    wire_string = format_access_request_callback(chat_id, group_id, generation)
+    unpacked = AccessCallback.unpack(wire_string)
+    assert unpacked.chat_id == chat_id
+    assert unpacked.group_id == group_id
+    assert unpacked.generation == generation
+    assert unpacked.action == AccessAction.REQUEST
+    assert unpacked.request_id == 0
+    assert unpacked.pack() == wire_string

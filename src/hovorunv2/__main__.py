@@ -42,7 +42,7 @@ def _setup_signal_handlers() -> None:
             loop.add_signal_handler(signal.SIGTSTP, current_task.cancel)
 
 
-async def _build_bot_router(container: AsyncContainer, settings: Settings) -> Router:
+async def build_bot_router(container: AsyncContainer, settings: Settings) -> Router:
     """Resolve dependencies and build main telegram router."""
     message_service = await container.get(MessageService)
     access_service = await container.get(AccessService)
@@ -63,7 +63,7 @@ async def _build_bot_router(container: AsyncContainer, settings: Settings) -> Ro
     )
 
 
-def _configure_dispatcher(container: AsyncContainer, router: Router) -> Dispatcher:
+def configure_dispatcher(container: AsyncContainer, router: Router) -> Dispatcher:
     """Configure aiogram dispatcher with outer middleware and DI wireup."""
     dp = Dispatcher()
     dp.update.outer_middleware(LogContextMiddleware())
@@ -72,7 +72,7 @@ def _configure_dispatcher(container: AsyncContainer, router: Router) -> Dispatch
     return dp
 
 
-async def _teardown_services(
+async def teardown_services(
     telegram_log_handler: AsyncTelegramHandler | None,
     container: AsyncContainer,
 ) -> None:
@@ -105,8 +105,8 @@ async def run_bot() -> None:
         await (await container.get(BetaPromptService)).announce_new()
 
         logger.info("Building Telegram router and dispatcher...")
-        router = await _build_bot_router(container, settings)
-        dp = _configure_dispatcher(container, router)
+        router = await build_bot_router(container, settings)
+        dp = configure_dispatcher(container, router)
 
         if settings.error_dm_enabled:
             telegram_log_handler = setup_telegram_logging(bot, await container.get(RoleService))
@@ -123,7 +123,7 @@ async def run_bot() -> None:
         try:
             await asyncio.to_thread(BOT_READY_PATH.unlink, missing_ok=True)
         finally:
-            await _teardown_services(telegram_log_handler, container)
+            await teardown_services(telegram_log_handler, container)
 
 
 def main() -> None:

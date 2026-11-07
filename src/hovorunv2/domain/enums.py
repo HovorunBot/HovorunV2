@@ -34,6 +34,15 @@ class TargetKind(StrEnum):
     GROUP = "group"
 
 
+class WorkerRole(StrEnum):
+    """Celery worker execution role determining initialized adapters."""
+
+    OPERATIONS = "operations"
+    MEDIA = "media"
+    BROWSER = "browser"
+    ALL = "all"
+
+
 class CommandName(StrEnum):
     """Names of all bot commands."""
 

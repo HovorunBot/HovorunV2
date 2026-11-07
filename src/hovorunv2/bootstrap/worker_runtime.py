@@ -6,7 +6,7 @@ from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from os import getpid
 from types import TracebackType
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 import redis
 from celery import Celery
@@ -14,21 +14,15 @@ from celery.signals import worker_process_init, worker_process_shutdown
 
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.jobs.admission import JobStage
-from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.jobs.feature_jobs import FEATURE_JOB_FUNCTION, JobEnvelope
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
-from hovorunv2.application.media.browser import BrowserTab
-from hovorunv2.application.media.downloader import NativeMediaDownloader
-from hovorunv2.application.media.errors import MediaFailure
-from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
 from hovorunv2.application.operations.operations_runner import WorkerOperationsRunner
 from hovorunv2.application.operations.release_updates import ReleaseUpdateService
-from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace, WallClock
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
+from hovorunv2.domain.enums import WorkerRole
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.infrastructure.queues.feature_queue import (
@@ -42,9 +36,14 @@ from hovorunv2.infrastructure.queues.feature_queue import (
 from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
-from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
-from hovorunv2.interface.telegram.settings.prompts import SyncTelegramUnauthorizedPromptSender
-from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramAPI, NativeTelegramDelivery
+from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
+from hovorunv2.interface.telegram.transport.sync_prompts import SyncTelegramUnauthorizedPromptSender
+
+if TYPE_CHECKING:
+    from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
+    from hovorunv2.application.media.browser import BrowserTab
+    from hovorunv2.application.media.errors import MediaFailure
+    from hovorunv2.application.media.payloads import RichMediaPayload
 
 RUNTIME_SOCKET_SECONDS = 2
 DEFAULT_SAFETY = UsageSafetyCaps()
@@ -100,7 +99,7 @@ class WorkerRuntime:
 
     @property
     def client(self) -> redis.Redis:
-        """Expose open Valkey client to the owning child."""
+        """Expose raw Valkey client for auxiliary worker services."""
         return self._require_open_client()
 
     @property
@@ -233,6 +232,7 @@ class WorkerChildContext:
         safety: UsageSafetyCaps | None = None,
         clock: Clock | None = None,
         *,
+        role: WorkerRole | str | None = None,
         runner: FeatureJobRunner | None = None,
         delivery: SyncTelegramDeliveryPort | None = None,
         http: SyncHTTPPort | None = None,
@@ -242,6 +242,8 @@ class WorkerChildContext:
         self._namespace = namespace or RuntimeNamespace()
         self._safety = safety or DEFAULT_SAFETY
         self._clock = clock or WallClock()
+        resolved_role = role or self._settings.worker_role
+        self._role = WorkerRole(resolved_role.lower()) if isinstance(resolved_role, str) else resolved_role
         self._runner = runner
         self._custom_delivery = delivery
         self._custom_http = http
@@ -252,10 +254,11 @@ class WorkerChildContext:
         self._http: SyncHTTPPort | None = None
         self._browser: SyncBrowserPort | None = None
         self._publisher: WorkerQueuePublisher | None = None
+        self._operations: WorkerOperationsRunner | None = None
         self._opened = runner is not None
 
     def open(self) -> Self:
-        """Open all child resources in the current process."""
+        """Open all child resources for the configured worker role in the current process."""
         if self._opened:
             return self
         self._db = WorkerDatabase(self._settings, FEATURE_REGISTRY, self._safety)
@@ -269,59 +272,71 @@ class WorkerChildContext:
             self._owned_http.__enter__()
             self._http = self._owned_http
         api = NativeTelegramAPI(self._http, self._settings.bot_token)
-        downloader = NativeMediaDownloader(self._http)
-        delivery = self._custom_delivery or NativeTelegramDelivery(api, downloader)
-        translation = NativeTranslationService(self._http, self._settings, self._db.policies)
-        extractor = NativeMediaExtractor()
-        if self._settings.browser_enabled:
-            self._browser = self._custom_browser or LazyBrowserService()
-        self._publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
-        self._runner = FeatureJobRunner(
-            admission=self._runtime.admission,
-            payloads=self._runtime.payloads,
-            budgets=self._runtime.budgets,
-            policies=self._db.policies,
-            ledger=self._db.ledger,
-            http=self._http,
-            delivery=delivery,
-            translation=translation,
-            extractor=extractor,
-            clock=self._clock,
-            settings=self._settings,
-            registry=FEATURE_REGISTRY,
-            browser=self._browser,
-            publisher=self._publisher,
-            telegram=api,
-            feedback=self._db.policies,
-            gate=ValkeyFeedbackGate(self._runtime.client, self._namespace),
-        )
-        prompt_sender = SyncTelegramUnauthorizedPromptSender(api)
-        notification_delivery = NotificationDeliveryService(
-            ledger=self._db.notifications,
-            payloads=self._runtime.payloads,
-            sender=api,
-            clock=self._clock,
-        )
-        release_updates = ReleaseUpdateService(
-            ops=self._db.operations,
-            ledger=self._db.notifications,
-            bodies=self._runtime.payloads,
-            settings=self._settings,
-            clock=self._clock,
-        )
-        self._operations = WorkerOperationsRunner(
-            ops=self._db.operations,
-            client=self._runtime.client,
-            namespace=self._namespace,
-            api=api,
-            prompt_sender=prompt_sender,
-            settings=self._settings,
-            clock=self._clock,
-            delivery=notification_delivery,
-            release=release_updates,
-        )
+
+        # 1. Initialize operations runner if role includes operations
+        if self._role in {WorkerRole.OPERATIONS, WorkerRole.ALL}:
+            prompt_sender = SyncTelegramUnauthorizedPromptSender(api)
+            notification_delivery = NotificationDeliveryService(
+                ledger=self._db.notifications,
+                payloads=self._runtime.payloads,
+                sender=api,
+                clock=self._clock,
+            )
+            release_updates = ReleaseUpdateService(
+                ops=self._db.operations,
+                ledger=self._db.notifications,
+                bodies=self._runtime.payloads,
+                settings=self._settings,
+                clock=self._clock,
+            )
+            self._operations = WorkerOperationsRunner(
+                ops=self._db.operations,
+                client=self._runtime.client,
+                namespace=self._namespace,
+                api=api,
+                prompt_sender=prompt_sender,
+                settings=self._settings,
+                clock=self._clock,
+                delivery=notification_delivery,
+                release=release_updates,
+            )
+
+        # 2. Initialize feature job runner if role includes media or browser
+        if self._role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.ALL}:
+            if self._role == WorkerRole.BROWSER or (self._role == WorkerRole.ALL and self._settings.browser_enabled):
+                self._browser = self._custom_browser or LazyBrowserService()
+            self._publisher = WorkerQueuePublisher(
+                self._settings.valkey_url,
+                self._namespace,
+                self._safety,
+                self._clock,
+            )
+            from hovorunv2.bootstrap.worker_media_runner import create_feature_runner  # noqa: PLC0415
+
+            self._runner = create_feature_runner(
+                settings=self._settings,
+                admission=self._runtime.admission,
+                payloads=self._runtime.payloads,
+                budgets=self._runtime.budgets,
+                client=self._runtime.client,
+                db=self._db,
+                http=self._http,
+                api=api,
+                clock=self._clock,
+                safety=self._safety,
+                namespace=self._namespace,
+                browser=self._browser,
+                publisher=self._publisher,
+                custom_delivery=self._custom_delivery,
+            )
+
         self._opened = True
         return self
+
+    @property
+    def role(self) -> WorkerRole:
+        """Expose the assigned execution role for this child context."""
+        return self._role
 
     @property
     def opened(self) -> bool:
@@ -332,7 +347,7 @@ class WorkerChildContext:
     def runner(self) -> FeatureJobRunner:
         """Expose initialized runner to worker task execution."""
         if self._runner is None:
-            msg = "Worker child context has not been opened."
+            msg = f"Feature job runner is not initialized for role={self._role.value}"
             raise ValueError(msg)
         return self._runner
 
@@ -340,9 +355,31 @@ class WorkerChildContext:
     def operations(self) -> WorkerOperationsRunner:
         """Expose initialized operations runner to maintenance task execution."""
         if self._operations is None:
-            msg = "Worker child context has not been opened."
+            msg = f"Worker operations runner is not initialized for role={self._role.value}"
             raise ValueError(msg)
         return self._operations
+
+    @property
+    def browser(self) -> SyncBrowserPort | None:
+        """Return the active synchronous browser service, or None if not configured."""
+        return self._browser
+
+    def recover(self) -> int:
+        """Run bounded recovery sweep across admission lifecycle."""
+        if self._runner is not None:
+            return self._runner.recover()
+        if self._runtime is not None and self._db is not None:
+            publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
+            try:
+                from hovorunv2.application.jobs.worker_lifecycle_service import WorkerLifecycleService  # noqa: PLC0415
+
+                lifecycle = WorkerLifecycleService(
+                    self._runtime.admission, self._runtime.budgets, self._db.ledger, self._clock
+                )
+                return lifecycle.recover(publisher)
+            finally:
+                publisher.close()
+        return 0
 
     def close(self) -> None:
         """Close all child resources deterministically."""
@@ -376,18 +413,26 @@ def init_worker_child(
     settings: Settings | None = None,
     namespace: RuntimeNamespace | None = None,
     safety: UsageSafetyCaps | None = None,
+    *,
+    role: WorkerRole | str | None = None,
 ) -> WorkerChildContext:
     """Initialize resources for the current worker child process."""
     global _current_worker_context  # noqa: PLW0603
     if _current_worker_context is not None:
         return _current_worker_context
-    context = WorkerChildContext(settings, namespace, safety)
+    context = WorkerChildContext(settings, namespace, safety, role=role)
     context.open()
     _current_worker_context = context
-    set_feature_task_runner(_execute_task_in_child)
-    set_recovery_runner(context.runner.recover)
-    set_operations_runner(context.operations)
-    logger.info("Worker child resources initialized")
+    if context.role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.ALL}:
+        set_feature_task_runner(_execute_task_in_child)
+    else:
+        set_feature_task_runner(None)
+    set_recovery_runner(context.recover)
+    if context.role in {WorkerRole.OPERATIONS, WorkerRole.ALL}:
+        set_operations_runner(context.operations)
+    else:
+        set_operations_runner(None)
+    logger.info("Worker child resources initialized for role=%s", context.role.value)
     return context
 
 
@@ -432,9 +477,21 @@ def set_worker_runner(runner: FeatureJobRunner | None) -> None:
         if _current_worker_context is not None:
             _current_worker_context.close()
         _current_worker_context = WorkerChildContext(runner=runner)
-        set_feature_task_runner(_execute_task_in_child)
-        set_recovery_runner(runner.recover)
+        _apply_worker_context(_current_worker_context)
+
+
+def _apply_worker_context(context: WorkerChildContext | None) -> None:
+    if context is None:
+        set_feature_task_runner(None)
+        set_recovery_runner(None)
         set_operations_runner(None)
+        return
+
+    is_media = context.role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.ALL}
+    set_feature_task_runner(_execute_task_in_child if is_media else None)
+    set_recovery_runner(context.recover)
+    is_ops = context.role in {WorkerRole.OPERATIONS, WorkerRole.ALL}
+    set_operations_runner(context.operations if is_ops and context.opened else None)
 
 
 @contextmanager
@@ -445,6 +502,7 @@ def worker_child_context(
     clock: Clock | None = None,
     runner: FeatureJobRunner | None = None,
     *,
+    role: WorkerRole | str | None = None,
     delivery: SyncTelegramDeliveryPort | None = None,
     http: SyncHTTPPort | None = None,
     browser: SyncBrowserPort | None = None,
@@ -453,29 +511,29 @@ def worker_child_context(
     global _current_worker_context  # noqa: PLW0603
     old_context = _current_worker_context
     context = (
-        WorkerChildContext(runner=runner)
+        WorkerChildContext(runner=runner, role=role)
         if runner is not None
-        else WorkerChildContext(settings, namespace, safety, clock, delivery=delivery, http=http, browser=browser)
+        else WorkerChildContext(
+            settings,
+            namespace,
+            safety,
+            clock,
+            role=role,
+            delivery=delivery,
+            http=http,
+            browser=browser,
+        )
     )
     if runner is None:
         context.open()
     _current_worker_context = context
-    set_feature_task_runner(_execute_task_in_child)
-    set_recovery_runner(context.runner.recover)
-    set_operations_runner(context.operations if runner is None else None)
+    _apply_worker_context(context)
     try:
         yield context.runner
     finally:
         context.close()
         _current_worker_context = old_context
-        if old_context is not None:
-            set_feature_task_runner(_execute_task_in_child)
-            set_recovery_runner(old_context.runner.recover)
-            set_operations_runner(old_context.operations if old_context.opened else None)
-        else:
-            set_feature_task_runner(None)
-            set_recovery_runner(None)
-            set_operations_runner(None)
+        _apply_worker_context(old_context)
 
 
 @worker_process_init.connect

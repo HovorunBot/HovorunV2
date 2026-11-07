@@ -5,9 +5,10 @@ no-op or acceptance outcome; they are not generic availability checks. Required
 operations propagate failures to the owning workflow. Injected adapters are mandatory.
 """
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from aiogram import Bot
+if TYPE_CHECKING:
+    from aiogram import Bot
 
 from hovorunv2.application.access.permissions import PermissionFacts
 from hovorunv2.domain.audit import ActorContext

@@ -3,9 +3,13 @@
 import asyncio
 import json
 import logging
+import os
 import sys
 import traceback
-from os import _exit, fork, getpid, waitpid
+import types
+from collections.abc import Sequence
+from importlib.abc import MetaPathFinder
+from importlib.machinery import ModuleSpec
 
 from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_jobs import JobOutcome
@@ -19,13 +23,32 @@ from hovorunv2.bootstrap.worker_runtime import (
 from hovorunv2.infrastructure.config import Settings
 
 
+class BlockedImportFinder(MetaPathFinder):
+    """Prevent imports of specified modules in subprocess probe."""
+
+    def __init__(self, *blocked: str) -> None:
+        self._blocked = set(blocked)
+
+    def find_spec(
+        self,
+        fullname: str,
+        path: Sequence[str] | None = None,
+        target: types.ModuleType | None = None,
+    ) -> ModuleSpec | None:
+        """Raise ImportError if a blocked module is imported."""
+        del path, target
+        if fullname in self._blocked or any(fullname.startswith(f"{b}.") for b in self._blocked):
+            msg = f"Import of blocked module '{fullname}' is forbidden"
+            raise ImportError(msg)
+        return None
+
+
 def main() -> None:
     """Verify clean child execution without event loops, container imports, or Chromium in media queue."""
     logging.disable(logging.CRITICAL)
     assert "DrissionPage" not in sys.modules
-    assert "hovorunv2.infrastructure.browser.async_browser" not in sys.modules
-    sys.modules["DrissionPage"] = None
-    sys.modules["hovorunv2.infrastructure.browser.async_browser"] = None
+    assert "aiogram" not in sys.modules
+    sys.meta_path.insert(0, BlockedImportFinder("DrissionPage", "aiogram"))
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -49,7 +72,7 @@ def main() -> None:
         _env_file=None,
     )
 
-    child = fork()
+    child = os.fork()
     if child == 0:
         try:
             init_worker_child(settings, namespace, UsageSafetyCaps())
@@ -57,15 +80,15 @@ def main() -> None:
             outcome = runner.run(envelope_json, JobStage.MEDIA)
             shutdown_worker_child()
             if outcome not in {JobOutcome.COMPLETE.value, JobOutcome.FAILED.value}:
-                _exit(2)
-            _exit(0)
+                os._exit(2)
+            os._exit(0)
         except Exception:
             traceback.print_exc()
-            _exit(1)
+            os._exit(1)
 
-    _, status = waitpid(child, 0)
+    _, status = os.waitpid(child, 0)
     assert status == 0, f"Child worker process failed with status {status}"
-    sys.stdout.write(json.dumps({"pid": getpid(), "status": "ok"}) + "\n")
+    sys.stdout.write(json.dumps({"pid": os.getpid(), "status": "ok"}) + "\n")
 
 
 if __name__ == "__main__":

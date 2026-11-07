@@ -53,7 +53,7 @@ def find_browser_executable() -> str | None:
     if (env_path := os.environ.get("BROWSER_PATH")) and _is_executable(Path(env_path)):
         return env_path
 
-    return _select_browser(_browser_candidates())
+    return select_browser(browser_candidates())
 
 
 def _is_executable(path: Path) -> bool:
@@ -73,7 +73,7 @@ def _installation_kind(path: Path) -> InstallationKind:
     return InstallationKind.PACKAGE
 
 
-def _select_browser(candidates: Iterable[Path]) -> str | None:
+def select_browser(candidates: Iterable[Path]) -> str | None:
     """Keep installation priority even when PATH lists sandboxed browsers first."""
     for path in sorted(dict.fromkeys(candidates), key=_installation_kind):
         if _is_executable(path):
@@ -81,7 +81,7 @@ def _select_browser(candidates: Iterable[Path]) -> str | None:
     return None
 
 
-def _browser_candidates() -> Iterator[Path]:
+def browser_candidates() -> Iterator[Path]:
     """Combine PATH, package locations and bounded portable-browser directories."""
     home = Path.home()
     path_directories = tuple(Path(directory) for directory in os.get_exec_path())
@@ -113,10 +113,10 @@ def _browser_candidates() -> Iterator[Path]:
             yield directory / name
 
     appimage_directories = (*path_directories, home / "Applications", home / "AppImages", Path("/opt/appimages"))
-    yield from _appimage_candidates(appimage_directories)
+    yield from appimage_candidates(appimage_directories)
 
 
-def _appimage_candidates(directories: Iterable[Path]) -> Iterator[Path]:
+def appimage_candidates(directories: Iterable[Path]) -> Iterator[Path]:
     """Search browser AppImages without recursively scanning disks or executing files."""
     for directory in dict.fromkeys(directories):
         try:

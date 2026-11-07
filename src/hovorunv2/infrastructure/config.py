@@ -35,6 +35,7 @@ class BrokerSettings(BaseSettings):
     """Valkey broker settings for scheduler processes that need no bot or database credentials."""
 
     valkey_url: str = "redis://localhost:6379/0"
+    worker_role: str = "all"
 
     model_config = SettingsConfigDict(env_file=DOT_ENV_PATH, extra="ignore", hide_input_in_errors=True)
 

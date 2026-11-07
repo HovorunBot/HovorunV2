@@ -1,11 +1,11 @@
 """Real Valkey regressions for admission ownership, stage recovery and publication fences."""
 
 import asyncio
+import os
 import secrets
 import subprocess
 import sys
 import time
-from os import _exit, fork, waitpid
 
 import pytest
 import redis.asyncio as async_redis
@@ -437,14 +437,14 @@ def verify_inherited_runtime_rejected(namespace: RuntimeNamespace) -> None:
     with WorkerRuntime(settings, WallClock(), namespace, UsageSafetyCaps()) as runtime:
         admission = runtime.admission
         admission.get("inheritance-probe")
-        child = fork()
+        child = os.fork()
         if child == 0:
             try:
                 admission.get("inheritance-probe")
             except ValueError:
-                _exit(0)
-            _exit(1)
-        _, status = waitpid(child, 0)
+                os._exit(0)
+            os._exit(1)
+        _, status = os.waitpid(child, 0)
         assert status == 0
 
 

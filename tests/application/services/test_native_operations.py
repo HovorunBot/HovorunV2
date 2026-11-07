@@ -9,7 +9,7 @@ from dishka import AsyncContainer, make_async_container
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.__main__ import _build_bot_router, _configure_dispatcher, _teardown_services
+from hovorunv2.__main__ import build_bot_router, configure_dispatcher, teardown_services
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import MembershipEvidence, MembershipStatus
@@ -43,8 +43,8 @@ from hovorunv2.infrastructure.queues.feature_queue import (
     sweep_expired_cleanups_task,
 )
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
-from hovorunv2.interface.telegram.settings.prompts import SyncTelegramUnauthorizedPromptSender
 from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramAPI
+from hovorunv2.interface.telegram.transport.sync_prompts import SyncTelegramUnauthorizedPromptSender
 from tests.conftest import provision_role
 from tests.utils.runtime import ManualClock
 
@@ -415,16 +415,16 @@ async def test_bot_startup_builds_dispatchers_without_http_calls(
     container2 = make_async_container(InfrastructureProvider(), AppProvider())
     try:
         settings = await container1.get(Settings)
-        router1 = await _build_bot_router(container1, settings)
-        dp1 = _configure_dispatcher(container1, router1)
+        router1 = await build_bot_router(container1, settings)
+        dp1 = configure_dispatcher(container1, router1)
         assert dp1 is not None
 
-        router2 = await _build_bot_router(container2, settings)
-        dp2 = _configure_dispatcher(container2, router2)
+        router2 = await build_bot_router(container2, settings)
+        dp2 = configure_dispatcher(container2, router2)
         assert dp2 is not None
 
         # Verify no calls or notifications were triggered
         assert len(sync_http.calls) == 0
     finally:
-        await _teardown_services(None, container1)
-        await _teardown_services(None, container2)
+        await teardown_services(None, container1)
+        await teardown_services(None, container2)

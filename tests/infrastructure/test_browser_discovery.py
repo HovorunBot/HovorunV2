@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 
 from hovorunv2.infrastructure.browser.browser_discovery import (
-    _appimage_candidates,
-    _browser_candidates,
-    _select_browser,
+    appimage_candidates,
+    browser_candidates,
     find_browser_executable,
+    select_browser,
 )
 
 pytestmark = [pytest.mark.browser]
@@ -30,9 +30,9 @@ def test_installation_priority_overrides_candidate_order(tmp_path: Path) -> None
     appimage = executable(tmp_path / "Applications/Brave.AppImage")
     candidates = [appimage, snap, flatpak, package]
     for expected in (package, flatpak, snap, appimage):
-        assert _select_browser(candidates) == str(expected)
+        assert select_browser(candidates) == str(expected)
         expected.unlink()
-    assert _select_browser(candidates) is None
+    assert select_browser(candidates) is None
 
 
 @pytest.mark.parametrize(
@@ -49,9 +49,9 @@ def test_path_symlink_keeps_installation_priority(tmp_path: Path, target_path: s
     alias = tmp_path / "chromium"
     alias.symlink_to(target)
     preferred = executable(tmp_path / preferred_path)
-    assert _select_browser([alias, preferred]) == str(preferred)
+    assert select_browser([alias, preferred]) == str(preferred)
     preferred.unlink()
-    assert _select_browser([alias, preferred]) == str(alias)
+    assert select_browser([alias, preferred]) == str(alias)
 
 
 def test_discovery_rejects_nonexecutable_files_and_directories(tmp_path: Path) -> None:
@@ -60,7 +60,7 @@ def test_discovery_rejects_nonexecutable_files_and_directories(tmp_path: Path) -
     download.touch()
     directory = tmp_path / "chromium"
     directory.mkdir()
-    assert _select_browser([directory, download]) is None
+    assert select_browser([directory, download]) is None
 
 
 def test_override_wins_and_invalid_override_falls_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -84,17 +84,17 @@ def test_home_candidates_include_bundles_flatpak_and_portable_browsers(
     bundle = executable(tmp_path / "Applications/Brave Browser.app/Contents/MacOS/Brave Browser")
     flatpak = executable(tmp_path / "data/flatpak/exports/bin/com.vivaldi.Vivaldi")
     appimage = executable(tmp_path / "AppImages/Chromium-123-x86_64.AppImage")
-    all_candidates = list(_browser_candidates())
+    all_candidates = list(browser_candidates())
     assert Path("/opt/homebrew/bin/chromium") in all_candidates
     assert Path("/usr/local/bin/chromium") in all_candidates
     assert Path("/home/linuxbrew/.linuxbrew/bin/chromium") in all_candidates
     assert Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") in all_candidates
     candidates = [path for path in all_candidates if path.is_relative_to(tmp_path)]
-    assert _select_browser(candidates) == str(bundle)
+    assert select_browser(candidates) == str(bundle)
     bundle.unlink()
-    assert _select_browser(candidates) == str(flatpak)
+    assert select_browser(candidates) == str(flatpak)
     flatpak.unlink()
-    assert _select_browser(candidates) == str(appimage)
+    assert select_browser(candidates) == str(appimage)
 
 
 def test_appimage_search_is_bounded_to_browser_files(tmp_path: Path) -> None:
@@ -102,4 +102,4 @@ def test_appimage_search_is_bounded_to_browser_files(tmp_path: Path) -> None:
     browser = executable(tmp_path / "Brave-Browser-x86_64.appimage")
     executable(tmp_path / "Editor.AppImage")
     executable(tmp_path / "nested/Chromium.AppImage")
-    assert list(_appimage_candidates([tmp_path, tmp_path / "missing"])) == [browser]
+    assert list(appimage_candidates([tmp_path, tmp_path / "missing"])) == [browser]

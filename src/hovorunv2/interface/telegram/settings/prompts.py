@@ -1,16 +1,26 @@
 """Telegram unauthorized prompt presentation and delivery."""
 
-import json
-
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.groups.ports import ChatStore
-from hovorunv2.application.operations.ports import SyncUnauthorizedPromptPort, WorkerTelegramPort
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
+from hovorunv2.interface.telegram.transport.sync_prompts import (
+    ACCESS_REQUEST_BUTTON_TEXT,
+    UNAUTHORIZED_PROMPT_TEXT,
+    SyncTelegramUnauthorizedPromptSender,
+)
+
+__all__ = [
+    "ACCESS_REQUEST_BUTTON_TEXT",
+    "UNAUTHORIZED_PROMPT_TEXT",
+    "SyncTelegramUnauthorizedPromptSender",
+    "TelegramUnauthorizedPromptSender",
+    "build_unauthorized_prompt",
+]
 
 logger = get_logger(__name__)
 
@@ -29,23 +39,13 @@ def build_unauthorized_prompt(chat_id: int, group_id: int, generation: int) -> t
     builder = InlineKeyboardBuilder()
     builder.add(
         InlineKeyboardButton(
-            text="🛡️ Activate / Request Access",
+            text=ACCESS_REQUEST_BUTTON_TEXT,
             callback_data=AccessCallback(
                 chat_id=chat_id, group_id=group_id, generation=generation, action=AccessAction.REQUEST
             ).pack(),
         )
     )
-
-    text = (
-        "👋 <b>Hello! I am Hovorun — Your Media Companion</b>\n\n"
-        "I enhance group conversations with fast media processing and automatic translation.\n\n"
-        "⚠️ <b>Chat Authorization Required:</b>\n"
-        "To keep performance reliable, I only operate in approved chats.\n"
-        "A trusted user can activate the bot with the button below or <code>/allow_chat</code>. "
-        "Other group administrators can request approval.\n\n"
-        "💬 <i>Need help or have questions? Type <code>/feedback &lt;message&gt;</code> to contact developers.</i>"
-    )
-    return text, builder
+    return UNAUTHORIZED_PROMPT_TEXT, builder
 
 
 class TelegramUnauthorizedPromptSender:
@@ -106,25 +106,3 @@ class TelegramUnauthorizedPromptSender:
             return False
         text, builder = build_unauthorized_prompt(chat_id, chat.id, chat.generation)
         return await self._dispatch_prompt(bot, chat_id, text, builder)
-
-
-class SyncTelegramUnauthorizedPromptSender(SyncUnauthorizedPromptPort):
-    """Delivers unauthorized guidance prompt to Telegram chats synchronously."""
-
-    def __init__(self, api: WorkerTelegramPort) -> None:
-        self._api = api
-
-    def send(self, chat_id: int, group_id: int, generation: int) -> bool:
-        """Send prompt to unauthorized chat.
-
-        Args:
-            chat_id: Telegram chat ID receiving the prompt.
-            group_id: Group entity ID bound into the approval callback.
-            generation: Group identity generation bound into the approval callback.
-
-        Returns:
-            True when the prompt was delivered, False otherwise.
-        """
-        text, builder = build_unauthorized_prompt(chat_id, group_id, generation)
-        reply_markup = json.dumps(builder.as_markup().model_dump(mode="json"))
-        return self._api.send_message(chat_id, text, reply_markup=reply_markup) is not None
