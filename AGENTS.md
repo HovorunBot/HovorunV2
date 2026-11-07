@@ -95,6 +95,7 @@ Before planning, implementing, or reviewing an `ai-schemes/` initiative, load th
 - **Architect:** `.agents/skills/architect/SKILL.md` (inspect current code, populate specifications, decompose into acyclic commit-sized blocks in `blocks/`, maintain contracts and `manifest.json`).
 - **Implementer:** `.agents/skills/implementer/SKILL.md` (execute one block at a time, verify direct prerequisites, implement outcome and tests, write implementation report in `reports/`, update block and `STATUS.md`).
 - **Reviewer:** `.agents/skills/reviewer/SKILL.md` (independently validate implementation diff against requirements and contracts, record findings under `reports/`, verify acceptance criteria).
+- **Workflow orchestration:** `.agents/skills/run-workflow/SKILL.md` (coordinate the existing roles for staged or explicitly authorized parallel work when `run_workflow` is available; preserve role procedures, prerequisite checks, and authorization boundaries).
 
 If the assistant environment has no automated skill loader, open the matching `SKILL.md` file directly.
 

@@ -8,6 +8,7 @@ Tracked workspace customization directory providing tool-neutral skills, role gu
   - `skills/architect/SKILL.md`: Planning, specification drafting, and block decomposition.
   - `skills/implementer/SKILL.md`: Single-block implementation procedure and verification.
   - `skills/reviewer/SKILL.md`: Independent verification, acceptance criteria audit, and review reporting.
+  - `skills/run-workflow/SKILL.md`: Optional orchestration of the existing roles when the environment exposes `run_workflow`; delegation and parallel execution require explicit authorization.
 - `roles.md`: Role responsibilities, boundaries, model tier guidelines, and parallel execution constraints.
 - `prompts/`: Role prompt templates with standard placeholders.
 - `templates/`: Skeletons for scaffolding new `ai-schemes/` initiatives.
