@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -81,3 +82,42 @@ async def test_lean_worker_import_does_not_load_browser_packages() -> None:
     )
     process = await asyncio.create_subprocess_exec(sys.executable, "-W", "error", "-c", script)
     assert await process.wait() == 0
+
+
+@pytest.mark.unit
+def test_dockerfile_multi_stage_role_contracts() -> None:
+    """Dockerfile defines dedicated role targets with BuildKit caching and minimal runtime layers."""
+    dockerfile_path = Path(__file__).resolve().parents[2] / "Dockerfile"
+    content = dockerfile_path.read_text(encoding="utf-8")
+
+    expected_stages = [
+        "FROM ${PYTHON_IMAGE} AS base",
+        "FROM base AS builder-base",
+        "FROM builder-base AS builder-migrate",
+        "FROM builder-base AS builder-bot",
+        "FROM builder-base AS builder-worker-ops",
+        "FROM builder-base AS builder-worker-media",
+        "FROM builder-base AS builder-worker-browser",
+        "FROM base AS migrate",
+        "FROM base AS bot",
+        "FROM base AS worker-operations",
+        "FROM base AS worker-media",
+        "FROM base AS worker-browser",
+        "FROM bot AS default",
+    ]
+    for stage in expected_stages:
+        assert stage in content, f"Missing expected stage: {stage}"
+
+    assert "--mount=type=cache,target=/root/.cache/uv" in content
+    assert "--mount=type=cache,target=/var/cache/apt" in content
+
+    runtime_targets = ["migrate", "bot", "worker-operations", "worker-media", "worker-browser"]
+    sections = content.split("FROM base AS ")
+    for section in sections[1:]:
+        stage_name = section.split()[0]
+        if stage_name in runtime_targets:
+            stage_body = section.split("FROM ")[0]
+            assert "/bin/uv" not in stage_body, f"Stage {stage_name} must not copy or invoke /bin/uv"
+            assert "COPY src" not in stage_body, f"Stage {stage_name} must not duplicate src/ tree"
+            assert "USER appuser" in stage_body, f"Stage {stage_name} must run as non-root appuser"
+            assert "/app/.venv/bin/" in stage_body, f"Stage {stage_name} must execute /app/.venv/bin/* entrypoint"

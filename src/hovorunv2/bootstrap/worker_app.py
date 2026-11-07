@@ -70,3 +70,4 @@ def build_worker_application(settings: BrokerSettings, namespace: RuntimeNamespa
 
 
 app = build_worker_application(BrokerSettings(), RuntimeNamespace())
+celery_app = app
