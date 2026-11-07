@@ -1,9 +1,7 @@
 """Tests for Instagram rich media command."""
 
 import logging
-from unittest.mock import MagicMock, patch
 
-import instaloader
 import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
@@ -131,42 +129,8 @@ def test_instagram_sync_media_stage_extractor() -> None:
 
 
 @pytest.mark.unit
-def test_instagram_sync_media_stage_instaloader() -> None:
-    """Test that when yt-dlp misses, instaloader extracts post directly in media stage."""
-    service = InstagramService.sync(embed=DisabledEmbedAdapter())
-    url = "https://www.instagram.com/p/C9876543210/"
-    http = FakeSyncHTTP()
-
-    class FailingExtractor(NativeMediaExtractor):
-        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
-            msg = "yt-dlp miss"
-            raise MediaExtractionError(msg)
-
-    mock_post = MagicMock(spec=instaloader.Post)
-    mock_post.caption = "Instaloader post content"
-    mock_post.owner_profile.full_name = "Insta Full Name"
-    mock_post.owner_username = "instauser"
-    mock_post.likes = 42
-    mock_post.comments = 5
-    mock_post.video_view_count = None
-    mock_post.typename = "GraphImage"
-    mock_post.is_video = False
-    mock_post.url = "https://scontent.cdninstagram.com/photo.jpg"
-
-    with patch("instaloader.Post.from_shortcode", return_value=mock_post):
-        payload = service.extract_media_sync(url, http, FailingExtractor())
-
-    assert payload is not None
-    assert payload.author_name == "Insta Full Name"
-    assert payload.author_handle == "instauser"
-    assert payload.content == "Instaloader post content"
-    assert len(payload.media_items) == 1
-    assert payload.media_items[0].url == "https://scontent.cdninstagram.com/photo.jpg"
-
-
-@pytest.mark.unit
 def test_instagram_sync_media_stage_requires_browser_continuation() -> None:
-    """Test that when yt-dlp and instaloader miss, BrowserContinuationRequired is raised."""
+    """Test that when yt-dlp and the embed fallback miss, BrowserContinuationRequired is raised."""
     service = InstagramService.sync(embed=DisabledEmbedAdapter())
     url = "https://www.instagram.com/p/C9876543210/"
     http = FakeSyncHTTP()
@@ -176,10 +140,7 @@ def test_instagram_sync_media_stage_requires_browser_continuation() -> None:
             msg = "yt-dlp miss"
             raise MediaExtractionError(msg)
 
-    with (
-        patch("instaloader.Post.from_shortcode", side_effect=instaloader.exceptions.InstaloaderException("blocked")),
-        pytest.raises(BrowserContinuationRequired),
-    ):
+    with pytest.raises(BrowserContinuationRequired):
         service.extract_media_sync(url, http, FailingExtractor())
 
 
@@ -232,7 +193,7 @@ def test_instagram_sync_browser_stage_fallback_to_og() -> None:
 def test_worker_media_stage_errors_in_strategy_order(caplog: pytest.LogCaptureFixture) -> None:
     """Pin each worker-tier failure in the exact cascade order for a reel shortcode.
 
-    The worker runs direct → generic yt-dlp → instaloader → browser-continuation. Each tier
+    The worker runs direct -> generic yt-dlp -> embed -> browser-continuation. Each tier
     translates its own backend failure into a MediaExtractionError so a backend outage can be
     traced to the tier that consumed the worker's execution budget instead of one blanket error.
     """
@@ -252,21 +213,8 @@ def test_worker_media_stage_errors_in_strategy_order(caplog: pytest.LogCaptureFi
     with pytest.raises(MediaExtractionError, match="Media extraction failed"):
         BackendDownExtractor().extract(url)
 
-    blocked = instaloader.exceptions.ConnectionException("blocked")
-
-    # Tier 3 — instaloader: a blocked backend surfaces as MediaExtractionError.
-    with (
-        patch("instaloader.Post.from_shortcode", side_effect=blocked),
-        pytest.raises(MediaExtractionError, match="Provider backend extraction failed"),
-    ):
-        service._extract_non_browser_fallback_sync(url, http)  # noqa: SLF001
-
-    # Tier 4 — the combined media stage walks every tier in order and requests browser continuation.
-    with (
-        patch("instaloader.Post.from_shortcode", side_effect=blocked),
-        caplog.at_level(logging.INFO),
-        pytest.raises(BrowserContinuationRequired),
-    ):
+    # Tier 3 — the combined media stage walks every tier in order and requests browser continuation.
+    with caplog.at_level(logging.INFO), pytest.raises(BrowserContinuationRequired):
         service.extract_media_sync(url, http, BackendDownExtractor())
 
     order = [record.getMessage() for record in caplog.records if record.name == "hovorunv2.application.media.actions"]
@@ -274,8 +222,6 @@ def test_worker_media_stage_errors_in_strategy_order(caplog: pytest.LogCaptureFi
         "Starting direct extraction strategy for provider instagram",
         "Starting generic extraction strategy for provider instagram",
         "Generic extraction strategy failed for provider instagram",
-        "Starting non-browser fallback strategy for provider instagram",
-        "Non-browser fallback strategy failed for provider instagram",
         "Starting embed fallback strategy for provider instagram",
         "Embed fallback strategy failed for provider instagram",
         "Provider requires browser continuation: instagram",

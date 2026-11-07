@@ -241,10 +241,6 @@ class BaseMediaClient(MediaParser):
             provider_name=self.name,
         )
 
-    def _extract_non_browser_fallback_sync(self, url: str, http: SyncHTTPPort) -> RichMediaPayload | None:
-        """Override in subclasses for non-browser synchronous fallbacks (e.g. instaloader)."""
-        return None
-
     def _extract_embed_fallback_sync(self, url: str) -> RichMediaPayload | None:
         """Override for providers with a bounded public-embed fallback owning its HTTP client."""
         return None

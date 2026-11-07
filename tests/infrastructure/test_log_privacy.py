@@ -13,7 +13,6 @@ from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.errors import MediaDownloadError
-from hovorunv2.application.media.providers.instagram import PrivateInstaloaderContext
 from hovorunv2.domain.enums import Role
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.infrastructure.logger import (
@@ -129,17 +128,10 @@ def test_safe_debug_metadata_survives_privacy_formatting() -> None:
 
 
 async def test_backend_diagnostics_never_write_payloads(capsys: pytest.CaptureFixture[str]) -> None:
-    """Backend retries cannot bypass logging privacy through stdout, stderr or retained errors."""
+    """Backend retries cannot bypass logging privacy through stdout or stderr."""
     backend = MediaBackendLogger()
     backend.debug(PRIVATE_URL)
     backend.warning(PRIVATE_URL)
     backend.error(PRIVATE_URL)
-    context = PrivateInstaloaderContext(quiet=True)
-    try:
-        context.log(PRIVATE_URL)
-        context.error(PRIVATE_URL)
-        assert context.error_log == []
-    finally:
-        await asyncio.to_thread(context.close)
     captured = capsys.readouterr()
     assert SENTINEL not in captured.out + captured.err

@@ -762,7 +762,6 @@ browser = [
     { name = "celery", extra = ["redis"] },
     { name = "curl-cffi" },
     { name = "drissionpage" },
-    { name = "instaloader" },
     { name = "redis" },
     { name = "requests" },
     { name = "yt-dlp", extra = ["curl-cffi"] },
@@ -778,7 +777,6 @@ worker-browser = [
     { name = "celery", extra = ["redis"] },
     { name = "curl-cffi" },
     { name = "drissionpage" },
-    { name = "instaloader" },
     { name = "redis" },
     { name = "requests" },
     { name = "yt-dlp", extra = ["curl-cffi"] },
@@ -787,7 +785,6 @@ worker-media = [
     { name = "beautifulsoup4" },
     { name = "celery", extra = ["redis"] },
     { name = "curl-cffi" },
-    { name = "instaloader" },
     { name = "redis" },
     { name = "requests" },
     { name = "yt-dlp", extra = ["curl-cffi"] },
@@ -834,7 +831,6 @@ requires-dist = [
     { name = "hovorunv2", extras = ["worker-browser"], marker = "extra == 'browser'" },
     { name = "hovorunv2", extras = ["worker-media"], marker = "extra == 'worker-browser'" },
     { name = "hovorunv2", extras = ["worker-ops"], marker = "extra == 'worker-media'" },
-    { name = "instaloader", marker = "extra == 'worker-media'" },
     { name = "psycopg", extras = ["binary"] },
     { name = "pycountry" },
     { name = "pydantic" },
@@ -905,18 +901,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/01/e1/2069291243c926a2ff1cd706c7f3eeb9b62144bf60f77c9fb9ff2fb26bd3/iniconfig-2.3.1.tar.gz", hash = "sha256:67f4b9c50da0dedf52af349e7749a80a9057a5031199791b906c3bb3ae878960", size = 21209, upload-time = "2026-10-06T22:48:38.076Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/56/43/4ca9e49d27a1fcf6bece6f6aec0ea46bb9112489b93d4b688fb415457bdb/iniconfig-2.3.1-py3-none-any.whl", hash = "sha256:9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7", size = 7552, upload-time = "2026-10-06T22:48:36.959Z" },
-]
-
-[[package]]
-name = "instaloader"
-version = "4.16"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/8e/7e602450eb5460af3ba4c8bfc6e5dce57a085872889de6d2b35ee329f366/instaloader-4.16.tar.gz", hash = "sha256:85c2abedc0a3933cfa7c054661a2fba4bb8a03547e746f571fa503bea1aed331", size = 74108, upload-time = "2026-10-26T21:38:12.419Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/e7/4ecfef2a49a869a27a314883804133a9937313b25e5fb679af04e5aa6839/instaloader-4.16-py3-none-any.whl", hash = "sha256:92824be2c64793097f0fb97e9e4a150516996a594cc25b795abd6976263eaa93", size = 75193, upload-time = "2026-10-26T21:38:11.377Z" },
 ]
 
 [[package]]
