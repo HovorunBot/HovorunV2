@@ -8,6 +8,7 @@ from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_jobs import JobEnvelope
 from hovorunv2.application.media.browser import BrowserTab
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import MediaFailure
 from hovorunv2.application.media.payloads import RichMediaPayload
 
@@ -70,7 +71,9 @@ class SyncHTTPPort(Protocol):
 class SyncBrowserPort(Protocol):
     """Protocol for synchronous worker headless browser automation."""
 
-    def get_content(self, url: str, wait_selector: str | None = None) -> str:
+    def get_content(
+        self, url: str, wait_selector: str | None = None, *, deadline: ExtractionDeadline | None = None
+    ) -> str:
         """Return rendered HTML; navigation or browser failures raise BrowserError."""
         ...
 
@@ -80,6 +83,8 @@ class SyncBrowserPort(Protocol):
         extractor_fn: Callable[[BrowserTab, str], RichMediaPayload | None],
         wait_selector: str | None = None,
         cookies: list[dict[str, object]] | None = None,
+        *,
+        deadline: ExtractionDeadline | None = None,
     ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
         """Run extraction and download in one synchronous browser session."""
         ...

@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **media**: bound Instagram fallback execution
 - **migrations**: preserve caller logging during embedded upgrades
 - **runtime**: increase worker task timeout for browser extraction
 - **logging**: preserve library diagnostics and capture stacktraces on errors

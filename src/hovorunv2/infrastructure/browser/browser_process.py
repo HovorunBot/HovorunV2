@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from os import getpid
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -187,6 +188,15 @@ class OwnedChromium:
                     self._stop_process()
                 finally:
                     self._cleanup_profile()
+
+    def abort(self) -> None:
+        """Kill the exact owned subprocess before expired SDK cleanup can wait on it."""
+        self._require_owner()
+        process = self._process
+        if process is not None and process.poll() is None:
+            # The owned process may exit between observation and signal delivery.
+            with suppress(ProcessLookupError):
+                process.kill()
 
     def _close_page(self) -> None:
         page = self._page

@@ -2,18 +2,24 @@
 
 import html
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import ExitStack, contextmanager
 from threading import BoundedSemaphore
+from time import monotonic
 from urllib.parse import SplitResult, urlsplit
 
 from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
 
 from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportError
 from hovorunv2.application.media.browser import BrowserTab
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
 from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.infrastructure.browser.bounded_tab import BoundedBrowserTab
 from hovorunv2.infrastructure.browser.browser_process import OwnedChromium
+from hovorunv2.infrastructure.browser.operation_timeout import BrowserOperationTimeout
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
+lazy from hovorunv2.infrastructure.http_transport.extraction_http import ExtractionHTTPClient
 
 DEFAULT_BROWSER_TIMEOUT_SECONDS = 30
 SELECTOR_TIMEOUT_SECONDS = 10
@@ -68,13 +74,20 @@ def _cookie_pair(cookie: dict[str, object], target: SplitResult) -> tuple[str, s
     return name, value
 
 
-def download_tab_media(tab: BrowserTab, payload: RichMediaPayload, referer: str) -> list[bytes | MediaFailure]:
+def download_tab_media(
+    tab: BrowserTab,
+    payload: RichMediaPayload,
+    referer: str,
+    *,
+    deadline: ExtractionDeadline | None = None,
+) -> list[bytes | MediaFailure]:
     """Keep every media position explicit, retaining successful transient bytes on the payload."""
     cookies = tab.cookies(all_domains=True, all_info=True)
     downloaded: list[bytes | MediaFailure] = []
     total_bytes = 0
     headers = {"Referer": referer, "User-Agent": tab.user_agent}
-    with NativeHTTPClient() as http:
+    transport = NativeHTTPClient() if deadline is None else ExtractionHTTPClient(deadline)
+    with transport as http:
         for item in payload.media_items:
             if not item.url:
                 logger.error("Browser media download has no usable source")
@@ -118,15 +131,30 @@ class NativeBrowserService:
         """Observe child-owned browser state without launching it."""
         return self._browser.is_running
 
-    def get_content(self, url: str, wait_selector: str | None = None) -> str:
-        """Fetch one tab synchronously, retrying only a disconnected browser once."""
-        with self._semaphore:
-            return self._fetch_with_retries(url, wait_selector)
+    @contextmanager
+    def _session(self, deadline: ExtractionDeadline | None) -> Generator[None]:
+        with ExitStack() as resources:
+            if deadline is not None:
+                resources.enter_context(BrowserOperationTimeout(deadline))
+            resources.enter_context(self._semaphore)
+            try:
+                yield
+            finally:
+                if deadline is not None and monotonic() >= deadline.expires_at:
+                    self._browser.abort()
+                    self._browser.close()
 
-    def _fetch_with_retries(self, url: str, wait_selector: str | None) -> str:
+    def get_content(
+        self, url: str, wait_selector: str | None = None, *, deadline: ExtractionDeadline | None = None
+    ) -> str:
+        """Fetch one tab synchronously, retrying only a disconnected browser once."""
+        with self._session(deadline):
+            return self._fetch_with_retries(url, wait_selector, deadline)
+
+    def _fetch_with_retries(self, url: str, wait_selector: str | None, deadline: ExtractionDeadline | None) -> str:
         for attempt in range(MAX_BROWSER_ATTEMPTS):
             try:
-                return self._fetch(url, wait_selector)
+                return self._fetch(url, wait_selector, deadline)
             except BrowserConnectError, PageDisconnectedError, ConnectionError:
                 self._browser.close()
                 if attempt == MAX_BROWSER_ATTEMPTS - 1:
@@ -138,9 +166,19 @@ class NativeBrowserService:
         msg = "Browser content is unavailable."
         raise BrowserError(msg)
 
-    def _fetch(self, url: str, wait_selector: str | None) -> str:
-        page = self._browser.start()
-        tab: BrowserTab = page.new_tab()
+    def _new_tab(self, deadline: ExtractionDeadline | None) -> BrowserTab:
+        tab = self._browser.start().new_tab()
+        return tab if deadline is None else BoundedBrowserTab(tab, deadline)
+
+    def _close_tab(self, tab: BrowserTab, deadline: ExtractionDeadline | None) -> None:
+        if deadline is not None and monotonic() >= deadline.expires_at:
+            self._browser.abort()
+            self._browser.close()
+            return
+        tab.close()
+
+    def _fetch(self, url: str, wait_selector: str | None, deadline: ExtractionDeadline | None) -> str:
+        tab = self._new_tab(deadline)
         try:
             self._navigate(tab, url, wait_selector)
             content = tab.html
@@ -149,7 +187,7 @@ class NativeBrowserService:
                 raise BrowserError(msg)
             return content
         finally:
-            tab.close()
+            self._close_tab(tab, deadline)
 
     def _navigate(self, tab: BrowserTab, url: str, wait_selector: str | None) -> None:
         if not tab.get(url, timeout=DEFAULT_BROWSER_TIMEOUT_SECONDS):
@@ -164,11 +202,13 @@ class NativeBrowserService:
         extractor_fn: Callable[[BrowserTab, str], RichMediaPayload | None],
         wait_selector: str | None = None,
         cookies: list[dict[str, object]] | None = None,
+        *,
+        deadline: ExtractionDeadline | None = None,
     ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
         """Extract in an isolated tab and download through a fresh bounded cookie-bearing HTTP session."""
-        with self._semaphore:
+        with self._session(deadline):
             try:
-                return self._extract_attempt(url, extractor_fn, wait_selector, cookies)
+                return self._extract_attempt(url, extractor_fn, wait_selector, cookies, deadline)
             except BaseError, OSError:
                 msg = "Browser extraction is unavailable."
                 raise BrowserError(msg) from None
@@ -179,9 +219,9 @@ class NativeBrowserService:
         extractor_fn: Callable[[BrowserTab, str], RichMediaPayload | None],
         wait_selector: str | None,
         cookies: list[dict[str, object]] | None,
+        deadline: ExtractionDeadline | None,
     ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
-        page = self._browser.start()
-        tab: BrowserTab = page.new_tab()
+        tab = self._new_tab(deadline)
         try:
             for cookie in cookies or ():
                 tab.set.cookies(cookie)
@@ -189,9 +229,9 @@ class NativeBrowserService:
             payload = extractor_fn(tab, url)
             if payload is None:
                 return None, []
-            return payload, download_tab_media(tab, payload, url)
+            return payload, download_tab_media(tab, payload, url, deadline=deadline)
         finally:
-            tab.close()
+            self._close_tab(tab, deadline)
 
     def close(self) -> None:
         """Deterministically close browser drivers, reap Chromium, and remove its temporary profile."""

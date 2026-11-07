@@ -41,7 +41,18 @@ REDIRECT_STATUSES = frozenset(
 SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"})
 
 
-def _validate_url(url: str) -> tuple[str, str, int | None]:
+def validate_http_url(url: str) -> tuple[str, str, int | None]:
+    """Require an HTTP origin without embedded credentials or an invalid port.
+
+    Args:
+        url: Untrusted request or redirect destination.
+
+    Returns:
+        Scheme, hostname and optional port for credential-scope comparison.
+
+    Raises:
+        HTTPTransportError: If the target has an unsupported or malformed origin.
+    """
     try:
         parts = urlsplit(url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
@@ -71,7 +82,7 @@ def _decode_json(raw: bytes) -> object:
 def _redirect_target(response: requests.Response, current: str, method: str) -> tuple[str, tuple[str, str, int | None]]:
     try:
         target = urljoin(current, response.headers.get("Location", ""))
-        next_origin = _validate_url(target)
+        next_origin = validate_http_url(target)
     finally:
         response.close()
     # A mutating request is never automatically resent to a redirect target.
@@ -140,7 +151,7 @@ class NativeHTTPClient:
         cookies: Mapping[str, str] | None = None,
     ) -> requests.Response:
         session = self._require_session()
-        origin = _validate_url(url)
+        origin = validate_http_url(url)
         current = url
         request_headers = dict(headers or {})
         cookie_values = dict(cookies or {})

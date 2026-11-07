@@ -32,6 +32,8 @@ class HTTPReply:
     disconnect: bool = False
     delay_seconds: float = 0
     started: Event | None = None
+    chunks: tuple[bytes, ...] = ()
+    chunk_delay_seconds: float = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,15 +70,27 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             self.connection.shutdown(SHUT_RDWR)
             self.connection.close()
             return
+        body = b"".join(response.chunks) if response.chunks else response.body
         self.send_response(response.status)
         for name, value in response.headers.items():
             self.send_header(name, value)
         if "Content-Length" not in response.headers:
-            self.send_header("Content-Length", str(len(response.body)))
+            self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(response.body)
+            self._write_body(response, body)
         self._fixture.complete(request)
+
+    def _write_body(self, response: HTTPReply, body: bytes) -> None:
+        """Stream a synthetic body, optionally drip-fed, without buffering it in memory."""
+        if not response.chunks:
+            self.wfile.write(body)
+            return
+        for chunk in response.chunks:
+            self.wfile.write(chunk)
+            self.wfile.flush()
+            if response.chunk_delay_seconds:
+                time.sleep(response.chunk_delay_seconds)
 
     def _read_body(self) -> bytes:
         if self.headers.get("Transfer-Encoding", "").lower() == "chunked":

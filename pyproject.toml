@@ -49,6 +49,7 @@ worker-ops = [
 ]
 worker-media = [
     "beautifulsoup4",
+    "curl-cffi",
     "hovorunv2[worker-ops]",
     "instaloader",
     "yt-dlp[curl-cffi]",

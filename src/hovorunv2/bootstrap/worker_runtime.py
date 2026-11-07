@@ -42,6 +42,7 @@ from hovorunv2.interface.telegram.transport.sync_prompts import SyncTelegramUnau
 if TYPE_CHECKING:
     from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
     from hovorunv2.application.media.browser import BrowserTab
+    from hovorunv2.application.media.deadlines import ExtractionDeadline
     from hovorunv2.application.media.errors import MediaFailure
     from hovorunv2.application.media.payloads import RichMediaPayload
 
@@ -201,9 +202,11 @@ class LazyBrowserService:
             self._service = self._factory()
         return self._service
 
-    def get_content(self, url: str, wait_selector: str | None = None) -> str:
+    def get_content(
+        self, url: str, wait_selector: str | None = None, *, deadline: ExtractionDeadline | None = None
+    ) -> str:
         """Fetch rendered HTML using child-owned browser."""
-        return self._require().get_content(url, wait_selector)
+        return self._require().get_content(url, wait_selector, deadline=deadline)
 
     def extract_and_download(
         self,
@@ -211,9 +214,11 @@ class LazyBrowserService:
         extractor_fn: Callable[[BrowserTab, str], RichMediaPayload | None],
         wait_selector: str | None = None,
         cookies: list[dict[str, object]] | None = None,
+        *,
+        deadline: ExtractionDeadline | None = None,
     ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
         """Run extraction and download in one synchronous browser session."""
-        return self._require().extract_and_download(url, extractor_fn, wait_selector, cookies)
+        return self._require().extract_and_download(url, extractor_fn, wait_selector, cookies, deadline=deadline)
 
     def close(self) -> None:
         """Dispose child-owned browser process if active."""

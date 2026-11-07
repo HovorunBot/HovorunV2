@@ -760,6 +760,7 @@ bot = [
 browser = [
     { name = "beautifulsoup4" },
     { name = "celery", extra = ["redis"] },
+    { name = "curl-cffi" },
     { name = "drissionpage" },
     { name = "instaloader" },
     { name = "redis" },
@@ -775,6 +776,7 @@ migrate = [
 worker-browser = [
     { name = "beautifulsoup4" },
     { name = "celery", extra = ["redis"] },
+    { name = "curl-cffi" },
     { name = "drissionpage" },
     { name = "instaloader" },
     { name = "redis" },
@@ -784,6 +786,7 @@ worker-browser = [
 worker-media = [
     { name = "beautifulsoup4" },
     { name = "celery", extra = ["redis"] },
+    { name = "curl-cffi" },
     { name = "instaloader" },
     { name = "redis" },
     { name = "requests" },
@@ -822,6 +825,7 @@ requires-dist = [
     { name = "celery", extras = ["redis"], marker = "extra == 'bot'", specifier = ">=5.7.0rc1" },
     { name = "celery", extras = ["redis"], marker = "extra == 'worker-ops'", specifier = ">=5.7.0rc1" },
     { name = "cryptography" },
+    { name = "curl-cffi", marker = "extra == 'worker-media'" },
     { name = "dishka", marker = "extra == 'bot'" },
     { name = "dishka", marker = "extra == 'migrate'" },
     { name = "drissionpage", marker = "extra == 'worker-browser'" },

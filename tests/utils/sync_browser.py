@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping
 
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort
 from hovorunv2.application.media.browser import BrowserTab
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
 from hovorunv2.application.media.payloads import RichMediaPayload
 
@@ -23,7 +24,9 @@ class FakeSyncBrowser(SyncBrowserPort):
         )
         self.requests: list[dict[str, object]] = []
 
-    def get_content(self, url: str, wait_selector: str | None = None) -> str:
+    def get_content(
+        self, url: str, wait_selector: str | None = None, *, deadline: ExtractionDeadline | None = None
+    ) -> str:
         """Return configured HTML content or raise BrowserError."""
         self.requests.append({"action": "get_content", "url": url, "wait_selector": wait_selector})
         for pattern, html in self.html_responses.items():
@@ -38,6 +41,8 @@ class FakeSyncBrowser(SyncBrowserPort):
         extractor_fn: Callable[[BrowserTab, str], RichMediaPayload | None],
         wait_selector: str | None = None,
         cookies: list[dict[str, object]] | None = None,
+        *,
+        deadline: ExtractionDeadline | None = None,
     ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
         """Return configured extract payload or raise BrowserError."""
         self.requests.append(
