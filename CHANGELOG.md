@@ -9,6 +9,7 @@
 
 ### Refactor
 
+- **instagram**: add typed extraction candidates and parsers
 - **packaging**: partition pyproject.toml into core and role-specific extras
 - **worker**: split runtime composition by role and decouple prompts from aiogram
 - **media**: decouple bot ingress to provider config and delete legacy async code

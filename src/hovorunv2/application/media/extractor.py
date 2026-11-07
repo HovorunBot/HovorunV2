@@ -11,6 +11,7 @@ from yt_dlp.networking import Request, Response
 
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.media.errors import MediaExtractionError
+from hovorunv2.application.media.limits import MAX_PLAYLIST_ITEMS
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.utils.formatting import format_number
 from hovorunv2.utils.text import clean_caption_text
@@ -18,7 +19,6 @@ from hovorunv2.utils.text import clean_caption_text
 logger = logging.getLogger(__name__)
 MIN_DESCRIPTION_LENGTH = 10
 EXTRACTION_TIMEOUT_SECONDS = 30
-MAX_PLAYLIST_ITEMS = 100
 
 
 class BoundedYoutubeDL(yt_dlp.YoutubeDL):
