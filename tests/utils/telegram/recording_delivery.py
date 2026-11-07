@@ -108,10 +108,10 @@ async def drain_and_run_media(
     outcomes: list[JobOutcome] = []
     with worker_child_context(settings, namespace=namespace, delivery=deliv, http=http, browser=browser) as runner:
         for msg in messages:
-            outcome_val = await asyncio.to_thread(runner.run, msg, JobStage.MEDIA)
+            outcome_val = runner.run(msg, JobStage.MEDIA)
             browser_msgs = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "browser")
             for b_msg in browser_msgs:
-                outcome_val = await asyncio.to_thread(runner.run, b_msg, JobStage.BROWSER)
+                outcome_val = runner.run(b_msg, JobStage.BROWSER)
             outcomes.append(JobOutcome(outcome_val))
 
     final_outcome = outcomes[0] if len(outcomes) == 1 else JobOutcome.COMPLETE

@@ -2,6 +2,7 @@
 
 import pytest
 
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import RichMediaPayload
@@ -93,7 +94,9 @@ def test_sync_extract_media_exhausted_strategies_raises() -> None:
     http = FakeSyncHTTP()
 
     class FailingExtractor(NativeMediaExtractor):
-        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+        def extract(
+            self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+        ) -> RichMediaPayload:
             msg = "generic failure"
             raise MediaExtractionError(msg)
 

@@ -42,6 +42,8 @@ from hovorunv2.application.jobs.http_ports import (
     TelegramRejectedError,
 )
 from hovorunv2.application.jobs.worker_lifecycle_service import WorkerLifecycleService
+from hovorunv2.application.media.actions import ActionOutcome, select_outcome
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import (
     BrowserContinuationRequired,
     BrowserError,
@@ -68,7 +70,7 @@ from hovorunv2.application.usage.budgets import (
     SyncBudgetPort,
     UnitAmount,
 )
-from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageUnit
+from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit
 from hovorunv2.application.usage.usage_ledger import AccountingSubject, SyncLedgerPort, UsageCharge, UsageEvent
 from hovorunv2.domain.enums import (
     PROVIDER_SPLIT_COMMANDS,
@@ -112,6 +114,9 @@ def default_media_clients(
     }
 
 
+DEFAULT_EXTRACTION_SAFETY = UsageSafetyCaps()
+
+
 class FeatureJobRunner:
     """Synchronous worker use case executing feature jobs through child-local adapters."""
 
@@ -134,6 +139,7 @@ class FeatureJobRunner:
         feedback: SyncFeedbackPort,
         gate: SyncFeedbackGate,
         embed: InstagramEmbedPort,
+        safety: UsageSafetyCaps = DEFAULT_EXTRACTION_SAFETY,
         registry: FeatureRegistry = FEATURE_REGISTRY,
         browser: SyncBrowserPort | None = None,
         clients: Sequence[BaseMediaClient] | Mapping[CommandName, BaseMediaClient] | None = None,
@@ -148,6 +154,8 @@ class FeatureJobRunner:
         self._translation = translation
         self._extractor = extractor
         self._clock = clock
+        self._safety = safety
+        self._stage_started = monotonic()
         self._settings = settings
         self._registry = registry
         self._browser = browser
@@ -197,6 +205,7 @@ class FeatureJobRunner:
 
     def _run_envelope(self, envelope: JobEnvelope, stage: JobStage) -> str:
         started = monotonic()
+        self._stage_started = started
         logger.info("Worker received feature task")
         claim_result = self._parse_and_claim(envelope, stage)
         if claim_result is None:
@@ -484,15 +493,19 @@ class FeatureJobRunner:
             msg = f"No media client found for feature {envelope.feature} or URL."
             raise MediaExtractionError(msg)
         logger.info("Worker starting media extraction for provider %s", client.name)
+        deadline = ExtractionDeadline.for_stage(
+            envelope.deadline - self._clock.now(),
+            self._safety.execution_seconds - (monotonic() - self._stage_started),
+        )
         if stage == JobStage.MEDIA:
-            return self._extract_media_stage(envelope, url, client, token)
-        return self._extract_browser_stage(envelope, url, client)
+            return self._extract_media_stage(envelope, url, client, token, deadline)
+        return self._extract_browser_stage(envelope, url, client, deadline)
 
     def _extract_media_stage(
-        self, envelope: JobEnvelope, url: str, client: BaseMediaClient, token: str
+        self, envelope: JobEnvelope, url: str, client: BaseMediaClient, token: str, deadline: ExtractionDeadline
     ) -> tuple[RichMediaPayload, BaseMediaClient]:
         try:
-            raw_payload = client.extract_media_sync(url, self._http, self._extractor)
+            raw_payload = client.extract_media_sync(url, self._http, self._extractor, deadline=deadline)
         except BrowserContinuationRequired as continuation:
             if not self._settings.browser_enabled:
                 if continuation.retained is not None:
@@ -509,7 +522,7 @@ class FeatureJobRunner:
             return raw_payload, client
 
     def _extract_browser_stage(
-        self, envelope: JobEnvelope, url: str, client: BaseMediaClient
+        self, envelope: JobEnvelope, url: str, client: BaseMediaClient, deadline: ExtractionDeadline
     ) -> tuple[RichMediaPayload, BaseMediaClient]:
         if not self._settings.browser_enabled or self._browser is None:
             retained = self._load_retained_candidate(envelope)
@@ -519,14 +532,16 @@ class FeatureJobRunner:
             msg = "Browser extraction is not available for this deployment."
             raise BrowserError(msg)
         try:
-            raw_payload = client.extract_browser_media_sync(url, self._http, self._browser)
+            outcome = client.extract_browser_outcome_sync(url, self._http, self._browser, deadline=deadline)
         except MediaExtractionError:
             retained = self._load_retained_candidate(envelope)
             if retained is not None:
                 logger.info("Browser stage failed; delivering retained usable partial candidate")
                 return retained, client
             raise
-        return raw_payload, client
+        retained = self._load_retained_candidate(envelope)
+        previous = ActionOutcome(retained, complete=False) if retained is not None else None
+        return select_outcome(previous, outcome).payload, client
 
     def _store_retained_candidate(self, envelope: JobEnvelope, retained: RichMediaPayload | None) -> None:
         """Retain a usable partial candidate across the browser handoff within the job deadline."""

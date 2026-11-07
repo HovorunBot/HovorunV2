@@ -15,6 +15,10 @@ Instagram declares its ordered extraction actions (executed by the shared `appli
 4. `browser extraction` — the browser worker enumerates complete carousels from structured post data and bounded lazy
    traversal.
 
+Browser extraction reads post-scoped JSON scripts and ordinary article/carousel markup. It resolves the requested
+article before observing media or advancing controls, and waits for slide changes within a bounded allowance.
+OpenGraph media from the rendered page is a partial preview; text-only metadata never completes Instagram extraction.
+
 Earlier strategy failures are recoverable and advance to the next action. A browser handoff keeps the original job
 deadline and admission fence; it never replays completed network actions.
 
@@ -25,16 +29,21 @@ deadline and admission fence; it never replays completed network actions.
 - `VXINSTAGRAM_ENABLED` (default `true`) — when `false`, a concrete no-request adapter is injected; the embed action
   fails recoverably and the chain continues to the browser. The browser path never depends on the embed service.
 - `BROWSER_ENABLED` (default `false`) — gates browser extraction and continuation. When disabled, jobs that reach the
-  browser handoff terminate with the existing failure notice.
+  browser handoff deliver a usable retained partial when available; otherwise they terminate with the existing failure
+  notice.
 
 ## Bounds
 
 - `ExtractionDeadline` is application-owned and monotonic; it clamps to the remaining job and stage time and reserves
-  10 s cleanup plus a 5 s handoff reserve before extraction.
+  10 s cleanup plus a 5 s handoff reserve before extraction. The worker uses its actual safety caps and subtracts time
+  already spent in the stage. A continuation computes a new process-local cutoff from the unchanged job deadline.
 - Provisional strategy allowances: 30 s `yt-dlp`, 10 s embed. Browser traversal and media downloads share the remaining
   stage allowance rather than resetting per slide.
 - The browser SDK is bounded per navigation/JS/selection call, with an owned-child teardown when the shared deadline
   expires. The bounded HTTP client aborts over-size bodies and enforces total (not socket-inactivity) time budget.
+- Native yt-dlp I/O and browser work use scoped total-operation alarms in the synchronous worker main thread. Tests
+  execute this path in the main thread as well. Backend extractor modules are resolved before the alarm is armed so
+  interruption cannot leave those imports partially initialized; their elapsed loading time still consumes the cutoff.
 
 ## Privacy
 
@@ -48,9 +57,13 @@ deadline and admission fence; it never replays completed network actions.
 ## Incomplete albums
 
 Completeness requires nonempty usable media plus count agreement or a verified terminal slide. Incomplete output is
-labelled with the incomplete-media footer rather than claiming a total. Contract 20 / D07 cross-action retained-candidate
-selection (prefer a complete result, otherwise the best usable partial, encrypted across the browser handoff) is a
-documented follow-up; the current runner returns the best in-stage result.
+labelled with the incomplete-media footer rather than claiming a total. Across actions and the browser handoff, a
+complete result wins; otherwise the candidate with more usable slides wins, with the earlier action winning ties.
+Separate attempts are never merged. A browser failure or smaller partial cannot discard a better retained embed
+candidate. Temporary candidates use the existing encrypted job store and are deleted during terminal cleanup.
+
+Synthetic command tests keep the embed caption contract, including engagement text supplied in its content field, and
+verify the exact resulting translation query. They do not depend on live post contents or private VCR recordings.
 
 ## Optional live diagnostics
 

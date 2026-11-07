@@ -35,6 +35,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     PayloadState,
 )
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
@@ -79,7 +80,14 @@ class VideoMediaClient(BaseMediaClient):
     def __init__(self) -> None:
         super().__init__(INSTAGRAM_CONFIG)
 
-    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+    def extract_media_sync(
+        self,
+        url: str,
+        http: SyncHTTPPort,
+        extractor: NativeMediaExtractor,
+        *,
+        deadline: ExtractionDeadline | None = None,
+    ) -> RichMediaPayload:
         """Return video payload to trigger video split variant."""
         return RichMediaPayload(
             author_name="test_author",
@@ -93,7 +101,14 @@ class VideoMediaClient(BaseMediaClient):
 class TimedOutMediaClient(VideoMediaClient):
     """Raise Celery's cooperative timeout at the extraction boundary."""
 
-    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+    def extract_media_sync(
+        self,
+        url: str,
+        http: SyncHTTPPort,
+        extractor: NativeMediaExtractor,
+        *,
+        deadline: ExtractionDeadline | None = None,
+    ) -> RichMediaPayload:
         """Interrupt extraction before delivery or accounting can begin."""
         raise SoftTimeLimitExceeded
 
@@ -101,7 +116,14 @@ class TimedOutMediaClient(VideoMediaClient):
 class FailedMediaClient(VideoMediaClient):
     """Exhaust extraction without usable post metadata."""
 
-    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+    def extract_media_sync(
+        self,
+        url: str,
+        http: SyncHTTPPort,
+        extractor: NativeMediaExtractor,
+        *,
+        deadline: ExtractionDeadline | None = None,
+    ) -> RichMediaPayload:
         """Fail before delivery so the worker must send terminal feedback."""
         msg = "Synthetic extraction failure."
         raise MediaExtractionError(msg)
@@ -110,11 +132,20 @@ class FailedMediaClient(VideoMediaClient):
 class BrowserRequiredMediaClient(VideoMediaClient):
     """Require browser continuation after non-browser extraction is exhausted."""
 
-    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+    def extract_media_sync(
+        self,
+        url: str,
+        http: SyncHTTPPort,
+        extractor: NativeMediaExtractor,
+        *,
+        deadline: ExtractionDeadline | None = None,
+    ) -> RichMediaPayload:
         """Request continuation without launching or importing a browser."""
         raise BrowserContinuationRequired
 
-    def extract_browser_media_sync(self, url: str, http: SyncHTTPPort, browser: SyncBrowserPort) -> RichMediaPayload:
+    def extract_browser_media_sync(
+        self, url: str, http: SyncHTTPPort, browser: SyncBrowserPort, *, deadline: ExtractionDeadline | None = None
+    ) -> RichMediaPayload:
         """Return controlled media after the browser stage is explicitly enabled."""
         return super().extract_media_sync(url, http, NativeMediaExtractor())
 
@@ -122,7 +153,14 @@ class BrowserRequiredMediaClient(VideoMediaClient):
 class MetadataVideoClient(VideoMediaClient):
     """Return video metadata without downloadable media."""
 
-    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+    def extract_media_sync(
+        self,
+        url: str,
+        http: SyncHTTPPort,
+        extractor: NativeMediaExtractor,
+        *,
+        deadline: ExtractionDeadline | None = None,
+    ) -> RichMediaPayload:
         """Preserve video classification for post-extraction permission checks."""
         payload = super().extract_media_sync(url, http, extractor)
         payload.media_items.clear()
@@ -133,7 +171,14 @@ class MetadataVideoClient(VideoMediaClient):
 class BrokenMediaClient(VideoMediaClient):
     """Raise an application defect without exposing exception details to users."""
 
-    def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
+    def extract_media_sync(
+        self,
+        url: str,
+        http: SyncHTTPPort,
+        extractor: NativeMediaExtractor,
+        *,
+        deadline: ExtractionDeadline | None = None,
+    ) -> RichMediaPayload:
         """Interrupt application execution with synthetic private diagnostic text."""
         raise ValueError(PRIVATE_URL)
 

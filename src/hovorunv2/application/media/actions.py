@@ -47,8 +47,21 @@ class ExtractionAction:
     run: Callable[[], ActionOutcome | None]
 
 
-def _better(retained: ActionOutcome | None, candidate: ActionOutcome) -> ActionOutcome:
+def select_outcome(retained: ActionOutcome | None, candidate: ActionOutcome) -> ActionOutcome:
+    """Prefer complete media, then the larger partial, retaining earlier ties.
+
+    Args:
+        retained: Earlier candidate, if an action produced usable media.
+        candidate: Later usable extraction result.
+
+    Returns:
+        One selected attempt without merging its media with another attempt.
+    """
     if retained is None:
+        return candidate
+    if retained.complete is True:
+        return retained
+    if candidate.complete is True:
         return candidate
     return candidate if len(candidate.payload.media_items) > len(retained.payload.media_items) else retained
 
@@ -87,7 +100,7 @@ def run_extraction_actions(actions: Sequence[ExtractionAction], *, provider_name
             continue
         if outcome.complete is True:
             return outcome.payload
-        retained = _better(retained, outcome)
+        retained = select_outcome(retained, outcome)
     if retained is not None:
         return retained.payload
     msg = "Media extraction strategies are exhausted."

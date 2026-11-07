@@ -16,9 +16,9 @@ def _structured_edge(position: int, url: str, is_video: bool) -> dict[str, objec
 
 
 def _slide_html(position: int, url: str, is_video: bool, *, active: bool) -> str:
-    active_attr = " data-ig-slide-active" if active else ""
+    active_attr = "false" if active else "true"
     media = f'<video src="{url}"></video>' if is_video else f'<img src="{url}">'
-    return f'<li data-ig-slide-position="{position}" data-ig-slide-id="slide-{position}"{active_attr}>{media}</li>'
+    return f'<li aria-posinset="{position + 1}" aria-hidden="{active_attr}">{media}</li>'
 
 
 def carousel_page(
@@ -27,6 +27,7 @@ def carousel_page(
     *,
     structured_observed: int | None = None,
     loop: bool = False,
+    advance_delay_ms: int = 0,
 ) -> str:
     """Build a synthetic Instagram post page with structured data and a carousel.
 
@@ -35,6 +36,7 @@ def carousel_page(
         slides: Ordered (url, is_video) media for the carousel DOM.
         structured_observed: Number of slides exposed in structured data; defaults to all.
         loop: Whether the next control wraps instead of disappearing at the terminal.
+        advance_delay_ms: Synthetic delay between clicking and observing the next slide.
 
     Returns:
         Self-contained HTML exercising the Instagram structured and traversal selectors.
@@ -56,19 +58,27 @@ def carousel_page(
     script = f"""
     window._sharedData = {{ entry_data: {{ PostPage: [{{ graphql: {{ shortcode_media: {structured_json} }} }}] }} }};
     let __igCurrent = 0;
-    const __igSlides = Array.from(document.querySelectorAll('[data-ig-slide-position]'));
+    const __igSlides = Array.from(document.getElementById('synthetic-post').querySelectorAll('li'));
     function __igNext() {{
-        __igSlides[__igCurrent].removeAttribute('data-ig-slide-active');
+        setTimeout(() => {{
+        __igSlides[__igCurrent].setAttribute('aria-hidden', 'true');
         __igCurrent += 1;
         if (__igCurrent >= __igSlides.length) {{
             if (!{wrap_mode}) {{ document.getElementById('ig-next').remove(); return; }}
             __igCurrent = 0;
         }}
-        __igSlides[__igCurrent].setAttribute('data-ig-slide-active', '');
+        __igSlides[__igCurrent].setAttribute('aria-hidden', 'false');
+        if (!{wrap_mode} && __igCurrent === __igSlides.length - 1) {{
+            document.getElementById('ig-next').remove();
+        }}
+        }}, {advance_delay_ms});
     }}
     """
     return (
-        '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'
-        f"<article><ul>{''.join(items)}</ul>{NEXT_BUTTON_HTML}</article>"
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        "<style>article,li,img,video{width:400px;height:300px} "
+        'li[aria-hidden="true"]{display:none}</style></head><body>'
+        f'<article id="synthetic-post"><a href="https://www.instagram.com/p/{shortcode}/">Post</a>'
+        f"<ul>{''.join(items)}</ul>{NEXT_BUTTON_HTML}</article>"
         f"<script>{script}</script></body></html>"
     )

@@ -1,6 +1,8 @@
 """Tests for Instagram rich media command."""
 
 import logging
+from http import HTTPStatus
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from aiogram import Bot
@@ -8,19 +10,25 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.jobs.feature_jobs import JobOutcome
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
+from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter, build_status_url
+from hovorunv2.application.media.instagram.results import InstagramPost
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.instagram import InstagramService
+from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.domain.enums import CommandName
-from hovorunv2.infrastructure.browser.native_browser import NativeBrowserService
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
+from tests.utils.instagram_browser import RoutedInstagramBrowser, route_media_downloads
+from tests.utils.instagram_worker import instagram_worker, route_instagram_backend
+from tests.utils.jobs import broker_envelopes
 from tests.utils.sync_browser import FakeSyncBrowser
-from tests.utils.sync_http import FakeSyncHTTP, HTTPFixture, HTTPReply
-from tests.utils.telegram.recording_delivery import drain_and_run_media
+from tests.utils.sync_http import FakeSyncHTTP, HTTPFixture, HTTPReply, json_reply
+from tests.utils.telegram.recording_delivery import RecordingTelegramDelivery
 
 
 @pytest.fixture
@@ -29,78 +37,130 @@ async def instagram_command(test_container: AsyncContainer) -> RichMediaCommand:
     return await get_media_command(test_container, CommandName.INSTAGRAM)
 
 
-@pytest.mark.slow
-@pytest.mark.vcr
+async def _assert_instagram_command(
+    command: RichMediaCommand,
+    container: AsyncContainer,
+    bot: Bot,
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    """Drive real queued extraction and translation using synthetic external HTTP responses."""
+    chat_id = 789 if kind == "p" else 790
+    post = InstagramPost("Synthetic_1", kind)
+    message = create_private_media_message(post.canonical_url, chat_id=chat_id).as_(bot)
+    statuses = await container.get(ChatStatusService)
+    await statuses.approve(chat_id)
+    await authorize_private_media(container, chat_id)
+    await command.handle(message, bot)
+    settings = await container.get(Settings)
+    settings = settings.model_copy(update={"database_url": database_url, "instagram_sessionid": None})
+    namespace = await container.get(RuntimeNamespace)
+    video = kind != "p"
+    raw = {
+        "url": post.canonical_url,
+        "content": "<p>Synthetic caption</p><p>❤️ 7 💬 2</p>",
+        "account": {"display_name": "Mock User", "username": "synthetic"},
+        "media_attachments": [{"type": "video" if video else "image", "url": "https://media.example.invalid/item"}],
+    }
+    routes = {
+        "/unavailable": HTTPReply(status=HTTPStatus.NOT_FOUND),
+        build_status_url(post, base_url=""): json_reply(raw),
+        "/translate": json_reply([[["Synthetic translation", "Synthetic caption ❤️ 7 💬 2"]], None, "en"]),
+    }
+    delivery = RecordingTelegramDelivery(bot)
+    with HTTPFixture(routes) as server:
+        route_instagram_backend(monkeypatch, server)
+        with instagram_worker(settings, namespace, delivery, server) as (runner, runtime, _database):
+            messages = broker_envelopes(settings, namespace.value)
+            assert len(messages) == 1
+            assert runner.run(messages[0]) == JobOutcome.COMPLETE.value
+            assert runner.run(messages[0]) == JobOutcome.COMPLETE.value
+            assert runtime.payloads.load_candidate(str(messages[0]["job_id"])) is None
+        translations = [
+            parse_qs(urlsplit(request.path).query)
+            for request in server.requests
+            if request.path.startswith("/translate?")
+        ]
+    assert len(bot.session.calls) == 1
+    assert len(delivery.calls) == 1
+    payload = delivery.calls[0]["payload"]
+    assert isinstance(payload, RichMediaPayload)
+    assert payload.is_video is video
+    assert translations == [
+        {
+            "client": ["gtx"],
+            "sl": ["auto"],
+            "tl": [settings.translation_target_lang],
+            "dt": ["t"],
+            "q": ["Synthetic caption ❤️ 7 💬 2"],
+        }
+    ]
+    call = bot.session.calls[0]
+    caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
+    assert "Mock User" in caption
+    assert "instagram.com" in caption
+
+
 async def test_handle_instagram_post(
-    instagram_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    instagram_command: RichMediaCommand,
+    test_container: AsyncContainer,
+    recording_bot: Bot,
+    postgres_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test handling an Instagram post using real extraction and VCR through queued execution."""
-    chat_id = 789
-    url = "https://www.instagram.com/p/DYPIeHDoZ-w/"
-    message = create_private_media_message(url, chat_id=chat_id).as_(recording_bot)
-
-    chat_status_service = await test_container.get(ChatStatusService)
-    await chat_status_service.approve(chat_id)
-    await authorize_private_media(test_container, chat_id)
-
-    await instagram_command.handle(message, recording_bot)
-
-    outcome, _ = await drain_and_run_media(test_container, recording_bot=recording_bot)
-    assert outcome == JobOutcome.COMPLETE
-    assert len(recording_bot.session.calls) == 1
-    call = recording_bot.session.calls[0]
-    caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
-    assert "Mock User" in caption
-    assert "instagram.com" in caption
+    """Extract a photo through real yt-dlp failure, embed fallback, translation and queued delivery."""
+    await _assert_instagram_command(
+        instagram_command, test_container, recording_bot, postgres_database_url, monkeypatch, "p"
+    )
 
 
-@pytest.mark.vcr
 async def test_handle_instagram_reel(
-    instagram_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    instagram_command: RichMediaCommand,
+    test_container: AsyncContainer,
+    recording_bot: Bot,
+    postgres_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test handling an Instagram reel using real extraction and VCR through queued execution."""
-    chat_id = 790
-    url = "https://www.instagram.com/reels/DVMKxZHggx7/"
-    message = create_private_media_message(url, chat_id=chat_id, message_id=12346).as_(recording_bot)
-
-    chat_status_service = await test_container.get(ChatStatusService)
-    await chat_status_service.approve(chat_id)
-    await authorize_private_media(test_container, chat_id)
-
-    await instagram_command.handle(message, recording_bot)
-
-    outcome, _ = await drain_and_run_media(test_container, recording_bot=recording_bot)
-    assert outcome == JobOutcome.COMPLETE
-    assert len(recording_bot.session.calls) == 1
-    call = recording_bot.session.calls[0]
-    caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
-    assert "Mock User" in caption
-    assert "instagram.com" in caption
+    """Keep video classification through the same synthetic queued fallback pipeline."""
+    await _assert_instagram_command(
+        instagram_command, test_container, recording_bot, postgres_database_url, monkeypatch, "reel"
+    )
 
 
 @pytest.mark.browser
 @pytest.mark.slow
-def test_instagram_browser_fallback_uses_real_dom_and_media() -> None:
-    """Real browser extraction downloads loopback media without replacing an internal strategy/service."""
+def test_instagram_browser_fallback_uses_real_dom_and_media(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Download a browser OpenGraph preview through the real provider callback with canonical identity."""
     service = InstagramService.sync(embed=DisabledEmbedAdapter())
-    with HTTPFixture({"/image.jpg": HTTPReply(b"synthetic image")}) as media:
-        document = (
-            '<html><head><meta property="og:title" content="Synthetic fallback">'
-            f'<meta property="og:image" content="{media.url("/image.jpg")}">'
-            "</head><body><main>Synthetic fallback</main></body></html>"
-        )
-        with HTTPFixture({"/post": HTTPReply(document.encode(), headers={"Content-Type": "text/html"})}) as server:
-            browser = NativeBrowserService()
-            http = NativeHTTPClient()
-            try:
-                payload = service.extract_browser_media_sync(server.url("/post"), http, browser)
-                assert payload is not None
-                assert "Synthetic fallback" in payload.content
-                assert payload.media_items[0].data == b"synthetic image"
-                assert payload.media_items[0].url == media.url("/image.jpg")
-            finally:
-                browser.close()
-                http.close()
+    url = "https://www.instagram.com/p/Synthetic_1/"
+    image = "https://media.example.invalid/image.jpg"
+    document = (
+        '<html><head><meta property="og:title" content="Synthetic fallback">'
+        f'<meta property="og:url" content="{url}">'
+        f'<meta property="og:image" content="{image}">'
+        "</head><body><main>Synthetic fallback</main></body></html>"
+    )
+    with (
+        HTTPFixture({"/image.jpg": HTTPReply(b"synthetic image")}) as media,
+        HTTPFixture({"/post": HTTPReply(document.encode(), headers={"Content-Type": "text/html"})}) as server,
+        NativeHTTPClient() as http,
+    ):
+        route_media_downloads(monkeypatch, media)
+        browser = RoutedInstagramBrowser(server.url("/post"))
+        try:
+            outcome = service.extract_browser_outcome_sync(url, http, browser, deadline=ExtractionDeadline.after(20))
+            payload = outcome.payload
+            assert not outcome.complete
+            assert "Synthetic fallback" in payload.content
+            assert payload.media_items[0].data == b"synthetic image"
+            assert payload.media_items[0].url == image
+            assert payload.original_url == url
+            assert payload.footer_text
+            assert len(media.requests) == 1
+        finally:
+            browser.close()
+        assert not browser.is_running
 
 
 @pytest.mark.unit
@@ -121,7 +181,9 @@ def test_instagram_sync_media_stage_extractor() -> None:
     )
 
     class ReelExtractor(NativeMediaExtractor):
-        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+        def extract(
+            self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+        ) -> RichMediaPayload:
             return expected_payload
 
     payload = service.extract_media_sync(url, http, ReelExtractor())
@@ -136,7 +198,9 @@ def test_instagram_sync_media_stage_requires_browser_continuation() -> None:
     http = FakeSyncHTTP()
 
     class FailingExtractor(NativeMediaExtractor):
-        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+        def extract(
+            self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+        ) -> RichMediaPayload:
             msg = "yt-dlp miss"
             raise MediaExtractionError(msg)
 
@@ -152,7 +216,9 @@ def test_instagram_text_only_ytdlp_continues_to_browser() -> None:
     http = FakeSyncHTTP()
 
     class TextOnlyExtractor(NativeMediaExtractor):
-        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+        def extract(
+            self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+        ) -> RichMediaPayload:
             return RichMediaPayload(
                 author_name="Creator",
                 author_handle="creator",
@@ -189,25 +255,14 @@ def test_instagram_sync_browser_stage_extraction() -> None:
 
 
 @pytest.mark.unit
-def test_instagram_sync_browser_stage_fallback_to_og() -> None:
-    """Test that browser-stage falls back to OpenGraph metadata when browser yields no payload."""
+def test_instagram_browser_stage_rejects_metadata_only_http_fallback() -> None:
+    """A browser miss cannot turn HTTP metadata-only output into successful Instagram media."""
     service = InstagramService.sync(embed=DisabledEmbedAdapter())
-    url = "https://www.instagram.com/p/C9876543210/"
-    browser = FakeSyncBrowser()
-    html = (
-        "<!DOCTYPE html><html><head>"
-        '<meta property="og:title" content="Instagram Creator on Instagram: Beautiful View">'
-        '<meta property="og:description" content="Beautiful View description">'
-        '<meta property="og:image" content="https://scontent.cdninstagram.com/og_photo.jpg">'
-        "</head><body></body></html>"
-    )
-    http = FakeSyncHTTP(text_responses={url: html})
-
-    payload = service.extract_browser_media_sync(url, http, browser)
-    assert payload is not None
-    assert payload.author_name == "Instagram Creator"
-    assert "Beautiful View" in payload.content
-    assert payload.media_items[0].url == "https://scontent.cdninstagram.com/og_photo.jpg"
+    url = "https://www.instagram.com/p/Synthetic_1/"
+    http = FakeSyncHTTP(text_responses={url: '<meta property="og:title" content="Synthetic">'})
+    with pytest.raises(MediaExtractionError):
+        service.extract_browser_media_sync(url, http, FakeSyncBrowser())
+    assert not http.requests
 
 
 @pytest.mark.unit
@@ -223,7 +278,9 @@ def test_worker_media_stage_errors_in_strategy_order(caplog: pytest.LogCaptureFi
     http = FakeSyncHTTP()
 
     class BackendDownExtractor(NativeMediaExtractor):
-        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+        def extract(
+            self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+        ) -> RichMediaPayload:
             msg = "Media extraction failed."
             raise MediaExtractionError(msg)
 

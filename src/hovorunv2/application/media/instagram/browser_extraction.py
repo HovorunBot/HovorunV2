@@ -1,10 +1,13 @@
 """Enumerate Instagram browser carousels from structured data and bounded traversal."""
 
+import json
 from dataclasses import dataclass
 from operator import attrgetter
+from time import monotonic, sleep
 
 from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import MediaExtractionError
+from hovorunv2.application.media.instagram.browser_scripts import ADVANCE_SLIDE_JS, OBSERVE_SLIDE_JS, STRUCTURED_POST_JS
 from hovorunv2.application.media.instagram.parsing import parse_browser_documents
 from hovorunv2.application.media.instagram.results import (
     InstagramPost,
@@ -13,40 +16,11 @@ from hovorunv2.application.media.instagram.results import (
     order_observations,
 )
 from hovorunv2.application.media.limits import MAX_PLAYLIST_ITEMS
+from hovorunv2.utils.metadata import extract_og_metadata
 
-CAROUSEL_NEXT_SELECTOR = 'css:button[aria-label="Next"]'
 CAROUSEL_SELECTOR_TIMEOUT_SECONDS = 1.0
 MAX_CAROUSEL_STEPS = MAX_PLAYLIST_ITEMS
-
-STRUCTURED_POST_JS = """
-function() {
-    const find = (root) => {
-        if (!root) return null;
-        if (root.graphql && root.graphql.shortcode_media) return root.graphql.shortcode_media;
-        if (root.items && root.items[0]) return root.items[0];
-        return null;
-    };
-    const shared = window._sharedData && window._sharedData.entry_data && window._sharedData.entry_data.PostPage;
-    const additional = window.__additionalDataLoaded && window.__additionalDataLoaded.feed;
-    return find(additional) || (shared && find(shared[0])) || null;
-}
-"""
-
-OBSERVE_SLIDE_JS = """
-function() {
-    const slide = document.querySelector('[data-ig-slide-active]');
-    if (!slide) return null;
-    const video = slide.querySelector('video');
-    const image = slide.querySelector('img');
-    const media = video || image;
-    return {
-        position: Number(slide.dataset.igSlidePosition),
-        id: slide.dataset.igSlideId || String(slide.dataset.igSlidePosition),
-        url: media ? (media.currentSrc || media.src || '') : '',
-        is_video: Boolean(video),
-    };
-}
-"""
+SLIDE_POLL_SECONDS = 0.05
 
 
 @dataclass(frozen=True)
@@ -90,7 +64,7 @@ def _read_structured_post(tab: BrowserTab) -> list[object]:
 
 def _observe_slide(tab: BrowserTab, post: InstagramPost) -> _SlideObservation | None:
     """Read the currently visible slide facts or report an unavailable observation."""
-    raw = tab.run_js(OBSERVE_SLIDE_JS)
+    raw = tab.run_js(OBSERVE_SLIDE_JS.replace("__SHORTCODE__", json.dumps(post.shortcode)))
     if not isinstance(raw, dict):
         return None
     position = raw.get("position")
@@ -111,13 +85,22 @@ def _observe_slide(tab: BrowserTab, post: InstagramPost) -> _SlideObservation | 
     return _SlideObservation(position, slide, is_video)
 
 
-def _advance(tab: BrowserTab) -> bool:
-    """Advance one bounded carousel step; return False when no next control exists."""
-    button = tab.ele(CAROUSEL_NEXT_SELECTOR, timeout=CAROUSEL_SELECTOR_TIMEOUT_SECONDS)
-    if button is None:
-        return False
-    button.click()
-    return True
+def _advance(tab: BrowserTab, post: InstagramPost) -> bool:
+    """Advance only the requested article's enabled carousel control."""
+    return tab.run_js(ADVANCE_SLIDE_JS.replace("__SHORTCODE__", json.dumps(post.shortcode))) is True
+
+
+def _wait_for_slide(tab: BrowserTab, post: InstagramPost, previous: int) -> _SlideObservation | None:
+    """Wait for a bounded position change rather than reading immediately after a click."""
+    expires = monotonic() + CAROUSEL_SELECTOR_TIMEOUT_SECONDS
+    while True:
+        observation = _observe_slide(tab, post)
+        if observation is not None and observation.position != previous:
+            return observation
+        remaining = expires - monotonic()
+        if remaining <= 0:
+            return observation
+        sleep(min(SLIDE_POLL_SECONDS, remaining))
 
 
 def _traverse_carousel(tab: BrowserTab, post: InstagramPost, initial: InstagramResult | None) -> InstagramResult:
@@ -128,10 +111,10 @@ def _traverse_carousel(tab: BrowserTab, post: InstagramPost, initial: InstagramR
     video_unavailable = initial.video_unavailable if initial is not None else False
     traversed: set[int] = set()
 
+    observation = _observe_slide(tab, post)
     for _ in range(MAX_CAROUSEL_STEPS + 1):
         if _carousel_complete(slides, expected, terminal=terminal):
             break
-        observation = _observe_slide(tab, post)
         if observation is None:
             break
         if observation.position in traversed:
@@ -142,9 +125,10 @@ def _traverse_carousel(tab: BrowserTab, post: InstagramPost, initial: InstagramR
             slides[observation.position] = observation.slide
         elif observation.slide is None and observation.is_video:
             video_unavailable = True
-        if not _advance(tab):
+        if not _advance(tab, post):
             terminal = True
             break
+        observation = _wait_for_slide(tab, post, observation.position)
     return _build_result(post, slides, expected, initial, terminal=terminal, video_unavailable=video_unavailable)
 
 
@@ -198,4 +182,26 @@ def extract_browser_post(tab: BrowserTab, post: InstagramPost) -> InstagramResul
             initial = None
     if initial is not None and initial.complete:
         return initial
-    return _traverse_carousel(tab, post, initial)
+    try:
+        return _traverse_carousel(tab, post, initial)
+    except MediaExtractionError:
+        return _opengraph_candidate(tab, post)
+
+
+def _opengraph_candidate(tab: BrowserTab, post: InstagramPost) -> InstagramResult:
+    """Retain an OpenGraph preview as partial media, never as a complete album or text-only success."""
+    metadata = extract_og_metadata(tab.html)
+    original = metadata.get("url")
+    if original is not None and InstagramPost.from_url(original).shortcode != post.shortcode:
+        msg = "Instagram preview identifies another post."
+        raise MediaExtractionError(msg)
+    video = metadata.get("video") or metadata.get("video:url") or metadata.get("video:secure_url")
+    if not video and post.kind in {"reel", "reels", "tv"}:
+        msg = "Instagram video preview has no video source."
+        raise MediaExtractionError(msg)
+    url = video or metadata.get("image", "")
+    return InstagramResult(
+        post=post,
+        slides=(InstagramSlide(f"{post.shortcode}:preview", 0, url, is_video=bool(video)),),
+        content=metadata.get("description") or metadata.get("title") or "Instagram Post",
+    )

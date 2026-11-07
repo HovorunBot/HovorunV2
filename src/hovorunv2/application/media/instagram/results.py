@@ -10,9 +10,18 @@ from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.limits import MAX_PLAYLIST_ITEMS
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 
-POST_PATH = re.compile(r"/(?:[\w.-]+/)?(?P<kind>p|reel|reels|tv)/(?P<code>[A-Za-z0-9_-]+)/?")
+POST_PATH = re.compile(
+    r"/(?:[\w.-]+/)?(?P<kind>p|reel|reels|tv)/(?P<code>[A-Za-z0-9_-]+)(?:/c/[A-Za-z0-9_-]+(?:/r/[A-Za-z0-9_-]+)?)?/?"
+)
 INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com"})
 INCOMPLETE_MEDIA_TEXT = "⚠️ Some media may be missing."
+
+
+@dataclass
+class InstagramPayload(RichMediaPayload):
+    """Preserve provider completeness through browser downloads without changing shared DTOs."""
+
+    complete: bool = False
 
 
 def require_public_media_url(value: object) -> str:
@@ -198,13 +207,13 @@ class InstagramResult:
             return len(self.slides) == self.expected_count
         return self.terminal_verified
 
-    def to_payload(self) -> RichMediaPayload:
+    def to_payload(self) -> InstagramPayload:
         """Map one candidate to the existing payload without combining extraction attempts.
 
         Returns:
             Ordered media with canonical provider link and an honest partial indication.
         """
-        return RichMediaPayload(
+        return InstagramPayload(
             author_name=self.author_name,
             author_handle=self.author_handle,
             author_url="https://www.instagram.com/",
@@ -213,6 +222,7 @@ class InstagramResult:
             original_url=self.post.canonical_url,
             media_items=[MediaItem(slide.url, slide.is_video) for slide in self.slides],
             video_unavailable=self.video_unavailable,
+            complete=self.complete,
         )
 
 

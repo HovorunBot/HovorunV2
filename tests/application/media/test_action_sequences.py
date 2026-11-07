@@ -10,6 +10,7 @@ from hovorunv2.application.media.actions import (
     ExtractionStage,
     run_extraction_actions,
 )
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload, pack_media_payload, unpack_media_payload
@@ -163,7 +164,9 @@ def test_runner_propagates_cancellation() -> None:
 class _FailingExtractor(NativeMediaExtractor):
     """Force the generic backend strategy to miss recoverably."""
 
-    def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+    def extract(
+        self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+    ) -> RichMediaPayload:
         msg = "generic miss"
         raise MediaExtractionError(msg)
 

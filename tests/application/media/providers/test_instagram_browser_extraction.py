@@ -3,10 +3,7 @@
 import pytest
 
 from hovorunv2.application.media.errors import MediaExtractionError
-from hovorunv2.application.media.instagram.browser_extraction import (
-    CAROUSEL_NEXT_SELECTOR,
-    extract_browser_post,
-)
+from hovorunv2.application.media.instagram.browser_extraction import extract_browser_post
 from hovorunv2.application.media.instagram.results import InstagramPost
 from hovorunv2.application.media.limits import MAX_PLAYLIST_ITEMS
 
@@ -45,17 +42,6 @@ def _album(count: int, *, observed: int | None = None) -> dict[str, object]:
     }
 
 
-class _NextButton:
-    """Advance the fake carousel by one bounded step."""
-
-    def __init__(self, tab: _CarouselTab) -> None:
-        self._tab = tab
-
-    def click(self) -> object:
-        self._tab.advance()
-        return None
-
-
 class _CarouselTab:
     """Duck-typed browser tab exposing only the operations used by carousel extraction."""
 
@@ -65,28 +51,33 @@ class _CarouselTab:
         *,
         structured: dict[str, object] | None = None,
         wrap: bool = False,
+        html: str = "<html></html>",
     ) -> None:
         self._slides = slides
         self._structured = structured
         self._wrap = wrap
         self._index = 0
         self.clicks = 0
+        self._html = html
 
     def run_js(self, script: str) -> object:
-        if "shortcode_media" in script:
+        if "window._sharedData" in script:
             return self._structured
-        if "data-ig-slide-active" in script:
+        if "const rawPosition" in script:
             if not self._slides or self._index >= len(self._slides):
                 return None
             return self._slides[self._index]
+        if "button.click();" in script:
+            if not self._wrap and self._index + 1 >= len(self._slides):
+                return False
+            self.advance()
+            return True
         return None
 
-    def ele(self, locator: str, *, timeout: float) -> _NextButton | None:
-        if locator != CAROUSEL_NEXT_SELECTOR:
-            return None
-        if not self._wrap and self._index + 1 >= len(self._slides):
-            return None
-        return _NextButton(self)
+    @property
+    def html(self) -> str:
+        """Return an empty challenge document when traversal has no candidate."""
+        return self._html
 
     def advance(self) -> None:
         self.clicks += 1
@@ -150,3 +141,37 @@ def test_no_observable_media_raises_without_sentinel() -> None:
     tab = _CarouselTab([], structured={"shortcode": "OtherPost", "display_url": "https://media.example.invalid/x.jpg"})
     with pytest.raises(MediaExtractionError):
         extract_browser_post(tab, POST)
+
+
+def test_opengraph_preview_is_partial_and_keeps_canonical_identity() -> None:
+    """A rendered OpenGraph image remains an explicitly partial candidate."""
+    tab = _CarouselTab([], html='<meta property="og:image" content="https://media.example.invalid/preview.jpg">')
+    result = extract_browser_post(tab, POST)
+    assert not result.complete
+    assert not result.to_payload().complete
+    assert result.to_payload().original_url == POST.canonical_url
+    assert result.to_payload().footer_text
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        '<meta property="og:title" content="Synthetic text only">',
+        '<meta property="og:image" content="http://127.0.0.1/private.jpg">',
+        (
+            '<meta property="og:url" content="https://www.instagram.com/p/OtherPost/">'
+            '<meta property="og:image" content="https://media.example.invalid/preview.jpg">'
+        ),
+    ],
+)
+def test_unusable_or_wrong_post_opengraph_does_not_become_media(metadata: str) -> None:
+    """Text, unsafe targets and another post's preview cannot suppress a retained candidate."""
+    with pytest.raises(MediaExtractionError):
+        extract_browser_post(_CarouselTab([], html=metadata), POST)
+
+
+def test_reel_poster_without_video_is_not_successful_photo() -> None:
+    """A reel preview image never turns unavailable video into a delivered photo."""
+    tab = _CarouselTab([], html='<meta property="og:image" content="https://media.example.invalid/poster.jpg">')
+    with pytest.raises(MediaExtractionError):
+        extract_browser_post(tab, InstagramPost(POST.shortcode, "reel"))

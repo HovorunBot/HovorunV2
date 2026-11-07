@@ -9,6 +9,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.jobs.feature_jobs import JobOutcome
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.youtube import YoutubeService
@@ -223,7 +224,9 @@ def test_youtube_sync_video_url_skips_direct_and_uses_extractor() -> None:
     )
 
     class DummyExtractor(NativeMediaExtractor):
-        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+        def extract(
+            self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+        ) -> RichMediaPayload:
             return expected_payload
 
     # Direct extraction returns None for standard video URLs

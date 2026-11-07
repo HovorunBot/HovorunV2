@@ -19,6 +19,7 @@ from hovorunv2.application.media.actions import (
     run_extraction_actions,
 )
 from hovorunv2.application.media.browser import BrowserTab
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import (
     BrowserError,
     MediaExtractionError,
@@ -193,7 +194,11 @@ class BaseMediaClient(MediaParser):
         return None if payload is None else ActionOutcome(payload, complete=True)
 
     def _media_actions(
-        self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor
+        self,
+        url: str,
+        http: SyncHTTPPort,
+        extractor: NativeMediaExtractor,
+        deadline: ExtractionDeadline | None = None,
     ) -> tuple[ExtractionAction, ...]:
         """Declare the ordered media-stage extraction actions for this provider.
 
@@ -201,6 +206,7 @@ class BaseMediaClient(MediaParser):
             url: Cleaned media URL.
             http: Synchronous HTTP port.
             extractor: Native media extractor for the generic backend strategy.
+            deadline: Optional shared extraction cutoff.
 
         Returns:
             Ordered media-stage actions matching the provider's current tier behavior.
@@ -241,6 +247,8 @@ class BaseMediaClient(MediaParser):
         url: str,
         http: SyncHTTPPort,
         extractor: NativeMediaExtractor,
+        *,
+        deadline: ExtractionDeadline | None = None,
     ) -> RichMediaPayload:
         """Execute the provider's ordered media-stage actions, then hand off or fail.
 
@@ -248,13 +256,14 @@ class BaseMediaClient(MediaParser):
             url: Media URL to extract.
             http: Synchronous HTTP port for the request.
             extractor: Native media extractor for the generic backend strategy.
+            deadline: Optional shared extraction cutoff.
 
         Returns:
             Parsed provider payload.
         """
         cleaned_url = url.rstrip(".,")
         return run_extraction_actions(
-            self._media_actions(cleaned_url, http, extractor),
+            self._media_actions(cleaned_url, http, extractor, deadline),
             provider_name=self.name,
         )
 
@@ -263,6 +272,8 @@ class BaseMediaClient(MediaParser):
         url: str,
         http: SyncHTTPPort,
         browser: SyncBrowserPort,
+        *,
+        deadline: ExtractionDeadline | None = None,
     ) -> RichMediaPayload:
         """Execute browser-stage extraction across the browser and OpenGraph tiers.
 
@@ -270,6 +281,7 @@ class BaseMediaClient(MediaParser):
             url: Media URL to extract.
             http: Synchronous HTTP port for the request.
             browser: Synchronous browser port for the browser tier.
+            deadline: Optional shared extraction cutoff.
 
         Returns:
             Parsed provider payload.
@@ -279,7 +291,7 @@ class BaseMediaClient(MediaParser):
         """
         cleaned_url = url.rstrip(".,")
         try:
-            payload = self._extract_browser_sync(cleaned_url, browser)
+            payload = self._extract_browser_sync(cleaned_url, browser, deadline)
             if payload is not None:
                 return payload
         except MediaExtractionError:
@@ -295,7 +307,25 @@ class BaseMediaClient(MediaParser):
         msg = "Media extraction strategies are exhausted."
         raise MediaExtractionError(msg)
 
-    def _extract_browser_sync(self, url: str, browser: SyncBrowserPort) -> RichMediaPayload | None:
+    def extract_browser_outcome_sync(
+        self, url: str, http: SyncHTTPPort, browser: SyncBrowserPort, *, deadline: ExtractionDeadline
+    ) -> ActionOutcome:
+        """Preserve terminal browser success for providers without completeness policy.
+
+        Args:
+            url: Requested media URL.
+            http: Synchronous HTTP transport for existing metadata fallbacks.
+            browser: Child-owned browser transport.
+            deadline: Shared stage cutoff for browser operations and downloads.
+
+        Returns:
+            Terminal browser or metadata result under the provider's existing policy.
+        """
+        return ActionOutcome(self.extract_browser_media_sync(url, http, browser, deadline=deadline), complete=True)
+
+    def _extract_browser_sync(
+        self, url: str, browser: SyncBrowserPort, deadline: ExtractionDeadline | None = None
+    ) -> RichMediaPayload | None:
         """Perform config-driven headless browser extraction synchronously."""
         b_cfg = self._config.browser_config
         if not b_cfg:
@@ -307,6 +337,7 @@ class BaseMediaClient(MediaParser):
                 extractor_fn=partial(self._extract_from_browser_tab, b_cfg=b_cfg),
                 wait_selector=b_cfg.wait_selector,
                 cookies=self.get_browser_cookies(),
+                deadline=deadline,
             )
             if not payload:
                 return None

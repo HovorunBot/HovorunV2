@@ -9,6 +9,7 @@ from typing import ClassVar, Self
 from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserError, MediaExtractionError
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.provider_config import THREADS_CONFIG, ProviderConfig
@@ -44,7 +45,9 @@ class ThreadsService(BaseMediaClient):
         """Create a client instance for synchronous worker extraction."""
         return cls(THREADS_CONFIG)
 
-    def _extract_browser_sync(self, url: str, browser: SyncBrowserPort) -> RichMediaPayload | None:
+    def _extract_browser_sync(
+        self, url: str, browser: SyncBrowserPort, deadline: ExtractionDeadline | None = None
+    ) -> RichMediaPayload | None:
         """Extract Threads post via headless browser synchronously in the browser stage."""
         match = self._config.pattern.search(url)
         if not match:
@@ -54,7 +57,7 @@ class ThreadsService(BaseMediaClient):
         post_id = match.group("post_id")
 
         try:
-            html_content = browser.get_content(url, wait_selector="article")
+            html_content = browser.get_content(url, wait_selector="article", deadline=deadline)
         except BrowserError:
             msg = "Provider browser extraction failed."
             raise MediaExtractionError(msg) from None

@@ -2,18 +2,22 @@
 
 import logging
 import math
+from contextlib import nullcontext
 from http.cookiejar import Cookie
 from time import monotonic
 from urllib.parse import urlsplit
 
 import yt_dlp
+from yt_dlp.extractor import gen_extractor_classes
 from yt_dlp.networking import Request, Response
 
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
+from hovorunv2.application.media.deadlines import YTDLP_ALLOWANCE_SECONDS, ExtractionDeadline
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.limits import MAX_PLAYLIST_ITEMS
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.utils.formatting import format_number
+from hovorunv2.utils.operation_timeout import OperationTimeout
 from hovorunv2.utils.text import clean_caption_text
 
 logger = logging.getLogger(__name__)
@@ -162,12 +166,23 @@ def _add_cookies(ydl: yt_dlp.YoutubeDL, url: str, cookies: dict[str, str]) -> No
         )
 
 
-def extract_info(url: str, cookies: dict[str, str] | None = None) -> object:
+def _load_selected_extractor(backend: BoundedYoutubeDL, url: str) -> None:
+    """Resolve backend modules before arming an interrupt that could leave imports half initialized."""
+    for extractor_class in gen_extractor_classes():
+        if extractor_class.suitable(url):
+            backend.get_info_extractor(extractor_class.ie_key())
+            return
+
+
+def extract_info(
+    url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+) -> object:
     """Run bounded yt-dlp I/O without an event loop or payload-bearing diagnostics.
 
     Args:
         url: Media URL to extract.
         cookies: Optional provider cookies for the backend.
+        deadline: Optional shared stage deadline for the total backend operation.
 
     Returns:
         Raw extraction result from yt-dlp.
@@ -186,13 +201,18 @@ def extract_info(url: str, cookies: dict[str, str] | None = None) -> object:
         "extractor_retries": 0,
         "playlistend": MAX_PLAYLIST_ITEMS,
     }
+    allowance = deadline.narrow(YTDLP_ALLOWANCE_SECONDS) if deadline is not None else None
+    timeout = allowance.remaining() if allowance is not None else EXTRACTION_TIMEOUT_SECONDS
     try:
-        with BoundedYoutubeDL(options) as ydl:
+        with BoundedYoutubeDL(options, timeout) as ydl:
+            _load_selected_extractor(ydl, url)
             if cookies:
                 _add_cookies(ydl, url, cookies)
-            return ydl.extract_info(url, download=False)
+            guard = OperationTimeout(allowance.expires_at) if allowance is not None else nullcontext()
+            with guard:
+                return ydl.extract_info(url, download=False)
     except yt_dlp.utils.YoutubeDLError, OSError, ValueError:
-        logger.exception("Media extraction failed")
+        logger.warning("Media extraction failed")
         msg = "Media extraction failed."
         raise MediaExtractionError(msg) from None
 
@@ -200,16 +220,19 @@ def extract_info(url: str, cookies: dict[str, str] | None = None) -> object:
 class NativeMediaExtractor:
     """Synchronous worker entrypoint sharing the same extraction and parsing as the bot."""
 
-    def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+    def extract(
+        self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
+    ) -> RichMediaPayload:
         """Return provider facts without crossing an asynchronous execution boundary.
 
         Args:
             url: Media URL to extract.
             cookies: Optional provider cookies for the backend.
+            deadline: Optional shared stage deadline for the total backend operation.
 
         Returns:
             Parsed provider payload.
         """
-        return process_extraction_info(extract_info(url, cookies), url)
+        return process_extraction_info(extract_info(url, cookies, deadline=deadline), url)
 
     extract_payload = extract

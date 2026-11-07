@@ -62,6 +62,22 @@ def test_post_canonicalization_drops_tracking_and_username_prefix(kind: str) -> 
 
 
 @pytest.mark.parametrize(
+    "comment_path",
+    [
+        "/c/18166539670425208/",
+        "/c/18166539670425208",
+        "/c/18166539670425208/r/17987654321/",
+    ],
+)
+def test_post_canonicalization_drops_comment_subpath(comment_path: str) -> None:
+    """Comment links resolve to the parent post identity and drop the comment path."""
+    url = f"https://www.instagram.com/p/Synthetic_1{comment_path}?img_index=1"
+    post = InstagramPost.from_url(url)
+    assert post == InstagramPost("Synthetic_1", "p")
+    assert post.canonical_url == "https://www.instagram.com/p/Synthetic_1/"
+
+
+@pytest.mark.parametrize(
     "url",
     [
         "https://instagram.com.evil.invalid/p/Synthetic_1/",

@@ -74,12 +74,36 @@ def test_browser_complete_structured_album_in_order() -> None:
 def test_browser_lazy_carousel_enumerates_remaining_slides() -> None:
     """Lazy slides outside the structured prefix are collected by bounded traversal."""
     slides = _slides(5)
-    server, url = _serve(carousel_page(SHORTCODE, slides, structured_observed=2))
+    server, url = _serve(carousel_page(SHORTCODE, slides, structured_observed=2, advance_delay_ms=100))
     with server:
         service = NativeBrowserService()
         try:
             payload, _ = service.extract_and_download(url, _extract_carousel, deadline=ExtractionDeadline.after(60))
             assert [item.url for item in payload.media_items] == [_media_url(position) for position in range(5)]
+            assert payload.footer_text == ""
+        finally:
+            service.close()
+
+
+@pytest.mark.slow
+def test_browser_dom_traversal_excludes_other_articles_and_profile_images() -> None:
+    """Resolve the requested article before observing media or advancing a carousel."""
+    document = carousel_page(SHORTCODE, _slides(3), structured_observed=0, advance_delay_ms=100)
+    unrelated = (
+        '<article><a href="https://www.instagram.com/p/OtherPost/">Other post</a>'
+        '<ul><li><img src="https://media.example.invalid/unrelated.jpg"></li></ul>'
+        '<button aria-label="Next">Next</button></article>'
+    )
+    avatar = '<header><img src="https://media.example.invalid/avatar.jpg"></header>'
+    document = document.replace("<body>", "<body>" + unrelated).replace(
+        '<article id="synthetic-post">', '<article id="synthetic-post">' + avatar
+    )
+    server, url = _serve(document)
+    with server:
+        service = NativeBrowserService()
+        try:
+            payload, _ = service.extract_and_download(url, _extract_carousel, deadline=ExtractionDeadline.after(60))
+            assert [item.url for item in payload.media_items] == [_media_url(position) for position in range(3)]
             assert payload.footer_text == ""
         finally:
             service.close()

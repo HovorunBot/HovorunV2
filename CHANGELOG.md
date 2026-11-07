@@ -2,11 +2,15 @@
 
 ### Feat
 
+- **instagram**: retain partial candidates across browser handoff
 - **instagram**: add bounded vxinstagram extraction
 - **instagram**: extract complete browser carousels
 
 ### Fix
 
+- **instagram**: bound stage extraction, retain best candidates, and strip comment URLs
+- **instagram**: degrade gracefully on retained-candidate storage failure
+- **instagram**: continue past text-only generic results
 - **media**: bound Instagram fallback execution
 - **migrations**: preserve caller logging during embedded upgrades
 - **runtime**: increase worker task timeout for browser extraction
@@ -15,6 +19,7 @@
 
 ### Refactor
 
+- **instagram**: remove Instaloader fallback and dependency
 - **media**: declare provider extraction action sequences
 - **instagram**: add typed extraction candidates and parsers
 - **packaging**: partition pyproject.toml into core and role-specific extras

@@ -64,7 +64,6 @@ def create_feature_runner(
     Returns:
         Configured FeatureJobRunner ready to orchestrate stage execution.
     """
-    del safety
     downloader = NativeMediaDownloader(http)
     delivery = custom_delivery or NativeTelegramDelivery(api, downloader)
     translation = NativeTranslationService(http, settings, db.policies)
@@ -89,4 +88,5 @@ def create_feature_runner(
         feedback=db.policies,
         gate=ValkeyFeedbackGate(client, namespace),
         embed=embed,
+        safety=safety,
     )
