@@ -1,6 +1,7 @@
 """Application service for Instagram media extraction using yt-dlp, embed and browser fallbacks."""
 
 import logging
+from collections.abc import Callable
 from functools import partial
 from typing import Self
 
@@ -74,6 +75,13 @@ class InstagramService(BaseMediaClient):
         post = InstagramPost.from_url(url)
         return extract_browser_post(tab, post).to_payload()
 
+    def _media_outcome(self, strategy: Callable[[], RichMediaPayload | None]) -> RichMediaPayload | None:
+        """Continue past a text-only/metadata-only generic result, which is not usable media."""
+        payload = strategy()
+        if payload is None or not payload.media_items:
+            return None
+        return payload
+
     def _media_actions(
         self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor
     ) -> tuple[ExtractionAction, ...]:
@@ -83,7 +91,10 @@ class InstagramService(BaseMediaClient):
             ExtractionAction(
                 "generic extraction",
                 ExtractionStage.MEDIA,
-                partial(extractor.extract, url, cookies=self.get_ytdlp_cookies()),
+                partial(
+                    self._media_outcome,
+                    partial(extractor.extract, url, cookies=self.get_ytdlp_cookies()),
+                ),
             ),
             ExtractionAction("embed fallback", ExtractionStage.MEDIA, partial(self._extract_embed_fallback_sync, url)),
             ExtractionAction("browser extraction", ExtractionStage.BROWSER, lambda: None),

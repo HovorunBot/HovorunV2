@@ -145,6 +145,27 @@ def test_instagram_sync_media_stage_requires_browser_continuation() -> None:
 
 
 @pytest.mark.unit
+def test_instagram_text_only_ytdlp_continues_to_browser() -> None:
+    """A text-only/metadata-only generic result is not usable media and continues the chain."""
+    service = InstagramService.sync(embed=DisabledEmbedAdapter())
+    url = "https://www.instagram.com/p/C9876543210/"
+    http = FakeSyncHTTP()
+
+    class TextOnlyExtractor(NativeMediaExtractor):
+        def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
+            return RichMediaPayload(
+                author_name="Creator",
+                author_handle="creator",
+                author_url="",
+                content="text only",
+                original_url=url,
+            )
+
+    with pytest.raises(BrowserContinuationRequired):
+        service.extract_media_sync(url, http, TextOnlyExtractor())
+
+
+@pytest.mark.unit
 def test_instagram_sync_browser_stage_extraction() -> None:
     """Test browser-stage extraction using SyncBrowserPort."""
     service = InstagramService.sync(embed=DisabledEmbedAdapter())
