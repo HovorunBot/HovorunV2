@@ -38,7 +38,12 @@ from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
-from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
+from hovorunv2.application.media.payloads import (
+    MediaItem,
+    RichMediaPayload,
+    pack_media_payload,
+    unpack_media_payload,
+)
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.media.providers.instagram import INSTAGRAM_CONFIG
 from hovorunv2.application.translation.native_translation import NativeTranslationService
@@ -433,6 +438,37 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
                     runtime.budgets.finish(envelope.job_id, (UnitAmount(UsageUnit.REQUESTS, 0),), clock.now()).state
                     == ReservationState.RELEASED
                 )
+
+
+@pytest.mark.slow
+async def test_retained_candidate_roundtrips_through_encrypted_job_store(
+    test_container: AsyncContainer, postgres_database_url: str
+) -> None:
+    """A retained candidate is encrypted, job-scoped, reloadable and deletable."""
+    settings = await test_container.get(Settings)
+    settings = settings.model_copy(update={"database_url": postgres_database_url})
+    clock = ManualClock(time.time())
+    payload = RichMediaPayload(
+        author_name="Retained",
+        author_handle="retained",
+        author_url="https://www.instagram.com/",
+        content="retained partial",
+        footer_text="⚠️ Some media may be missing.",
+        original_url="https://www.instagram.com/p/synthetic/",
+        media_items=[MediaItem("https://media.example.invalid/a.jpg", is_video=False)],
+    )
+    async with runtime_cache(test_container) as (_cache, namespace):
+        with WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime:
+            data = pack_media_payload(payload)
+            assert runtime.payloads.store_candidate("retained-job", data, clock.now() + 300)
+            loaded = runtime.payloads.load_candidate("retained-job")
+            assert loaded is not None
+            restored = unpack_media_payload(loaded)
+            assert restored.content == "retained partial"
+            assert restored.footer_text == "⚠️ Some media may be missing."
+            assert [item.url for item in restored.media_items] == ["https://media.example.invalid/a.jpg"]
+            runtime.payloads.delete_candidate("retained-job")
+            assert runtime.payloads.load_candidate("retained-job") is None
 
 
 @pytest.mark.parametrize(

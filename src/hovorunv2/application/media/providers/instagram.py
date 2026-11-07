@@ -7,7 +7,7 @@ from typing import Self
 
 from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
-from hovorunv2.application.media.actions import ExtractionAction, ExtractionStage
+from hovorunv2.application.media.actions import ActionOutcome, ExtractionAction, ExtractionStage
 from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.deadlines import EMBED_ALLOWANCE_SECONDS, ExtractionDeadline
 from hovorunv2.application.media.extractor import NativeMediaExtractor
@@ -61,12 +61,6 @@ class InstagramService(BaseMediaClient):
             }
         ]
 
-    def _extract_embed_fallback_sync(self, url: str) -> RichMediaPayload | None:
-        """Run the bounded public embed fallback from validated Instagram facts."""
-        post = InstagramPost.from_url(url)
-        deadline = ExtractionDeadline.after(EMBED_ALLOWANCE_SECONDS)
-        return self._embed.extract(post, deadline).to_payload()
-
     def _extract_from_browser_tab(
         self, tab: BrowserTab, url: str, b_cfg: BrowserFallbackConfig
     ) -> RichMediaPayload | None:
@@ -75,19 +69,30 @@ class InstagramService(BaseMediaClient):
         post = InstagramPost.from_url(url)
         return extract_browser_post(tab, post).to_payload()
 
-    def _media_outcome(self, strategy: Callable[[], RichMediaPayload | None]) -> RichMediaPayload | None:
-        """Continue past a text-only/metadata-only generic result, which is not usable media."""
+    def _embed_outcome(self, url: str) -> ActionOutcome:
+        """Run the bounded public embed action with its completeness evidence."""
+        result = self._embed.extract(
+            InstagramPost.from_url(url), ExtractionDeadline.after(EMBED_ALLOWANCE_SECONDS)
+        )
+        return ActionOutcome(result.to_payload(), complete=result.complete)
+
+    def _media_outcome(self, strategy: Callable[[], RichMediaPayload | None]) -> ActionOutcome | None:
+        """Accept a media-bearing generic result; text-only/metadata-only output continues."""
         payload = strategy()
         if payload is None or not payload.media_items:
             return None
-        return payload
+        return ActionOutcome(payload, complete=True)
 
     def _media_actions(
         self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor
     ) -> tuple[ExtractionAction, ...]:
         """Declare Instagram's ordered media-stage actions."""
         actions = [
-            ExtractionAction("direct extraction", ExtractionStage.MEDIA, partial(self.extract_sync, url, http)),
+            ExtractionAction(
+                "direct extraction",
+                ExtractionStage.MEDIA,
+                partial(self._terminal_outcome, partial(self.extract_sync, url, http)),
+            ),
             ExtractionAction(
                 "generic extraction",
                 ExtractionStage.MEDIA,
@@ -96,7 +101,7 @@ class InstagramService(BaseMediaClient):
                     partial(extractor.extract, url, cookies=self.get_ytdlp_cookies()),
                 ),
             ),
-            ExtractionAction("embed fallback", ExtractionStage.MEDIA, partial(self._extract_embed_fallback_sync, url)),
+            ExtractionAction("embed fallback", ExtractionStage.MEDIA, partial(self._embed_outcome, url)),
             ExtractionAction("browser extraction", ExtractionStage.BROWSER, lambda: None),
         ]
         return tuple(actions)

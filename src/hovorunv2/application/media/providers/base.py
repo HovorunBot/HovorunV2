@@ -3,7 +3,7 @@
 import logging
 import re
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import partial
 from typing import ClassVar, Self
 
@@ -12,7 +12,12 @@ from hovorunv2.application.jobs.http_ports import (
     SyncBrowserPort,
     SyncHTTPPort,
 )
-from hovorunv2.application.media.actions import ExtractionAction, ExtractionStage, run_extraction_actions
+from hovorunv2.application.media.actions import (
+    ActionOutcome,
+    ExtractionAction,
+    ExtractionStage,
+    run_extraction_actions,
+)
 from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import (
     BrowserError,
@@ -182,6 +187,11 @@ class BaseMediaClient(MediaParser):
             return self._resolve_redirect_sync(http, url, headers=self._config.headers or None)
         return url
 
+    def _terminal_outcome(self, strategy: Callable[[], RichMediaPayload | None]) -> ActionOutcome | None:
+        """Wrap a provider-terminal strategy result as a proven-complete outcome."""
+        payload = strategy()
+        return None if payload is None else ActionOutcome(payload, complete=True)
+
     def _media_actions(
         self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor
     ) -> tuple[ExtractionAction, ...]:
@@ -196,7 +206,11 @@ class BaseMediaClient(MediaParser):
             Ordered media-stage actions matching the provider's current tier behavior.
         """
         actions = [
-            ExtractionAction("direct extraction", ExtractionStage.MEDIA, partial(self.extract_sync, url, http)),
+            ExtractionAction(
+                "direct extraction",
+                ExtractionStage.MEDIA,
+                partial(self._terminal_outcome, partial(self.extract_sync, url, http)),
+            ),
         ]
         is_post_url = bool(self._config.post_url_pattern and self._config.post_url_pattern.search(url))
         if not is_post_url:
@@ -204,7 +218,10 @@ class BaseMediaClient(MediaParser):
                 ExtractionAction(
                     "generic extraction",
                     ExtractionStage.MEDIA,
-                    partial(extractor.extract, url, cookies=self.get_ytdlp_cookies()),
+                    partial(
+                        self._terminal_outcome,
+                        partial(extractor.extract, url, cookies=self.get_ytdlp_cookies()),
+                    ),
                 )
             )
         if self.has_browser_fallback:
@@ -214,7 +231,7 @@ class BaseMediaClient(MediaParser):
                 ExtractionAction(
                     "metadata extraction",
                     ExtractionStage.MEDIA,
-                    partial(self.extract_metadata_sync, url, http),
+                    partial(self._terminal_outcome, partial(self.extract_metadata_sync, url, http)),
                 )
             )
         return tuple(actions)
@@ -240,10 +257,6 @@ class BaseMediaClient(MediaParser):
             self._media_actions(cleaned_url, http, extractor),
             provider_name=self.name,
         )
-
-    def _extract_embed_fallback_sync(self, url: str) -> RichMediaPayload | None:
-        """Override for providers with a bounded public-embed fallback owning its HTTP client."""
-        return None
 
     def extract_browser_media_sync(
         self,

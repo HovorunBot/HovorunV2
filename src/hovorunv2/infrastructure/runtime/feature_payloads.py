@@ -237,6 +237,7 @@ class WorkerPayloadClient:
         self._settings = settings
         self._clock = clock
         self._prefix = namespace.value + "payload:"
+        self._candidate_suffix = "candidate:"
         self._safety = safety
         self._require_owner = require_owner
 
@@ -309,3 +310,37 @@ class WorkerPayloadClient:
         validate_reference(reference)
         self._client.delete(self._prefix + reference)
         logger.debug("Payload deleted: reference=%s", reference)
+
+    def store_candidate(self, job_id: str, data: bytes, deadline: float) -> bool:
+        """Encrypt and store a job-scoped retained candidate within the original deadline."""
+        self._require_owner()
+        sealed = self.seal(job_id, data, deadline)
+        ttl = math.ceil(deadline - self._clock.now()) + PAYLOAD_CLEANUP_SECONDS
+        try:
+            self._client.set(self._prefix + self._candidate_suffix + job_id, sealed.blob, ex=ttl)
+        except RedisError, OSError:
+            logger.debug("Candidate store unavailable: job=%s", job_id)
+            return False
+        return True
+
+    def load_candidate(self, job_id: str) -> bytes | None:
+        """Return decrypted retained candidate bytes, or None when absent or unusable."""
+        self._require_owner()
+        try:
+            raw = self._client.get(self._prefix + self._candidate_suffix + job_id)
+            if raw is None:
+                return None
+            master = self._settings.cache_encryption_key
+            metadata, master = _read_encrypted_payload(raw, job_id, master, self._clock.now())
+            fernet = get_fernet_for_chat(master, metadata.salt)
+            data, _ = _decrypt_payload(metadata, fernet)
+        except _PayloadExpiredError, RedisError, OSError:
+            return None
+        except KeyError, TypeError, ValueError, InvalidToken:
+            return None
+        return data
+
+    def delete_candidate(self, job_id: str) -> None:
+        """Remove a retained candidate during terminal cleanup."""
+        self._require_owner()
+        self._client.delete(self._prefix + self._candidate_suffix + job_id)

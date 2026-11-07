@@ -4,18 +4,32 @@ from functools import partial
 
 import pytest
 
-from hovorunv2.application.media.actions import ExtractionAction, ExtractionStage, run_extraction_actions
+from hovorunv2.application.media.actions import (
+    ActionOutcome,
+    ExtractionAction,
+    ExtractionStage,
+    run_extraction_actions,
+)
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.threads import ThreadsService
 from hovorunv2.application.media.providers.twitter import TwitterService
 from tests.utils.sync_http import FakeSyncHTTP
 
 pytestmark = pytest.mark.unit
 
-PAYLOAD = RichMediaPayload(author_name="Synthetic", author_handle="synthetic", author_url="", content="ok")
 ACTIONS_LOGGER = "hovorunv2.application.media.actions"
+
+
+def _payload(items: int) -> RichMediaPayload:
+    return RichMediaPayload(
+        author_name="Synthetic",
+        author_handle="synthetic",
+        author_url="",
+        content="ok",
+        media_items=[MediaItem(f"https://media.example.invalid/{index}.jpg", is_video=False) for index in range(items)],
+    )
 
 
 class _Recorder:
@@ -24,11 +38,15 @@ class _Recorder:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def succeed(self, name: str) -> RichMediaPayload:
+    def succeed(self, name: str, items: int = 1) -> ActionOutcome:
         self.calls.append(name)
-        return PAYLOAD
+        return ActionOutcome(_payload(items), complete=True)
 
-    def fail(self, name: str) -> RichMediaPayload:
+    def partial(self, name: str, items: int = 1) -> ActionOutcome:
+        self.calls.append(name)
+        return ActionOutcome(_payload(items), complete=None)
+
+    def fail(self, name: str) -> ActionOutcome:
         self.calls.append(name)
         msg = "synthetic miss"
         raise MediaExtractionError(msg)
@@ -42,14 +60,14 @@ def _action(name: str, run: object, stage: ExtractionStage = ExtractionStage.MED
     return ExtractionAction(name, stage, run)
 
 
-def test_runner_returns_first_success_without_running_later_actions() -> None:
-    """An early success stops the sequence; later network actions never run."""
+def test_runner_returns_first_complete_without_running_later_actions() -> None:
+    """A proven-complete success stops the sequence; later network actions never run."""
     recorder = _Recorder()
     actions = (
         _action("first", partial(recorder.succeed, "first")),
         _action("second", partial(recorder.succeed, "second")),
     )
-    assert run_extraction_actions(actions, provider_name="synthetic") is PAYLOAD
+    assert run_extraction_actions(actions, provider_name="synthetic") == _payload(1)
     assert recorder.calls == ["first"]
 
 
@@ -60,8 +78,30 @@ def test_runner_continues_after_recoverable_failure() -> None:
         _action("failing", partial(recorder.fail, "failing")),
         _action("success", partial(recorder.succeed, "success")),
     )
-    assert run_extraction_actions(actions, provider_name="synthetic") is PAYLOAD
+    assert run_extraction_actions(actions, provider_name="synthetic") == _payload(1)
     assert recorder.calls == ["failing", "success"]
+
+
+def test_runner_retains_unknown_then_prefers_complete() -> None:
+    """An unknown-completeness result does not short-circuit a later complete action."""
+    recorder = _Recorder()
+    actions = (
+        _action("partial", partial(recorder.partial, "partial", 1)),
+        _action("complete", partial(recorder.succeed, "complete", 5)),
+    )
+    assert run_extraction_actions(actions, provider_name="synthetic") == _payload(5)
+    assert recorder.calls == ["partial", "complete"]
+
+
+def test_runner_returns_best_retained_partial_after_exhaustion() -> None:
+    """A later smaller partial never replaces a larger earlier usable candidate."""
+    recorder = _Recorder()
+    actions = (
+        _action("larger", partial(recorder.partial, "larger", 3)),
+        _action("smaller", partial(recorder.partial, "smaller", 1)),
+    )
+    assert run_extraction_actions(actions, provider_name="synthetic") == _payload(3)
+    assert recorder.calls == ["larger", "smaller"]
 
 
 def test_runner_raises_exhausted_when_all_actions_miss() -> None:
@@ -72,23 +112,37 @@ def test_runner_raises_exhausted_when_all_actions_miss() -> None:
     assert recorder.calls == ["miss"]
 
 
-def test_runner_hands_off_at_browser_action() -> None:
-    """A browser-stage marker raises the handoff signal before any later action."""
+def test_runner_hands_off_with_retained_partial() -> None:
+    """A browser-stage marker carries the best retained partial for cross-stage selection."""
+    recorder = _Recorder()
+    actions = (
+        _action("media", partial(recorder.partial, "media", 2)),
+        _action("browser", partial(recorder.miss, "browser"), ExtractionStage.BROWSER),
+        _action("after", partial(recorder.succeed, "after")),
+    )
+    with pytest.raises(BrowserContinuationRequired) as handoff:
+        run_extraction_actions(actions, provider_name="synthetic")
+    assert handoff.value.retained == _payload(2)
+    assert recorder.calls == ["media"]
+
+
+def test_runner_hands_off_without_retained_partial() -> None:
+    """A browser handoff with no usable media carries no retained candidate."""
     recorder = _Recorder()
     actions = (
         _action("media", partial(recorder.miss, "media")),
         _action("browser", partial(recorder.miss, "browser"), ExtractionStage.BROWSER),
-        _action("after", partial(recorder.succeed, "after")),
     )
-    with pytest.raises(BrowserContinuationRequired):
+    with pytest.raises(BrowserContinuationRequired) as handoff:
         run_extraction_actions(actions, provider_name="synthetic")
+    assert handoff.value.retained is None
     assert recorder.calls == ["media"]
 
 
 def test_runner_propagates_cancellation() -> None:
     """Cancellation and other non-recoverable exceptions are not swallowed."""
 
-    def cancel() -> RichMediaPayload:
+    def cancel() -> ActionOutcome:
         raise KeyboardInterrupt
 
     with pytest.raises(KeyboardInterrupt):

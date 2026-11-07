@@ -218,7 +218,7 @@ class FeatureQueuePort(Protocol):
 
 
 class SyncPayloadPort(Protocol):
-    """Synchronous worker payload loading contract."""
+    """Synchronous worker payload loading and job-scoped candidate retention contract."""
 
     def load(self, reference: str, job_id: str) -> LoadedPayload:
         """Return safe unavailable state when payload is missing, expired or undecryptable."""
@@ -226,4 +226,16 @@ class SyncPayloadPort(Protocol):
 
     def delete(self, reference: str) -> None:
         """Remove the exact opaque payload reference during terminal cleanup."""
+        ...
+
+    def store_candidate(self, job_id: str, data: bytes, deadline: float) -> bool:
+        """Encrypt and store a job-scoped retained candidate within the original deadline."""
+        ...
+
+    def load_candidate(self, job_id: str) -> bytes | None:
+        """Return decrypted retained candidate bytes, or None when absent or expired."""
+        ...
+
+    def delete_candidate(self, job_id: str) -> None:
+        """Remove a retained candidate during terminal cleanup."""
         ...

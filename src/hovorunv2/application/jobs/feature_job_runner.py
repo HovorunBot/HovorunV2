@@ -50,7 +50,7 @@ from hovorunv2.application.media.errors import (
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.finalization import append_translation, prepare_caption_text
 from hovorunv2.application.media.instagram.ports import InstagramEmbedPort
-from hovorunv2.application.media.payloads import RichMediaPayload
+from hovorunv2.application.media.payloads import RichMediaPayload, pack_media_payload, unpack_media_payload
 from hovorunv2.application.media.providers.base import FACEBOOK_CONFIG, BaseMediaClient
 from hovorunv2.application.media.providers.bluesky import BlueskyService
 from hovorunv2.application.media.providers.instagram import InstagramService
@@ -433,6 +433,7 @@ class FeatureJobRunner:
         token: str,
         now: float,
     ) -> str:
+        self._delete_retained_candidate(envelope.job_id)
         split_def = self._check_post_extraction_gates(envelope, raw_payload, client)
         if split_def is None:
             logger.info("Worker skipped delivery after the access or lifecycle check")
@@ -485,33 +486,67 @@ class FeatureJobRunner:
         logger.info("Worker starting media extraction for provider %s", client.name)
         if stage == JobStage.MEDIA:
             return self._extract_media_stage(envelope, url, client, token)
-        return self._extract_browser_stage(url, client)
+        return self._extract_browser_stage(envelope, url, client)
 
     def _extract_media_stage(
         self, envelope: JobEnvelope, url: str, client: BaseMediaClient, token: str
     ) -> tuple[RichMediaPayload, BaseMediaClient]:
         try:
             raw_payload = client.extract_media_sync(url, self._http, self._extractor)
-        except BrowserContinuationRequired:
+        except BrowserContinuationRequired as continuation:
             if not self._settings.browser_enabled:
+                if continuation.retained is not None:
+                    logger.info("Browser disabled; delivering retained usable partial candidate")
+                    return continuation.retained, client
                 logger.info("Browser continuation disabled by deployment configuration")
                 msg = "Browser fallback is disabled for this deployment."
                 raise MediaExtractionError(msg) from None
+            self._store_retained_candidate(envelope, continuation.retained)
             self._handoff_to_browser(envelope, token)
             raise
         else:
             logger.info("Worker extracted %s media items", len(raw_payload.media_items))
             return raw_payload, client
 
-    def _extract_browser_stage(self, url: str, client: BaseMediaClient) -> tuple[RichMediaPayload, BaseMediaClient]:
+    def _extract_browser_stage(
+        self, envelope: JobEnvelope, url: str, client: BaseMediaClient
+    ) -> tuple[RichMediaPayload, BaseMediaClient]:
         if not self._settings.browser_enabled:
             msg = "Browser extraction is disabled for this deployment."
             raise BrowserError(msg)
         if self._browser is None:
             msg = "Browser service is not available for browser stage."
             raise BrowserError(msg)
-        raw_payload = client.extract_browser_media_sync(url, self._http, self._browser)
+        try:
+            raw_payload = client.extract_browser_media_sync(url, self._http, self._browser)
+        except MediaExtractionError:
+            retained = self._load_retained_candidate(envelope)
+            if retained is not None:
+                logger.info("Browser stage failed; delivering retained usable partial candidate")
+                return retained, client
+            raise
         return raw_payload, client
+
+    def _store_retained_candidate(self, envelope: JobEnvelope, retained: RichMediaPayload | None) -> None:
+        """Retain a usable partial candidate across the browser handoff within the job deadline."""
+        if retained is None:
+            return
+        self._payloads.store_candidate(envelope.job_id, pack_media_payload(retained), envelope.deadline)
+
+    def _load_retained_candidate(self, envelope: JobEnvelope) -> RichMediaPayload | None:
+        """Load and validate the encrypted retained candidate, if one survives the handoff."""
+        data = self._payloads.load_candidate(envelope.job_id)
+        if data is None:
+            return None
+        try:
+            return unpack_media_payload(data)
+        except ValueError:
+            logger.exception("Retained candidate is malformed")
+            return None
+
+    def _delete_retained_candidate(self, job_id: str) -> None:
+        """Remove the retained candidate on terminal, cancellation or deletion cleanup."""
+        self._payloads.delete_candidate(job_id)
 
     def _handoff_to_browser(self, envelope: JobEnvelope, token: str) -> None:
         logger.info("Worker requesting browser continuation")
@@ -637,6 +672,7 @@ class FeatureJobRunner:
             )
             if terminal:
                 self._payloads.delete(updated.envelope.payload_ref)
+                self._payloads.delete_candidate(job_id)
                 if updated.budget_reserved:
                     self._budgets.finish(job_id, (), self._clock.now())
             cleared += 1

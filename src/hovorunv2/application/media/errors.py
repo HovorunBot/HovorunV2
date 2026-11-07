@@ -1,6 +1,10 @@
 """Safe extraction failures and explicit per-item download outcomes."""
 
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hovorunv2.application.media.payloads import RichMediaPayload
 
 
 class MediaExtractionError(ValueError):
@@ -28,4 +32,12 @@ class BrowserError(Exception):
 
 
 class BrowserContinuationRequired(Exception):  # noqa: N818
-    """The media stage finished non-browser tiers without media; browser stage continuation is required."""
+    """The media stage finished non-browser tiers; browser continuation is required.
+
+    Args:
+        retained: Best usable partial candidate collected before the handoff, when present.
+    """
+
+    def __init__(self, retained: RichMediaPayload | None = None) -> None:
+        self.retained = retained
+        super().__init__("browser_continuation_required")
