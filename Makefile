@@ -28,7 +28,7 @@ FORCE ?= 0
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
         test test-unit test-fast test-profile test-coverage lint format type-check lint-imports check install-hooks \
         clean backup logs status \
-        ai agy gemini codex claude ai-check ai-next
+        ai agy gemini codex claude deepseek ai-check ai-next
 
 # Each command uses one complete environment file, never an overlay.
 ## Run setup, then start the selected Docker stack.
@@ -291,10 +291,10 @@ install-hooks:
 		uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg --hook-type post-commit; \
 	fi
 
-## Launch an assistant CLI with sandbox and workspace settings (TOOL=<codex|agy|gemini|claude|custom> [MODEL=...]).
+## Launch an assistant with project workspace settings (TOOL=<codex|agy|gemini|claude|deepseek|custom> [MODEL=...]).
 ai:
 	@if [ -z "$(TOOL)" ]; then \
-		echo "Usage: make ai TOOL=<codex|agy|gemini|claude|custom> [MODEL=...] [ARGS=...]"; \
+		echo "Usage: make ai TOOL=<codex|agy|gemini|claude|deepseek|custom> [MODEL=...] [ARGS=...]"; \
 		exit 2; \
 	fi; \
 	AI_MODEL="$(MODEL)" ./scripts/ai-workflow $(TOOL) $(ARGS)
@@ -313,6 +313,10 @@ codex:
 ## Launch Claude Code assistant with project settings (optional MODEL=...).
 claude:
 	@$(MAKE) ai TOOL=claude MODEL="$(MODEL)" ARGS="$(ARGS)"
+
+## Launch the DeepSeek Harness web UI through npx (optional ARGS="--port 3081 --no-open").
+deepseek:
+	@$(MAKE) ai TOOL=deepseek MODEL="$(MODEL)" ARGS="$(ARGS)"
 
 ## Validate local ai-schemes initiatives (optional SCHEME=path/to/initiative).
 ai-check:

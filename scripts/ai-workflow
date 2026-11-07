@@ -56,6 +56,14 @@ case "$workflow_assistant" in
         fi
         argv+=("$@")
         ;;
+    deepseek)
+        if [[ -n "${AI_MODEL:-}" ]]; then
+            printf 'ai-workflow: configure DeepSeek models in its web UI; MODEL is not supported\n' >&2
+            exit 2
+        fi
+        tool_bin="npx"
+        argv=("$tool_bin" @deepseek-ai/dsh web "$@")
+        ;;
     custom)
         if [[ -z "${AI_RUNNER:-}" ]]; then
             printf 'ai-workflow: AI_RUNNER environment variable must be set for custom tool\n' >&2
@@ -65,7 +73,7 @@ case "$workflow_assistant" in
         argv=("$tool_bin" "$@")
         ;;
     *)
-        printf 'Usage: %s [--dry-run] {codex|agy|gemini|claude|custom} [--] [args...]\n' "$0" >&2
+        printf 'Usage: %s [--dry-run] {codex|agy|gemini|claude|deepseek|custom} [--] [args...]\n' "$0" >&2
         printf 'Environment variables:\n' >&2
         printf '  AI_MODEL          Model override for codex, agy, claude\n' >&2
         printf '  AGY_DEFAULT_MODEL Default model for agy (default: gemini-4-argon-medium)\n' >&2
