@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncIterable
 
-import aiohttp
 from aiogram import Bot
 from dishka import Scope, alias, provide
 
@@ -32,12 +31,6 @@ class InfrastructureProvider(DatabaseProvider):
         """Share one Telegram transport and close it after its consumers."""
         async with Bot(token=config.bot_token) as bot:
             yield bot
-
-    @provide(scope=Scope.APP)
-    async def get_http_session(self) -> AsyncIterable[aiohttp.ClientSession]:
-        """Provide aiohttp ClientSession."""
-        async with aiohttp.ClientSession() as session:
-            yield session
 
     @provide(scope=Scope.APP)
     async def get_cache_service(self, config: Settings) -> AsyncIterable[CacheService]:

@@ -6,7 +6,7 @@ from http import HTTPStatus
 import pytest
 
 from hovorunv2.application.media.errors import MediaExtractionError
-from hovorunv2.application.media.extractor import MediaExtractor, NativeMediaExtractor, process_extraction_info
+from hovorunv2.application.media.extractor import NativeMediaExtractor, process_extraction_info
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 
 
@@ -39,25 +39,20 @@ def test_required_extraction_rejects_unusable_metadata(raw: object) -> None:
         process_extraction_info(raw, "https://synthetic.invalid/post")
 
 
-async def test_native_and_async_extraction_use_real_bounded_backend() -> None:
-    """Both runtimes parse the same real loopback HTTP media endpoint without replacing internal operations."""
+async def test_native_extraction_uses_real_bounded_backend() -> None:
+    """Native worker parses the real loopback HTTP media endpoint without replacing internal operations."""
     with HTTPFixture({"/asset.mp4": HTTPReply(b"synthetic media", headers={"Content-Type": "video/mp4"})}) as server:
         source = server.url("/asset.mp4")
         native = await asyncio.to_thread(NativeMediaExtractor().extract, source)
-        asynchronous = await MediaExtractor().extract(source)
         assert native.media_items[0].url == source
-        assert asynchronous.media_items[0].url == source
-        assert native.original_url == asynchronous.original_url == source
+        assert native.original_url == source
 
 
-async def test_backend_failure_is_semantic_and_sanitized_in_both_runtimes() -> None:
+async def test_backend_failure_is_semantic_and_sanitized() -> None:
     """Unavailable HTTP input yields a safe required-strategy error instead of None."""
     with HTTPFixture({"/missing.mp4": HTTPReply(status=HTTPStatus.NOT_FOUND)}) as server:
         source = server.url("/missing.mp4")
         with pytest.raises(MediaExtractionError) as native:
             await asyncio.to_thread(NativeMediaExtractor().extract, source)
-        with pytest.raises(MediaExtractionError) as asynchronous:
-            await MediaExtractor().extract(source)
-        assert str(native.value) == str(asynchronous.value) == "Media extraction failed."
+        assert str(native.value) == "Media extraction failed."
         assert native.value.__cause__ is None
-        assert asynchronous.value.__cause__ is None

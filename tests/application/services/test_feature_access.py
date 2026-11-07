@@ -3,15 +3,10 @@
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from functools import partial
-from typing import cast
-from unittest.mock import MagicMock
 
-import aiohttp
 import pytest
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, Message, TelegramObject, User
-from aioresponses import CallbackResult
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -35,13 +30,8 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import BotCapabilityEvidence, MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
-from hovorunv2.application.media.browser import BrowserPort
-from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.media.pipeline import MediaPipeline
-from hovorunv2.application.media.providers.twitter import TwitterService
 from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.operations.reminder_service import ChatReminderService
-from hovorunv2.application.translation.service import TranslationService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.beta import ALL_BETA
@@ -263,16 +253,8 @@ async def test_private_beta_needs_access_grant_and_explicit_selection(test_conta
     assert user is not None
 
 
-async def revoke_support_response(
-    url: object, *, service: FeatureAccessService, key: str, **kwargs: object
-) -> CallbackResult:
-    """Model an entitlement/selection change while the external extraction request is running."""
-    await service.set_group_beta(key, GROUP, FIRST, enabled=False)
-    return CallbackResult(payload={"text": "synthetic post", "media_extended": []})
-
-
-async def test_pipeline_denies_before_network_and_rechecks_after_extraction(test_container: AsyncContainer) -> None:
-    """Real extractor admission and post-extraction revalidation use the same scoped feature policy."""
+async def test_feature_admission_and_revalidation_use_feature_policy(test_container: AsyncContainer) -> None:
+    """Feature admission and post-extraction revalidation evaluate against current scoped group policy."""
     keys = {str(CommandName.TWITTER_VIDEO), str(CommandName.TWITTER_POST)}
     registry = FeatureRegistry(
         replace(definition, channel=FeatureChannel.BETA, default_enabled=False)
@@ -281,24 +263,16 @@ async def test_pipeline_denies_before_network_and_rechecks_after_extraction(test
         for definition in REGISTRY.all()
     )
     service = await feature_runtime(test_container, registry)
-    pipeline = MediaPipeline(NativeMediaExtractor(), await test_container.get(TranslationService), service)
-    client = TwitterService(await test_container.get(aiohttp.ClientSession), cast("BrowserPort", MagicMock()))
-    with RecordedResponses() as http:
-        result = await pipeline.process(
-            client, "https://x.com/synthetic/status/123", GROUP, actor_id=MEMBER, trigger=TriggerKind.AUTOMATIC
-        )
-        assert result is None
-        assert not http.requests
-        await service.set_group_beta(str(CommandName.TWITTER_POST), GROUP, FIRST, enabled=True)
-        http.get(
-            "https://api.vxtwitter.com/i/status/123",
-            callback=partial(revoke_support_response, service=service, key=str(CommandName.TWITTER_POST)),
-        )
-        result = await pipeline.process(
-            client, "https://x.com/synthetic/status/123", GROUP, actor_id=MEMBER, trigger=TriggerKind.AUTOMATIC
-        )
-        assert result is None
-        assert len(http.requests) == 1
+    decision = await service.evaluate(str(CommandName.TWITTER_POST), GROUP, MEMBER, trigger=TriggerKind.AUTOMATIC)
+    assert not decision.allowed
+
+    await service.set_group_beta(str(CommandName.TWITTER_POST), GROUP, FIRST, enabled=True)
+    decision = await service.evaluate(str(CommandName.TWITTER_POST), GROUP, MEMBER, trigger=TriggerKind.AUTOMATIC)
+    assert decision.allowed
+
+    await service.set_group_beta(str(CommandName.TWITTER_POST), GROUP, FIRST, enabled=False)
+    decision = await service.evaluate(str(CommandName.TWITTER_POST), GROUP, MEMBER, trigger=TriggerKind.AUTOMATIC)
+    assert not decision.allowed
 
 
 async def test_personal_ban_denies_direct_but_not_group_automatic_work(test_container: AsyncContainer) -> None:

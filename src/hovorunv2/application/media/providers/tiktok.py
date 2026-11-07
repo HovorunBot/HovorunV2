@@ -3,23 +3,13 @@
 import re
 from typing import ClassVar, Self
 
-import aiohttp
-
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
-from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.application.media.providers.base import BaseMediaClient, ProviderConfig
-from hovorunv2.domain.enums import CommandName
+from hovorunv2.application.media.provider_config import TIKTOK_CONFIG, ProviderConfig
+from hovorunv2.application.media.providers.base import BaseMediaClient
 
-TIKTOK_CONFIG = ProviderConfig(
-    name=CommandName.TIKTOK,
-    strip_hashtags=True,
-    pattern=re.compile(
-        r"https?://(?:www\.|vm\.|vt\.)?tiktok\.com/(?:(?P<type>v|t|video|photo)/|(?P<username>[@\w.-]+)/)?"
-        r"(?:(?P<type_alt>video|photo)/)?(?P<id>[\w-]+)/?(?:(?<=/)\w+/?)*(?=[^\w/]|$)"
-    ),
-)
+__all__ = ["TIKTOK_CONFIG", "TikTokService"]
 
 
 class TikTokService(BaseMediaClient):
@@ -28,23 +18,14 @@ class TikTokService(BaseMediaClient):
     API_URL: ClassVar[str] = "https://www.tikwm.com/api/"
     SUCCESS_CODE: ClassVar[int] = 0
 
-    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
-        """Initialize with HTTP session and browser adapter."""
-        super().__init__(config=TIKTOK_CONFIG, http=http, browser=browser)
+    def __init__(self, config: ProviderConfig = TIKTOK_CONFIG) -> None:
+        """Initialize with provider configuration."""
+        super().__init__(config=config)
 
     @classmethod
     def sync(cls) -> Self:
         """Create a client instance for synchronous worker extraction."""
-        return cls.for_worker(TIKTOK_CONFIG)
-
-    async def _extract_raw_payload(
-        self,
-        url: str,
-        match: re.Match[str],
-    ) -> RichMediaPayload:
-        """Fetch TikTok data and construct raw RichMediaPayload."""
-        data = await self._fetch_json(self.API_URL, params={"url": url})
-        return self._parse_tiktok_data(data, url)
+        return cls(TIKTOK_CONFIG)
 
     def _extract_raw_payload_sync(
         self,
@@ -53,6 +34,7 @@ class TikTokService(BaseMediaClient):
         http: SyncHTTPPort,
     ) -> RichMediaPayload:
         """Fetch TikTok data synchronously and construct raw RichMediaPayload."""
+        del match
         data = self._fetch_json_sync(http, self.API_URL, params={"url": url})
         return self._parse_tiktok_data(data, url)
 

@@ -1,17 +1,13 @@
-"""Application service for media downloading."""
+"""Application service for native synchronous media downloading."""
 
-import asyncio
 import html
 import logging
 import tempfile
 from collections.abc import Mapping
 from functools import partial
-from http import HTTPStatus
 from pathlib import Path
 
-import aiohttp
 import yt_dlp
-from aiogram.types import BufferedInputFile
 
 from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportError, SyncHTTPPort
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
@@ -183,131 +179,3 @@ class NativeMediaDownloader:
             One bytes payload or MediaFailure per input item, in input order.
         """
         return [self._download_item(item) for item in items]
-
-
-class MediaDownloader:
-    """Service to handle downloading media from URLs into RAM."""
-
-    DEFAULT_TIMEOUT_SECONDS = DOWNLOAD_TIMEOUT_SECONDS
-    HLS_MANIFEST_SIZE_THRESHOLD = HLS_MANIFEST_SIZE_THRESHOLD
-    DEFAULT_HEADERS = DEFAULT_DOWNLOAD_HEADERS
-
-    def __init__(self, session: aiohttp.ClientSession) -> None:
-        """Initialize service with mandatory session."""
-        self._session = session
-
-    async def download_as_buffered_file(
-        self, url: str, filename: str, *, is_video: bool = False, session: aiohttp.ClientSession | None = None
-    ) -> BufferedInputFile:
-        """Require one bounded download for a single URL.
-
-        Args:
-            url: Media URL to download.
-            filename: Name to attach to the buffered file.
-            is_video: Whether the media is a video.
-            session: Optional session override; defaults to the injected session.
-
-        Returns:
-            The downloaded content as a buffered input file.
-        """
-        # Fix HTML entities in URLs (common in scraped meta tags)
-        clean_url = html.unescape(url)
-        actual_session = session or self._session
-        return await self._perform_download(actual_session, clean_url, filename, is_video=is_video)
-
-    async def _download_item(
-        self, item: MediaItem, filename: str, session: aiohttp.ClientSession
-    ) -> BufferedInputFile | MediaFailure:
-        try:
-            return await self._perform_download(session, html.unescape(item.url), filename, is_video=item.is_video)
-        except MediaDownloadError as error:
-            return error.code
-
-    async def download_batch(
-        self, items: list[MediaItem], prefix: str = "media", session: aiohttp.ClientSession | None = None
-    ) -> list[BufferedInputFile | MediaFailure]:
-        """Download every item concurrently while preserving input order.
-
-        Args:
-            items: Media items to download.
-            prefix: Filename prefix for generated names.
-            session: Optional session override; defaults to the injected session.
-
-        Returns:
-            One buffered file or MediaFailure per input item, in input order.
-        """
-        actual_session = session or self._session
-        tasks = []
-        for index, item in enumerate(items):
-            extension = "mp4" if item.is_video else "jpg"
-            tasks.append(self._download_item(item, f"{prefix}_{index}.{extension}", actual_session))
-        return list(await asyncio.gather(*tasks))
-
-    async def _read_response(self, response: aiohttp.ClientResponse) -> bytes:
-        if response.status != HTTPStatus.OK:
-            logger.error("HTTP media request rejected (status %s)", response.status)
-            raise MediaDownloadError
-        if response.content_length is not None and response.content_length > MAX_MEDIA_BYTES:
-            raise MediaDownloadError(MediaFailure.TOO_LARGE)
-        chunks = []
-        size = 0
-        async for chunk in response.content.iter_chunked(DOWNLOAD_CHUNK_BYTES):
-            size += len(chunk)
-            if size > MAX_MEDIA_BYTES:
-                raise MediaDownloadError(MediaFailure.TOO_LARGE)
-            chunks.append(chunk)
-        return _require_content(b"".join(chunks))
-
-    async def _direct_download(self, session: aiohttp.ClientSession, url: str) -> bytes:
-        try:
-            async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS), headers=self.DEFAULT_HEADERS
-            ) as response:
-                return await self._read_response(response)
-        except MediaDownloadError:
-            raise
-        except aiohttp.ClientError, OSError, TimeoutError, ValueError:
-            logger.exception("Media download failed")
-            raise MediaDownloadError from None
-
-    async def _perform_download(
-        self, session: aiohttp.ClientSession, url: str, filename: str, *, is_video: bool = False
-    ) -> BufferedInputFile:
-        """Trace the required download and surface terminal failures to error sinks."""
-        logger.info("Starting media download")
-        try:
-            downloaded = await self._download_media(session, url, filename, is_video=is_video)
-        except MediaDownloadError as error:
-            logger.exception("Media download failed (%s)", error.code)
-            raise
-        logger.info("Downloaded %s media bytes", len(downloaded.data))
-        return downloaded
-
-    async def _download_media(
-        self, session: aiohttp.ClientSession, url: str, filename: str, *, is_video: bool
-    ) -> BufferedInputFile:
-        """Require a direct response or a successful video strategy without swallowing failures."""
-        # 1. Direct HLS/M3U8 detection
-        if is_video and (".m3u8" in url or "blob:" in url):
-            return await self._download_with_ytdlp(url, filename)
-
-        # 2. Try direct aiohttp download
-        try:
-            content = await self._direct_download(session, url)
-        except MediaDownloadError as error:
-            if not is_video or error.code == MediaFailure.TOO_LARGE:
-                raise
-            return await self._download_with_ytdlp(url, filename)
-        if is_video and self._is_hls_manifest(content):
-            logger.info("Detected HLS manifest via aiohttp, falling back to yt-dlp")
-            return await self._download_with_ytdlp(url, filename)
-        return BufferedInputFile(content, filename=filename)
-
-    def _is_hls_manifest(self, content: bytes) -> bool:
-        """Check if content looks like an HLS manifest."""
-        return is_hls_manifest(content)
-
-    async def _download_with_ytdlp(self, url: str, filename: str) -> BufferedInputFile:
-        """Download video using yt-dlp to a temporary file and return as buffer."""
-        content = await asyncio.to_thread(download_ytdlp_bytes, url)
-        return BufferedInputFile(content, filename=filename)

@@ -1,27 +1,21 @@
 """Real loopback Telegram acknowledgements, partial receipts and explicit delivery recovery."""
 
-from collections.abc import AsyncIterator, Iterator, Mapping
-from contextlib import asynccontextmanager, contextmanager
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
-import aiohttp
 import pytest
-from aiogram import Bot
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
-from aiogram.types import Message
 
-from hovorunv2.application.media.downloader import MediaDownloader, NativeMediaDownloader
+from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.rendering import MEDIA_UNAVAILABLE_TEXT
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
-from hovorunv2.interface.telegram.transport.delivery import TelegramMediaDelivery
 from hovorunv2.interface.telegram.transport.sync_delivery import (
     NativeTelegramAPI,
     NativeTelegramDelivery,
     TelegramDeliveryUncertainError,
+    TelegramRejectedError,
 )
 from tests.utils.sync_http import HTTPFixture, HTTPReply, json_reply
 
@@ -71,39 +65,11 @@ def test_native_missing_video_sends_post_text_and_explanation() -> None:
         assert payload.original_url in fields["text"][0]
 
 
-async def test_async_missing_video_sends_post_text_and_explanation() -> None:
-    """The async transport preserves the same text-only video fallback as native workers."""
-    payload = _payload(0)
-    payload.video_unavailable = True
-    async with _async_delivery({API_PREFIX + "sendMessage": _ack(_message(10))}) as values:
-        delivery, bot, message, server = values
-        await delivery.deliver(bot, message, payload, "Synthetic")
-        assert _methods(server) == ["sendMessage"]
-        fields = parse_qs(server.requests[0].body.decode())
-        assert MEDIA_UNAVAILABLE_TEXT in fields["text"][0]
-        assert "Caption" in fields["text"][0]
-        assert payload.original_url in fields["text"][0]
-
-
 @contextmanager
 def _native_delivery(routes: RouteReplies) -> Iterator[tuple[NativeTelegramDelivery, HTTPFixture]]:
     with HTTPFixture(routes) as server, NativeHTTPClient() as http:
         api = NativeTelegramAPI(http, SYNTHETIC_BOT_IDENTITY, api_base=server.url(""))
         yield NativeTelegramDelivery(api, NativeMediaDownloader(http)), server
-
-
-@asynccontextmanager
-async def _async_delivery(
-    routes: RouteReplies,
-) -> AsyncIterator[tuple[TelegramMediaDelivery, Bot, Message, HTTPFixture]]:
-    with HTTPFixture(routes) as server:
-        session = AiohttpSession(api=TelegramAPIServer.from_base(server.url("")))
-        async with Bot(SYNTHETIC_BOT_IDENTITY, session=session) as bot, aiohttp.ClientSession() as http:
-            message = Message.model_validate(
-                {**_message(1), "from": {"id": 7, "is_bot": False, "first_name": "Synthetic"}},
-                context={"bot": bot},
-            )
-            yield TelegramMediaDelivery(MediaDownloader(http), http), bot, message, server
 
 
 def test_native_later_malformed_ack_retains_caption_and_previous_album_receipts() -> None:
@@ -178,68 +144,11 @@ def test_native_explicit_fetch_rejection_uploads_once_and_preserves_placeholder(
         assert b"synthetic media" in server.requests[3].body
 
 
-@pytest.mark.parametrize("predownloaded", [False, True])
-async def test_async_uncertain_send_propagates_without_fallback_or_error_message(predownloaded: bool) -> None:
-    """Both URL and buffered uncertain acknowledgements stop at the actual send boundary."""
-    async with _async_delivery({API_PREFIX + "sendMediaGroup": HTTPReply(disconnect=True)}) as values:
-        delivery, bot, message, server = values
-        payload = _payload()
-        if predownloaded:
-            payload.media_items[0].data = b"synthetic media"
-        with pytest.raises(TelegramNetworkError):
-            await delivery.deliver(bot, message, payload, "Synthetic")
-        assert _methods(server) == ["sendMediaGroup"]
-
-
-async def test_async_explicit_rejection_uses_partial_downloads_and_ignores_cleanup_failure() -> None:
-    """The first surviving upload receives the caption; a failed placeholder deletion cannot turn it into failure."""
-    routes = {
-        API_PREFIX + "sendMediaGroup": [_reject(), _ack([_message(21)])],
-        API_PREFIX + "sendMessage": _ack(_message(10)),
-        API_PREFIX + "deleteMessage": HTTPReply(disconnect=True),
-        "/missing": HTTPReply(status=HTTPStatus.NOT_FOUND),
-        "/asset": HTTPReply(b"synthetic media"),
-    }
-    async with _async_delivery(routes) as (delivery, bot, message, server):
-        payload = _payload()
-        payload.media_items[0].url = server.url("/missing")
-        payload.media_items[1].url = server.url("/asset")
-        await delivery.deliver(bot, message, payload, "Synthetic")
-        methods = _methods(server)
-        assert methods[:2] == ["sendMediaGroup", "sendMessage"]
-        assert sorted(methods[2:4]) == ["asset", "missing"]
-        assert methods[4:] == ["sendMediaGroup", "deleteMessage"]
-        assert b"synthetic media" in server.requests[4].body
-        assert b"Caption" in server.requests[4].body
-        assert "editMessageText" not in methods
-
-
-@pytest.mark.parametrize("predownloaded", [False, True])
-async def test_async_explicit_upload_rejection_keeps_safe_user_error(predownloaded: bool) -> None:
-    """A known rejected upload keeps the existing user-facing error without logging remote payload details."""
-    routes = {
-        API_PREFIX + "sendMediaGroup": [_reject(), _reject("synthetic rejection")],
-        API_PREFIX + "sendMessage": _ack(_message(10)),
-        API_PREFIX + "editMessageText": _ack(_message(10)),
-        "/asset": HTTPReply(b"synthetic media"),
-    }
-    async with _async_delivery(routes) as (delivery, bot, message, server):
-        payload = _payload(1)
-        payload.media_items[0].url = server.url("/asset")
-        if predownloaded:
-            payload.media_items[0].data = b"synthetic media"
-        await delivery.deliver(bot, message, payload, "Synthetic")
-        error_request = server.requests[-1]
-        assert "Failed to upload media" in parse_qs(error_request.body.decode())["text"][0]
-        assert "deleteMessage" not in _methods(server)
-
-
-async def test_async_unrelated_url_rejection_does_not_download() -> None:
+def test_native_unrelated_url_rejection_does_not_download() -> None:
     """An explicit rejection only permits fallback for the documented fetch reasons."""
-    async with _async_delivery({API_PREFIX + "sendMediaGroup": _reject("synthetic rejection")}) as values:
-        delivery, bot, message, server = values
-        with pytest.raises(TelegramBadRequest):
-            await delivery.deliver(bot, message, _payload(), "Synthetic")
+    with _native_delivery({API_PREFIX + "sendMediaGroup": _reject("synthetic rejection")}) as (delivery, server):
+        with pytest.raises(TelegramRejectedError):
+            delivery.deliver(42, 1, _payload(), "Synthetic", None)
         assert _methods(server) == ["sendMediaGroup"]
 
 
@@ -249,22 +158,6 @@ def test_native_success_receipts_and_single_item_wire_policy() -> None:
         assert delivery.deliver(42, 1, _payload(0), "Synthetic", None) == (21,)
         assert _methods(server) == ["sendMessage"]
         assert b"Caption" in server.requests[0].body
-
-
-@pytest.mark.parametrize("predownloaded", [False, True])
-async def test_async_too_large_is_reported_without_download_retry(predownloaded: bool) -> None:
-    """Explicit size rejection preserves the original size notice for URL and buffered media."""
-    routes = {
-        API_PREFIX + "sendMediaGroup": _reject("Request Entity Too Large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
-        API_PREFIX + "sendMessage": _ack(_message(10)),
-    }
-    async with _async_delivery(routes) as (delivery, bot, message, server):
-        payload = _payload()
-        if predownloaded:
-            payload.media_items[0].data = b"synthetic media"
-        await delivery.deliver(bot, message, payload, "Synthetic")
-        assert _methods(server) == ["sendMediaGroup", "sendMessage"]
-        assert "Media is too large" in parse_qs(server.requests[-1].body.decode())["text"][0]
 
 
 def test_native_too_large_is_reported_without_download_retry() -> None:
@@ -291,17 +184,17 @@ def test_native_buffered_album_returns_all_receipts_without_retry() -> None:
         assert b"media_1.mp4" in server.requests[0].body
 
 
-async def test_async_empty_download_batch_edits_placeholder_without_upload() -> None:
+def test_native_empty_download_batch_edits_placeholder_without_upload() -> None:
     """No usable download updates the accepted placeholder instead of submitting an empty album."""
     routes = {
-        API_PREFIX + "sendMediaGroup": _reject(),
+        API_PREFIX + "sendPhoto": _reject(),
         API_PREFIX + "sendMessage": _ack(_message(10)),
         API_PREFIX + "editMessageText": _ack(_message(10)),
         "/missing": HTTPReply(status=HTTPStatus.NOT_FOUND),
     }
-    async with _async_delivery(routes) as (delivery, bot, message, server):
+    with _native_delivery(routes) as (delivery, server):
         payload = _payload(1)
         payload.media_items[0].url = server.url("/missing")
-        await delivery.deliver(bot, message, payload, "Synthetic")
-        assert _methods(server) == ["sendMediaGroup", "sendMessage", "missing", "editMessageText"]
+        assert delivery.deliver(42, 1, payload, "Synthetic", None) == (10,)
+        assert _methods(server) == ["sendPhoto", "sendMessage", "missing", "editMessageText"]
         assert "Failed to download media" in parse_qs(server.requests[-1].body.decode())["text"][0]

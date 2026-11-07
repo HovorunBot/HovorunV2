@@ -5,17 +5,14 @@ import re
 import time
 from collections.abc import Mapping
 from functools import partial
-from http import HTTPStatus
 from typing import ClassVar, Self
-
-import aiohttp
 
 from hovorunv2.application.jobs.http_ports import (
     HTTPTransportError,
     SyncBrowserPort,
     SyncHTTPPort,
 )
-from hovorunv2.application.media.browser import BrowserPort, BrowserTab
+from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import (
     BrowserContinuationRequired,
     BrowserError,
@@ -53,38 +50,14 @@ class BaseMediaClient(MediaParser):
     def __init__(
         self,
         config: ProviderConfig,
-        http: aiohttp.ClientSession | None = None,
-        browser: BrowserPort | None = None,
     ) -> None:
-        """Initialize client with its provider config and shared infrastructure."""
+        """Initialize client with its provider config."""
         self._config = config
-        self._http = http
-        self._browser = browser
 
     @classmethod
     def for_worker(cls, config: ProviderConfig) -> Self:
         """Create a provider client for synchronous worker extraction."""
-        instance = cls.__new__(cls)
-        instance.init_worker(config)
-        return instance
-
-    def init_worker(self, config: ProviderConfig) -> None:
-        """Initialize worker client without async infrastructure dependencies."""
-        self._config = config
-        self._http = None
-        self._browser = None
-
-    def _require_async_http(self) -> aiohttp.ClientSession:
-        if self._http is None:
-            msg = "Async HTTP client is not available in synchronous worker mode."
-            raise ValueError(msg)
-        return self._http
-
-    def _require_browser(self) -> BrowserPort:
-        if self._browser is None:
-            msg = "Browser is not available in synchronous worker mode."
-            raise ValueError(msg)
-        return self._browser
+        return cls(config)
 
     @property
     def config(self) -> ProviderConfig:
@@ -110,72 +83,6 @@ class BaseMediaClient(MediaParser):
     def has_browser_fallback(self) -> bool:
         """Whether this provider requires headless browser continuation."""
         return bool(self._config.browser_config)
-
-    async def extract(self, url: str) -> RichMediaPayload | None:
-        """Execute direct API extraction.
-
-        Args:
-            url: Media URL to extract.
-
-        Returns:
-            Parsed provider payload, or None when the URL is not handled.
-
-        Raises:
-            MediaExtractionError: If the provider returns unusable extraction metadata.
-        """
-        if self._config.post_url_pattern and not self._config.post_url_pattern.search(url):
-            return None
-
-        resolved_url = await self.resolve_url(url)
-        if not (match := self._config.pattern.search(resolved_url)):
-            return None
-
-        try:
-            payload = await self._extract_raw_payload(resolved_url, match)
-        except MediaExtractionError:
-            raise
-        except KeyError, TypeError, ValueError, IndexError, AttributeError:
-            msg = "Provider returned unusable extraction metadata."
-            raise MediaExtractionError(msg) from None
-        if payload is None:
-            return None
-        return self._require_usable_payload(payload)
-
-    async def extract_metadata(self, url: str) -> RichMediaPayload | None:
-        """Execute OpenGraph/HTML metadata extraction as the final fallback.
-
-        Args:
-            url: Media URL to extract.
-
-        Returns:
-            Parsed provider payload, or None when no OpenGraph configuration exists.
-        """
-        if self._config.og_config is None:
-            return None
-
-        resolved_url = await self.resolve_url(url)
-        return await self._extract_via_og(resolved_url, self._config.og_config)
-
-    async def resolve_url(self, url: str) -> str:
-        """Resolve redirects when configured on the provider.
-
-        Args:
-            url: URL to resolve.
-
-        Returns:
-            Resolved URL, or the original URL when no redirect pattern matches.
-        """
-        if self._config.redirect_pattern and self._config.redirect_pattern.search(url):
-            return await self._resolve_redirect(url, headers=self._config.headers or None)
-        return url
-
-    async def _extract_raw_payload(
-        self,
-        url: str,
-        match: re.Match[str],
-    ) -> RichMediaPayload | None:
-        """Override in subclasses for provider-specific raw extraction."""
-        return None
 
     def _require_usable_payload(self, payload: RichMediaPayload) -> RichMediaPayload:
         self._require_provider_fields(payload)
@@ -213,41 +120,6 @@ class BaseMediaClient(MediaParser):
     def get_browser_cookies(self) -> list[dict[str, object]]:
         """Return optional cookies to inject into headless browser fallback."""
         return []
-
-    async def extract_fallback(self, url: str) -> RichMediaPayload | None:
-        """Perform config-driven headless browser fallback when configured.
-
-        Args:
-            url: Media URL to extract.
-
-        Returns:
-            Parsed provider payload, or None when no browser fallback is configured.
-
-        Raises:
-            MediaExtractionError: If the browser extraction fails.
-        """
-        b_cfg = self._config.browser_config
-        if not b_cfg:
-            return None
-
-        browser = self._require_browser()
-        try:
-            payload, media_bytes = await browser.extract_and_download(
-                url,
-                extractor_fn=partial(self._extract_from_browser_tab, b_cfg=b_cfg),
-                wait_selector=b_cfg.wait_selector,
-                cookies=self.get_browser_cookies(),
-            )
-            if not payload:
-                return None
-            for item, content in zip(payload.media_items, media_bytes, strict=False):
-                if isinstance(content, bytes):
-                    item.data = content
-        except BrowserError, MediaExtractionError:
-            msg = "Provider browser extraction failed."
-            raise MediaExtractionError(msg) from None
-        else:
-            return self._require_usable_payload(payload)
 
     def extract_sync(self, url: str, http: SyncHTTPPort) -> RichMediaPayload | None:
         """Execute direct API extraction synchronously.
@@ -438,8 +310,6 @@ class BaseMediaClient(MediaParser):
             return self._require_usable_payload(payload)
 
     # Compatibility aliases
-    extract_payload = extract
-    extract_metadata_payload = extract_metadata
     extract_payload_sync = extract_sync
     extract_metadata_payload_sync = extract_metadata_sync
 
@@ -490,41 +360,12 @@ class BaseMediaClient(MediaParser):
         """Override in subclasses for provider-specific synchronous raw extraction."""
         return None
 
-    async def _extract_via_og(self, url: str, og_cfg: OGConfig) -> RichMediaPayload | None:
-        """Fetch HTML and construct raw RichMediaPayload from OpenGraph metadata."""
-        html_content = await self._fetch_html(url, headers=og_cfg.headers)
-        if not html_content:
-            return None
-        return self._parse_og_html(html_content, url, og_cfg)
-
     def _extract_via_og_sync(self, url: str, og_cfg: OGConfig, http: SyncHTTPPort) -> RichMediaPayload | None:
         """Fetch HTML and construct raw RichMediaPayload from OpenGraph metadata synchronously."""
         html_content = self._fetch_html_sync(http, url, headers=og_cfg.headers)
         if not html_content:
             return None
         return self._parse_og_html(html_content, url, og_cfg)
-
-    async def _fetch_json(
-        self,
-        url: str,
-        *,
-        params: Mapping[str, str | int] | None = None,
-        headers: Mapping[str, str] | None = None,
-    ) -> object:
-        """Require decoded provider JSON; malformed or unavailable I/O raises a safe error."""
-        http = self._require_async_http()
-        try:
-            async with http.get(
-                url,
-                params=params,
-                headers=headers or self._config.headers or None,
-                timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
-            ) as resp:
-                self._require_success(resp.status)
-                return await resp.json()
-        except aiohttp.ClientError, OSError, ValueError:
-            msg = "Provider JSON request failed."
-            raise MediaExtractionError(msg) from None
 
     def _fetch_json_sync(
         self,
@@ -541,26 +382,6 @@ class BaseMediaClient(MediaParser):
             msg = "Provider JSON request failed."
             raise MediaExtractionError(msg) from None
 
-    async def _fetch_html(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> str:
-        """Require provider HTML without exposing request-bearing backend diagnostics."""
-        http = self._require_async_http()
-        try:
-            async with http.get(
-                url,
-                headers=headers or self._config.headers or self.DEFAULT_HEADERS,
-                timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
-            ) as resp:
-                self._require_success(resp.status)
-                return await resp.text()
-        except aiohttp.ClientError, OSError, ValueError:
-            msg = "Provider HTML request failed."
-            raise MediaExtractionError(msg) from None
-
     def _fetch_html_sync(
         self,
         http: SyncHTTPPort,
@@ -573,27 +394,6 @@ class BaseMediaClient(MediaParser):
             return http.read_text(url, headers=headers or self._config.headers or self.DEFAULT_HEADERS)
         except HTTPTransportError:
             msg = "Provider HTML request failed."
-            raise MediaExtractionError(msg) from None
-
-    async def _resolve_redirect(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> str:
-        """Require a successful resolved URL, preserving configured request headers."""
-        http = self._require_async_http()
-        try:
-            async with http.get(
-                url,
-                headers=headers or self._config.headers or self.DEFAULT_HEADERS,
-                allow_redirects=True,
-                timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT_SECONDS),
-            ) as resp:
-                self._require_success(resp.status)
-                return str(resp.url)
-        except aiohttp.ClientError, OSError, ValueError:
-            msg = "Provider redirect request failed."
             raise MediaExtractionError(msg) from None
 
     def _resolve_redirect_sync(
@@ -609,8 +409,3 @@ class BaseMediaClient(MediaParser):
         except HTTPTransportError:
             msg = "Provider redirect request failed."
             raise MediaExtractionError(msg) from None
-
-    def _require_success(self, status: int) -> None:
-        if status != HTTPStatus.OK:
-            msg = "Provider request did not return a usable response."
-            raise MediaExtractionError(msg)

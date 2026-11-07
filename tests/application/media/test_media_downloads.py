@@ -6,13 +6,9 @@ import tempfile
 from http import HTTPStatus
 from pathlib import Path
 
-import aiohttp
 import pytest
-from aiogram.types import BufferedInputFile
 
 from hovorunv2.application.media.downloader import (
-    MAX_MEDIA_BYTES,
-    MediaDownloader,
     NativeMediaDownloader,
     download_ytdlp_bytes,
 )
@@ -22,7 +18,7 @@ from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 
 
-async def test_native_and_async_batches_retain_order_with_explicit_partial_failures(
+async def test_native_batches_retain_order_with_explicit_partial_failures(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Only the batch policy translates semantic failures; standalone downloads require usable bytes."""
@@ -36,23 +32,15 @@ async def test_native_and_async_batches_retain_order_with_explicit_partial_failu
         ) as server,
         NativeHTTPClient() as http,
     ):
-        async with aiohttp.ClientSession() as session:
-            native = NativeMediaDownloader(http)
-            asynchronous = MediaDownloader(session)
-            items = [MediaItem(server.url(path), is_video=False) for path in ("/good", "/missing", "/empty")]
-            downloaded = await asynchronous.download_batch(items)
-            assert isinstance(downloaded[0], BufferedInputFile)
-            assert downloaded[0].data == b"synthetic media"
-            assert downloaded[1:] == [MediaFailure.UNAVAILABLE, MediaFailure.UNUSABLE]
-            direct = await asyncio.to_thread(native.download_batch, items)
-            assert direct == [b"synthetic media", MediaFailure.UNAVAILABLE, MediaFailure.UNUSABLE]
-            with pytest.raises(MediaDownloadError):
-                await asynchronous.download_as_buffered_file(server.url("/missing"), "synthetic.jpg")
-            with pytest.raises(MediaDownloadError):
-                await asyncio.to_thread(native.download, server.url("/missing"))
-            errors = [record for record in caplog.records if record.levelno == logging.ERROR]
-            assert sum(record.msg == "Media download failed (%s)" for record in errors) == 6
-            assert all(server.url("") not in record.getMessage() for record in errors)
+        native = NativeMediaDownloader(http)
+        items = [MediaItem(server.url(path), is_video=False) for path in ("/good", "/missing", "/empty")]
+        direct = await asyncio.to_thread(native.download_batch, items)
+        assert direct == [b"synthetic media", MediaFailure.UNAVAILABLE, MediaFailure.UNUSABLE]
+        with pytest.raises(MediaDownloadError):
+            await asyncio.to_thread(native.download, server.url("/missing"))
+        errors = [record for record in caplog.records if record.levelno == logging.ERROR]
+        assert sum(record.msg == "Media download failed (%s)" for record in errors) == 3
+        assert all(server.url("") not in record.getMessage() for record in errors)
 
 
 def test_ytdlp_output_is_bounded_and_temporary_artifacts_are_removed(
@@ -66,14 +54,3 @@ def test_ytdlp_output_is_bounded_and_temporary_artifacts_are_removed(
         with pytest.raises(MediaDownloadError):
             download_ytdlp_bytes(server.url("/asset.mp4"), max_bytes=4)
         assert list(tmp_path.iterdir()) == []
-
-
-async def test_direct_oversize_does_not_retry_the_video_backend() -> None:
-    """An oversized declared response fails before reading and retains the original no-fallback size policy."""
-    with HTTPFixture({"/large": HTTPReply(b"x", headers={"Content-Length": str(MAX_MEDIA_BYTES + 1)})}) as server:
-        async with aiohttp.ClientSession() as session:
-            downloader = MediaDownloader(session)
-            with pytest.raises(MediaDownloadError) as error:
-                await downloader.download_as_buffered_file(server.url("/large"), "synthetic.mp4", is_video=True)
-            assert error.value.code == MediaFailure.TOO_LARGE
-            assert [request.method for request in server.requests] == ["GET"]

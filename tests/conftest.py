@@ -32,11 +32,8 @@ from hovorunv2.bootstrap.providers.infrastructure import InfrastructureProvider
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.enums import CommandName, Role
-from hovorunv2.infrastructure.browser.async_browser import BrowserService
-from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
-from tests.utils.browser_cache import CACHE_EXPIRY_SECONDS, TestBrowserService
 from tests.utils.postgres import DEFAULT_TEST_DATABASE_URL, postgres_database
 from tests.utils.telegram import BOT_CREDENTIAL, create_mock_message, create_private_media_message
 from tests.utils.telegram.session import RecordingSession
@@ -115,6 +112,7 @@ async def get_media_command(container: AsyncContainer, name: CommandName) -> Ric
     raise LookupError(msg)
 
 
+CACHE_EXPIRY_SECONDS: int = 7 * 24 * 60 * 60
 DEFAULT_TEST_VALKEY_URL: str = "redis://localhost:6379/1"
 
 
@@ -245,16 +243,6 @@ class TestInfrastructureProvider(InfrastructureProvider):
     async def get_engine(self) -> AsyncEngine:
         """Provide test engine."""
         return self._engine
-
-    @provide(scope=Scope.APP)
-    async def get_browser_service(self, config: Settings) -> AsyncGenerator[BrowserService]:
-        """Provide TestBrowserService (DrissionPage) with caching."""
-        service = TestBrowserService(
-            max_tabs=config.browser_max_tabs,
-            idle_timeout=config.browser_idle_timeout,
-        )
-        yield service
-        await service.close()
 
 
 @pytest.fixture

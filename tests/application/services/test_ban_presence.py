@@ -57,7 +57,6 @@ async def test_restrictions_survive_rejoin_and_maintenance(test_container: Async
                 await join.handle_my_chat_member_update(
                     bot_event(group, present=True, date=datetime.now(UTC)), runtime.bot
                 )
-                await reminder.run_maintenance_cycle(runtime.bot)
                 assert await statuses.get_status(group) == status
                 current = await chats.get_chat(group)
                 assert current is not None

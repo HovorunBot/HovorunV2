@@ -143,5 +143,5 @@ async def test_scheduled_job_callbacks(test_container: AsyncContainer, recording
     await reminder_service.send_unauthorized_prompt(recording_bot, -100999)
     assert await cache.get(f"{RuntimeNamespace().value}periodic:unauthorized_prompt:-100999") == 1
     assert len(recording_bot.session.calls) == 1
-    await reminder_service.run_maintenance_cycle(recording_bot)
+    assert not await reminder_service.send_unauthorized_prompt(recording_bot, -100999)
     assert len(recording_bot.session.calls) == 1

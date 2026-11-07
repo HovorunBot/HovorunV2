@@ -24,7 +24,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     JobTarget,
     PayloadPort,
 )
-from hovorunv2.application.media.providers.base import BaseMediaClient
+from hovorunv2.application.media.provider_config import ProviderConfig
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import TargetKind
@@ -113,17 +113,17 @@ class RichMediaCommand(BaseCommand):
 
     def __init__(
         self,
-        primary_client: BaseMediaClient,
+        provider_config: ProviderConfig,
         admission: AdmissionService,
         payloads: PayloadPort,
         chats: ChatStore,
         users: UserStore,
         clock: Clock,
     ) -> None:
-        """Initialize command with provider client, admission service and persistence ports."""
-        FEATURE_REGISTRY.capture(primary_client.name, is_video=True)
-        FEATURE_REGISTRY.capture(primary_client.name, is_video=False)
-        self._primary_client = primary_client
+        """Initialize command with provider config, admission service and persistence ports."""
+        FEATURE_REGISTRY.capture(provider_config.name, is_video=True)
+        FEATURE_REGISTRY.capture(provider_config.name, is_video=False)
+        self._provider_config = provider_config
         self._admission = admission
         self._payloads = payloads
         self._chats = chats
@@ -133,18 +133,18 @@ class RichMediaCommand(BaseCommand):
 
     @property
     def name(self) -> str:
-        """Command name derived from provider client."""
-        return str(self._primary_client.name)
+        """Command name derived from provider config."""
+        return str(self._provider_config.name)
 
     @property
     def pattern(self) -> re.Pattern[str]:
         """Regex pattern to match links handled by this provider."""
-        return self._primary_client.pattern
+        return self._provider_config.pattern
 
     @property
     def platform_name(self) -> str:
         """Human-readable platform name."""
-        return self._primary_client.platform_label
+        return self._provider_config.label
 
     @property
     def trigger(self) -> MagicFilter:

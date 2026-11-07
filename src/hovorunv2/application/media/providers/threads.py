@@ -6,30 +6,17 @@ import re
 import urllib.parse
 from typing import ClassVar, Self
 
-import aiohttp
 from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort
-from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.errors import BrowserError, MediaExtractionError
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.application.media.providers.base import BaseMediaClient, OGConfig, ProviderConfig
-from hovorunv2.domain.enums import CommandName
+from hovorunv2.application.media.provider_config import THREADS_CONFIG, ProviderConfig
+from hovorunv2.application.media.providers.base import BaseMediaClient
+
+__all__ = ["THREADS_CONFIG", "ThreadsService"]
 
 logger = logging.getLogger(__name__)
-
-THREADS_CONFIG = ProviderConfig(
-    name=CommandName.THREADS,
-    merge_quoted_media=False,
-    translate_quoted=False,
-    pattern=re.compile(r"https?://(?:www\.)?threads\.(?P<tld>net|com)/(?:@[\w.-]+/)?(?:post|t)/(?P<post_id>[\w-]+)"),
-    og_config=OGConfig(
-        default_author="Threads User",
-        author_handle="threads",
-        author_url="https://www.threads.net",
-        title_suffix=" on Threads",
-    ),
-)
 
 
 class ThreadsService(BaseMediaClient):
@@ -43,9 +30,9 @@ class ThreadsService(BaseMediaClient):
     MIN_FALLBACK_QUOTE_LENGTH: ClassVar[int] = 30
     PROFILE_PATH_PARTS: ClassVar[int] = 2
 
-    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
-        """Initialize with required services."""
-        super().__init__(config=THREADS_CONFIG, http=http, browser=browser)
+    def __init__(self, config: ProviderConfig = THREADS_CONFIG) -> None:
+        """Initialize with provider configuration."""
+        super().__init__(config=config)
 
     @property
     def has_browser_fallback(self) -> bool:
@@ -55,7 +42,7 @@ class ThreadsService(BaseMediaClient):
     @classmethod
     def sync(cls) -> Self:
         """Create a client instance for synchronous worker extraction."""
-        return cls.for_worker(THREADS_CONFIG)
+        return cls(THREADS_CONFIG)
 
     def _extract_browser_sync(self, url: str, browser: SyncBrowserPort) -> RichMediaPayload | None:
         """Extract Threads post via headless browser synchronously in the browser stage."""
@@ -68,44 +55,6 @@ class ThreadsService(BaseMediaClient):
 
         try:
             html_content = browser.get_content(url, wait_selector="article")
-        except BrowserError:
-            msg = "Provider browser extraction failed."
-            raise MediaExtractionError(msg) from None
-
-        if not html_content:
-            return None
-
-        return self._parse_browser_post(html_content, url, tld, post_id)
-
-    async def extract_fallback(
-        self,
-        url: str,
-    ) -> RichMediaPayload | None:
-        """Fetch the Threads post via the headless browser after yt-dlp is attempted.
-
-        Args:
-            url: Media URL to extract.
-
-        Returns:
-            Parsed provider payload, or None when the URL does not match.
-        """
-        match = self._config.pattern.search(url)
-        if not match:
-            return None
-
-        return await self._extract_from_browser(url, match)
-
-    async def _extract_from_browser(
-        self,
-        url: str,
-        match: re.Match[str],
-    ) -> RichMediaPayload | None:
-        """Fetch native Threads data using BrowserService and construct raw RichMediaPayload."""
-        tld = match.group("tld")
-        post_id = match.group("post_id")
-
-        try:
-            html_content = await self._require_browser().get_content(url, wait_selector="article")
         except BrowserError:
             msg = "Provider browser extraction failed."
             raise MediaExtractionError(msg) from None

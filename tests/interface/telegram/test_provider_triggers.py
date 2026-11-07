@@ -8,7 +8,7 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_jobs import APPLICATION_FAILURE_NOTICE_TEXT
-from hovorunv2.application.media.providers.instagram import InstagramService
+from hovorunv2.application.media.provider_config import INSTAGRAM_CONFIG
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.config import Settings
@@ -176,7 +176,7 @@ async def test_admission_application_failure_replies_without_exposing_details(
     await users.ingest_user(470019)
     async with runtime_cache(test_container) as (cache, namespace):
         command = RichMediaCommand(
-            primary_client=InstagramService.sync(),
+            provider_config=INSTAGRAM_CONFIG,
             admission=await test_container.get(AdmissionService),
             payloads=ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps()),
             chats=await test_container.get(ChatStore),

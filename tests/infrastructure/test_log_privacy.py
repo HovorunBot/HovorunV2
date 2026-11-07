@@ -5,17 +5,17 @@ import io
 import logging
 import sys
 
-import aiohttp
 import pytest
 from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
-from hovorunv2.application.media.downloader import MediaDownloader
+from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.errors import MediaDownloadError
 from hovorunv2.application.media.providers.instagram import PrivateInstaloaderContext
 from hovorunv2.domain.enums import Role
+from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.infrastructure.logger import (
     LOG_FORMAT,
     LogContextFilter,
@@ -26,6 +26,7 @@ from hovorunv2.infrastructure.logger import (
 )
 from tests.conftest import provision_role
 from tests.utils.recorded_responses import RecordedResponses
+from tests.utils.sync_http import HTTPFixture, HTTPReply
 from tests.utils.telegram import API, BOT_CREDENTIAL
 
 SENTINEL = "synthetic-private-payload-022e"
@@ -97,19 +98,19 @@ async def test_media_download_failure_logs_no_message_url(
     """Verify the producer emits no URL even before the sink formatter runs."""
     # Alembic migration tests disable pre-existing loggers through fileConfig.
     monkeypatch.setattr(logging.getLogger("hovorunv2.application.media.downloader"), "disabled", False)
-    async with aiohttp.ClientSession() as session:
-        downloader = MediaDownloader(session)
-        with caplog.at_level(logging.WARNING), RecordedResponses() as http:
-            http.get(PRIVATE_URL, exception=ValueError(SENTINEL))
+    with (
+        HTTPFixture({"/media": HTTPReply(status=500)}) as server,
+        NativeHTTPClient() as http,
+    ):
+        target_url = server.url(f"/media?credential={SENTINEL}")
+        downloader = NativeMediaDownloader(http)
+        with caplog.at_level(logging.WARNING):
             with pytest.raises(MediaDownloadError) as error:
-                await downloader.download_as_buffered_file(PRIVATE_URL, "image.jpg", is_video=False)
+                await asyncio.to_thread(downloader.download, target_url)
             assert error.value.__cause__ is None
             assert error.value.__suppress_context__
-    assert all(PRIVATE_URL not in record.getMessage() for record in caplog.records)
-    assert any(record.msg == "Media download failed" for record in caplog.records), caplog.record_tuples
-    assert any(
-        record.levelno == logging.ERROR and "Media download failed" in record.getMessage() for record in caplog.records
-    )
+        assert all(target_url not in record.getMessage() for record in caplog.records)
+        assert any(record.msg == "Media download failed (%s)" for record in caplog.records), caplog.record_tuples
 
 
 def test_safe_debug_metadata_survives_privacy_formatting() -> None:

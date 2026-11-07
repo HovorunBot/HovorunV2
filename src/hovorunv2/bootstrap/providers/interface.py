@@ -20,7 +20,6 @@ from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.operations.feature_status import FeatureStatusNotifier
 from hovorunv2.application.operations.notification_ledger import NotificationLedgerService
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceService
-from hovorunv2.application.operations.notification_service import NotificationService
 from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.application.settings.admin_session_service import AdminSessionService
 from hovorunv2.application.settings.settings_session_service import SettingsSessionService
@@ -52,7 +51,6 @@ class InterfaceAndUtilityProvider(Provider):
     prompt_sender = alias(source=TelegramUnauthorizedPromptSender, provides=UnauthorizedPromptSender)
 
     message_service = provide(MessageService)
-    notification_service = provide(NotificationService)
     notification_preferences = provide(NotificationPreferenceService)
     notification_ledger = provide(NotificationLedgerService)
     owner_notifier = provide(OwnerNotifier)

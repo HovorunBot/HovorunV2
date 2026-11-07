@@ -114,5 +114,5 @@ def test_bluesky_sync_extraction() -> None:
     assert payload.media_items[0].url == "https://cdn.bsky.app/img/full.jpg"
     assert payload.media_items[0].is_video is False
     assert "💬 3" in payload.footer_text
-    assert "🔄 7" in payload.footer_text
+    assert "🔁 7" in payload.footer_text
     assert "❤️ 42" in payload.footer_text

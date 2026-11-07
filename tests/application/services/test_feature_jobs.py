@@ -71,7 +71,7 @@ class VideoMediaClient(BaseMediaClient):
     """Synthetic client returning a video payload for provider commands."""
 
     def __init__(self) -> None:
-        super().init_worker(INSTAGRAM_CONFIG)
+        super().__init__(INSTAGRAM_CONFIG)
 
     def extract_media_sync(self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor) -> RichMediaPayload:
         """Return video payload to trigger video split variant."""

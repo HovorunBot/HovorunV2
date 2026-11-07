@@ -3,21 +3,14 @@
 import re
 from typing import ClassVar, Self
 
-import aiohttp
-
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
-from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.application.media.providers.base import BaseMediaClient, ProviderConfig
-from hovorunv2.domain.enums import CommandName
+from hovorunv2.application.media.provider_config import BLUESKY_CONFIG, ProviderConfig
+from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.utils.json_values import mapping, sequence, text
 
-BLUESKY_CONFIG = ProviderConfig(
-    name=CommandName.BLUESKY,
-    redirect_pattern=re.compile(r"go\.bsky\.app"),
-    pattern=re.compile(r"https?://(?:www\.|go\.)?bsky\.app/(?:profile/(?P<handle>[\w.-]+)/post/)?(?P<rkey>[\w.-]+)"),
-)
+__all__ = ["BLUESKY_CONFIG", "BlueskyService"]
 
 
 class BlueskyService(BaseMediaClient):
@@ -25,24 +18,14 @@ class BlueskyService(BaseMediaClient):
 
     API_BASE_URL: ClassVar[str] = "https://public.api.bsky.app/xrpc"
 
-    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
-        """Initialize with HTTP session and browser adapter."""
-        super().__init__(config=BLUESKY_CONFIG, http=http, browser=browser)
+    def __init__(self, config: ProviderConfig = BLUESKY_CONFIG) -> None:
+        """Initialize with provider configuration."""
+        super().__init__(config=config)
 
     @classmethod
     def sync(cls) -> Self:
         """Create a client instance for synchronous worker extraction."""
-        return cls.for_worker(BLUESKY_CONFIG)
-
-    async def _extract_raw_payload(self, url: str, match: re.Match[str]) -> RichMediaPayload | None:
-        """Fetch Bluesky thread data and construct raw RichMediaPayload."""
-        handle = match.group("handle")
-        if not handle:
-            return None
-
-        did = handle if handle.startswith("did:") else await self._resolve_did(handle)
-        thread_data = await self._fetch_thread(did, match.group("rkey"))
-        return self._parse_thread_data(thread_data, url)
+        return cls(BLUESKY_CONFIG)
 
     def _extract_raw_payload_sync(
         self,
@@ -58,53 +41,40 @@ class BlueskyService(BaseMediaClient):
         did = handle if handle.startswith("did:") else self._resolve_did_sync(handle, http)
         at_uri = f"at://{did}/app.bsky.feed.post/{match.group('rkey')}"
         thread_data = self._fetch_json_sync(
-            http,
-            f"{self.API_BASE_URL}/app.bsky.feed.getPostThread",
-            params={"uri": at_uri, "depth": 0},
+            http, f"{self.API_BASE_URL}/app.bsky.feed.getPostThread", params={"uri": at_uri, "depth": 0}
         )
         return self._parse_thread_data(thread_data, url)
 
-    def _parse_thread_data(self, thread_data: object, url: str) -> RichMediaPayload:
-        """Parse raw Bluesky thread JSON into RichMediaPayload."""
+    def _parse_thread_data(self, thread_data: object, url: str) -> RichMediaPayload | None:
+        """Parse raw Bluesky thread data into RichMediaPayload."""
         if not isinstance(thread_data, dict) or "thread" not in thread_data:
             msg = "Provider returned unusable extraction metadata."
             raise MediaExtractionError(msg)
 
-        post = thread_data["thread"]["post"]
-        record = post.get("record", {})
-        author = post.get("author", {})
-        embed = post.get("embed", {})
+        post = mapping(mapping(thread_data.get("thread")).get("post"))
+        if not post:
+            return None
 
-        author_name = author.get("displayName") or author.get("handle") or "Unknown"
-        author_handle = author.get("handle") or "unknown"
+        author = mapping(post.get("author"))
+        record = mapping(post.get("record"))
+        embed = mapping(post.get("embed"))
 
+        handle = text(author.get("handle"), "unknown")
         return RichMediaPayload(
-            author_name=author_name,
-            author_handle=author_handle,
-            author_url=f"https://bsky.app/profile/{author_handle}",
-            content=record.get("text", ""),
+            author_name=text(author.get("displayName"), handle),
+            author_handle=handle,
+            author_url=f"https://bsky.app/profile/{handle}",
+            content=text(record.get("text")),
             footer_text=self._build_metrics_footer(
-                ("💬", post.get("replyCount", 0)),
-                ("🔄", post.get("repostCount", 0)),
+                ("🔁", post.get("repostCount", 0)),
                 ("❤️", post.get("likeCount", 0)),
+                ("💬", post.get("replyCount", 0)),
                 include_zero=True,
             ),
             original_url=url,
             media_items=self._extract_media_from_embed(embed),
             quoted_payload=self._extract_quote(embed),
         )
-
-    async def _fetch_thread(self, did: str, record_key: str) -> object:
-        """Read only the selected post thread after actor identity resolution."""
-        at_uri = f"at://{did}/app.bsky.feed.post/{record_key}"
-        return await self._fetch_json(
-            f"{self.API_BASE_URL}/app.bsky.feed.getPostThread", params={"uri": at_uri, "depth": 0}
-        )
-
-    async def _resolve_did(self, handle: str) -> str:
-        """Resolve Bluesky handle to DID."""
-        profile = await self._fetch_json(f"{self.API_BASE_URL}/app.bsky.actor.getProfile", params={"actor": handle})
-        return self._parse_did(profile)
 
     def _resolve_did_sync(self, handle: str, http: SyncHTTPPort) -> str:
         """Resolve Bluesky handle to DID synchronously."""

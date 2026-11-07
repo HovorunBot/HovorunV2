@@ -1,9 +1,7 @@
-"""Shared yt-dlp extraction and pure parsing for async bot and synchronous workers."""
+"""Shared yt-dlp extraction and pure parsing for native synchronous workers."""
 
-import asyncio
 import logging
 import math
-import re
 from http.cookiejar import Cookie
 from time import monotonic
 from urllib.parse import urlsplit
@@ -215,28 +213,3 @@ class NativeMediaExtractor:
         return process_extraction_info(extract_info(url, cookies), url)
 
     extract_payload = extract
-
-
-class MediaExtractor:
-    """Keep existing async bot callers while sharing the native yt-dlp operation."""
-
-    MIN_DESCRIPTION_LENGTH = MIN_DESCRIPTION_LENGTH
-    YT_SHORTS_PATTERN = re.compile(r"https?://(?:www\.)?youtube\.com/shorts/(?P<id>[\w-]+)")
-
-    async def extract(self, url: str, cookies: dict[str, str] | None = None) -> RichMediaPayload:
-        """Offload the blocking backend to a worker thread for the async bot path.
-
-        Args:
-            url: Media URL to extract.
-            cookies: Optional provider cookies for the backend.
-
-        Returns:
-            Parsed provider payload.
-        """
-        info = await asyncio.to_thread(self._extract_info, url, cookies)
-        return process_extraction_info(info, url)
-
-    extract_payload = extract
-
-    def _extract_info(self, url: str, cookies: dict[str, str] | None = None) -> object:
-        return extract_info(url, cookies)

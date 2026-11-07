@@ -1,10 +1,14 @@
-## v0.3.4.1 (2026-11-03)
+## Unreleased
 
 ### Fix
 
 - **runtime**: increase worker task timeout for browser extraction
 - **logging**: preserve library diagnostics and capture stacktraces on errors
 - **release**: prevent technical changelog fallback and user notification leak
+
+### Refactor
+
+- **media**: decouple bot ingress to provider config and delete legacy async code
 
 ## v0.3.4 (2026-11-02)
 

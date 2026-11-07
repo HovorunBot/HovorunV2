@@ -4,27 +4,14 @@ import html
 import re
 from typing import ClassVar, Self
 
-import aiohttp
 from bs4 import BeautifulSoup, Tag
 
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
-from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.application.media.providers.base import BaseMediaClient, ProviderConfig
-from hovorunv2.domain.enums import CommandName
+from hovorunv2.application.media.provider_config import REDDIT_CONFIG, ProviderConfig
+from hovorunv2.application.media.providers.base import BaseMediaClient
 
-REDDIT_CONFIG = ProviderConfig(
-    name=CommandName.REDDIT,
-    headers={
-        "User-Agent": "TelegramBot (like TwitterBot)",
-    },
-    pattern=re.compile(
-        r"https?://(?:"
-        r"(?:[\w-]+\.)?reddit\.com/(?:r|u|user)/[\w-]+/(?:comments/(?P<post_id>[\w-]+)(?:/[^\s/?#]*)?/?|s/(?P<share_id>[\w-]+))|"
-        r"redd\.it/(?P<short_id>[\w-]+)"
-        r")"
-    ),
-)
+__all__ = ["REDDIT_CONFIG", "RedditService"]
 
 
 class RedditService(BaseMediaClient):
@@ -35,27 +22,14 @@ class RedditService(BaseMediaClient):
         r"^u/(?P<author>\S+)\s+on\s+(?P<subreddit>\S+)\s+-\s+⬆️\s*(?P<upvotes>\d+)(?:\s*\|\s*💬\s*(?P<comments>\d+))?"
     )
 
-    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
-        """Initialize with HTTP session and browser adapter."""
-        super().__init__(config=REDDIT_CONFIG, http=http, browser=browser)
+    def __init__(self, config: ProviderConfig = REDDIT_CONFIG) -> None:
+        """Initialize with provider configuration."""
+        super().__init__(config=config)
 
     @classmethod
     def sync(cls) -> Self:
         """Create a client instance for synchronous worker extraction."""
-        return cls.for_worker(REDDIT_CONFIG)
-
-    async def _extract_raw_payload(
-        self,
-        url: str,
-        match: re.Match[str],
-    ) -> RichMediaPayload | None:
-        """Fetch Reddit post metadata from vxReddit and construct raw RichMediaPayload."""
-        vx_url = self._metadata_url(url)
-        html_content = await self._fetch_html(vx_url)
-        if not html_content:
-            return None
-
-        return self._parse_vxreddit_html(html_content, url)
+        return cls(REDDIT_CONFIG)
 
     def _extract_raw_payload_sync(
         self,
@@ -64,6 +38,7 @@ class RedditService(BaseMediaClient):
         http: SyncHTTPPort,
     ) -> RichMediaPayload | None:
         """Fetch Reddit post metadata synchronously from vxReddit and construct raw RichMediaPayload."""
+        del match
         vx_url = self._metadata_url(url)
         html_content = self._fetch_html_sync(http, vx_url)
         if not html_content:

@@ -1,6 +1,5 @@
 """Application service for managing chat reminders and authorization prompts."""
 
-import asyncio
 import logging
 from typing import Final
 
@@ -11,7 +10,6 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.usage.budgets import RuntimeNamespace
-from hovorunv2.domain.enums import ChatStatus
 
 logger = logging.getLogger(__name__)
 
@@ -72,39 +70,3 @@ class ChatReminderService:
             await self._cache_service.set(cooldown_key, 1, expire=DEFAULT_REMINDER_COOLDOWN_SECONDS)
             logger.info("Sent unauthorized guidance prompt to chat %d", chat_id)
         return sent
-
-    async def run_maintenance_cycle(self, bot: Bot) -> None:
-        """Execute the full maintenance cycle across chats.
-
-        Args:
-            bot: Telegram bot instance used for delivery.
-        """
-        logger.info("Starting maintenance cycle")
-
-        # 2. Check unauthorized group chats
-        unauthorized_chats = await self._chat_service.get_all_by_status(ChatStatus.UNAUTHORIZED)
-        for chat in unauthorized_chats:
-            if chat.chat_id >= 0:
-                continue
-            await self.send_unauthorized_prompt(bot, chat.chat_id, force=False)
-            await asyncio.sleep(0.5)
-
-        # 3. Check pending chats to remind owners
-        pending_chats = await self._chat_service.get_all_by_status(ChatStatus.PENDING)
-        for chat in pending_chats:
-            pending_key = f"{self._namespace.value}periodic:pending_ping:{chat.chat_id}"
-            if await self._cache_service.get(pending_key):
-                continue
-
-            await self._owner_notifier.broadcast(
-                bot,
-                (
-                    f"⏳ <b>Reminder: Pending Approval</b>\n\n"
-                    f"Chat ID <code>{chat.chat_id}</code> is still awaiting your approval decision."
-                ),
-            )
-
-            await self._cache_service.set(pending_key, 1, expire=DEFAULT_REMINDER_COOLDOWN_SECONDS)
-            await asyncio.sleep(0.5)
-
-        logger.info("Maintenance cycle completed")

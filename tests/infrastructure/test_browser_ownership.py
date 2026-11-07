@@ -1,6 +1,5 @@
 """Real Chromium ownership, cancellation and ordered browser download contracts."""
 
-import asyncio
 import multiprocessing
 import os
 import signal
@@ -11,14 +10,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from http import HTTPStatus
 from pathlib import Path
-from threading import Event
 
 import pytest
 
 from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.infrastructure.browser.async_browser import BrowserService
 from hovorunv2.infrastructure.browser.browser_discovery import find_browser_executable
 from hovorunv2.infrastructure.browser.browser_process import OwnedChromium
 from hovorunv2.infrastructure.browser.native_browser import NativeBrowserService, cookies_for_url
@@ -104,44 +101,6 @@ def test_native_browser_partial_download_preserves_positions() -> None:
             _require_partial_download(payload, results)
         finally:
             service.close()
-
-
-@pytest.mark.slow
-async def test_async_browser_partial_download_preserves_positions() -> None:
-    """Async browser uses the same ordered result and payload attachment contract."""
-    with _partial_download_url() as url:
-        service = BrowserService(max_tabs=1, idle_timeout=5)
-        try:
-            payload, results = await service.extract_and_download(url, _extract_images)
-            _require_partial_download(payload, results)
-        finally:
-            await service.close()
-
-
-async def _cancel_inflight_navigation(browser: BrowserService, server: HTTPFixture, started: Event) -> None:
-    task = asyncio.create_task(browser.get_content(server.url("/slow")))
-    assert await asyncio.to_thread(started.wait, 15)
-    task.cancel()
-    await asyncio.sleep(0)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert any(request.path == "/slow" for request in server.completed)
-    assert "Next" in await browser.get_content(server.url("/next"))
-
-
-@pytest.mark.slow
-async def test_cancelled_navigation_finishes_before_releasing_browser() -> None:
-    """Cancellation drains a real in-flight navigation, including repeated cancellation."""
-    started = Event()
-    reply = HTTPReply(b"<html><body>Delayed</body></html>", delay_seconds=0.5, started=started)
-    with HTTPFixture({"/slow": reply, "/next": HTTPReply(b"<html><body>Next</body></html>")}) as server:
-        browser = BrowserService(max_tabs=1, idle_timeout=5)
-        try:
-            async with asyncio.timeout(20):
-                await _cancel_inflight_navigation(browser, server, started)
-        finally:
-            await browser.close()
 
 
 @pytest.mark.parametrize(

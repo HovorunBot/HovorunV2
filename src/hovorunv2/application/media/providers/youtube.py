@@ -5,70 +5,26 @@ import re
 from collections.abc import Sequence
 from typing import Self
 
-import aiohttp
-
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
-from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.application.media.providers.base import BaseMediaClient, OGConfig, ProviderConfig
-from hovorunv2.domain.enums import CommandName
+from hovorunv2.application.media.provider_config import YOUTUBE_CONFIG, ProviderConfig
+from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.utils.json_values import mapping, sequence, text
 
-_YOUTUBE_OG_CONFIG = OGConfig(
-    default_author="YouTube Channel",
-    author_handle="youtube",
-    author_url="https://www.youtube.com",
-    title_suffix=" - YouTube",
-)
-
-YOUTUBE_CONFIG = ProviderConfig(
-    name=CommandName.YOUTUBE,
-    platform_name="YouTube",
-    pattern=re.compile(
-        r"https?://(?:(?:www|m)\.)?(?:"
-        r"youtube\.com/(?:"
-        r"shorts/(?P<short_id>[\w-]+)|"
-        r"watch\?(?:[^\s#]*&)?v=(?P<video_id>[\w-]+)|"
-        r"(?:(?:channel|c|user)/[\w-]+/|@[\w.-]+/)?post/(?P<post_id>[\w-]+)|"
-        r"(?:(?:channel|c|user)/[\w-]+|@[\w.-]+)/community\?(?:[^\s#]*&)?lb=(?P<community_id>[\w-]+)"
-        r")|"
-        r"youtu\.be/(?P<youtu_be_id>[\w-]+)"
-        r")"
-    ),
-    post_url_pattern=re.compile(
-        r"https?://(?:(?:www|m)\.)?youtube\.com/(?:"
-        r"(?:(?:channel|c|user)/[\w-]+/|@[\w.-]+/)?post/(?P<post_id>[\w-]+)|"
-        r"(?:(?:channel|c|user)/[\w-]+|@[\w.-]+)/community\?(?:[^\s#]*&)?lb=(?P<community_id>[\w-]+)"
-        r")"
-    ),
-    headers={
-        "Cookie": "SOCS=CAESEwgDEgk2MTQ1NzU1MDQaAmVuIAEaBgiA_LyaBg",
-    },
-    og_config=_YOUTUBE_OG_CONFIG,
-)
+__all__ = ["YOUTUBE_CONFIG", "YoutubeService"]
 
 
 class YoutubeService(BaseMediaClient):
     """Service to interact with YouTube videos, Shorts, and Community posts."""
 
-    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
-        """Initialize with HTTP session and browser adapter."""
-        super().__init__(config=YOUTUBE_CONFIG, http=http, browser=browser)
+    def __init__(self, config: ProviderConfig = YOUTUBE_CONFIG) -> None:
+        """Initialize with provider configuration."""
+        super().__init__(config=config)
 
     @classmethod
     def sync(cls) -> Self:
         """Create a client instance for synchronous worker extraction."""
-        return cls.for_worker(YOUTUBE_CONFIG)
-
-    async def _extract_raw_payload(
-        self,
-        url: str,
-        match: re.Match[str],
-    ) -> RichMediaPayload | None:
-        """Extract YouTube Community post from ytInitialData or fall back to OG config."""
-        fetch_url = self._post_fetch_url(match, url)
-        html_content = await self._fetch_html(fetch_url)
-        return self._parse_youtube_post_html(html_content, fetch_url)
+        return cls(YOUTUBE_CONFIG)
 
     def _extract_raw_payload_sync(
         self,
@@ -94,7 +50,9 @@ class YoutubeService(BaseMediaClient):
         if renderer := self._extract_post_renderer(html_content):
             return self._build_payload_from_renderer(renderer, fetch_url)
 
-        return self._parse_og_html(html_content, fetch_url, _YOUTUBE_OG_CONFIG)
+        if self._config.og_config is None:
+            return None
+        return self._parse_og_html(html_content, fetch_url, self._config.og_config)
 
     def _extract_post_renderer(self, html_content: str) -> dict[str, object] | None:
         """Extract backstagePostRenderer or sharedPostRenderer from ytInitialData in page HTML."""

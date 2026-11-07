@@ -3,40 +3,27 @@
 import re
 from typing import Self
 
-import aiohttp
-
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
-from hovorunv2.application.media.browser import BrowserPort
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.application.media.providers.base import BaseMediaClient, ProviderConfig
-from hovorunv2.domain.enums import CommandName
+from hovorunv2.application.media.provider_config import TWITTER_CONFIG, ProviderConfig
+from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.utils.json_values import mapping, sequence, text
 
-TWITTER_CONFIG = ProviderConfig(
-    name=CommandName.TWITTER,
-    pattern=re.compile(
-        r"https?://(?:www\.)?(?:api\.)?(?:x\.com|twitter\.com)/(?:\w+/status/|2/tweets/)(?P<post_id>\d+)"
-    ),
-)
+__all__ = ["TWITTER_CONFIG", "TwitterService"]
 
 
 class TwitterService(BaseMediaClient):
     """Service to interact with Twitter and process tweet links."""
 
-    def __init__(self, http: aiohttp.ClientSession, browser: BrowserPort) -> None:
-        """Initialize with HTTP session and browser adapter."""
-        super().__init__(config=TWITTER_CONFIG, http=http, browser=browser)
+    def __init__(self, config: ProviderConfig = TWITTER_CONFIG) -> None:
+        """Initialize with provider configuration."""
+        super().__init__(config=config)
 
     @classmethod
     def sync(cls) -> Self:
         """Create a client instance for synchronous worker extraction."""
-        return cls.for_worker(TWITTER_CONFIG)
-
-    async def _extract_raw_payload(self, url: str, match: re.Match[str]) -> RichMediaPayload:
-        """Fetch tweet data from vxtwitter API and return raw RichMediaPayload."""
-        tweet_data = await self._fetch_json(f"https://api.vxtwitter.com/i/status/{match.group('post_id')}")
-        return self._parse_tweet_data(tweet_data, url)
+        return cls(TWITTER_CONFIG)
 
     def _extract_raw_payload_sync(
         self,
@@ -101,5 +88,6 @@ class TwitterService(BaseMediaClient):
             author_handle=handle,
             author_url=f"https://x.com/{handle}",
             content=text(quote_data.get("text")),
+            original_url=text(quote_data.get("tweetURL")),
             media_items=self._extract_media(quote_data),
         )
