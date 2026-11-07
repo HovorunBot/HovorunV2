@@ -6,24 +6,6 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
-x-app: &app
-  logging: *logging
-  image: hovorunv2-dev:${APP_TAG:-local}
-  build:
-    context: .
-    target: lean
-    args:
-      APP_VERSION: ${APP_VERSION:-}
-
-x-browser: &browser
-  logging: *logging
-  image: hovorunv2-dev-browser:${APP_TAG:-local}
-  build:
-    context: .
-    target: browser
-    args:
-      APP_VERSION: ${APP_VERSION:-}
-
 x-app-environment: &app-environment
   DATABASE_URL: postgresql+psycopg://hovorun:hovorun@postgres:5432/hovorun
   VALKEY_URL: redis://valkey:6379/0
@@ -34,24 +16,11 @@ x-app-environment: &app-environment
   BROWSER_ENABLED: ${BROWSER_ENABLED:-False}
 
 x-worker-health: &worker-health
-  test: ["CMD-SHELL", "/app/.venv/bin/celery -A hovorunv2.bootstrap.worker_app:app inspect ping --destination celery@$$HOSTNAME --timeout 5"]
+  test: ["CMD-SHELL", "/app/.venv/bin/celery -A hovorunv2.bootstrap.worker_app:celery_app inspect ping --destination celery@$$HOSTNAME --timeout 5"]
   interval: 60s
   timeout: 15s
   start_period: 30s
   retries: 3
-
-x-worker: &worker
-  stop_grace_period: 150s
-  healthcheck: *worker-health
-  <<: *app
-  restart: unless-stopped
-  environment:
-    <<: *app-environment
-  depends_on:
-    migrate:
-      condition: service_completed_successfully
-    valkey:
-      condition: service_healthy
 
 services:
   postgres:
@@ -94,13 +63,19 @@ services:
   migrate:
     mem_limit: ${MIGRATE_MEMORY_LIMIT:-512m}
     pids_limit: 128
-    <<: *app
+    logging: *logging
+    image: hovorunv2-migrate:${APP_TAG:-dev}
+    build:
+      context: .
+      target: migrate
+      args:
+        APP_VERSION: ${APP_VERSION:-}
     environment:
       DATABASE_URL: postgresql+psycopg://hovorun:hovorun@postgres:5432/hovorun
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
+    command: ["/app/.venv/bin/alembic", "upgrade", "head"]
     restart: "no"
 
   bot:
@@ -112,7 +87,13 @@ services:
       retries: 3
     mem_limit: ${BOT_MEMORY_LIMIT:-512m}
     pids_limit: 128
-    <<: *app
+    logging: *logging
+    image: hovorunv2-bot:${APP_TAG:-dev}
+    build:
+      context: .
+      target: bot
+      args:
+        APP_VERSION: ${APP_VERSION:-}
     restart: unless-stopped
     depends_on:
       migrate:
@@ -124,20 +105,36 @@ services:
         required: false
     environment:
       <<: *app-environment
+    command: ["/app/.venv/bin/hovorunv2"]
 
   worker-media:
     mem_limit: ${WORKER_MEDIA_MEMORY_LIMIT:-1536m}
     pids_limit: 256
-    <<: *worker
+    logging: *logging
+    image: hovorunv2-worker-media:${APP_TAG:-dev}
+    build:
+      context: .
+      target: worker-media
+      args:
+        APP_VERSION: ${APP_VERSION:-}
+    stop_grace_period: 150s
+    healthcheck: *worker-health
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
     environment:
       <<: *app-environment
+      WORKER_ROLE: media
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
     command:
       - /app/.venv/bin/celery
       - -A
-      - hovorunv2.bootstrap.worker_app:app
+      - hovorunv2.bootstrap.worker_app:celery_app
       - worker
       - --pool=prefork
       - --concurrency=${MEDIA_CONCURRENCY:-1}
@@ -151,25 +148,32 @@ services:
   worker-browser:
     mem_limit: ${WORKER_BROWSER_MEMORY_LIMIT:-1536m}
     pids_limit: 512
-    <<: *browser
+    logging: *logging
+    image: hovorunv2-worker-browser:${APP_TAG:-dev}
+    build:
+      context: .
+      target: worker-browser
+      args:
+        APP_VERSION: ${APP_VERSION:-}
     profiles: [browser]
     stop_grace_period: 150s
     healthcheck: *worker-health
     restart: unless-stopped
-    environment:
-      <<: *app-environment
-      INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
-      TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
-      TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
     depends_on:
       migrate:
         condition: service_completed_successfully
       valkey:
         condition: service_healthy
+    environment:
+      <<: *app-environment
+      WORKER_ROLE: browser
+      INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
+      TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
+      TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
     command:
       - /app/.venv/bin/celery
       - -A
-      - hovorunv2.bootstrap.worker_app:app
+      - hovorunv2.bootstrap.worker_app:celery_app
       - worker
       - --pool=prefork
       - --concurrency=1
@@ -183,11 +187,28 @@ services:
   worker-operations:
     mem_limit: ${WORKER_OPERATIONS_MEMORY_LIMIT:-512m}
     pids_limit: 128
-    <<: *worker
+    logging: *logging
+    image: hovorunv2-worker-ops:${APP_TAG:-dev}
+    build:
+      context: .
+      target: worker-operations
+      args:
+        APP_VERSION: ${APP_VERSION:-}
+    stop_grace_period: 150s
+    healthcheck: *worker-health
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    environment:
+      <<: *app-environment
+      WORKER_ROLE: operations
     command:
       - /app/.venv/bin/celery
       - -A
-      - hovorunv2.bootstrap.worker_app:app
+      - hovorunv2.bootstrap.worker_app:celery_app
       - worker
       - --pool=prefork
       - --concurrency=1
@@ -200,20 +221,27 @@ services:
   beat:
     mem_limit: ${BEAT_MEMORY_LIMIT:-256m}
     pids_limit: 64
-    <<: *app
+    logging: *logging
+    image: hovorunv2-worker-ops:${APP_TAG:-dev}
+    build:
+      context: .
+      target: worker-operations
+      args:
+        APP_VERSION: ${APP_VERSION:-}
     restart: unless-stopped
-    environment:
-      VALKEY_URL: redis://valkey:6379/0
-      APP_VERSION: ${APP_VERSION:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
       valkey:
         condition: service_healthy
+    environment:
+      VALKEY_URL: redis://valkey:6379/0
+      APP_VERSION: ${APP_VERSION:-}
+      WORKER_ROLE: operations
     command:
       - /app/.venv/bin/celery
       - -A
-      - hovorunv2.bootstrap.worker_app:app
+      - hovorunv2.bootstrap.worker_app:celery_app
       - beat
       - --loglevel=INFO
       - --schedule=/var/lib/celery/beat/celerybeat-schedule

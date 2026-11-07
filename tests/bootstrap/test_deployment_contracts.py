@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.bootstrap.worker_app import build_worker_application
@@ -121,3 +122,43 @@ def test_dockerfile_multi_stage_role_contracts() -> None:
             assert "COPY src" not in stage_body, f"Stage {stage_name} must not duplicate src/ tree"
             assert "USER appuser" in stage_body, f"Stage {stage_name} must run as non-root appuser"
             assert "/app/.venv/bin/" in stage_body, f"Stage {stage_name} must execute /app/.venv/bin/* entrypoint"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("compose_file", ["docker-compose.prod.yml", "docker-compose.dev.yml"])
+def test_compose_role_targets_and_direct_entrypoints(compose_file: str) -> None:
+    """Compose manifests configure dedicated role targets and direct .venv commands without uv."""
+    compose_path = Path(__file__).resolve().parents[2] / compose_file
+    content = compose_path.read_text(encoding="utf-8")
+    assert "uv run" not in content, f"{compose_file} must not invoke 'uv run'"
+
+    data = yaml.safe_load(content)
+    services = data["services"]
+
+    expected_targets = {
+        "migrate": "migrate",
+        "bot": "bot",
+        "worker-media": "worker-media",
+        "worker-browser": "worker-browser",
+        "worker-operations": "worker-operations",
+        "beat": "worker-operations",
+    }
+    for service_name, target in expected_targets.items():
+        service = services[service_name]
+        assert service["build"]["target"] == target, f"{service_name} build target must be {target}"
+
+    expected_roles = {
+        "worker-media": "media",
+        "worker-browser": "browser",
+        "worker-operations": "operations",
+        "beat": "operations",
+    }
+    for service_name, role in expected_roles.items():
+        env = services[service_name]["environment"]
+        assert env.get("WORKER_ROLE") == role, f"{service_name} must have WORKER_ROLE={role}"
+
+    for service_name in ["migrate", "bot", "worker-media", "worker-browser", "worker-operations", "beat"]:
+        command = services[service_name].get("command")
+        assert command, f"{service_name} must specify a command"
+        cmd_str = " ".join(command) if isinstance(command, list) else str(command)
+        assert "/app/.venv/bin/" in cmd_str, f"{service_name} command must execute from /app/.venv/bin/: {cmd_str}"
