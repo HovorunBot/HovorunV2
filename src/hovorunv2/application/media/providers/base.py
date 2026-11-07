@@ -3,7 +3,7 @@
 import logging
 import re
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from functools import partial
 from typing import ClassVar, Self
 
@@ -12,9 +12,9 @@ from hovorunv2.application.jobs.http_ports import (
     SyncBrowserPort,
     SyncHTTPPort,
 )
+from hovorunv2.application.media.actions import ExtractionAction, ExtractionStage, run_extraction_actions
 from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.errors import (
-    BrowserContinuationRequired,
     BrowserError,
     MediaExtractionError,
 )
@@ -182,22 +182,42 @@ class BaseMediaClient(MediaParser):
             return self._resolve_redirect_sync(http, url, headers=self._config.headers or None)
         return url
 
-    def _run_strategy(self, label: str, strategy: Callable[[], RichMediaPayload | None]) -> RichMediaPayload | None:
-        """Run one recoverable strategy and return its payload or None.
+    def _media_actions(
+        self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor
+    ) -> tuple[ExtractionAction, ...]:
+        """Declare the ordered media-stage extraction actions for this provider.
 
         Args:
-            label: Human-readable strategy label for operational logging.
-            strategy: Zero-argument strategy callable.
+            url: Cleaned media URL.
+            http: Synchronous HTTP port.
+            extractor: Native media extractor for the generic backend strategy.
 
         Returns:
-            Parsed payload, or None when the strategy missed or failed recoverably.
+            Ordered media-stage actions matching the provider's current tier behavior.
         """
-        logger.info("Starting %s strategy for provider %s", label, self.name)
-        try:
-            return strategy()
-        except MediaExtractionError:
-            logger.info("%s strategy failed for provider %s", label.capitalize(), self.name)
-            return None
+        actions = [
+            ExtractionAction("direct extraction", ExtractionStage.MEDIA, partial(self.extract_sync, url, http)),
+        ]
+        is_post_url = bool(self._config.post_url_pattern and self._config.post_url_pattern.search(url))
+        if not is_post_url:
+            actions.append(
+                ExtractionAction(
+                    "generic extraction",
+                    ExtractionStage.MEDIA,
+                    partial(extractor.extract, url, cookies=self.get_ytdlp_cookies()),
+                )
+            )
+        if self.has_browser_fallback:
+            actions.append(ExtractionAction("browser extraction", ExtractionStage.BROWSER, lambda: None))
+        else:
+            actions.append(
+                ExtractionAction(
+                    "metadata extraction",
+                    ExtractionStage.MEDIA,
+                    partial(self.extract_metadata_sync, url, http),
+                )
+            )
+        return tuple(actions)
 
     def extract_media_sync(
         self,
@@ -205,7 +225,7 @@ class BaseMediaClient(MediaParser):
         http: SyncHTTPPort,
         extractor: NativeMediaExtractor,
     ) -> RichMediaPayload:
-        """Execute multi-tier extraction synchronously in the media stage.
+        """Execute the provider's ordered media-stage actions, then hand off or fail.
 
         Args:
             url: Media URL to extract.
@@ -214,45 +234,12 @@ class BaseMediaClient(MediaParser):
 
         Returns:
             Parsed provider payload.
-
-        Raises:
-            BrowserContinuationRequired: If browser continuation is needed after non-browser tiers miss.
-            MediaExtractionError: If every extraction strategy is exhausted.
         """
         cleaned_url = url.rstrip(".,")
-
-        payload = self._run_strategy("direct extraction", partial(self.extract_sync, cleaned_url, http))
-        if payload is not None:
-            return payload
-
-        is_post_url = bool(self._config.post_url_pattern and self._config.post_url_pattern.search(cleaned_url))
-        if not is_post_url:
-            payload = self._run_strategy(
-                "generic extraction", partial(extractor.extract, cleaned_url, cookies=self.get_ytdlp_cookies())
-            )
-            if payload is not None:
-                return payload
-
-        payload = self._run_strategy(
-            "non-browser fallback", partial(self._extract_non_browser_fallback_sync, cleaned_url, http)
+        return run_extraction_actions(
+            self._media_actions(cleaned_url, http, extractor),
+            provider_name=self.name,
         )
-        if payload is not None:
-            return payload
-
-        payload = self._run_strategy("embed fallback", partial(self._extract_embed_fallback_sync, cleaned_url))
-        if payload is not None:
-            return payload
-
-        if self.has_browser_fallback:
-            logger.info("Provider requires browser continuation: %s", self.name)
-            raise BrowserContinuationRequired
-
-        payload = self._run_strategy("metadata extraction", partial(self.extract_metadata_sync, cleaned_url, http))
-        if payload is not None:
-            return payload
-
-        msg = "Media extraction strategies are exhausted."
-        raise MediaExtractionError(msg)
 
     def _extract_non_browser_fallback_sync(self, url: str, http: SyncHTTPPort) -> RichMediaPayload | None:
         """Override in subclasses for non-browser synchronous fallbacks (e.g. instaloader)."""

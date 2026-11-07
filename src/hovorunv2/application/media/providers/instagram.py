@@ -12,10 +12,11 @@ import requests
 
 from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.jobs.http_ports import SyncHTTPPort
+from hovorunv2.application.media.actions import ExtractionAction, ExtractionStage
 from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.deadlines import EMBED_ALLOWANCE_SECONDS, ExtractionDeadline
 from hovorunv2.application.media.errors import MediaExtractionError
-from hovorunv2.application.media.extractor import EXTRACTION_TIMEOUT_SECONDS
+from hovorunv2.application.media.extractor import EXTRACTION_TIMEOUT_SECONDS, NativeMediaExtractor
 from hovorunv2.application.media.instagram.browser_extraction import extract_browser_post
 from hovorunv2.application.media.instagram.ports import InstagramEmbedPort
 from hovorunv2.application.media.instagram.results import InstagramPost
@@ -175,6 +176,35 @@ class InstagramService(BaseMediaClient):
         post = InstagramPost.from_url(url)
         deadline = ExtractionDeadline.after(EMBED_ALLOWANCE_SECONDS)
         return self._embed.extract(post, deadline).to_payload()
+
+    def _media_actions(
+        self, url: str, http: SyncHTTPPort, extractor: NativeMediaExtractor
+    ) -> tuple[ExtractionAction, ...]:
+        """Declare Instagram's ordered media-stage actions."""
+        actions = [
+            ExtractionAction("direct extraction", ExtractionStage.MEDIA, partial(self.extract_sync, url, http)),
+        ]
+        is_post_url = bool(self._config.post_url_pattern and self._config.post_url_pattern.search(url))
+        if not is_post_url:
+            actions.append(
+                ExtractionAction(
+                    "generic extraction",
+                    ExtractionStage.MEDIA,
+                    partial(extractor.extract, url, cookies=self.get_ytdlp_cookies()),
+                )
+            )
+        actions.append(
+            ExtractionAction(
+                "non-browser fallback",
+                ExtractionStage.MEDIA,
+                partial(self._extract_non_browser_fallback_sync, url, http),
+            )
+        )
+        actions.append(
+            ExtractionAction("embed fallback", ExtractionStage.MEDIA, partial(self._extract_embed_fallback_sync, url))
+        )
+        actions.append(ExtractionAction("browser extraction", ExtractionStage.BROWSER, lambda: None))
+        return tuple(actions)
 
     def _extract_from_browser_tab(
         self, tab: BrowserTab, url: str, b_cfg: BrowserFallbackConfig

@@ -15,6 +15,7 @@
 
 ### Refactor
 
+- **media**: declare provider extraction action sequences
 - **instagram**: add typed extraction candidates and parsers
 - **packaging**: partition pyproject.toml into core and role-specific extras
 - **worker**: split runtime composition by role and decouple prompts from aiogram

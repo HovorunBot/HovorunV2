@@ -269,9 +269,7 @@ def test_worker_media_stage_errors_in_strategy_order(caplog: pytest.LogCaptureFi
     ):
         service.extract_media_sync(url, http, BackendDownExtractor())
 
-    order = [
-        record.getMessage() for record in caplog.records if record.name == "hovorunv2.application.media.providers.base"
-    ]
+    order = [record.getMessage() for record in caplog.records if record.name == "hovorunv2.application.media.actions"]
     assert order == [
         "Starting direct extraction strategy for provider instagram",
         "Starting generic extraction strategy for provider instagram",
