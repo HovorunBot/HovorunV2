@@ -12,7 +12,7 @@ from hovorunv2.application.media.actions import (
 )
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
-from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
+from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload, pack_media_payload, unpack_media_payload
 from hovorunv2.application.media.providers.threads import ThreadsService
 from hovorunv2.application.media.providers.twitter import TwitterService
 from tests.utils.sync_http import FakeSyncHTTP
@@ -137,6 +137,17 @@ def test_runner_hands_off_without_retained_partial() -> None:
         run_extraction_actions(actions, provider_name="synthetic")
     assert handoff.value.retained is None
     assert recorder.calls == ["media"]
+
+
+def test_pack_and_unpack_roundtrip_and_reject_malformed() -> None:
+    """A retained candidate round-trips and malformed bytes fail safely."""
+    original = _payload(2)
+    restored = unpack_media_payload(pack_media_payload(original))
+    assert [item.url for item in restored.media_items] == [item.url for item in original.media_items]
+    with pytest.raises(TypeError):
+        unpack_media_payload(b'{"malformed": 1}')
+    with pytest.raises(KeyError):
+        unpack_media_payload(b'{"media_items": []}')
 
 
 def test_runner_propagates_cancellation() -> None:

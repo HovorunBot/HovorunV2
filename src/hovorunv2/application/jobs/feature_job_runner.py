@@ -511,11 +511,12 @@ class FeatureJobRunner:
     def _extract_browser_stage(
         self, envelope: JobEnvelope, url: str, client: BaseMediaClient
     ) -> tuple[RichMediaPayload, BaseMediaClient]:
-        if not self._settings.browser_enabled:
-            msg = "Browser extraction is disabled for this deployment."
-            raise BrowserError(msg)
-        if self._browser is None:
-            msg = "Browser service is not available for browser stage."
+        if not self._settings.browser_enabled or self._browser is None:
+            retained = self._load_retained_candidate(envelope)
+            if retained is not None:
+                logger.info("Browser stage unavailable; delivering retained usable partial candidate")
+                return retained, client
+            msg = "Browser extraction is not available for this deployment."
             raise BrowserError(msg)
         try:
             raw_payload = client.extract_browser_media_sync(url, self._http, self._browser)
@@ -531,7 +532,10 @@ class FeatureJobRunner:
         """Retain a usable partial candidate across the browser handoff within the job deadline."""
         if retained is None:
             return
-        self._payloads.store_candidate(envelope.job_id, pack_media_payload(retained), envelope.deadline)
+        try:
+            self._payloads.store_candidate(envelope.job_id, pack_media_payload(retained), envelope.deadline)
+        except ValueError:
+            logger.warning("Retained candidate could not be stored; continuing without a fallback")
 
     def _load_retained_candidate(self, envelope: JobEnvelope) -> RichMediaPayload | None:
         """Load and validate the encrypted retained candidate, if one survives the handoff."""
@@ -540,7 +544,7 @@ class FeatureJobRunner:
             return None
         try:
             return unpack_media_payload(data)
-        except ValueError:
+        except ValueError, TypeError, KeyError:
             logger.exception("Retained candidate is malformed")
             return None
 
