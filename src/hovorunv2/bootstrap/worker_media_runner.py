@@ -12,11 +12,13 @@ from hovorunv2.application.jobs.http_ports import (
 )
 from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.extractor import NativeMediaExtractor
+from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.media.embed_adapter import VxInstagramEmbedAdapter
 from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
@@ -67,6 +69,7 @@ def create_feature_runner(
     delivery = custom_delivery or NativeTelegramDelivery(api, downloader)
     translation = NativeTranslationService(http, settings, db.policies)
     extractor = NativeMediaExtractor()
+    embed = VxInstagramEmbedAdapter() if settings.vxinstagram_enabled else DisabledEmbedAdapter()
     return FeatureJobRunner(
         admission=admission,
         payloads=payloads,
@@ -85,4 +88,5 @@ def create_feature_runner(
         telegram=api,
         feedback=db.policies,
         gate=ValkeyFeedbackGate(client, namespace),
+        embed=embed,
     )

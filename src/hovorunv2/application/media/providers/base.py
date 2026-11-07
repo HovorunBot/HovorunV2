@@ -3,7 +3,7 @@
 import logging
 import re
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import partial
 from typing import ClassVar, Self
 
@@ -182,6 +182,23 @@ class BaseMediaClient(MediaParser):
             return self._resolve_redirect_sync(http, url, headers=self._config.headers or None)
         return url
 
+    def _run_strategy(self, label: str, strategy: Callable[[], RichMediaPayload | None]) -> RichMediaPayload | None:
+        """Run one recoverable strategy and return its payload or None.
+
+        Args:
+            label: Human-readable strategy label for operational logging.
+            strategy: Zero-argument strategy callable.
+
+        Returns:
+            Parsed payload, or None when the strategy missed or failed recoverably.
+        """
+        logger.info("Starting %s strategy for provider %s", label, self.name)
+        try:
+            return strategy()
+        except MediaExtractionError:
+            logger.info("%s strategy failed for provider %s", label.capitalize(), self.name)
+            return None
+
     def extract_media_sync(
         self,
         url: str,
@@ -204,48 +221,45 @@ class BaseMediaClient(MediaParser):
         """
         cleaned_url = url.rstrip(".,")
 
-        try:
-            logger.info("Starting direct extraction strategy for provider %s", self.name)
-            payload = self.extract_sync(cleaned_url, http)
-            if payload is not None:
-                return payload
-        except MediaExtractionError:
-            logger.info("Direct extraction strategy failed for provider %s", self.name)
+        payload = self._run_strategy("direct extraction", partial(self.extract_sync, cleaned_url, http))
+        if payload is not None:
+            return payload
 
         is_post_url = bool(self._config.post_url_pattern and self._config.post_url_pattern.search(cleaned_url))
         if not is_post_url:
-            try:
-                logger.info("Starting generic extraction strategy for provider %s", self.name)
-                payload = extractor.extract(cleaned_url, cookies=self.get_ytdlp_cookies())
-                if payload is not None:
-                    return payload
-            except MediaExtractionError:
-                logger.info("Generic extraction strategy failed for provider %s", self.name)
-
-        try:
-            logger.info("Starting non-browser fallback strategy for provider %s", self.name)
-            payload = self._extract_non_browser_fallback_sync(cleaned_url, http)
+            payload = self._run_strategy(
+                "generic extraction", partial(extractor.extract, cleaned_url, cookies=self.get_ytdlp_cookies())
+            )
             if payload is not None:
                 return payload
-        except MediaExtractionError:
-            logger.info("Non-browser fallback strategy failed for provider %s", self.name)
+
+        payload = self._run_strategy(
+            "non-browser fallback", partial(self._extract_non_browser_fallback_sync, cleaned_url, http)
+        )
+        if payload is not None:
+            return payload
+
+        payload = self._run_strategy("embed fallback", partial(self._extract_embed_fallback_sync, cleaned_url))
+        if payload is not None:
+            return payload
 
         if self.has_browser_fallback:
             logger.info("Provider requires browser continuation: %s", self.name)
             raise BrowserContinuationRequired
 
-        try:
-            payload = self.extract_metadata_sync(cleaned_url, http)
-            if payload is not None:
-                return payload
-        except MediaExtractionError:
-            logger.info("Metadata extraction strategy failed for provider %s", self.name)
+        payload = self._run_strategy("metadata extraction", partial(self.extract_metadata_sync, cleaned_url, http))
+        if payload is not None:
+            return payload
 
         msg = "Media extraction strategies are exhausted."
         raise MediaExtractionError(msg)
 
     def _extract_non_browser_fallback_sync(self, url: str, http: SyncHTTPPort) -> RichMediaPayload | None:
         """Override in subclasses for non-browser synchronous fallbacks (e.g. instaloader)."""
+        return None
+
+    def _extract_embed_fallback_sync(self, url: str) -> RichMediaPayload | None:
+        """Override for providers with a bounded public-embed fallback owning its HTTP client."""
         return None
 
     def extract_browser_media_sync(

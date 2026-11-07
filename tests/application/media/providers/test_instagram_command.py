@@ -12,6 +12,7 @@ from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.jobs.feature_jobs import JobOutcome
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
+from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.instagram import InstagramService
 from hovorunv2.domain.enums import CommandName
@@ -83,7 +84,7 @@ async def test_handle_instagram_reel(
 @pytest.mark.slow
 def test_instagram_browser_fallback_uses_real_dom_and_media() -> None:
     """Real browser extraction downloads loopback media without replacing an internal strategy/service."""
-    service = InstagramService.sync()
+    service = InstagramService.sync(embed=DisabledEmbedAdapter())
     with HTTPFixture({"/image.jpg": HTTPReply(b"synthetic image")}) as media:
         document = (
             '<html><head><meta property="og:title" content="Synthetic fallback">'
@@ -107,7 +108,7 @@ def test_instagram_browser_fallback_uses_real_dom_and_media() -> None:
 @pytest.mark.unit
 def test_instagram_sync_media_stage_extractor() -> None:
     """Test that yt-dlp success completes in media stage without browser continuation."""
-    service = InstagramService.sync()
+    service = InstagramService.sync(embed=DisabledEmbedAdapter())
     url = "https://www.instagram.com/reel/C1234567890/"
     http = FakeSyncHTTP()
 
@@ -132,7 +133,7 @@ def test_instagram_sync_media_stage_extractor() -> None:
 @pytest.mark.unit
 def test_instagram_sync_media_stage_instaloader() -> None:
     """Test that when yt-dlp misses, instaloader extracts post directly in media stage."""
-    service = InstagramService.sync()
+    service = InstagramService.sync(embed=DisabledEmbedAdapter())
     url = "https://www.instagram.com/p/C9876543210/"
     http = FakeSyncHTTP()
 
@@ -166,7 +167,7 @@ def test_instagram_sync_media_stage_instaloader() -> None:
 @pytest.mark.unit
 def test_instagram_sync_media_stage_requires_browser_continuation() -> None:
     """Test that when yt-dlp and instaloader miss, BrowserContinuationRequired is raised."""
-    service = InstagramService.sync()
+    service = InstagramService.sync(embed=DisabledEmbedAdapter())
     url = "https://www.instagram.com/p/C9876543210/"
     http = FakeSyncHTTP()
 
@@ -185,7 +186,7 @@ def test_instagram_sync_media_stage_requires_browser_continuation() -> None:
 @pytest.mark.unit
 def test_instagram_sync_browser_stage_extraction() -> None:
     """Test browser-stage extraction using SyncBrowserPort."""
-    service = InstagramService.sync()
+    service = InstagramService.sync(embed=DisabledEmbedAdapter())
     url = "https://www.instagram.com/p/C9876543210/"
     http = FakeSyncHTTP()
 
@@ -208,7 +209,7 @@ def test_instagram_sync_browser_stage_extraction() -> None:
 @pytest.mark.unit
 def test_instagram_sync_browser_stage_fallback_to_og() -> None:
     """Test that browser-stage falls back to OpenGraph metadata when browser yields no payload."""
-    service = InstagramService.sync()
+    service = InstagramService.sync(embed=DisabledEmbedAdapter())
     url = "https://www.instagram.com/p/C9876543210/"
     browser = FakeSyncBrowser()
     html = (
@@ -235,7 +236,7 @@ def test_worker_media_stage_errors_in_strategy_order(caplog: pytest.LogCaptureFi
     translates its own backend failure into a MediaExtractionError so a backend outage can be
     traced to the tier that consumed the worker's execution budget instead of one blanket error.
     """
-    service = InstagramService.sync()
+    service = InstagramService.sync(embed=DisabledEmbedAdapter())
     url = "https://www.instagram.com/reel/DfMf1rlxq_W/"
     http = FakeSyncHTTP()
 
@@ -277,5 +278,7 @@ def test_worker_media_stage_errors_in_strategy_order(caplog: pytest.LogCaptureFi
         "Generic extraction strategy failed for provider instagram",
         "Starting non-browser fallback strategy for provider instagram",
         "Non-browser fallback strategy failed for provider instagram",
+        "Starting embed fallback strategy for provider instagram",
+        "Embed fallback strategy failed for provider instagram",
         "Provider requires browser continuation: instagram",
     ]

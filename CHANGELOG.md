@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **instagram**: add bounded vxinstagram extraction
 - **instagram**: extract complete browser carousels
 
 ### Fix

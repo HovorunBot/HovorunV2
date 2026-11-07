@@ -49,6 +49,7 @@ from hovorunv2.application.media.errors import (
 )
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.finalization import append_translation, prepare_caption_text
+from hovorunv2.application.media.instagram.ports import InstagramEmbedPort
 from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.application.media.providers.base import FACEBOOK_CONFIG, BaseMediaClient
 from hovorunv2.application.media.providers.bluesky import BlueskyService
@@ -87,18 +88,21 @@ LIMIT_WAIT_NOTICE_TEXT = "⏳ Request limits are currently reached. Your request
 LIMIT_FAILURE_NOTICE_TEXT = "⚠️ This request could not run within the current usage limits. Please try again later."
 
 
-def default_media_clients(settings: AppSettings | None = None) -> dict[CommandName, BaseMediaClient]:
+def default_media_clients(
+    settings: AppSettings | None = None, *, embed: InstagramEmbedPort
+) -> dict[CommandName, BaseMediaClient]:
     """Construct native synchronous provider clients for worker execution.
 
     Args:
         settings: Optional application settings for provider construction.
+        embed: Mandatory Instagram public-embed port.
 
     Returns:
         Mapping of command to its synchronous media client.
     """
     return {
         CommandName.TWITTER: TwitterService.sync(),
-        CommandName.INSTAGRAM: InstagramService.sync(settings),
+        CommandName.INSTAGRAM: InstagramService.sync(settings, embed=embed),
         CommandName.TIKTOK: TikTokService.sync(),
         CommandName.THREADS: ThreadsService.sync(),
         CommandName.BLUESKY: BlueskyService.sync(),
@@ -129,6 +133,7 @@ class FeatureJobRunner:
         telegram: SyncFeedbackTelegramPort,
         feedback: SyncFeedbackPort,
         gate: SyncFeedbackGate,
+        embed: InstagramEmbedPort,
         registry: FeatureRegistry = FEATURE_REGISTRY,
         browser: SyncBrowserPort | None = None,
         clients: Sequence[BaseMediaClient] | Mapping[CommandName, BaseMediaClient] | None = None,
@@ -150,16 +155,17 @@ class FeatureJobRunner:
         self._telegram = telegram
         self._feedback = feedback
         self._gate = gate
-        self._clients = self._init_clients(clients, settings)
+        self._clients = self._init_clients(clients, settings, embed)
         self._lifecycle = WorkerLifecycleService(admission, budgets, ledger, clock)
 
     def _init_clients(
         self,
         clients: Sequence[BaseMediaClient] | Mapping[CommandName, BaseMediaClient] | None,
         settings: AppSettings,
+        embed: InstagramEmbedPort,
     ) -> dict[CommandName, BaseMediaClient]:
         if clients is None:
-            return default_media_clients(settings)
+            return default_media_clients(settings, embed=embed)
         if isinstance(clients, Mapping):
             return dict(clients)
         return {client.name: client for client in clients}

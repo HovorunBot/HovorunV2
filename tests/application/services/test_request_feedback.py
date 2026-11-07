@@ -16,6 +16,7 @@ from hovorunv2.application.jobs.feature_job_runner import (
 )
 from hovorunv2.application.jobs.feature_jobs import JobOutcome, JobTarget
 from hovorunv2.application.media.extractor import NativeMediaExtractor
+from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import ReservationDecision, ReservationState, RuntimeNamespace
@@ -124,6 +125,7 @@ def _runner(
         telegram=telegram,
         feedback=database.policies,
         gate=AllowGate(),
+        embed=DisabledEmbedAdapter(),
     )
 
 

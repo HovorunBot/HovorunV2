@@ -37,6 +37,7 @@ from hovorunv2.application.jobs.feature_jobs import (
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor
+from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.media.providers.instagram import INSTAGRAM_CONFIG
@@ -395,6 +396,7 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
                 telegram=telegram,
                 feedback=AllowFeedback(),
                 gate=AllowGate(),
+                embed=DisabledEmbedAdapter(),
             )
             outcome = runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
             if browser_enabled:
@@ -487,6 +489,7 @@ async def test_denied_budget_reports_limits_separately_from_application_failure(
                 telegram=telegram,
                 feedback=AllowFeedback(),
                 gate=AllowGate(),
+                embed=DisabledEmbedAdapter(),
             )
             token = secrets.token_hex(16)
             assert runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), token) is not None
