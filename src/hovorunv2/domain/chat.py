@@ -88,6 +88,7 @@ class ChatDB(Base):
             CommandDB.id == chat_commands.c.command_id,
             chat_commands.c.deleted_at.is_(None),
         ),
+        lazy="selectin",
     )
 
     __table_args__ = (

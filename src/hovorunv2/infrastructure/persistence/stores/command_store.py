@@ -140,8 +140,7 @@ class SQLAlchemyCommandStore(CommandStore):
             chat = await repo.get_by_id(chat_id, platform)
             if not chat:
                 return []
-            commands = await chat.awaitable_attrs.commands
-            return [cmd.name for cmd in commands]
+            return [cmd.name for cmd in chat.commands]
 
     async def _execute_enable_command(
         self,

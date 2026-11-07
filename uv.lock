@@ -739,36 +739,67 @@ name = "hovorunv2"
 version = "0.3.4.1"
 source = { editable = "." }
 dependencies = [
-    { name = "aiogram" },
-    { name = "aiohttp" },
-    { name = "alembic" },
-    { name = "beautifulsoup4" },
     { name = "casbin" },
-    { name = "celery", extra = ["redis"] },
     { name = "cryptography" },
-    { name = "dishka" },
-    { name = "greenlet" },
-    { name = "instaloader" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pycountry" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "redis" },
-    { name = "requests" },
     { name = "sqlalchemy" },
-    { name = "yt-dlp", extra = ["curl-cffi"] },
 ]
 
 [package.optional-dependencies]
+bot = [
+    { name = "aiogram" },
+    { name = "aiohttp" },
+    { name = "celery", extra = ["redis"] },
+    { name = "dishka" },
+    { name = "greenlet" },
+    { name = "redis" },
+]
 browser = [
+    { name = "beautifulsoup4" },
+    { name = "celery", extra = ["redis"] },
     { name = "drissionpage" },
+    { name = "instaloader" },
+    { name = "redis" },
+    { name = "requests" },
+    { name = "yt-dlp", extra = ["curl-cffi"] },
+]
+migrate = [
+    { name = "alembic" },
+    { name = "dishka" },
+    { name = "greenlet" },
+    { name = "redis" },
+]
+worker-browser = [
+    { name = "beautifulsoup4" },
+    { name = "celery", extra = ["redis"] },
+    { name = "drissionpage" },
+    { name = "instaloader" },
+    { name = "redis" },
+    { name = "requests" },
+    { name = "yt-dlp", extra = ["curl-cffi"] },
+]
+worker-media = [
+    { name = "beautifulsoup4" },
+    { name = "celery", extra = ["redis"] },
+    { name = "instaloader" },
+    { name = "redis" },
+    { name = "requests" },
+    { name = "yt-dlp", extra = ["curl-cffi"] },
+]
+worker-ops = [
+    { name = "celery", extra = ["redis"] },
+    { name = "redis" },
+    { name = "requests" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "aioresponses" },
     { name = "commitizen" },
-    { name = "drissionpage" },
+    { name = "hovorunv2", extra = ["bot", "migrate", "worker-browser"] },
     { name = "import-linter" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -783,33 +814,41 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiogram" },
-    { name = "aiohttp" },
-    { name = "alembic" },
-    { name = "beautifulsoup4" },
+    { name = "aiogram", marker = "extra == 'bot'" },
+    { name = "aiohttp", marker = "extra == 'bot'" },
+    { name = "alembic", marker = "extra == 'migrate'" },
+    { name = "beautifulsoup4", marker = "extra == 'worker-media'" },
     { name = "casbin" },
-    { name = "celery", extras = ["redis"], specifier = ">=5.7.0rc1" },
+    { name = "celery", extras = ["redis"], marker = "extra == 'bot'", specifier = ">=5.7.0rc1" },
+    { name = "celery", extras = ["redis"], marker = "extra == 'worker-ops'", specifier = ">=5.7.0rc1" },
     { name = "cryptography" },
-    { name = "dishka" },
-    { name = "drissionpage", marker = "extra == 'browser'" },
-    { name = "greenlet" },
-    { name = "instaloader" },
+    { name = "dishka", marker = "extra == 'bot'" },
+    { name = "dishka", marker = "extra == 'migrate'" },
+    { name = "drissionpage", marker = "extra == 'worker-browser'" },
+    { name = "greenlet", marker = "extra == 'bot'" },
+    { name = "greenlet", marker = "extra == 'migrate'" },
+    { name = "hovorunv2", extras = ["worker-browser"], marker = "extra == 'browser'" },
+    { name = "hovorunv2", extras = ["worker-media"], marker = "extra == 'worker-browser'" },
+    { name = "hovorunv2", extras = ["worker-ops"], marker = "extra == 'worker-media'" },
+    { name = "instaloader", marker = "extra == 'worker-media'" },
     { name = "psycopg", extras = ["binary"] },
     { name = "pycountry" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "redis", specifier = ">=7.4,<8" },
-    { name = "requests" },
+    { name = "redis", marker = "extra == 'bot'", specifier = ">=7.4,<8" },
+    { name = "redis", marker = "extra == 'migrate'", specifier = ">=7.4,<8" },
+    { name = "redis", marker = "extra == 'worker-ops'", specifier = ">=7.4,<8" },
+    { name = "requests", marker = "extra == 'worker-ops'" },
     { name = "sqlalchemy" },
-    { name = "yt-dlp", extras = ["curl-cffi"] },
+    { name = "yt-dlp", extras = ["curl-cffi"], marker = "extra == 'worker-media'" },
 ]
-provides-extras = ["browser"]
+provides-extras = ["bot", "migrate", "worker-ops", "worker-media", "worker-browser", "browser"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "aioresponses" },
     { name = "commitizen" },
-    { name = "drissionpage" },
+    { name = "hovorunv2", extras = ["bot", "migrate", "worker-browser"] },
     { name = "import-linter" },
     { name = "pre-commit" },
     { name = "pytest" },

@@ -151,8 +151,8 @@ aggregate upserts. Their transaction owners commit receipt, totals and one allow
 serialization/deadlock failures retry the database-only transaction, at most three times with fresh sessions. Synchronous
 accounting uses the same trusted-origin and supported-dimension validation; no external effect runs in its transaction.
 Accounting for retained deleted identities remains supported without restoring their access. These reads add no private
-payload, profile data or new persistence state. AsyncAttrs remains on the ORM base because the existing bot command store
-still has three awaitable relationship consumers; native fact reads use explicit eager statements.
+payload, profile data or new persistence state. The ORM base inherits DeclarativeBase directly without AsyncAttrs
+or greenlet, using explicit eager selectin relationships across domain models.
 
 
 ## Admission runtime ownership

@@ -17,7 +17,7 @@ from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.infrastructure.config import DatabaseSettings, ErrorLoggingSettings, Settings
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.infrastructure.logger import LOG_FORMAT, LogContextFilter, PrivacyFormatter
-from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramAPI, TelegramMethod
+from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI, TelegramMethod
 from hovorunv2.utils.job_logging import reset_job_log_context, set_job_log_context
 
 ALERT_TIMEOUT_SECONDS = 3

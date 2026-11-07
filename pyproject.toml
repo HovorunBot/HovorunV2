@@ -18,28 +18,48 @@ classifiers = [
 ]
 requires-python = ">=3.15"
 dependencies = [
-    "aiogram",
+    "casbin",
+    "cryptography",
+    "psycopg[binary]",
+    "pycountry",
     "pydantic",
     "pydantic-settings",
-    "aiohttp",
-    "redis>=7.4,<8",
     "sqlalchemy",
-    "greenlet",
-    "alembic",
-    "yt-dlp[curl-cffi]",
-    "instaloader",
-    "beautifulsoup4",
-    "dishka",
-    "cryptography",
-    "pycountry",
-    "celery[redis]>=5.7.0rc1",
-    "casbin",
-    "psycopg[binary]",
-    "requests",
 ]
 
 [project.optional-dependencies]
-browser = ["DrissionPage"]
+bot = [
+    "aiogram",
+    "aiohttp",
+    "celery[redis]>=5.7.0rc1",
+    "dishka",
+    "greenlet",
+    "redis>=7.4,<8",
+]
+migrate = [
+    "alembic",
+    "dishka",
+    "greenlet",
+    "redis>=7.4,<8",
+]
+worker-ops = [
+    "celery[redis]>=5.7.0rc1",
+    "redis>=7.4,<8",
+    "requests",
+]
+worker-media = [
+    "beautifulsoup4",
+    "hovorunv2[worker-ops]",
+    "instaloader",
+    "yt-dlp[curl-cffi]",
+]
+worker-browser = [
+    "DrissionPage",
+    "hovorunv2[worker-media]",
+]
+browser = [
+    "hovorunv2[worker-browser]",
+]
 
 [project.urls]
 Repository = "https://github.com/HovorunBot/HovorunV2"
@@ -58,9 +78,9 @@ packages = ["src/hovorunv2"]
 
 [dependency-groups]
 dev = [
+    "hovorunv2[bot,migrate,worker-browser]",
     "aioresponses",
     "commitizen",
-    "DrissionPage",
     "import-linter",
     "pre-commit",
     "pytest",

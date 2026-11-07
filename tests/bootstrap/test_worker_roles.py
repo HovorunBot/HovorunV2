@@ -113,21 +113,82 @@ async def test_browser_worker_role_composition(test_container: object, postgres_
 
 
 @pytest.mark.unit
-def test_operations_role_subprocess_import_isolation() -> None:
-    """A fresh process initializing operations role does not load media/browser/bot packages."""
+def test_bot_subprocess_import_isolation() -> None:
+    """Bot entrypoint imports succeed when media, browser, and migration packages are blocked."""
     code = """
-import os, sys
-os.environ['WORKER_ROLE'] = 'operations'
-os.environ['BOT_TOKEN'] = 'synthetic:token'
+import sys
+from importlib.abc import MetaPathFinder
+
+class BlockedFinder(MetaPathFinder):
+    def __init__(self, *blocked):
+        self.blocked = set(blocked)
+    def find_spec(self, fullname, path=None, target=None):
+        del path, target
+        if fullname in self.blocked or any(fullname.startswith(f"{b}.") for b in self.blocked):
+            raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
+        return None
+
+forbidden = ["yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "DrissionPage", "alembic"]
+sys.meta_path.insert(0, BlockedFinder(*forbidden))
+
+import hovorunv2.__main__
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)  # noqa: S603
+    assert result.returncode == 0, f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+
+
+@pytest.mark.unit
+def test_migrate_subprocess_import_isolation() -> None:
+    """Migration entrypoint imports succeed when bot, media, and browser packages are blocked."""
+    code = """
+import sys
+from importlib.abc import MetaPathFinder
+
+class BlockedFinder(MetaPathFinder):
+    def __init__(self, *blocked):
+        self.blocked = set(blocked)
+    def find_spec(self, fullname, path=None, target=None):
+        del path, target
+        if fullname in self.blocked or any(fullname.startswith(f"{b}.") for b in self.blocked):
+            raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
+        return None
+
+forbidden = ["aiogram", "yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "DrissionPage"]
+sys.meta_path.insert(0, BlockedFinder(*forbidden))
+
+from alembic.config import Config
+cfg = Config("alembic.ini")
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)  # noqa: S603
+    assert result.returncode == 0, f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+
+
+@pytest.mark.unit
+def test_operations_role_subprocess_import_isolation() -> None:
+    """Operations worker initializes cleanly when bot, media, browser, and migration packages are blocked."""
+    code = """
+import os
+import sys
+from importlib.abc import MetaPathFinder
+
+class BlockedFinder(MetaPathFinder):
+    def __init__(self, *blocked):
+        self.blocked = set(blocked)
+    def find_spec(self, fullname, path=None, target=None):
+        del path, target
+        if fullname in self.blocked or any(fullname.startswith(f"{b}.") for b in self.blocked):
+            raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
+        return None
+
+forbidden = ["aiogram", "dishka", "alembic", "yt_dlp", "curl_cffi", "instaloader", "bs4", "DrissionPage"]
+sys.meta_path.insert(0, BlockedFinder(*forbidden))
+
+os.environ["WORKER_ROLE"] = "operations"
+os.environ["BOT_TOKEN"] = "synthetic:token"
+import hovorunv2.bootstrap.worker_app as app
 import hovorunv2.bootstrap.worker_runtime as runtime
 context = runtime.WorkerChildContext()
 assert context.role == runtime.WorkerRole.OPERATIONS
-
-forbidden = ['aiogram', 'dishka', 'yt_dlp', 'instaloader', 'bs4', 'DrissionPage']
-loaded = [m for m in forbidden if m in sys.modules]
-if loaded:
-    print(f"FAILED: loaded {loaded}")
-    sys.exit(1)
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)  # noqa: S603
     assert result.returncode == 0, f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
@@ -135,20 +196,30 @@ if loaded:
 
 @pytest.mark.unit
 def test_media_role_subprocess_import_isolation() -> None:
-    """A fresh process initializing media role does not load DrissionPage, aiogram, or dishka."""
+    """Media worker initializes cleanly when bot, DI container, migrations, and browser are blocked."""
     code = """
-import os, sys
-os.environ['WORKER_ROLE'] = 'media'
-os.environ['BOT_TOKEN'] = 'synthetic:token'
+import os
+import sys
+from importlib.abc import MetaPathFinder
+
+class BlockedFinder(MetaPathFinder):
+    def __init__(self, *blocked):
+        self.blocked = set(blocked)
+    def find_spec(self, fullname, path=None, target=None):
+        del path, target
+        if fullname in self.blocked or any(fullname.startswith(f"{b}.") for b in self.blocked):
+            raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
+        return None
+
+forbidden = ["aiogram", "dishka", "alembic", "DrissionPage"]
+sys.meta_path.insert(0, BlockedFinder(*forbidden))
+
+os.environ["WORKER_ROLE"] = "media"
+os.environ["BOT_TOKEN"] = "synthetic:token"
+import hovorunv2.bootstrap.worker_app as app
 import hovorunv2.bootstrap.worker_runtime as runtime
 context = runtime.WorkerChildContext()
 assert context.role == runtime.WorkerRole.MEDIA
-
-forbidden = ['aiogram', 'dishka', 'DrissionPage']
-loaded = [m for m in forbidden if m in sys.modules]
-if loaded:
-    print(f"FAILED: loaded {loaded}")
-    sys.exit(1)
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)  # noqa: S603
     assert result.returncode == 0, f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
