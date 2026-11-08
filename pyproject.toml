@@ -51,7 +51,7 @@ worker-media = [
     "beautifulsoup4",
     "curl-cffi",
     "hovorunv2[worker-ops]",
-    "yt-dlp[curl-cffi]",
+    "yt-dlp[default,curl-cffi,deno]",
 ]
 worker-browser = [
     "DrissionPage",

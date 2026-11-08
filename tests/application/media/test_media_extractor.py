@@ -4,6 +4,8 @@ import asyncio
 from http import HTTPStatus
 
 import pytest
+import yt_dlp_ejs
+from yt_dlp.globals import supported_js_runtimes
 
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.extractor import NativeMediaExtractor, process_extraction_info
@@ -18,18 +20,45 @@ def test_extraction_metadata_preserves_short_caption_and_metrics_policy() -> Non
             "title": "Synthetic title",
             "description": "Short desc",
             "uploader": "Synthetic uploader",
-            "uploader_id": "synthetic",
-            "url": "https://synthetic.invalid/asset.mp4",
+            "uploader_id": "@synthetic",
+            "formats": [
+                {
+                    "url": "https://synthetic.invalid/hls.m3u8",
+                    "ext": "mp4",
+                    "vcodec": "avc1",
+                    "acodec": "mp4a",
+                    "protocol": "m3u8_native",
+                    "height": 1920,
+                },
+                {
+                    "url": "https://synthetic.invalid/direct.mp4",
+                    "ext": "mp4",
+                    "vcodec": "avc1",
+                    "acodec": "mp4a",
+                    "protocol": "https",
+                    "height": 640,
+                },
+            ],
             "like_count": 100,
             "view_count": 1000,
         },
         source,
     )
     assert payload.author_name == "Synthetic uploader"
+    assert payload.author_handle == "synthetic"
     assert payload.content == "Synthetic title"
     assert payload.is_video
+    assert payload.media_items[0].url == "https://synthetic.invalid/direct.mp4"
     assert payload.original_url == source
     assert payload.footer_text == "❤️ 100 | 👁️ 1K"
+
+
+def test_ytdlp_default_js_runtime_and_ejs_solver_are_available() -> None:
+    """Default yt-dlp configuration has a supported JS runtime and challenge solver scripts."""
+    assert yt_dlp_ejs.version
+    runtime = supported_js_runtimes.value["deno"]()
+    assert runtime.info is not None
+    assert runtime.info.supported is True
 
 
 @pytest.mark.parametrize("raw", [None, {}, [], "invalid", {"unknown": 1}])

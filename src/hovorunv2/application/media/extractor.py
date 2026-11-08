@@ -70,8 +70,8 @@ def _count(info: dict[str, object], key: str) -> int:
     return int(value) if isinstance(value, int | float) and math.isfinite(value) and value > 0 else 0
 
 
-def _format_height(value: dict[str, object]) -> int:
-    return _count(value, "height")
+def _format_rank(value: dict[str, object]) -> tuple[bool, int]:
+    return value.get("protocol") in {"http", "https"}, _count(value, "height")
 
 
 def _media_items(info: dict[str, object]) -> list[MediaItem]:
@@ -91,7 +91,7 @@ def _media_items(info: dict[str, object]) -> list[MediaItem]:
             if item.get("vcodec") != "none" and item.get("acodec") != "none" and item.get("ext") == "mp4"
         ]
         if suitable:
-            media_url = _text(max(suitable, key=_format_height), "url")
+            media_url = _text(max(suitable, key=_format_rank), "url")
             is_video = True
         elif formats:
             media_url = _text(formats[-1], "url")
@@ -130,7 +130,7 @@ def process_extraction_info(raw: object, url: str) -> RichMediaPayload:
         raise MediaExtractionError(msg)
     return RichMediaPayload(
         author_name=_text(info, "uploader") or _text(info, "channel", "Unknown"),
-        author_handle=_text(info, "uploader_id", "unknown"),
+        author_handle=_text(info, "uploader_id", "unknown").lstrip("@") or "unknown",
         author_url=_text(info, "uploader_url"),
         content=clean_desc if len(clean_desc) > MIN_DESCRIPTION_LENGTH else title,
         footer_text=" | ".join(stats),

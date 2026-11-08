@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **media**: enable yt-dlp ejs/deno runtime and edit fallback message in-place
 - **worker**: close opened resources when child startup fails
 - **security**: reject private network destinations in worker HTTP
 - **jobs**: release admission capacity when claimed work fails

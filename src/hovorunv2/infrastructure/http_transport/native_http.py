@@ -300,10 +300,9 @@ class NativeHTTPClient:
     ) -> object:
         """Perform one mutating request; a missing valid response remains an uncertain external effect."""
         self._require_session()
-        started = time.monotonic()
         try:
             with self._request(method.upper(), url, data=data, files=files) as response:
-                raw = self._read(response, self._response_bytes, started)
+                raw = self._read(response, self._response_bytes, time.monotonic())
                 result = _decode_json(raw)
                 if response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
                     raise HTTPTransportError

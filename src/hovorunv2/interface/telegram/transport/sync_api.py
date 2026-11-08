@@ -26,6 +26,7 @@ class TelegramMethod(StrEnum):
     SEND_DOCUMENT = "sendDocument"
     SEND_MEDIA_GROUP = "sendMediaGroup"
     EDIT_MESSAGE_TEXT = "editMessageText"
+    EDIT_MESSAGE_MEDIA = "editMessageMedia"
     DELETE_MESSAGE = "deleteMessage"
     GET_CHAT_MEMBER = "getChatMember"
     GET_CHAT_ADMINISTRATORS = "getChatAdministrators"

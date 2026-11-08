@@ -64,7 +64,14 @@ class NativeTelegramDelivery:
         self._api = api
         self._downloader = downloader
 
-    def _text(self, chat_id: int, text: str, *, message_id: int | None = None) -> tuple[int, ...]:
+    def _text(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        message_id: int | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> tuple[int, ...]:
         fields: dict[str, str | int | float | bool] = {
             "chat_id": chat_id,
             "text": text,
@@ -75,7 +82,19 @@ class NativeTelegramDelivery:
         if message_id is not None:
             fields["message_id"] = message_id
             method = TelegramMethod.EDIT_MESSAGE_TEXT
+        elif reply_to_message_id is not None:
+            fields["reply_parameters"] = json.dumps({"message_id": reply_to_message_id})
         return extract_message_ids(self._api.call(method, fields))
+
+    def _edit_media(self, chat_id: int, placeholder: int, item: MediaItem, caption: str) -> tuple[int, ...]:
+        logger.info("Worker updating placeholder with uploaded Telegram media item")
+        media, files = _media_group([item], 0, caption)
+        fields: dict[str, str | int | float | bool] = {
+            "chat_id": chat_id,
+            "message_id": placeholder,
+            "media": json.dumps(media[0]),
+        }
+        return extract_message_ids(self._api.call(TelegramMethod.EDIT_MESSAGE_MEDIA, fields, files or None))
 
     def _send_items(self, chat_id: int, message_id: int, items: list[MediaItem], caption: str) -> tuple[int, ...]:
         receipts = []
@@ -105,7 +124,9 @@ class NativeTelegramDelivery:
 
     def _fallback(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
         logger.info("Telegram could not fetch media URLs; starting download and upload fallback")
-        placeholder = self._text(chat_id, caption + "\n\n⏳ <i>Downloading media...</i>")[0]
+        placeholder = self._text(
+            chat_id, caption + "\n\n⏳ <i>Downloading media...</i>", reply_to_message_id=message_id
+        )[0]
         try:
             return self._upload_fallback(chat_id, message_id, payload, caption, placeholder)
         except TelegramDeliveryUncertainError as error:
@@ -126,6 +147,8 @@ class NativeTelegramDelivery:
             logger.error("Worker media download fallback produced no usable media")
             return self._text(chat_id, caption + "\n\n⚠️ <i>Failed to download media.</i>", message_id=placeholder)
         try:
+            if len(items) == 1:
+                return self._edit_media(chat_id, placeholder, items[0], caption)
             receipts = self._send_items(chat_id, message_id, items, caption)
         except TelegramRejectedError as exc:
             logger.exception("Telegram rejected worker media upload (%s)", exc.reason)

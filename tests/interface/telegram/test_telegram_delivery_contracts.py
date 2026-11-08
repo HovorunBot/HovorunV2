@@ -66,10 +66,15 @@ def test_native_missing_video_sends_post_text_and_explanation() -> None:
 
 
 @contextmanager
-def _native_delivery(routes: RouteReplies) -> Iterator[tuple[NativeTelegramDelivery, HTTPFixture]]:
+def _native_delivery(
+    routes: RouteReplies, *, total_timeout: float = 60.0
+) -> Iterator[tuple[NativeTelegramDelivery, HTTPFixture]]:
     with (
         HTTPFixture(routes) as server,
-        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost", "synthetic.invalid"})) as http,
+        NativeHTTPClient(
+            total_timeout=total_timeout,
+            allowed_hosts=frozenset({"127.0.0.1", "localhost", "synthetic.invalid"}),
+        ) as http,
     ):
         api = NativeTelegramAPI(http, SYNTHETIC_BOT_IDENTITY, api_base=server.url(""))
         yield NativeTelegramDelivery(api, NativeMediaDownloader(http)), server
@@ -125,12 +130,12 @@ def test_native_uncertain_transport_stops_without_download_or_second_send() -> N
 
 @pytest.mark.parametrize("uncertain_upload", [False, True])
 def test_native_explicit_fetch_rejection_uploads_once_and_preserves_placeholder(uncertain_upload: bool) -> None:
-    """Only known fetch rejection enables RAM fallback; uncertain upload retains its accepted placeholder."""
-    upload = HTTPReply(disconnect=True) if uncertain_upload else _ack(_message(21))
+    """Single-item fetch rejection updates the placeholder in-place via editMessageMedia instead of sending twice."""
+    upload = HTTPReply(disconnect=True) if uncertain_upload else _ack(_message(10))
     routes = {
-        API_PREFIX + "sendPhoto": [_reject(), upload],
+        API_PREFIX + "sendPhoto": _reject(),
         API_PREFIX + "sendMessage": _ack(_message(10)),
-        API_PREFIX + "deleteMessage": _ack(True),
+        API_PREFIX + "editMessageMedia": upload,
         "/asset": HTTPReply(b"synthetic media"),
     }
     with _native_delivery(routes) as (delivery, server):
@@ -141,10 +146,55 @@ def test_native_explicit_fetch_rejection_uploads_once_and_preserves_placeholder(
                 delivery.deliver(42, 1, payload, "Synthetic", None)
             assert error.value.receipts == (10,)
         else:
-            assert delivery.deliver(42, 1, payload, "Synthetic", None) == (21,)
-        methods = ["sendPhoto", "sendMessage", "asset", "sendPhoto"]
-        assert _methods(server) == methods + ([] if uncertain_upload else ["deleteMessage"])
+            assert delivery.deliver(42, 1, payload, "Synthetic", None) == (10,)
+        assert _methods(server) == ["sendPhoto", "sendMessage", "asset", "editMessageMedia"]
+        placeholder_fields = parse_qs(server.requests[1].body.decode())
+        assert placeholder_fields["reply_parameters"] == ['{"message_id": 1}']
         assert b"synthetic media" in server.requests[3].body
+
+
+def test_native_album_fetch_rejection_uploads_group_and_deletes_placeholder() -> None:
+    """Multi-item album fallback sends the uploaded media group and deletes the temporary placeholder."""
+    routes = {
+        API_PREFIX + "sendMediaGroup": [_reject(), _ack([_message(21), _message(22)])],
+        API_PREFIX + "sendMessage": _ack(_message(10)),
+        API_PREFIX + "deleteMessage": _ack(True),
+        "/0.jpg": HTTPReply(b"image 0"),
+        "/1.jpg": HTTPReply(b"image 1"),
+    }
+    with _native_delivery(routes) as (delivery, server):
+        payload = _payload(2)
+        payload.media_items[0].url = server.url("/0.jpg")
+        payload.media_items[1].url = server.url("/1.jpg")
+        assert delivery.deliver(42, 1, payload, "Synthetic", None) == (21, 22)
+        assert _methods(server) == [
+            "sendMediaGroup",
+            "sendMessage",
+            "0.jpg",
+            "1.jpg",
+            "sendMediaGroup",
+            "deleteMessage",
+        ]
+
+
+def test_native_slow_upload_updates_placeholder_when_telegram_acknowledges() -> None:
+    """Upload time before response headers arrive must not cause response read timeout on editMessageMedia."""
+    slow_ack = HTTPReply(
+        b'{"ok": true, "result": {"message_id": 10, "date": 0, "chat": {"id": 42, "type": "private"}}}',
+        headers={"Content-Type": "application/json"},
+        delay_seconds=0.08,
+    )
+    routes = {
+        API_PREFIX + "sendVideo": _reject(),
+        API_PREFIX + "sendMessage": _ack(_message(10)),
+        API_PREFIX + "editMessageMedia": slow_ack,
+        "/video.mp4": HTTPReply(b"synthetic video"),
+    }
+    with _native_delivery(routes, total_timeout=0.04) as (delivery, server):
+        payload = _payload(1)
+        payload.media_items[0] = MediaItem(server.url("/video.mp4"), is_video=True)
+        assert delivery.deliver(42, 1, payload, "YouTube", None) == (10,)
+        assert _methods(server) == ["sendVideo", "sendMessage", "video.mp4", "editMessageMedia"]
 
 
 def test_native_unrelated_url_rejection_does_not_download() -> None:
