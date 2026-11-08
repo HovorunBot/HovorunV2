@@ -17,7 +17,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
-from hovorunv2.application.jobs.admission import JobStage
+from hovorunv2.application.jobs.admission import AdmissionLimits, AdmissionState, JobStage, TicketState
 from hovorunv2.application.jobs.feature_job_runner import (
     APPLICATION_FAILURE_NOTICE_TEXT,
     EXTRACTION_FAILURE_NOTICE_TEXT,
@@ -48,7 +48,7 @@ from hovorunv2.application.media.payloads import (
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.media.providers.instagram import INSTAGRAM_CONFIG
 from hovorunv2.application.translation.native_translation import NativeTranslationService
-from hovorunv2.application.usage.budgets import ReservationDecision, ReservationState, UnitAmount
+from hovorunv2.application.usage.budgets import BudgetRequest, ReservationDecision, ReservationState, UnitAmount
 from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AccountingSubject
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -63,6 +63,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.jobs import (
     PRIVATE_BODY,
@@ -468,11 +469,8 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
 
             ticket = runtime.admission.get(envelope.job_id)
             assert ticket is not None
-            if client_type is BrokenMediaClient:
-                assert ticket.outcome is None
-                assert ticket.budget_reserved
-            else:
-                assert ticket.outcome == expected_outcome
+            assert ticket.state == TicketState.TERMINAL
+            assert ticket.outcome == expected_outcome
 
             subject = AccountingSubject(envelope.target.kind, envelope.target.telegram_id)
             total = database.ledger.total(subject, MEDIA_BUCKET, UsageUnit.REQUESTS, UsageWindow(), int(clock.now()))
@@ -668,3 +666,68 @@ async def test_native_prefork_worker_processes_job_end_to_end_under_werror(
         assert not stderr, stderr.decode()
         result = json.loads(stdout)
         assert result["status"] == "ok"
+
+
+@pytest.mark.parametrize("failure", ["budget_unavailable", "payload_error"])
+async def test_claimed_failure_releases_admission_without_refunding_uncertain_budget(
+    test_container: AsyncContainer, postgres_database_url: str, failure: str
+) -> None:
+    """Failed claimed work frees bounded admission while preserving uncertain budget ownership."""
+    settings = (await test_container.get(Settings)).model_copy(update={"database_url": postgres_database_url})
+    clock = ManualClock(time.time())
+    chat_id, generation = await _seed_entities(test_container, 390001, -390001)
+    safety = replace(UsageSafetyCaps(), global_pending=1)
+    limits = AdmissionLimits(1, 1, safety)
+    async with runtime_cache(test_container) as (cache, namespace):
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        sealed = await payloads.seal("failure-job", PRIVATE_BODY, clock.now() + 300)
+        envelope = job_envelope(
+            sealed.reference,
+            clock,
+            job_id=sealed.job_id,
+            feature="instagram_post",
+            target=JobTarget(kind=TargetKind.GROUP, entity_id=chat_id, generation=generation, telegram_id=-390001),
+        )
+        admission = ValkeyAdmissionStore(cache, namespace)
+        assert (await admission.admit(envelope, sealed, limits, clock.now())).state == AdmissionState.ACCEPTED
+        next_payload = await payloads.seal("next-job", PRIVATE_BODY, envelope.deadline)
+        next_envelope = envelope.model_copy(
+            update={"job_id": next_payload.job_id, "payload_ref": next_payload.reference, "dedupe_key": "b" * 64}
+        )
+        assert (await admission.admit(next_envelope, next_payload, limits, clock.now())).state == AdmissionState.FULL
+        with (
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+        ):
+            budget_prefix = namespace.value + "budget:"
+            if failure == "budget_unavailable":
+                usage = database.policies.resolve(
+                    envelope.feature, envelope.trigger, envelope.actor_id, group_id=-390001
+                )
+                usage = replace(
+                    usage, policies=tuple(policy for policy in usage.policies if policy.bucket == MEDIA_BUCKET)
+                )
+                request = BudgetRequest(envelope.job_id, usage, (UnitAmount(UsageUnit.REQUESTS, 1),), envelope.deadline)
+                assert runtime.budgets.reserve(request, clock.now(), (0,)).allowed
+                record = json.loads(await cache.client.get(budget_prefix + "reservation:" + envelope.job_id))
+                await cache.client.hdel(record["quotas"][0]["key"], "used")
+            else:
+                payload_key = namespace.value + "payload:" + sealed.reference
+                metadata = json.loads(await cache.client.get(payload_key))
+                metadata["deadline"] = 10**400
+                await cache.client.set(payload_key, json.dumps(metadata))
+            budget_before = {
+                key: await cache.client.dump(key) async for key in cache.client.scan_iter(match=budget_prefix + "*")
+            }
+            with worker_child_context(settings, namespace=namespace, clock=clock) as runner:
+                assert runner.run(envelope.model_dump(mode="json")) == JobOutcome.FAILED.value
+            ticket = runtime.admission.get(envelope.job_id)
+            assert ticket is not None
+            assert ticket.state == TicketState.TERMINAL
+            assert ticket.outcome == JobOutcome.FAILED
+            assert {
+                key: await cache.client.dump(key) async for key in cache.client.scan_iter(match=budget_prefix + "*")
+            } == budget_before
+            assert (
+                await admission.admit(next_envelope, next_payload, limits, clock.now())
+            ).state == AdmissionState.ACCEPTED

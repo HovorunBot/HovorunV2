@@ -14,7 +14,6 @@ from hovorunv2.application.features.emergency import envelope_is_current
 from hovorunv2.application.features.feature_policy import SyncPolicyPort
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry
 from hovorunv2.application.jobs.admission import (
-    AdmissionConflictError,
     JobStage,
     NoticeKind,
     SettlementIntent,
@@ -273,6 +272,7 @@ class FeatureJobRunner:
             return self._execute_reserved(envelope, loaded, stage, token, now)
         except Exception:
             logger.exception("Claimed execution reconciliation deferred")
+            self._finish_ticket_safe(envelope.job_id, token, JobOutcome.FAILED)
             self._notify_application_failure(envelope)
             return JobOutcome.FAILED.value
 
@@ -391,6 +391,7 @@ class FeatureJobRunner:
                 return ReservationState.WAITING.value
         if reservation.state == ReservationState.UNAVAILABLE:
             # A lost reserve acknowledgement can hide a live reservation; do not refund it.
+            self._finish_ticket_safe(envelope.job_id, token, JobOutcome.FAILED)
             self._notify_application_failure(envelope)
             return JobOutcome.FAILED.value
         outcome = (
@@ -704,8 +705,8 @@ class FeatureJobRunner:
                 self._complete_zero(job_id, token, outcome)
                 return
             self._admission.finish(job_id, outcome, token=token)
-        except AdmissionConflictError:
-            logger.exception("Admission conflict finishing ticket %s", job_id)
+        except Exception as error:
+            logger.log(logging.ERROR, "Ticket completion deferred: %s", type(error).__name__)
 
     def _find_client(self, feature: str, url: str) -> BaseMediaClient | None:
         provider = self._resolve_provider_command(feature)
