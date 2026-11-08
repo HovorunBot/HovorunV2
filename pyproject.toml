@@ -31,20 +31,20 @@ dependencies = [
 bot = [
     "aiogram",
     "aiohttp",
-    "celery[redis]>=5.7.0rc1",
+    "celery[redis]",
     "dishka",
     "greenlet",
-    "redis>=7.4,<8",
+    "redis",
 ]
 migrate = [
     "alembic",
     "dishka",
     "greenlet",
-    "redis>=7.4,<8",
+    "redis",
 ]
 worker-ops = [
     "celery[redis]>=5.7.0rc1",
-    "redis>=7.4,<8",
+    "redis",
     "requests",
 ]
 worker-media = [
@@ -56,7 +56,7 @@ worker-media = [
 worker-browser = [
     "DrissionPage",
     "hovorunv2[worker-media]",
-    "pydoll-python>=3.0.1,<4.0",
+    "pydoll-python",
 ]
 browser = [
     "hovorunv2[worker-browser]",
@@ -92,7 +92,7 @@ dev = [
     "ty",
     "pytest-xdist",
     "pytest-cov",
-    "celery-types>=0.26.0",
+    "celery-types",
 ]
 
 [tool.ruff]
@@ -154,6 +154,8 @@ asyncio_default_fixture_loop_scope = "function"
 xfail_strict = true
 filterwarnings = [
     "error",
+    # Accepted for pydoll 3.0.1 on Python 3.15; remove once upstream uses inspect.
+    "default:'asyncio.iscoroutinefunction' is deprecated.*:DeprecationWarning:pydoll\\..*",
     "ignore:Exception ignored while finalizing socket:pytest.PytestUnraisableExceptionWarning",
 ]
 markers = [
