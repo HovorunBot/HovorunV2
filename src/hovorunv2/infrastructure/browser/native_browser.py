@@ -8,7 +8,14 @@ from threading import BoundedSemaphore
 from time import monotonic
 from urllib.parse import SplitResult, urlsplit
 
-from DrissionPage.errors import BaseError, BrowserConnectError, PageDisconnectedError
+lazy from pydoll.exceptions import (
+    BrowserNotRunning,
+    ConnectionException,
+    PageLoadTimeout,
+    PydollException,
+    TargetCrashed,
+)
+lazy from pydoll.sync import Chrome, SyncError
 
 from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportError
 from hovorunv2.application.media.browser import BrowserTab
@@ -23,6 +30,7 @@ lazy from hovorunv2.infrastructure.http_transport.extraction_http import Extract
 
 DEFAULT_BROWSER_TIMEOUT_SECONDS = 30
 SELECTOR_TIMEOUT_SECONDS = 10
+CONTEXT_CLEANUP_SECONDS = 3
 MAX_BROWSER_ATTEMPTS = 2
 MAX_BROWSER_HTML_BYTES = 2 * 1024 * 1024
 MAX_BROWSER_MEDIA_BYTES = 50 * 1024 * 1024
@@ -167,46 +175,58 @@ class NativeBrowserService:
         for attempt in range(MAX_BROWSER_ATTEMPTS):
             try:
                 return self._fetch(url, wait_selector, deadline)
-            except BrowserConnectError, PageDisconnectedError, ConnectionError:
+            except ConnectionException, BrowserNotRunning, TargetCrashed, PageLoadTimeout, ConnectionError:
                 self._browser.close()
                 if attempt == MAX_BROWSER_ATTEMPTS - 1:
                     msg = "Browser content is unavailable."
                     raise BrowserError(msg) from None
-            except BaseError, OSError:
+            except PydollException, SyncError, TimeoutError, OSError:
                 msg = "Browser content is unavailable."
                 raise BrowserError(msg) from None
         msg = "Browser content is unavailable."
         raise BrowserError(msg)
 
-    def _new_tab(self, deadline: ExtractionDeadline | None) -> BrowserTab:
-        tab = self._browser.start().new_tab()
-        return tab if deadline is None else BoundedBrowserTab(tab, deadline)
+    @contextmanager
+    def _tab(self, deadline: ExtractionDeadline | None) -> Generator[BrowserTab]:
+        with BrowserOperationTimeout(deadline or ExtractionDeadline.after(DEFAULT_BROWSER_TIMEOUT_SECONDS)):
+            browser = self._browser.start()
+            context = browser.create_browser_context()
+        try:
+            with BrowserOperationTimeout(deadline or ExtractionDeadline.after(DEFAULT_BROWSER_TIMEOUT_SECONDS)):
+                tab = browser.new_tab(browser_context_id=context)
+            yield BoundedBrowserTab(tab, deadline)
+        finally:
+            self._close_context(browser, context, deadline)
 
-    def _close_tab(self, tab: BrowserTab, deadline: ExtractionDeadline | None) -> None:
+    def _close_context(self, browser: Chrome, context: str, deadline: ExtractionDeadline | None) -> None:
         if deadline is not None and monotonic() >= deadline.expires_at:
             self._browser.abort()
             self._browser.close()
             return
-        tab.close()
+        try:
+            with BrowserOperationTimeout(ExtractionDeadline.after(CONTEXT_CLEANUP_SECONDS)):
+                browser.delete_browser_context(context)
+        except PydollException, SyncError, BrowserError, OSError:
+            self._browser.abort()
+            self._browser.close()
+            raise
 
     def _fetch(self, url: str, wait_selector: str | None, deadline: ExtractionDeadline | None) -> str:
-        tab = self._new_tab(deadline)
-        try:
+        with self._tab(deadline) as tab:
             self._navigate(tab, url, wait_selector)
             content = tab.html
             if len(content.encode()) > MAX_BROWSER_HTML_BYTES:
                 msg = "Browser HTML exceeds its byte limit."
                 raise BrowserError(msg)
             return content
-        finally:
-            self._close_tab(tab, deadline)
 
     def _navigate(self, tab: BrowserTab, url: str, wait_selector: str | None) -> None:
         if not tab.get(url, timeout=DEFAULT_BROWSER_TIMEOUT_SECONDS):
             msg = "Browser navigation failed."
             raise BrowserError(msg)
-        if wait_selector:
-            tab.ele(wait_selector, timeout=SELECTOR_TIMEOUT_SECONDS)
+        if wait_selector and tab.ele(wait_selector, timeout=SELECTOR_TIMEOUT_SECONDS) is None:
+            msg = "Browser required content is unavailable."
+            raise BrowserError(msg)
 
     def extract_and_download(
         self,
@@ -221,7 +241,7 @@ class NativeBrowserService:
         with self._session(deadline):
             try:
                 return self._extract_attempt(url, extractor_fn, wait_selector, cookies, deadline)
-            except BaseError, OSError:
+            except PydollException, SyncError, TimeoutError, OSError:
                 msg = "Browser extraction is unavailable."
                 raise BrowserError(msg) from None
 
@@ -233,8 +253,7 @@ class NativeBrowserService:
         cookies: list[dict[str, object]] | None,
         deadline: ExtractionDeadline | None,
     ) -> tuple[RichMediaPayload | None, list[bytes | MediaFailure]]:
-        tab = self._new_tab(deadline)
-        try:
+        with self._tab(deadline) as tab:
             for cookie in cookies or ():
                 tab.set.cookies(cookie)
             self._navigate(tab, url, wait_selector)
@@ -242,8 +261,6 @@ class NativeBrowserService:
             if payload is None:
                 return None, []
             return payload, download_tab_media(tab, payload, url, deadline=deadline, allowed_hosts=self._allowed_hosts)
-        finally:
-            self._close_tab(tab, deadline)
 
     def close(self) -> None:
         """Deterministically close browser drivers, reap Chromium, and remove its temporary profile."""

@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Feat
+
+- **browser**: cut over chromium adapter to pydoll sync
+
 ### Fix
 
 - **jobs**: stop republishing acknowledged queued jobs every sweep

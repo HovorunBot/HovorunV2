@@ -1,7 +1,6 @@
 """Read requested-post JSON and ordinary article/carousel markup without provider SDKs."""
 
 STRUCTURED_POST_JS = """
-function() {
     const documents = [];
     const shared = window._sharedData;
     const additional = window.__additionalDataLoaded;
@@ -12,7 +11,6 @@ function() {
         try { documents.push(JSON.parse(script.textContent)); } catch (_) {}
     }
     return documents;
-}
 """
 
 # Each operation resolves the requested article again; unrelated articles cannot supply media or controls.
@@ -36,8 +34,7 @@ POST_ARTICLE_JS = """
 """
 
 OBSERVE_SLIDE_JS = (
-    "function() {"
-    + POST_ARTICLE_JS
+    POST_ARTICLE_JS
     + """
     const viewport = article.getBoundingClientRect();
     const visible = (node) => {
@@ -65,18 +62,15 @@ OBSERVE_SLIDE_JS = (
         is_video: Boolean(video),
         carousel: entries.length > 1 || Boolean(article.querySelector('button[aria-label="Next"]')),
     };
-}
 """
 )
 
 ADVANCE_SLIDE_JS = (
-    "function() {"
-    + POST_ARTICLE_JS
+    POST_ARTICLE_JS
     + """
     const button = article.querySelector('button[aria-label="Next"], button[aria-label="Далі"]');
     if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return false;
     button.click();
     return true;
-}
 """
 )

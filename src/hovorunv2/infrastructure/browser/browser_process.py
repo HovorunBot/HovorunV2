@@ -1,4 +1,4 @@
-"""Explicit Chromium subprocess ownership using DrissionPage's public attachment API."""
+"""Explicit Chromium subprocess ownership using pydoll's public attachment API."""
 
 import math
 import shutil
@@ -11,11 +11,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import RLock
 
-from DrissionPage import ChromiumOptions, ChromiumPage
-from DrissionPage.errors import BaseError
+lazy from pydoll.exceptions import PydollException
+lazy from pydoll.sync import Chrome, SyncError
 
+from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserError
 from hovorunv2.infrastructure.browser.browser_discovery import find_browser_executable
+from hovorunv2.infrastructure.browser.operation_timeout import BrowserOperationTimeout
 from hovorunv2.infrastructure.logger import get_logger
 
 logger = get_logger(__name__)
@@ -63,7 +65,7 @@ class OwnedChromium:
         self._owner: int | None = None
         self._process: subprocess.Popen[bytes] | None = None
         self._profile: TemporaryDirectory[str] | None = None
-        self._page: ChromiumPage | None = None
+        self._page: Chrome | None = None
         self._lock = RLock()
 
     def _require_owner(self) -> None:
@@ -72,7 +74,7 @@ class OwnedChromium:
             raise ValueError(msg)
 
     @property
-    def page(self) -> ChromiumPage | None:
+    def page(self) -> Chrome | None:
         """Expose the child-local attached page without creating resources."""
         self._require_owner()
         return self._page
@@ -95,7 +97,7 @@ class OwnedChromium:
         self._require_owner()
         return self._page is not None and self._process is not None and self._process.poll() is None
 
-    def start(self) -> ChromiumPage:
+    def start(self) -> Chrome:
         """Own Chromium before attaching, and clean every resource if startup fails."""
         with self._lock:
             self._require_owner()
@@ -107,7 +109,7 @@ class OwnedChromium:
                 process, profile = self._launch()
                 address = self._wait_for_address(process, profile)
                 self._page = self._attach_page(address)
-            except BaseError, OSError:
+            except PydollException, SyncError, TimeoutError, OSError:
                 self.close()
                 msg = "Browser startup is unavailable."
                 raise BrowserError(msg) from None
@@ -117,14 +119,12 @@ class OwnedChromium:
             else:
                 return self._page
 
-    def _attach_page(self, address: str) -> ChromiumPage:
-        options = ChromiumOptions(read_file=False)
-        options.set_address(address)
-        options.existing_only(on_off=True)
-        options.headless(on_off=True)
-        options.set_retry(times=0, interval=0)
-        options.set_timeouts(base=DEFAULT_STARTUP_SECONDS, page_load=DEFAULT_STARTUP_SECONDS)
-        return ChromiumPage(options)
+    def _attach_page(self, address: str) -> Chrome:
+        browser = Chrome()
+        self._page = browser
+        with BrowserOperationTimeout(ExtractionDeadline.after(self._startup_timeout)):
+            browser.connect(address)
+        return browser
 
     def _launch(self) -> tuple[subprocess.Popen[bytes], Path]:
         self._owner = getpid()
@@ -157,11 +157,12 @@ class OwnedChromium:
         if not active_port.is_file():
             return None
         try:
-            port = int(active_port.read_text(encoding="utf-8").splitlines()[0])
+            port_text, ws_path = active_port.read_text(encoding="utf-8").splitlines()
+            port = int(port_text)
         except OSError, ValueError, IndexError:
             return None
-        if 0 < port <= MAX_TCP_PORT:
-            return f"127.0.0.1:{port}"
+        if 0 < port <= MAX_TCP_PORT and ws_path.startswith("/devtools/"):
+            return f"ws://127.0.0.1:{port}{ws_path}"
         return None
 
     def _wait_for_address(self, process: subprocess.Popen[bytes], profile: Path) -> str:
@@ -203,8 +204,9 @@ class OwnedChromium:
         if page is None:
             return
         try:
-            page.quit(timeout=PROCESS_STOP_SECONDS, force=False)
-        except BaseError, OSError:
+            with BrowserOperationTimeout(ExtractionDeadline.after(PROCESS_STOP_SECONDS)):
+                page.close()
+        except PydollException, SyncError, BrowserError, OSError:
             # The owned subprocess is still reaped when the browser connection already died.
             logger.debug("Browser connection was already closed during shutdown")
         finally:
@@ -237,7 +239,7 @@ class OwnedChromium:
         if process is None:
             return
         try:
-            if self._wait_for_exit(process):
+            if process.poll() is not None:
                 return
             process.terminate()
             if self._wait_for_exit(process):
