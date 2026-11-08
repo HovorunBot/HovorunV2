@@ -6,6 +6,7 @@
 
 ### Fix
 
+- **browser**: protect SDK diagnostics and complete migration acceptance
 - **jobs**: stop republishing acknowledged queued jobs every sweep
 - **jobs**: reclaim running tickets abandoned by killed workers
 - **core**: remediate implementation edge cases and security boundaries

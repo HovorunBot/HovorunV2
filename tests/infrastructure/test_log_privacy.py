@@ -49,7 +49,9 @@ def payload_exception_record(name: str) -> logging.LogRecord:
     return record
 
 
-@pytest.mark.parametrize("name", ["hovorunv2.application.media.extractor", "aiohttp.client"])
+@pytest.mark.parametrize(
+    "name", ["hovorunv2.application.media.extractor", "aiohttp.client", "pydoll.browser.tab", "websockets.client"]
+)
 async def test_exception_payloads_never_reach_console_or_telegram(test_container: AsyncContainer, name: str) -> None:
     """Exercise both production sinks with real authority and intercepted external Telegram HTTP."""
     await provision_role(test_container, 101, Role.OWNER)

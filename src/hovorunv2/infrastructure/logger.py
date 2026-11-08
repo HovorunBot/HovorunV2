@@ -47,6 +47,7 @@ LOG_FORMAT: Final = (
 
 MAX_TB_LINES: Final = 8
 MAX_TELEGRAM_MESSAGE_LENGTH: Final = 4096
+BROWSER_DIAGNOSTIC_LOGGERS: Final = frozenset({"pydoll", "websockets"})
 CLI_OPERATIONAL_LABELS: Final = frozenset(
     {
         "role",
@@ -197,6 +198,9 @@ class PrivacyFormatter(logging.Formatter):
         safe.job_stage = current_job_stage.get()
         safe.exc_text = None
         safe.stack_info = None
+        if record.name.partition(".")[0] in BROWSER_DIAGNOSTIC_LOGGERS:
+            self._omit_browser_payload(safe)
+            return super().format(safe)
         safe.msg = redact_sensitive_text(str(record.msg))
         if not record.name.startswith("hovorunv2."):
             if isinstance(record.args, dict):
@@ -209,8 +213,17 @@ class PrivacyFormatter(logging.Formatter):
             safe.args = tuple(safe_log_argument(value) for value in record.args)
         return super().format(safe)
 
+    def _omit_browser_payload(self, record: logging.LogRecord) -> None:
+        """Keep browser diagnostic metadata while excluding CDP frames and exception values."""
+        record.msg = "Browser SDK diagnostic omitted"
+        record.args = ()
+        if record.exc_info:
+            exception_type, _, tb = record.exc_info
+            record.exc_text = self.formatException((exception_type, None, tb))
+            record.exc_info = None
+
     def formatException(  # noqa: N802
-        self, ei: tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None]
+        self, ei: tuple[type[BaseException] | None, BaseException | None, TracebackType | None]
     ) -> str:
         """Format exception type, sanitized message and code locations."""
         exception_type, value, tb = ei
