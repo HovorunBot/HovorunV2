@@ -14,6 +14,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.access.trust_service import TrustService
 from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.messaging.crypto import get_fernet_for_chat
 from hovorunv2.application.messaging.message_service import MessageService, minimal_message_data
 from hovorunv2.application.operations.reminder_service import ChatReminderService
@@ -154,6 +155,7 @@ async def test_router_caches_only_authorized_messages(
             identity,
             cache,
             await test_container.get(ChatReminderService),
+            await test_container.get(MembershipReconciliationService),
         )
     )
     message = Message(

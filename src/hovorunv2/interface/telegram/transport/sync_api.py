@@ -1,5 +1,6 @@
 """Synchronous Telegram Bot API client for native workers."""
 
+import logging
 from enum import StrEnum
 from http import HTTPStatus
 
@@ -12,6 +13,8 @@ from hovorunv2.application.jobs.http_ports import (
     TelegramRejectedError,
     TelegramRejection,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramMethod(StrEnum):
@@ -60,6 +63,18 @@ class NativeTelegramAPI:
             response = self._http.request_json("POST", self._base + operation.value, data=data, files=files)
         except HTTPTransportError:
             raise TelegramDeliveryUncertainError from None
+        if (
+            operation in {TelegramMethod.GET_CHAT_MEMBER, TelegramMethod.GET_CHAT_ADMINISTRATORS}
+            and isinstance(response, dict)
+            and response.get("ok") is False
+        ):
+            error_code = response.get("error_code")
+            logger.warning(
+                "Telegram membership API rejected verification: chat=%s administrators=%s error_code=%s",
+                data.get("chat_id") if data is not None else None,
+                operation == TelegramMethod.GET_CHAT_ADMINISTRATORS,
+                error_code if type(error_code) is int else None,
+            )
         return _api_result(response)
 
     def get_chat_member(self, chat_id: int, user_id: int) -> dict[str, object] | None:
@@ -74,9 +89,12 @@ class NativeTelegramAPI:
         """
         try:
             result = self.call(TelegramMethod.GET_CHAT_MEMBER, data={"chat_id": chat_id, "user_id": user_id})
-        except TelegramRejectedError, TelegramDeliveryUncertainError:
+        except (TelegramRejectedError, TelegramDeliveryUncertainError) as error:
+            logger.warning("Telegram getChatMember unavailable: chat=%d failure=%s", chat_id, type(error))
             return None
         else:
+            if not isinstance(result, dict):
+                logger.warning("Telegram getChatMember returned an invalid result: chat=%d", chat_id)
             return result if isinstance(result, dict) else None
 
     def get_chat_administrators(self, chat_id: int) -> list[object] | None:
@@ -90,9 +108,12 @@ class NativeTelegramAPI:
         """
         try:
             result = self.call(TelegramMethod.GET_CHAT_ADMINISTRATORS, data={"chat_id": chat_id})
-        except TelegramRejectedError, TelegramDeliveryUncertainError:
+        except (TelegramRejectedError, TelegramDeliveryUncertainError) as error:
+            logger.warning("Telegram getChatAdministrators unavailable: chat=%d failure=%s", chat_id, type(error))
             return None
         else:
+            if not isinstance(result, list):
+                logger.warning("Telegram getChatAdministrators returned an invalid result: chat=%d", chat_id)
             return result if isinstance(result, list) else None
 
     def send_message(

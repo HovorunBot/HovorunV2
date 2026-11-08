@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Select, exists, or_, select
+from sqlalchemy import ColumnElement, Select, and_, exists, or_, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.selectable import Exists
 
@@ -11,8 +11,9 @@ from hovorunv2.application.identity.membership import MembershipStatus
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
-from hovorunv2.domain.enums import TargetKind
+from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.domain.group_beta import GroupBetaEnablerDB, GroupBetaFeatureDB
+from hovorunv2.domain.group_grant import GroupApprovalDB
 from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
@@ -147,3 +148,77 @@ def exact_target(target: PermissionTarget) -> Select[UserDB] | Select[ChatDB] | 
             ChatDB.chat_type.in_(("group", "supergroup")),
         )
     return None
+
+
+def group_approved_expr() -> ColumnElement[bool]:
+    """Return a SQL expression matching durable explicit or legacy group approval."""
+    has_active_approval = exists(
+        select(GroupApprovalDB.id)
+        .where(
+            GroupApprovalDB.group_id == ChatDB.id,
+            GroupApprovalDB.deleted_at.is_(None),
+            GroupApprovalDB.revoked_at.is_(None),
+        )
+        .correlate(ChatDB)
+    )
+    has_revoked_approval = exists(
+        select(GroupApprovalDB.id)
+        .where(
+            GroupApprovalDB.group_id == ChatDB.id,
+            GroupApprovalDB.deleted_at.is_(None),
+            GroupApprovalDB.revoked_at.is_not(None),
+        )
+        .correlate(ChatDB)
+    )
+    return or_(
+        has_active_approval,
+        and_(ChatDB.status == ChatStatus.APPROVED, ~has_revoked_approval),
+    )
+
+
+def due_groups_query(now: datetime, limit: int) -> Select[ChatDB]:
+    """Select active, bot-present groups with missing or expired evidence, approved first."""
+    relevant_expired = exists(
+        select(UserDB.id)
+        .join(
+            MemberEvidenceDB,
+            (MemberEvidenceDB.user_id == UserDB.id)
+            & (MemberEvidenceDB.group_id == ChatDB.id)
+            & MemberEvidenceDB.deleted_at.is_(None),
+        )
+        .where(
+            UserDB.deleted_at.is_(None),
+            or_(
+                MemberEvidenceDB.admin_candidate.is_(True),
+                MemberEvidenceDB.needs_verification.is_(True),
+            ),
+            MemberEvidenceDB.expires_at <= now,
+        )
+        .correlate(ChatDB)
+    )
+    return (
+        select(ChatDB)
+        .outerjoin(GroupMembershipStateDB, GroupMembershipStateDB.group_id == ChatDB.id)
+        .where(
+            ChatDB.deleted_at.is_(None),
+            ChatDB.chat_type.in_(("group", "supergroup")),
+            ChatDB.chat_id < 0,
+            ChatDB.is_bot_present.is_(True),
+            or_(
+                GroupMembershipStateDB.group_id.is_(None),
+                GroupMembershipStateDB.deleted_at.is_not(None),
+                GroupMembershipStateDB.admins_expires_at.is_(None),
+                GroupMembershipStateDB.admins_expires_at <= now,
+                GroupMembershipStateDB.bot_expires_at.is_(None),
+                GroupMembershipStateDB.bot_expires_at <= now,
+                relevant_expired,
+            ),
+        )
+        .order_by(
+            group_approved_expr().desc(),
+            GroupMembershipStateDB.admins_known.desc().nulls_first(),
+            GroupMembershipStateDB.admins_expires_at.asc().nulls_first(),
+            ChatDB.id,
+        )
+        .limit(limit)
+    )

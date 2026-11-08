@@ -4,6 +4,7 @@ from aiogram import Router
 
 from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.configuration import AppSettings
+from hovorunv2.application.identity.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.operations.reminder_service import ChatReminderService
@@ -12,6 +13,7 @@ from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import (
     AccessMiddleware,
     LogContextMiddleware,
+    MembershipRefreshMiddleware,
     MessageCacheMiddleware,
 )
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
@@ -25,6 +27,7 @@ def _register_middlewares(
     cache: CachePort,
     settings: AppSettings,
     reminders: ChatReminderService,
+    reconciliation: MembershipReconciliationService,
 ) -> None:
     """Attach identity, logging, access and caching middlewares to router.
 
@@ -36,6 +39,7 @@ def _register_middlewares(
         cache: Cooldown cache for access denial guidance.
         settings: Application settings consumed by the access middleware.
         reminders: Reminder service used for unapproved-group prompts.
+        reconciliation: Service refreshing stale membership before protected actions.
     """
     router.message.outer_middleware(identity_middleware)
     router.callback_query.outer_middleware(identity_middleware)
@@ -47,6 +51,8 @@ def _register_middlewares(
     router.callback_query.outer_middleware(log_context_middleware)
     router.my_chat_member.outer_middleware(log_context_middleware)
 
+    router.message.middleware(MembershipRefreshMiddleware(reconciliation))
+    router.callback_query.middleware(MembershipRefreshMiddleware(reconciliation))
     router.message.middleware(AccessMiddleware(access_service, cache, settings, reminders))
     router.callback_query.middleware(AccessMiddleware(access_service, cache, settings, reminders))
     router.message.middleware(MessageCacheMiddleware(message_service))
@@ -80,6 +86,7 @@ def build_router(
     identity_middleware: IdentityMiddleware,
     cache: CachePort,
     reminders: ChatReminderService,
+    reconciliation: MembershipReconciliationService,
     bot_join_handler: BotJoinHandler | None = None,
 ) -> Router:
     """Build and configure the main Telegram router with middlewares and handlers.
@@ -92,6 +99,7 @@ def build_router(
         identity_middleware: Outer middleware ingesting public identity evidence.
         cache: Cooldown cache for access denial guidance.
         reminders: Reminder service used for unapproved-group prompts.
+        reconciliation: Service refreshing stale membership before protected actions.
         bot_join_handler: Optional handler for bot membership changes.
 
     Returns:
@@ -106,6 +114,7 @@ def build_router(
         cache,
         settings,
         reminders,
+        reconciliation,
     )
     if bot_join_handler:
         bot_join_handler.register(router)

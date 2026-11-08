@@ -124,49 +124,70 @@ class AccessService:
             return False
         return member.status in ("administrator", "creator")
 
-    async def _group_policy_allows(self, chat_id: int, policy: CommandPolicy) -> bool:
-        """Return whether group blockers permit the command policy.
-
-        Args:
-            chat_id: Numeric Telegram identity of the group chat.
-            policy: Command policy to validate.
-
-        Returns:
-            Whether group bans, unavailability and approval blockers are satisfied.
-        """
-        decision = await self._chat_status_service.evaluate_access(chat_id)
+    def _group_blocker_decision(self, decision: AccessDecision, policy: CommandPolicy) -> AccessDecision | None:
+        """Return a blocking group decision when group bans or approval blockers apply."""
         if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ENTITY_UNAVAILABLE}:
-            return False
-        return not (
-            policy.requires_approval
-            and decision.reason in {DecisionReason.ADMIN_FULL_BANNED, DecisionReason.MEMBER_EVIDENCE_UNKNOWN}
-        )
+            return decision
+        if policy.requires_approval and decision.reason in {
+            DecisionReason.ADMIN_FULL_BANNED,
+            DecisionReason.MEMBER_EVIDENCE_UNKNOWN,
+        }:
+            return decision
+        return None
 
-    async def _check_non_admin_policy(
+    async def _check_non_admin_decision(
         self,
         user_id: int | None,
         chat_id: int,
         policy: CommandPolicy,
         bot: Bot | None,
-    ) -> bool:
-        """Return whether a non-admin actor satisfies the policy constraints.
-
-        Args:
-            user_id: Numeric Telegram identity of the user, or None for an unknown actor.
-            chat_id: Numeric Telegram identity of the group chat.
-            policy: Command policy to validate.
-            bot: Telegram bot used for group administrator checks, when required.
-
-        Returns:
-            Whether admin, group-admin and approval requirements are satisfied.
-        """
+        group_decision: AccessDecision | None,
+    ) -> AccessDecision:
+        """Return the access decision for a non-admin actor under the policy constraints."""
         if policy.requires_admin:
-            return False
+            return AccessDecision(allowed=False, reason=DecisionReason.UNAUTHORIZED_MANAGEMENT)
         if policy.requires_group_admin and (
             not user_id or not bot or not await self.is_group_admin(bot, chat_id, user_id)
         ):
-            return False
-        return not (policy.requires_approval and not await self._chat_status_service.is_approved(chat_id))
+            return AccessDecision(allowed=False, reason=DecisionReason.UNAUTHORIZED_MANAGEMENT)
+        if policy.requires_approval:
+            if group_decision is not None:
+                if not group_decision.allowed:
+                    return group_decision
+            elif not await self._chat_status_service.is_approved(chat_id):
+                return AccessDecision(allowed=False, reason=DecisionReason.NOT_APPROVED)
+        return AccessDecision(allowed=True, reason=DecisionReason.ALLOWED)
+
+    async def evaluate_command_access(
+        self,
+        user_id: int | None,
+        chat_id: int,
+        policy: CommandPolicy,
+        bot: Bot | None = None,
+        command_name: str | None = None,
+    ) -> AccessDecision:
+        """Evaluate command access and return an explicit decision with reason.
+
+        Args:
+            user_id: Platform-specific user ID.
+            chat_id: Platform-specific chat or group ID.
+            policy: Command policy to validate against.
+            bot: Bot instance required for group administrator checks.
+            command_name: Optional name of the command being executed.
+
+        Returns:
+            Access decision with the allowing or first blocking reason.
+        """
+        decision = await self._evaluate_command_access(user_id, chat_id, policy, bot, command_name)
+        logger.debug(
+            "Access policy evaluated: command=%s chat=%d actor=%s allowed=%s reason=%s",
+            command_name or "none",
+            chat_id,
+            user_id if user_id is not None else "none",
+            decision.allowed,
+            decision.reason,
+        )
+        return decision
 
     async def is_allowed(
         self,
@@ -188,52 +209,37 @@ class AccessService:
         Returns:
             Whether the action is allowed.
         """
-        allowed = await self._evaluate_is_allowed(user_id, chat_id, policy, bot, command_name)
-        logger.debug(
-            "Access policy evaluated: command=%s chat=%d actor=%s allowed=%s",
-            command_name or "none",
-            chat_id,
-            user_id if user_id is not None else "none",
-            allowed,
-        )
-        return allowed
+        decision = await self.evaluate_command_access(user_id, chat_id, policy, bot, command_name)
+        return decision.allowed
 
-    async def _evaluate_is_allowed(
+    async def _evaluate_command_access(
         self,
         user_id: int | None,
         chat_id: int,
         policy: CommandPolicy,
         bot: Bot | None,
         command_name: str | None,
-    ) -> bool:
-        """Evaluate toggles, blockers, bans and authority without logging decisions.
-
-        Args:
-            user_id: Platform-specific user ID.
-            chat_id: Platform-specific chat or group ID.
-            policy: Command policy to validate against.
-            bot: Bot instance required for group administrator checks.
-            command_name: Optional name of the command being executed.
-
-        Returns:
-            Whether the action is allowed.
-        """
+    ) -> AccessDecision:
+        """Evaluate toggles, blockers, bans and authority in a single pass."""
         if (
             policy.is_toggleable
             and command_name
             and not await self._command_service.is_command_allowed(chat_id, command_name)
         ):
-            return False
+            return AccessDecision(allowed=False, reason=DecisionReason.NOT_APPROVED)
 
-        # Group bans always block everyone, including global admins.
-        if chat_id < 0 and not await self._group_policy_allows(chat_id, policy):
-            return False
+        group_decision: AccessDecision | None = None
+        if chat_id < 0:
+            group_decision = await self._chat_status_service.evaluate_access(chat_id)
+            blocker = self._group_blocker_decision(group_decision, policy)
+            if blocker is not None:
+                return blocker
 
         # Personal user bans block direct commands, but not automatic media links in groups
         if user_id is not None and await self.is_banned(user_id) and not policy.is_automatic:
-            return False
+            return AccessDecision(allowed=False, reason=DecisionReason.UNAUTHORIZED_MANAGEMENT)
 
         if user_id is not None and await self.is_admin(user_id):
-            return True
+            return AccessDecision(allowed=True, reason=DecisionReason.ALLOWED)
 
-        return await self._check_non_admin_policy(user_id, chat_id, policy, bot)
+        return await self._check_non_admin_decision(user_id, chat_id, policy, bot, group_decision)

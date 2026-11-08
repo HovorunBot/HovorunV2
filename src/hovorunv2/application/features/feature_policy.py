@@ -1,12 +1,24 @@
 """Pure feature decisions shared by async ingress and native worker execution."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Protocol
 
 from hovorunv2.application.access.permissions import DecisionReason, PermissionTarget
 from hovorunv2.application.features.emergency import FeatureEmergencyState
 from hovorunv2.application.features.registry import FeatureDefinition, FeatureScope, TriggerKind
 from hovorunv2.application.usage.policies import ResolvedUsage, UsageUnit
+
+
+class FeatureDenial(StrEnum):
+    """Reason labels for feature-level access or selection denials."""
+
+    UNKNOWN_FEATURE = "unknown_feature"
+    EMERGENCY_DISABLED = "emergency_disabled"
+    ENTRY_NOT_ALLOWED = "entry_not_allowed"
+    NOT_ELIGIBLE = "not_eligible"
+    NOT_SELECTED = "not_selected"
+    CAPABILITY_MISSING = "capability_missing"
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +29,7 @@ class FeatureDecision:
     allowed: bool = False
     selected: bool = False
     guidance: str | None = None
+    reason: DecisionReason | FeatureDenial | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,9 +102,9 @@ def evaluate_feature(
         The resulting decision, safe by default.
     """
     if facts.emergency_disabled:
-        return FeatureDecision()
+        return FeatureDecision(reason=FeatureDenial.EMERGENCY_DISABLED)
     if not facts.target_active:
-        return FeatureDecision()
+        return FeatureDecision(reason=DecisionReason.ENTITY_UNAVAILABLE)
     if not feature_entry_allowed(
         definition,
         facts.scope,
@@ -100,7 +113,7 @@ def evaluate_feature(
         trigger=trigger,
         configure=configure,
     ):
-        return FeatureDecision()
+        return FeatureDecision(reason=FeatureDenial.ENTRY_NOT_ALLOWED)
     if facts.scope == FeatureScope.PRIVATE:
         return _private_decision(facts, configure=configure)
     return _group_decision(facts, configure=configure)
@@ -117,21 +130,35 @@ def _group_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecision:
         The group decision, with guidance restricted to managers.
     """
     if configure and not facts.manager:
-        return FeatureDecision()
+        return FeatureDecision(reason=DecisionReason.UNAUTHORIZED_MANAGEMENT)
     if facts.access_reason != DecisionReason.ALLOWED:
         return FeatureDecision(
             guidance="Group access is unavailable. Check approval and administrator verification."
             if facts.manager
-            else None
+            else None,
+            reason=facts.access_reason,
         )
     if not facts.eligible:
-        return FeatureDecision()
+        return FeatureDecision(reason=FeatureDenial.NOT_ELIGIBLE)
+    allowed = facts.capable and (configure or (facts.selected and facts.supported))
     return FeatureDecision(
         visible=configure or (facts.selected and facts.supported and facts.capable),
-        allowed=facts.capable and (configure or (facts.selected and facts.supported)),
+        allowed=allowed,
         selected=facts.selected,
         guidance="Bot permissions are missing or need verification." if facts.manager and not facts.capable else None,
+        reason=_group_feature_reason(facts, allowed=allowed),
     )
+
+
+def _group_feature_reason(facts: FeatureFacts, *, allowed: bool) -> DecisionReason | FeatureDenial:
+    """Resolve the reason label for a group feature after access and eligibility pass."""
+    if allowed:
+        return DecisionReason.ALLOWED
+    if not facts.capable:
+        return FeatureDenial.CAPABILITY_MISSING
+    if not facts.selected:
+        return FeatureDenial.NOT_SELECTED
+    return FeatureDenial.NOT_ELIGIBLE
 
 
 def _private_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecision:
@@ -144,12 +171,23 @@ def _private_decision(facts: FeatureFacts, *, configure: bool) -> FeatureDecisio
     Returns:
         The private decision.
     """
-    if not facts.private_access or not facts.eligible:
-        return FeatureDecision()
+    if not facts.private_access:
+        return FeatureDecision(reason=DecisionReason.UNAUTHORIZED_MANAGEMENT)
+    if not facts.eligible:
+        return FeatureDecision(reason=FeatureDenial.NOT_ELIGIBLE)
+    allowed = facts.capable and (configure or facts.selected)
+    reason: DecisionReason | FeatureDenial = (
+        DecisionReason.ALLOWED
+        if allowed
+        else FeatureDenial.CAPABILITY_MISSING
+        if not facts.capable
+        else FeatureDenial.NOT_SELECTED
+    )
     return FeatureDecision(
         visible=configure or (facts.selected and facts.capable),
-        allowed=facts.capable and (configure or facts.selected),
+        allowed=allowed,
         selected=facts.selected,
+        reason=reason,
     )
 
 

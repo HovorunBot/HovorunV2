@@ -97,6 +97,14 @@ Chat command associations are explicit selected activation for private and group
 
 PostgreSQL and Valkey run independently of application processes with named data volumes. Every application process owns its connection pools. Audited mutations use scoped parent/row locks and conflict-safe PostgreSQL writes. Shared actor locks permit independent target mutations to progress concurrently. Missing-key gates protect ingestion and other absent rows; no application-wide writer lock remains. See the [complete writer lock matrix](postgresql-concurrency.md). See [database setup](postgresql.md).
 
+After migrations and fixture initialization, the bot refreshes one bounded batch of due membership evidence before polling
+and readiness. The startup batch checks at most ten groups within a thirty-second deadline; remaining
+groups stay due for the operations worker. A matched group action requiring approval also refreshes missing or expired
+administrator and bot snapshots before access evaluation. This fallback has a fifteen-second deadline, coalesces concurrent
+actions per group, and records a thirty-second retry cooldown in Valkey. Fresh snapshots, private actions, public commands,
+and unmatched messages do not trigger verification API calls. Failed verification retains approval and cannot grant access;
+normal policy evaluates the persisted evidence after the attempt. Verification is runtime initialization, not a migration.
+
 
 ## Package ownership
 
@@ -108,7 +116,7 @@ The following process ownership is the implemented production architecture. Medi
 
 | Process | Responsibilities |
 | --- | --- |
-| Async bot | Telegram update ingestion, interactive commands/settings/feedback, current-authority checks, bounded admission and publication |
+| Async bot | Telegram update ingestion, interactive commands/settings/feedback, current-authority checks, bounded startup/action membership verification, bounded admission and publication |
 | Native synchronous media worker | Fresh authority and budget checks, API/yt-dlp extraction, translation, formatting and Telegram delivery |
 | Native synchronous browser worker | Browser continuation, lazy child-owned Chromium, remaining fallback tiers and final delivery |
 | Native synchronous operations worker | Bounded reminders, membership reconciliation, cleanup, notifications and lifecycle/accounting recovery |

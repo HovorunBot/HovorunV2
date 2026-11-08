@@ -121,11 +121,18 @@ class ChatStatusService:
                 approved=bool(approvals) or (not revoked and chat.status == ChatStatus.APPROVED),
             )
         )
-        logger.debug(
-            "Group access evaluated: chat=%d allowed=%s reason=%s",
+        logger.info(
+            "Group access evaluated: chat=%d allowed=%s reason=%s admins_known=%s admins_fresh=%s "
+            "approved=%s approval_revoked=%s admins_expires_at=%s evaluated_at=%.0f",
             chat_id,
             decision.allowed,
-            decision.reason.value,
+            decision.reason,
+            state.admins_known if state is not None else False,
+            fresh,
+            bool(approvals) or (not revoked and chat.status == ChatStatus.APPROVED),
+            revoked,
+            state.admins_expires_at.timestamp() if state is not None and state.admins_expires_at is not None else None,
+            current_time.timestamp(),
         )
         return decision
 

@@ -12,7 +12,9 @@ from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObj
 from hovorunv2.application.access.access_service import AccessService, CommandPolicy
 from hovorunv2.application.access.permissions import DecisionReason
 from hovorunv2.application.configuration import AppSettings
+from hovorunv2.application.features.feature_policy import FeatureDecision, FeatureDenial
 from hovorunv2.application.features.registry import TriggerKind
+from hovorunv2.application.identity.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.operations.reminder_service import ChatReminderService
@@ -111,6 +113,27 @@ class MessageCacheMiddleware(BaseMiddleware):
                 logger.info("Cached message %d for chat %d", event.message_id, event.chat.id)
             except Exception:
                 logger.exception("Message caching failed")
+        return await handler(event, data)
+
+
+class MembershipRefreshMiddleware(BaseMiddleware):
+    """Refresh stale group evidence before authorizing a matched protected action."""
+
+    def __init__(self, reconciliation: MembershipReconciliationService) -> None:
+        self._reconciliation = reconciliation
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
+        event: TelegramObject,
+        data: dict[str, object],
+    ) -> object:
+        """Refresh only matched actions whose policies require group approval."""
+        policy = get_flag(data, "policy")
+        if isinstance(policy, CommandPolicy) and policy.requires_approval and not policy.requires_admin:
+            message = event.message if isinstance(event, CallbackQuery) else event
+            if isinstance(message, Message):
+                await self._reconciliation.ensure_fresh(message.chat.id)
         return await handler(event, data)
 
 
@@ -221,7 +244,7 @@ class AccessMiddleware(BaseMiddleware):
 
         raw_bot = data.get("bot")
         bot = raw_bot if isinstance(raw_bot, Bot) else None
-        is_allowed = await self._access_service.is_allowed(
+        decision = await self._access_service.evaluate_command_access(
             user_id=user_id,
             chat_id=chat_id,
             policy=policy,
@@ -229,28 +252,37 @@ class AccessMiddleware(BaseMiddleware):
             command_name=command_name,
         )
 
-        if is_allowed:
+        if decision.allowed:
             logger.info("Group chat access granted for %s in chat %d", command_name or "callback", chat_id)
             return await handler(event, data)
 
-        logger.info("Access denied for %s in chat %d by user %s", command_name or "callback", chat_id, user_id)
+        logger.info(
+            "Access denied for %s in chat %d by user %s: reason=%s",
+            command_name or "callback",
+            chat_id,
+            user_id,
+            decision.reason,
+        )
         if isinstance(event, Message) and chat_id < 0:
-            await self._send_group_denial(event, chat_id)
+            await self._send_group_denial(event, chat_id, reason=decision.reason)
         if isinstance(event, CallbackQuery):
             await event.answer("🚫 You don't have permission to do this.", show_alert=True)
         return None
 
-    async def _send_group_denial(self, event: Message, chat_id: int) -> None:
+    async def _send_group_denial(self, event: Message, chat_id: int, *, reason: DecisionReason | None = None) -> None:
         """Send cooldown-limited guidance only for group or administrator bans.
 
         Args:
             event: Telegram message being answered.
             chat_id: Telegram chat ID of the group.
+            reason: Optional pre-evaluated group access denial reason.
         """
-        decision = await self._access_service.evaluate_group_access(chat_id)
-        if decision.reason not in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
+        effective_reason = (
+            reason if reason is not None else (await self._access_service.evaluate_group_access(chat_id)).reason
+        )
+        if effective_reason not in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
             return
-        key = f"access:denial:{chat_id}:{decision.reason}"
+        key = f"access:denial:{chat_id}:{effective_reason}"
         if await self._cache.get(key):
             return
         await self._cache.set(key, 1, expire=DENIAL_COOLDOWN_SECONDS)
@@ -315,19 +347,19 @@ class AccessMiddleware(BaseMiddleware):
             policy.is_toggleable,
         )
 
-        feature_allowed = await self._feature_allowed(event, chat_id, user_id, command_name, policy)
-        if feature_allowed is False:
+        feature_decision = await self._feature_allowed(event, chat_id, user_id, command_name, policy)
+        if feature_decision is not None and not feature_decision.allowed:
             await self._deny_feature(
                 event,
                 data,
                 user_id,
                 chat_id,
                 is_private=is_private,
-                policy=policy,
                 command_name=command_name,
+                reason=feature_decision.reason,
             )
             return None
-        if feature_allowed and not policy.requires_admin and not policy.requires_group_admin:
+        if feature_decision is not None and not policy.requires_admin and not policy.requires_group_admin:
             return await handler(event, data)
 
         if is_private:
@@ -343,25 +375,28 @@ class AccessMiddleware(BaseMiddleware):
         chat_id: int,
         *,
         is_private: bool,
-        policy: CommandPolicy,
         command_name: str | None,
+        reason: DecisionReason | FeatureDenial | None,
     ) -> None:
         """Route a denied feature through the correct access prompt or alert without invoking handler."""
+        logger.info(
+            "Access denied for %s in chat %d by user %s: reason=%s",
+            command_name or "none",
+            chat_id,
+            user_id,
+            reason or FeatureDenial.UNKNOWN_FEATURE,
+        )
         if is_private:
-            await self._deny_private_feature(event, data, user_id, policy, command_name)
+            await self._deny_private_feature(event, user_id)
             return
-        await self._deny_group_feature(event, data, user_id, chat_id, policy, command_name)
+        await self._deny_group_feature(event, data, user_id, chat_id, reason=reason)
 
     async def _deny_private_feature(
         self,
         event: TelegramObject,
-        data: dict[str, object],
         user_id: int | None,
-        policy: CommandPolicy,
-        command_name: str | None,
     ) -> None:
         """Show the private landing help or a feature alert for a denied feature."""
-        _ = (data, policy, command_name)
         if user_id is not None and (
             await self._access_service.is_banned(user_id)
             or (not await self._access_service.is_admin(user_id) and not await self._access_service.is_trusted(user_id))
@@ -377,17 +412,20 @@ class AccessMiddleware(BaseMiddleware):
         data: dict[str, object],
         user_id: int | None,
         chat_id: int,
-        policy: CommandPolicy,
-        command_name: str | None,
+        *,
+        reason: DecisionReason | FeatureDenial | None = None,
     ) -> None:
         """Show the approval prompt, group denial, ban alert or feature alert."""
-        _ = (policy, command_name)
-        decision = await self._access_service.evaluate_group_access(chat_id)
-        if decision.reason == DecisionReason.NOT_APPROVED:
+        group_reason = (
+            reason
+            if isinstance(reason, DecisionReason)
+            else (await self._access_service.evaluate_group_access(chat_id)).reason
+        )
+        if group_reason == DecisionReason.NOT_APPROVED:
             await self._not_approved(event, data, chat_id)
             return
-        if decision.reason in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
-            await self._group_denied(event, chat_id)
+        if group_reason in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
+            await self._group_denied(event, chat_id, reason=group_reason)
             return
         if user_id is not None and await self._access_service.is_banned(user_id):
             if isinstance(event, CallbackQuery):
@@ -405,10 +443,10 @@ class AccessMiddleware(BaseMiddleware):
         if isinstance(event, Message) and isinstance(bot, Bot):
             await self._reminders.send_unauthorized_prompt(bot, chat_id, force=False)
 
-    async def _group_denied(self, event: TelegramObject, chat_id: int) -> None:
+    async def _group_denied(self, event: TelegramObject, chat_id: int, *, reason: DecisionReason | None = None) -> None:
         """Send group-ban guidance or a callback denial alert."""
         if isinstance(event, Message):
-            await self._send_group_denial(event, chat_id)
+            await self._send_group_denial(event, chat_id, reason=reason)
         elif isinstance(event, CallbackQuery):
             await event.answer("🚫 Access denied.", show_alert=True)
 
@@ -419,7 +457,7 @@ class AccessMiddleware(BaseMiddleware):
         user_id: int | None,
         command_name: str | None,
         policy: CommandPolicy,
-    ) -> bool | None:
+    ) -> FeatureDecision | None:
         """Return no feature decision for public actions; unknown features fail closed.
 
         Args:
@@ -430,24 +468,25 @@ class AccessMiddleware(BaseMiddleware):
             policy: Command policy governing this interaction.
 
         Returns:
-            True when the feature is allowed, False when closed, or None when no
-            feature decision applies.
+            Feature decision when feature evaluation applies, or None for non-feature actions.
         """
         if not isinstance(command_name, str):
             return None
         registry = self._access_service.features.registry
         keys = (command_name,) if registry.get(command_name) else PROVIDER_SPLIT_COMMANDS.get(command_name, ())
         if not keys:
-            return False if policy.is_toggleable else None
+            return FeatureDecision(reason=FeatureDenial.UNKNOWN_FEATURE) if policy.is_toggleable else None
         direct = isinstance(event, CallbackQuery) or (
             isinstance(event, Message) and bool(event.text and event.text.startswith("/"))
         )
         trigger = TriggerKind.DIRECT if direct else TriggerKind.AUTOMATIC
+        last_decision: FeatureDecision | None = None
         for key in keys:
             decision = await self._access_service.features.evaluate(str(key), chat_id, user_id, trigger=trigger)
             if decision.allowed:
-                return True
-        return False
+                return decision
+            last_decision = decision
+        return last_decision or FeatureDecision(reason=FeatureDenial.UNKNOWN_FEATURE)
 
     def _extract_event_context(self, event: TelegramObject) -> tuple[int | None, int, bool]:
         """Extract user_id, chat_id, and private chat flag from a Telegram event.

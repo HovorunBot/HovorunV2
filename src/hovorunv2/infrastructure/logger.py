@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Final
 from hovorunv2.application.access.administration import AdminAction
 from hovorunv2.application.access.permissions import DecisionReason
 from hovorunv2.application.features.beta_prompts import BetaDecision
+from hovorunv2.application.features.feature_policy import FeatureDenial
 from hovorunv2.application.features.registry import FeatureChannel, FeatureScope, TriggerKind
 from hovorunv2.application.groups.activation import ActivationAction, ActivationOutcome
 from hovorunv2.application.identity.membership import MembershipStatus
@@ -86,6 +87,8 @@ CLI_OPERATIONAL_LABELS: Final = frozenset(
         "CallbackQuery",
         "ChatMemberUpdated",
         "Update",
+        "callback",
+        "reconcile_memberships",
         "none",
         "all",
         "unknown",
@@ -115,6 +118,7 @@ SAFE_LOG_LABELS: Final = (
             ApprovalBasis,
             RequestStatus,
             DecisionReason,
+            FeatureDenial,
             AdminAction,
             ActivationAction,
             ActivationOutcome,

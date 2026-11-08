@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from hovorunv2.application.access.access_service import AccessService
 from hovorunv2.application.access.role_service import RoleService
 from hovorunv2.application.features.beta_prompts import BetaPromptService
+from hovorunv2.application.identity.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.messaging.crypto import verify_encryption_key
 from hovorunv2.application.messaging.message_service import MessageService
 from hovorunv2.application.messaging.ports import CachePort
@@ -51,6 +52,7 @@ async def build_bot_router(container: AsyncContainer, settings: Settings) -> Rou
     identity_middleware = await container.get(IdentityMiddleware)
     cache = await container.get(CachePort)
     reminders = await container.get(ChatReminderService)
+    reconciliation = await container.get(MembershipReconciliationService)
     return build_router(
         commands=commands,
         message_service=message_service,
@@ -59,6 +61,7 @@ async def build_bot_router(container: AsyncContainer, settings: Settings) -> Rou
         identity_middleware=identity_middleware,
         cache=cache,
         reminders=reminders,
+        reconciliation=reconciliation,
         bot_join_handler=bot_join_handler,
     )
 
@@ -114,6 +117,8 @@ async def run_bot() -> None:
         _setup_signal_handlers()
 
         await bot.me()
+        logger.info("Refreshing membership evidence before polling...")
+        await (await container.get(MembershipReconciliationService)).run_cycle()
         await asyncio.to_thread(BOT_READY_PATH.touch)
         logger.info("Bot started and polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

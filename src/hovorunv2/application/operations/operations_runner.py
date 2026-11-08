@@ -199,6 +199,7 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         """
         lock_key = f"{self._namespace.value}lock:maintenance:reconciliation"
         if not self._client.set(lock_key, "1", nx=True, ex=30):
+            logger.info("Membership reconciliation skipped: cycle lock held")
             return 0
         try:
             return self._execute_reconciliation(now)
@@ -208,11 +209,17 @@ class WorkerOperationsRunner(OperationsRunnerPort):
     def _execute_reconciliation(self, now: datetime | None) -> int:
         current_time = now or datetime.now(UTC)
         groups = self._ops.due_groups(current_time, limit=GROUP_BATCH_SIZE)
-        logger.info("Starting membership reconciliation for %d due group(s)", len(groups))
+        logger.info(
+            "Starting membership reconciliation: due_groups=%d batch_limit=%d batch_full=%s",
+            len(groups),
+            GROUP_BATCH_SIZE,
+            len(groups) == GROUP_BATCH_SIZE,
+        )
         refreshed = 0
         for group in groups:
             group_lock = f"{self._namespace.value}lock:reconcile_group:{group.id}"
             if not self._client.set(group_lock, "1", nx=True, ex=30):
+                logger.info("Membership reconciliation skipped: chat=%d group lock held", group.chat_id)
                 continue
             try:
                 self._reconcile_single_group(group, current_time)
@@ -228,20 +235,46 @@ class WorkerOperationsRunner(OperationsRunnerPort):
         logger.info("Reconciling group membership (group_id=%d chat_id=%d)", group_id, chat_id)
         bot_member = self._api.get_chat_member(chat_id, self._bot_id)
         bot_evidence = bot_capability_from_api(bot_member, self._bot_id, chat_id, current_time)
-        self._ops.save_bot(group_id, bot_evidence)
+        bot_changed = self._ops.save_bot(group_id, bot_evidence)
+        logger.log(
+            logging.WARNING if bot_evidence.membership.status == MembershipStatus.UNKNOWN else logging.INFO,
+            "Bot membership verified: chat=%d status=%s changed=%s expires_at=%.0f",
+            chat_id,
+            bot_evidence.membership.status,
+            bot_changed,
+            bot_evidence.membership.expires_at.timestamp(),
+        )
 
         admins_result = self._api.get_chat_administrators(chat_id)
         admin_evidence = administrator_evidence_from_api(admins_result, chat_id, current_time)
-        self._ops.save_admins(group_id, admin_evidence)
+        admins_changed = self._ops.save_admins(group_id, admin_evidence)
+        logger.log(
+            logging.INFO if admin_evidence.known else logging.WARNING,
+            "Administrator verification completed: chat=%d known=%s administrators=%d changed=%s expires_at=%.0f",
+            chat_id,
+            admin_evidence.known,
+            len(admin_evidence.members),
+            admins_changed,
+            admin_evidence.expires_at.timestamp(),
+        )
 
         users = self._ops.relevant_users(group_id, limit=MEMBER_BATCH_SIZE)
+        unknown_members = 0
         for user in users:
             member_result = self._api.get_chat_member(chat_id, user.telegram_id)
             status = membership_status_from_api(member_result, user.telegram_id)
+            unknown_members += status == MembershipStatus.UNKNOWN
             evidence = MembershipEvidence(
                 chat_id, user.telegram_id, status, current_time, current_time + MEMBERSHIP_FRESHNESS
             )
             self._ops.save_member(group_id, evidence, expected_user_id=user.id)
+        logger.info(
+            "Membership reconciliation completed: chat=%d members_checked=%d members_unknown=%d member_batch_full=%s",
+            chat_id,
+            len(users),
+            unknown_members,
+            len(users) == MEMBER_BATCH_SIZE,
+        )
 
     def run_chat_reminders(self) -> int:
         """Run hourly maintenance for unauthorized groups and pending approval reminders.

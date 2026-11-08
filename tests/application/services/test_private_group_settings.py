@@ -29,6 +29,7 @@ from hovorunv2.application.identity.membership import (
     MembershipEvidence,
     MembershipStatus,
 )
+from hovorunv2.application.identity.membership_reconciliation import MembershipReconciliationService
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.messaging.message_service import MessageService
@@ -168,6 +169,7 @@ async def test_untrusted_admin_private_workflow_reuses_group_settings_and_audit(
                 await test_container.get(IdentityMiddleware),
                 await test_container.get(CachePort),
                 await test_container.get(ChatReminderService),
+                await test_container.get(MembershipReconciliationService),
             )
         )
         message = settings_message(chat_id=SECOND, actor_id=SECOND).as_(bot)

@@ -1,5 +1,6 @@
 """Tests for synchronous Celery operations worker maintenance tasks."""
 
+import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
@@ -10,7 +11,11 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.__main__ import build_bot_router, configure_dispatcher, teardown_services
+from hovorunv2.application.access.permissions import DecisionReason
+from hovorunv2.application.features.feature_access_service import FeatureAccessService
+from hovorunv2.application.features.registry import TriggerKind
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import MembershipEvidence, MembershipStatus
 from hovorunv2.application.identity.membership_store import MembershipStore
@@ -25,9 +30,11 @@ from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.container import AppProvider
 from hovorunv2.bootstrap.providers.infrastructure import InfrastructureProvider
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
-from hovorunv2.domain.enums import ChatStatus, Role
+from hovorunv2.domain.audit import ActorContext
+from hovorunv2.domain.enums import ChatStatus, CommandName, Role
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.infrastructure.config import Settings
+from hovorunv2.infrastructure.logger import PrivacyFormatter
 from hovorunv2.infrastructure.queues.feature_queue import (
     CHAT_MAINTENANCE_TASK,
     CLEANUP_SWEEP_TASK,
@@ -177,12 +184,29 @@ async def test_celery_beat_schedule_structure() -> None:
         assert options["queue"] == "test:operations"
 
 
+def _assert_reconciliation_diagnostics(records: list[logging.LogRecord]) -> None:
+    """Verify that operational recovery facts survive the production privacy formatter."""
+    output = "\n".join(PrivacyFormatter("%(message)s").format(record) for record in records)
+    for expected in (
+        "reason=member_evidence_unknown",
+        "admins_known=False admins_fresh=False approved=True",
+        "due_groups=1 batch_limit=10 batch_full=False",
+        "status=admin changed=True",
+        "known=True administrators=1 changed=True",
+        "members_checked=1 members_unknown=0 member_batch_full=False",
+    ):
+        assert expected in output
+    assert "[omitted]" not in output
+
+
 async def test_membership_reconciliation_in_operations_worker(
     test_container: AsyncContainer,
     sync_telegram_api: NativeTelegramAPI,
     sync_prompt_sender: SyncTelegramUnauthorizedPromptSender,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Run membership reconciliation in operations worker and verify durable PostgreSQL state."""
+    caplog.set_level(logging.INFO)
     chats = await test_container.get(ChatStore)
     users = await test_container.get(UserStore)
     memberships = await test_container.get(MembershipStore)
@@ -205,6 +229,19 @@ async def test_membership_reconciliation_in_operations_worker(
             stale_time + timedelta(minutes=5),
         ),
     )
+
+    statuses = await test_container.get(ChatStatusService)
+    grants = await test_container.get(GroupGrantStore)
+    features = await test_container.get(FeatureAccessService)
+    await statuses.approve(group_chat_id)
+    await grants.approve(group.id, ActorContext.cli())
+    approvals = [approval.id for approval in await grants.approvals(group.id)]
+    assert (await statuses.evaluate_access(group_chat_id)).reason == DecisionReason.MEMBER_EVIDENCE_UNKNOWN
+    assert (
+        await features.evaluate(
+            CommandName.INSTAGRAM_POST, group_chat_id, user_telegram_id, trigger=TriggerKind.AUTOMATIC
+        )
+    ).reason == DecisionReason.MEMBER_EVIDENCE_UNKNOWN
 
     namespace = RuntimeNamespace("test:{ops}:")
     client = redis.Redis.from_url(settings.valkey_url, decode_responses=True)
@@ -234,6 +271,18 @@ async def test_membership_reconciliation_in_operations_worker(
             member_ev = await memberships.get_member(group.id, user.id)
             assert member_ev is not None
             assert member_ev.status == MembershipStatus.ADMIN
+            assert (await statuses.evaluate_access(group_chat_id)).allowed
+            assert (
+                await features.evaluate(
+                    CommandName.INSTAGRAM_POST, group_chat_id, user_telegram_id, trigger=TriggerKind.AUTOMATIC
+                )
+            ).allowed
+            settings_status = await features.group_settings_status(group_chat_id, user_telegram_id)
+            assert settings_status is not None
+            assert settings_status.access_reason == DecisionReason.ALLOWED
+            assert settings_status.bot_verified
+            assert [approval.id for approval in await grants.approvals(group.id)] == approvals
+            _assert_reconciliation_diagnostics(caplog.records)
         finally:
             set_operations_runner(None)
             client.close()

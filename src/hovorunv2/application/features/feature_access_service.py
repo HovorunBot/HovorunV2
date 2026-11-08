@@ -12,7 +12,7 @@ from hovorunv2.application.access.permissions import (
     PermissionRequest,
     PermissionTarget,
 )
-from hovorunv2.application.features.feature_policy import FeatureDecision, evaluate_feature
+from hovorunv2.application.features.feature_policy import FeatureDecision, FeatureDenial, evaluate_feature
 from hovorunv2.application.features.group_beta import GroupBetaStore
 from hovorunv2.application.features.policy_facts import FeatureFactStore
 from hovorunv2.application.features.registry import FeatureChannel, FeatureRegistry, FeatureScope, TriggerKind
@@ -137,8 +137,8 @@ class FeatureAccessService:
         """
         definition = self.registry.get(feature_key)
         if definition is None:
-            logger.debug("Feature evaluated: feature=%s chat=%d actor=%s unknown", feature_key, chat_id, actor_id)
-            return FeatureDecision()
+            logger.info("Feature evaluated: feature=%s chat=%d actor=%s unknown", feature_key, chat_id, actor_id)
+            return FeatureDecision(reason=FeatureDenial.UNKNOWN_FEATURE)
         facts = await self._facts.feature_facts(
             definition,
             chat_id,
@@ -148,8 +148,9 @@ class FeatureAccessService:
             now=datetime.now(UTC),
         )
         decision = evaluate_feature(definition, facts, trigger=trigger, configure=configure)
-        logger.debug(
-            "Feature evaluated: feature=%s chat=%d actor=%s trigger=%s allowed=%s selected=%s visible=%s",
+        logger.info(
+            "Feature evaluated: feature=%s chat=%d actor=%s trigger=%s allowed=%s selected=%s visible=%s "
+            "reason=%s access_reason=%s eligible=%s supported=%s capable=%s emergency_disabled=%s",
             feature_key,
             chat_id,
             actor_id if actor_id is not None else "none",
@@ -157,6 +158,12 @@ class FeatureAccessService:
             decision.allowed,
             decision.selected,
             decision.visible,
+            decision.reason,
+            facts.access_reason,
+            facts.eligible,
+            facts.supported,
+            facts.capable,
+            facts.emergency_disabled,
         )
         return decision
 

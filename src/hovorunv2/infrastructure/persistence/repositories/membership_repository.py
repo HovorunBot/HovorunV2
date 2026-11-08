@@ -15,7 +15,7 @@ from hovorunv2.application.identity.membership import (
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.user import UserDB
-from hovorunv2.infrastructure.persistence.repositories.policy_queries import banned_admin_queries
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import banned_admin_queries, due_groups_query
 from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
 
 
@@ -79,45 +79,7 @@ class SQLAlchemyMembershipRepository:
         """
         if limit < 1:
             return []
-        relevant_expired = exists(
-            select(UserDB.id)
-            .join(
-                MemberEvidenceDB,
-                (MemberEvidenceDB.user_id == UserDB.id)
-                & (MemberEvidenceDB.group_id == ChatDB.id)
-                & MemberEvidenceDB.deleted_at.is_(None),
-            )
-            .where(
-                UserDB.deleted_at.is_(None),
-                or_(
-                    MemberEvidenceDB.admin_candidate.is_(True),
-                    MemberEvidenceDB.needs_verification.is_(True),
-                ),
-                MemberEvidenceDB.expires_at <= now,
-            )
-            .correlate(ChatDB)
-        )
-        query = (
-            select(ChatDB)
-            .outerjoin(GroupMembershipStateDB, GroupMembershipStateDB.group_id == ChatDB.id)
-            .where(
-                ChatDB.deleted_at.is_(None),
-                ChatDB.chat_type.in_(("group", "supergroup")),
-                ChatDB.chat_id < 0,
-                or_(
-                    GroupMembershipStateDB.group_id.is_(None),
-                    GroupMembershipStateDB.deleted_at.is_not(None),
-                    GroupMembershipStateDB.admins_expires_at.is_(None),
-                    GroupMembershipStateDB.admins_expires_at <= now,
-                    GroupMembershipStateDB.bot_expires_at.is_(None),
-                    GroupMembershipStateDB.bot_expires_at <= now,
-                    relevant_expired,
-                ),
-            )
-            .order_by(GroupMembershipStateDB.admins_expires_at.asc().nulls_first(), ChatDB.id)
-            .limit(limit)
-        )
-        return list((await self._session.scalars(query)).all())
+        return list((await self._session.scalars(due_groups_query(now, limit))).all())
 
     async def relevant_users(self, group_id: int, limit: int) -> list[UserDB]:
         """Bound current/pending administrator candidates, prioritizing expired records.

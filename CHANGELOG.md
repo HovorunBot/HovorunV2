@@ -1,7 +1,8 @@
-## v0.3.5.1 (2026-11-07)
+## Unreleased
 
 ### Fix
 
+- **access**: restore group access after redeployment
 - **deps**: upgrade missing sqlalchemy dependency
 
 ## v0.3.5 (2026-11-07)

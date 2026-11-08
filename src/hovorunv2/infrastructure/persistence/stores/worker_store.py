@@ -1,5 +1,6 @@
 """Small native PostgreSQL adapters for worker policy reads and durable accounting."""
 
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from hovorunv2.application.access.permissions import AccessDecision, PermissionRequest, PermissionTarget
 from hovorunv2.application.access.ports import AuthorizationPolicy
 from hovorunv2.application.features.emergency import FeatureEmergencyState, resolve_emergency_key
-from hovorunv2.application.features.feature_policy import FeatureDecision, evaluate_feature
+from hovorunv2.application.features.feature_policy import FeatureDecision, FeatureDenial, evaluate_feature
 from hovorunv2.application.features.registry import FeatureRegistry, TriggerKind
 from hovorunv2.application.identity.membership import (
     AdministratorEvidence,
@@ -51,8 +52,14 @@ from hovorunv2.infrastructure.persistence.repositories.membership_repository imp
     validate_evidence_time,
 )
 from hovorunv2.infrastructure.persistence.repositories.policy_fact_reader import PolicyFactReader
-from hovorunv2.infrastructure.persistence.repositories.policy_queries import banned_admin_queries, exact_target
+from hovorunv2.infrastructure.persistence.repositories.policy_queries import (
+    banned_admin_queries,
+    due_groups_query,
+    exact_target,
+)
 from hovorunv2.infrastructure.persistence.repositories.usage_ledger import UsageLedgerRepository
+
+logger = logging.getLogger(__name__)
 
 
 class WorkerPolicyStore:
@@ -96,7 +103,7 @@ class WorkerPolicyStore:
         self._require_owner()
         definition = self._registry.get(feature)
         if definition is None:
-            return FeatureDecision()
+            return FeatureDecision(reason=FeatureDenial.UNKNOWN_FEATURE)
         with self._sessions() as session:
             facts = PolicyFactReader(session, self._policy).feature_facts(
                 definition,
@@ -106,7 +113,23 @@ class WorkerPolicyStore:
                 configure=configure,
                 now=datetime.now(UTC),
             )
-            return evaluate_feature(definition, facts, trigger=trigger, configure=configure)
+            decision = evaluate_feature(definition, facts, trigger=trigger, configure=configure)
+        logger.info(
+            "Worker feature evaluated: feature=%s chat=%d trigger=%s allowed=%s reason=%s "
+            "access_reason=%s selected=%s eligible=%s supported=%s capable=%s emergency_disabled=%s",
+            feature,
+            chat_id,
+            trigger,
+            decision.allowed,
+            decision.reason,
+            facts.access_reason,
+            facts.selected,
+            facts.eligible,
+            facts.supported,
+            facts.capable,
+            facts.emergency_disabled,
+        )
+        return decision
 
     def emergency_state(self, feature: str) -> FeatureEmergencyState:
         """Read the current authoritative emergency state for stale-envelope fencing.
@@ -367,46 +390,8 @@ class WorkerOperationsStore:
         self._require_owner()
         if limit < 1:
             return []
-        relevant_expired = exists(
-            select(UserDB.id)
-            .join(
-                MemberEvidenceDB,
-                (MemberEvidenceDB.user_id == UserDB.id)
-                & (MemberEvidenceDB.group_id == ChatDB.id)
-                & MemberEvidenceDB.deleted_at.is_(None),
-            )
-            .where(
-                UserDB.deleted_at.is_(None),
-                or_(
-                    MemberEvidenceDB.admin_candidate.is_(True),
-                    MemberEvidenceDB.needs_verification.is_(True),
-                ),
-                MemberEvidenceDB.expires_at <= now,
-            )
-            .correlate(ChatDB)
-        )
-        query = (
-            select(ChatDB)
-            .outerjoin(GroupMembershipStateDB, GroupMembershipStateDB.group_id == ChatDB.id)
-            .where(
-                ChatDB.deleted_at.is_(None),
-                ChatDB.chat_type.in_(("group", "supergroup")),
-                ChatDB.chat_id < 0,
-                or_(
-                    GroupMembershipStateDB.group_id.is_(None),
-                    GroupMembershipStateDB.deleted_at.is_not(None),
-                    GroupMembershipStateDB.admins_expires_at.is_(None),
-                    GroupMembershipStateDB.admins_expires_at <= now,
-                    GroupMembershipStateDB.bot_expires_at.is_(None),
-                    GroupMembershipStateDB.bot_expires_at <= now,
-                    relevant_expired,
-                ),
-            )
-            .order_by(GroupMembershipStateDB.admins_expires_at.asc().nulls_first(), ChatDB.id)
-            .limit(limit)
-        )
         with self._sessions() as session:
-            return list(session.scalars(query).all())
+            return list(session.scalars(due_groups_query(now, limit)).all())
 
     def relevant_users(self, group_id: int, limit: int = 50) -> list[UserDB]:
         """Return current and unresolved former administrators, missing/stale evidence first.
