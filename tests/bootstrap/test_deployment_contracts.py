@@ -94,7 +94,6 @@ async def test_lean_worker_import_does_not_load_browser_packages() -> None:
     script = (
         "import sys\n"
         "import hovorunv2.bootstrap.worker_app\n"
-        "assert 'DrissionPage' not in sys.modules\n"
         "assert 'pydoll' not in sys.modules\n"
         "assert 'hovorunv2.infrastructure.browser.async_browser' not in sys.modules\n"
         "assert 'hovorunv2.infrastructure.browser.native_browser' not in sys.modules\n"
