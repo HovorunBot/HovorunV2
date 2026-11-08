@@ -9,6 +9,8 @@ from typing import Final, Self
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from hovorunv2.application.jobs.admission import (
+    MAX_REPUBLICATIONS,
+    QUEUE_LATENCY_BOUND_SECONDS,
     RECOVERY_RETRY_SECONDS,
     TASK_CLEANUP_GRACE_SECONDS,
     TASK_EXECUTION_HARD_LIMIT_SECONDS,
@@ -113,6 +115,8 @@ class AdmissionRecord(BaseModel):
     retry_at: float = Field(default=0, ge=0)
     not_before: float = Field(ge=0)
     claimed_at: float = Field(default=0, ge=0)
+    enqueued_at: float = Field(default=0, ge=0)
+    republications: int = Field(default=0, ge=0)
     subject_key: str
     ingress_key: str
     payload_key: str
@@ -540,8 +544,11 @@ def _acknowledge(record: AdmissionRecord, request: AdmissionTransition) -> Admis
                 request.stage,
                 request.attempt,
             ):
+                enqueued_at = request.now if request.now > 0 else (record.enqueued_at or record.job.accepted_at)
                 return AdmissionChange(
-                    record.model_copy(update={"state": TicketState.ENQUEUED}), write=True, handoff=False
+                    record.model_copy(update={"state": TicketState.ENQUEUED, "enqueued_at": enqueued_at}),
+                    write=True,
+                    handoff=False,
                 )
         case AdmissionOperation.PUBLISHED:
             if record.state != TicketState.TERMINAL and (record.stage, record.attempt) == (
@@ -589,9 +596,23 @@ def _republish(record: AdmissionRecord, request: AdmissionTransition) -> Admissi
         return AdmissionChange(record)
     if (record.stage, record.attempt) != (request.stage, request.attempt):
         return AdmissionChange(record)
+    if record.republications >= MAX_REPUBLICATIONS:
+        return AdmissionChange(record)
+    enqueued_at = record.enqueued_at if record.enqueued_at > 0 else record.job.accepted_at
+    if (
+        record.state == TicketState.ENQUEUED
+        and record.published == 1
+        and request.now - enqueued_at < QUEUE_LATENCY_BOUND_SECONDS
+    ):
+        return AdmissionChange(record)
     if not max(record.not_before, record.retry_at) <= request.now < record.job.deadline:
         return AdmissionChange(record)
-    retried = record.model_copy(update={"retry_at": request.now + RECOVERY_RETRY_SECONDS})
+    retried = record.model_copy(
+        update={
+            "retry_at": request.now + RECOVERY_RETRY_SECONDS,
+            "republications": record.republications + 1,
+        }
+    )
     return AdmissionChange(retried, write=True, success=True)
 
 

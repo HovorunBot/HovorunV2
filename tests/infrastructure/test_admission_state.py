@@ -1,11 +1,14 @@
 """Pure admission corruption precedence, capacity binding and transition-fencing regressions."""
 
+import json
 from dataclasses import replace
 
 import pytest
 from pydantic import ValidationError
 
 from hovorunv2.application.jobs.admission import (
+    MAX_REPUBLICATIONS,
+    QUEUE_LATENCY_BOUND_SECONDS,
     RECOVERY_RETRY_SECONDS,
     TASK_CLEANUP_GRACE_SECONDS,
     TASK_EXECUTION_HARD_LIMIT_SECONDS,
@@ -300,3 +303,115 @@ def test_reap_running_work_only_after_conservative_kill_window(*, reserved: bool
     else:
         assert after.record.outcome == JobOutcome.EXPIRED
         assert after.release
+
+
+@pytest.mark.unit
+def test_republish_bounds_enqueued_tickets_by_latency_and_attempt_cap() -> None:
+    """An acknowledged enqueued ticket is not republished before latency bound, and capped at MAX_REPUBLICATIONS."""
+    clock = ManualClock(100.0)
+    job = job_envelope("a" * 32, clock, deadline=400.0)
+    record = RECORD.model_copy(
+        update={
+            "envelope": envelope_json(job),
+            "state": TicketState.ENQUEUED,
+            "published": 1,
+            "enqueued_at": 50.0,
+        }
+    )
+    early = calculate_change(
+        record,
+        AdmissionTransition(
+            AdmissionOperation.REPUBLISH,
+            stage=record.stage,
+            attempt=record.attempt,
+            now=170.0,
+        ),
+    )
+    assert not early.success
+    assert early.record == record
+
+    # After latency bound: allowed, increments republications
+    due = calculate_change(
+        record,
+        AdmissionTransition(
+            AdmissionOperation.REPUBLISH,
+            stage=record.stage,
+            attempt=record.attempt,
+            now=50.0 + QUEUE_LATENCY_BOUND_SECONDS,
+        ),
+    )
+    assert due.success
+    assert due.record is not None
+    assert due.record.republications == 1
+    assert due.record.retry_at == 50.0 + QUEUE_LATENCY_BOUND_SECONDS + RECOVERY_RETRY_SECONDS
+
+    # Capped at MAX_REPUBLICATIONS
+    capped_record = record.model_copy(update={"republications": MAX_REPUBLICATIONS})
+    capped = calculate_change(
+        capped_record,
+        AdmissionTransition(
+            AdmissionOperation.REPUBLISH,
+            stage=capped_record.stage,
+            attempt=capped_record.attempt,
+            now=360.0,
+        ),
+    )
+    assert not capped.success
+    assert capped.record == capped_record
+
+
+@pytest.mark.unit
+def test_unacknowledged_ticket_allows_republication_before_latency_bound() -> None:
+    """Unacknowledged tickets (published == 0) can be republished before QUEUE_LATENCY_BOUND_SECONDS."""
+    clock = ManualClock(100.0)
+    job = job_envelope("a" * 32, clock, deadline=400.0)
+    record = RECORD.model_copy(
+        update={
+            "envelope": envelope_json(job),
+            "state": TicketState.ACCEPTED,
+            "published": 0,
+            "enqueued_at": job.accepted_at,
+        }
+    )
+    result = calculate_change(
+        record,
+        AdmissionTransition(
+            AdmissionOperation.REPUBLISH,
+            stage=record.stage,
+            attempt=record.attempt,
+            now=job.accepted_at + 10,
+        ),
+    )
+    assert result.success
+    assert result.record is not None
+    assert result.record.republications == 1
+
+
+@pytest.mark.unit
+def test_legacy_record_loads_defaults_and_uses_accepted_at_for_latency() -> None:
+    """Existing records in Valkey without enqueued_at or republications deserialize with defaults."""
+    clock = ManualClock(100.0)
+    job = job_envelope("a" * 32, clock, deadline=400.0)
+    record = RECORD.model_copy(update={"envelope": envelope_json(job)})
+    payload = record.encode()
+    data = json.loads(payload)
+    data.pop("enqueued_at", None)
+    data.pop("republications", None)
+    legacy_json = json.dumps(data)
+
+    loaded = AdmissionRecord.model_validate_json(legacy_json)
+    assert loaded.enqueued_at == 0
+    assert loaded.republications == 0
+
+    enqueued = loaded.model_copy(update={"state": TicketState.ENQUEUED, "published": 1})
+    early = calculate_change(
+        enqueued,
+        AdmissionTransition(
+            AdmissionOperation.REPUBLISH,
+            stage=enqueued.stage,
+            attempt=enqueued.attempt,
+            now=job.accepted_at + 70,
+        ),
+    )
+    assert not early.success
+    assert early.record == enqueued

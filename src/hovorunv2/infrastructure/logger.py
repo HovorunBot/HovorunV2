@@ -12,8 +12,6 @@ from enum import Enum
 from types import TracebackType
 from typing import TYPE_CHECKING, Final
 
-from aiogram.exceptions import TelegramAPIError
-
 from hovorunv2.application.access.administration import AdminAction
 from hovorunv2.application.access.permissions import DecisionReason
 from hovorunv2.application.features.beta_prompts import BetaDecision
@@ -309,6 +307,8 @@ class AsyncTelegramHandler(logging.Handler):
 
     async def _send_to_telegram(self, message: str, owner_id: int) -> None:
         """Send the message to one owner through the bot."""
+        from aiogram.exceptions import TelegramAPIError  # noqa: PLC0415
+
         try:
             # We don't escape everything because _condense_exception_log provides HTML tags
             # but we ensure the message isn't insanely large

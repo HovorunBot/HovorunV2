@@ -14,6 +14,7 @@ from dishka import AsyncContainer
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import (
+    MAX_REPUBLICATIONS,
     RECOVERY_RETRY_SECONDS,
     TASK_CLEANUP_GRACE_SECONDS,
     TASK_EXECUTION_HARD_LIMIT_SECONDS,
@@ -535,3 +536,52 @@ async def test_recovery_preserves_running_ticket_during_broker_delay_execution(
             assert terminal is not None
             assert terminal.state == TicketState.TERMINAL
             assert terminal.outcome == JobOutcome.EXPIRED
+
+
+async def test_recovery_sweep_bounds_acknowledged_queued_republications(
+    test_container: AsyncContainer, postgres_database_url: str
+) -> None:
+    """Acknowledged enqueued work is not republished every sweep, but idle unacknowledged is bounded."""
+    settings = (await test_container.get(Settings)).model_copy(update={"database_url": postgres_database_url})
+    await (await test_container.get(UserStore)).ingest_user(390003, actor=ActorContext.cli())
+    clock = ManualClock(time.time())
+    safety = UsageSafetyCaps()
+    async with runtime_cache(test_container) as (cache, namespace):
+        store = ValkeyAdmissionStore(cache, namespace)
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        envelope = await _admit(store, payloads, clock, "republish-job", feature=FEATURE)
+        with (
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+        ):
+            lifecycle = WorkerLifecycleService(runtime.admission, runtime.budgets, database.ledger, clock)
+            assert runtime.admission.mark_enqueued(envelope.job_id, JobStage.MEDIA, 0) is not None
+            assert runtime.admission.ack_publication(envelope.job_id, JobStage.MEDIA, 0)
+            ticket = runtime.admission.get(envelope.job_id)
+            assert ticket is not None
+            assert ticket.state == TicketState.ENQUEUED
+
+            # 70 seconds after enqueue: within bound (300s) -> not republished
+            clock.value += 70
+            assert lifecycle.recover(publisher) == 0
+            assert len(broker_envelopes(settings, namespace.value)) == 0
+
+        # Now test unacknowledged job: republications are bounded by MAX_REPUBLICATIONS
+        await (await test_container.get(UserStore)).ingest_user(390004, actor=ActorContext.cli())
+        _ = await _admit(
+            store, payloads, clock, "unack-job", feature=FEATURE, actor_id=390004, charged_telegram_id=390004
+        )
+        with (
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+        ):
+            lifecycle = WorkerLifecycleService(runtime.admission, runtime.budgets, database.ledger, clock)
+            # Unacknowledged publication: can be republished up to MAX_REPUBLICATIONS times
+            for _ in range(MAX_REPUBLICATIONS):
+                assert lifecycle.recover(publisher) == 1
+                clock.value += RECOVERY_RETRY_SECONDS
+
+            # Once cap reached, further sweeps do not republish
+            assert lifecycle.recover(publisher) == 0
