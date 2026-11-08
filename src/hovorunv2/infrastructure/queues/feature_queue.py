@@ -6,6 +6,7 @@ import math
 import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import NotRequired, TypedDict
 
 from celery import Celery
 from celery.schedules import crontab
@@ -41,7 +42,14 @@ BROKER_SOCKET_SECONDS = 2
 TASK_CLEANUP_GRACE_SECONDS = 10
 
 
-def feature_task_time_limits(execution_seconds: float) -> dict[str, int]:
+class FeatureTaskTimeLimits(TypedDict):
+    """Describe only Celery execution limits accepted by task publication."""
+
+    time_limit: int
+    soft_time_limit: NotRequired[int]
+
+
+def feature_task_time_limits(execution_seconds: float) -> FeatureTaskTimeLimits:
     """Leave cleanup time before Celery's process-killing hard limit.
 
     Args:
@@ -51,7 +59,7 @@ def feature_task_time_limits(execution_seconds: float) -> dict[str, int]:
         Hard limit and, when possible, an earlier cooperative soft limit.
     """
     hard = max(1, math.ceil(execution_seconds))
-    limits = {"time_limit": hard}
+    limits: FeatureTaskTimeLimits = {"time_limit": hard}
     if hard > 1:
         limits["soft_time_limit"] = max(1, hard - TASK_CLEANUP_GRACE_SECONDS)
     return limits

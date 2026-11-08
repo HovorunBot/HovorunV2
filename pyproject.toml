@@ -91,6 +91,7 @@ dev = [
     "ty",
     "pytest-xdist",
     "pytest-cov",
+    "celery-types>=0.26.0",
 ]
 
 [tool.ruff]
