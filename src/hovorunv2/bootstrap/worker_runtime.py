@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Callable, Generator
-from contextlib import contextmanager, suppress
+from contextlib import ExitStack, contextmanager, suppress
 from datetime import UTC, datetime
 from os import getpid
 from types import TracebackType
@@ -38,6 +38,7 @@ from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from hovorunv2.interface.telegram.transport.sync_prompts import SyncTelegramUnauthorizedPromptSender
+lazy from hovorunv2.bootstrap.worker_media_runner import create_feature_runner
 
 if TYPE_CHECKING:
     from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
@@ -261,82 +262,100 @@ class WorkerChildContext:
         self._publisher: WorkerQueuePublisher | None = None
         self._operations: WorkerOperationsRunner | None = None
         self._opened = runner is not None
+        self._resources = ExitStack()
 
     def open(self) -> Self:
-        """Open all child resources for the configured worker role in the current process."""
+        """Open child-local resources and unwind partial startup without replacing its error."""
         if self._opened:
             return self
-        self._db = WorkerDatabase(self._settings, FEATURE_REGISTRY, self._safety)
-        self._db.__enter__()
-        self._runtime = WorkerRuntime(self._settings, self._clock, self._namespace, self._safety)
-        self._runtime.__enter__()
+        try:
+            self._open_resources()
+        except BaseException:
+            try:
+                self.close()
+            except BaseException as error:
+                logger.log(logging.ERROR, "Worker startup cleanup failed: %s", type(error).__name__)
+            raise
+        self._opened = True
+        return self
+
+    def _open_resources(self) -> None:
+        database = self._resources.enter_context(WorkerDatabase(self._settings, FEATURE_REGISTRY, self._safety))
+        self._db = database
+        runtime = self._resources.enter_context(
+            WorkerRuntime(self._settings, self._clock, self._namespace, self._safety)
+        )
+        self._runtime = runtime
         if self._custom_http is not None:
-            self._http = self._custom_http
+            http = self._custom_http
         else:
-            self._owned_http = NativeHTTPClient()
-            self._owned_http.__enter__()
-            self._http = self._owned_http
-        api = NativeTelegramAPI(self._http, self._settings.bot_token)
+            http = self._resources.enter_context(NativeHTTPClient())
+            self._owned_http = http
+        self._http = http
+        api = NativeTelegramAPI(http, self._settings.bot_token)
 
         # 1. Initialize operations runner if role includes operations
         if self._role in {WorkerRole.OPERATIONS, WorkerRole.ALL}:
-            prompt_sender = SyncTelegramUnauthorizedPromptSender(api)
-            notification_delivery = NotificationDeliveryService(
-                ledger=self._db.notifications,
-                payloads=self._runtime.payloads,
-                sender=api,
-                clock=self._clock,
-            )
-            release_updates = ReleaseUpdateService(
-                ops=self._db.operations,
-                ledger=self._db.notifications,
-                bodies=self._runtime.payloads,
-                settings=self._settings,
-                clock=self._clock,
-            )
-            self._operations = WorkerOperationsRunner(
-                ops=self._db.operations,
-                client=self._runtime.client,
-                namespace=self._namespace,
-                api=api,
-                prompt_sender=prompt_sender,
-                settings=self._settings,
-                clock=self._clock,
-                delivery=notification_delivery,
-                release=release_updates,
-            )
+            self._operations = self._open_operations_runner(database, runtime, api)
 
         # 2. Initialize feature job runner if role includes media or browser
         if self._role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.ALL}:
-            if self._role == WorkerRole.BROWSER or (self._role == WorkerRole.ALL and self._settings.browser_enabled):
-                self._browser = self._custom_browser or LazyBrowserService()
-            self._publisher = WorkerQueuePublisher(
-                self._settings.valkey_url,
-                self._namespace,
-                self._safety,
-                self._clock,
-            )
-            from hovorunv2.bootstrap.worker_media_runner import create_feature_runner  # noqa: PLC0415
+            self._runner = self._open_feature_runner(database, runtime, http, api)
 
-            self._runner = create_feature_runner(
-                settings=self._settings,
-                admission=self._runtime.admission,
-                payloads=self._runtime.payloads,
-                budgets=self._runtime.budgets,
-                client=self._runtime.client,
-                db=self._db,
-                http=self._http,
-                api=api,
-                clock=self._clock,
-                safety=self._safety,
-                namespace=self._namespace,
-                browser=self._browser,
-                publisher=self._publisher,
-                custom_delivery=self._custom_delivery,
-            )
+    def _open_operations_runner(
+        self, database: WorkerDatabase, runtime: WorkerRuntime, api: NativeTelegramAPI
+    ) -> WorkerOperationsRunner:
+        prompt_sender = SyncTelegramUnauthorizedPromptSender(api)
+        notification_delivery = NotificationDeliveryService(
+            ledger=database.notifications,
+            payloads=runtime.payloads,
+            sender=api,
+            clock=self._clock,
+        )
+        release_updates = ReleaseUpdateService(
+            ops=database.operations,
+            ledger=database.notifications,
+            bodies=runtime.payloads,
+            settings=self._settings,
+            clock=self._clock,
+        )
+        return WorkerOperationsRunner(
+            ops=database.operations,
+            client=runtime.client,
+            namespace=self._namespace,
+            api=api,
+            prompt_sender=prompt_sender,
+            settings=self._settings,
+            clock=self._clock,
+            delivery=notification_delivery,
+            release=release_updates,
+        )
 
-        self._opened = True
-        return self
+    def _open_feature_runner(
+        self, database: WorkerDatabase, runtime: WorkerRuntime, http: SyncHTTPPort, api: NativeTelegramAPI
+    ) -> FeatureJobRunner:
+        if self._role == WorkerRole.BROWSER or (self._role == WorkerRole.ALL and self._settings.browser_enabled):
+            self._browser = self._custom_browser or LazyBrowserService()
+            self._resources.callback(self._browser.close)
+        publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
+        self._resources.callback(publisher.close)
+        self._publisher = publisher
+        return create_feature_runner(
+            settings=self._settings,
+            admission=runtime.admission,
+            payloads=runtime.payloads,
+            budgets=runtime.budgets,
+            client=runtime.client,
+            db=database,
+            http=http,
+            api=api,
+            clock=self._clock,
+            safety=self._safety,
+            namespace=self._namespace,
+            browser=self._browser,
+            publisher=publisher,
+            custom_delivery=self._custom_delivery,
+        )
 
     @property
     def role(self) -> WorkerRole:
@@ -387,28 +406,19 @@ class WorkerChildContext:
         return 0
 
     def close(self) -> None:
-        """Close all child resources deterministically."""
-        if not self._opened:
-            return
-        self._operations = None
-        self._runner = None
-        if self._publisher is not None:
-            self._publisher.close()
+        """Unwind every acquired resource and invalidate adapters even after partial startup."""
+        try:
+            self._resources.close()
+        finally:
+            self._operations = None
+            self._runner = None
             self._publisher = None
-        if self._browser is not None:
-            self._browser.close()
             self._browser = None
-        if self._owned_http is not None:
-            self._owned_http.close()
             self._owned_http = None
-        self._http = None
-        if self._runtime is not None:
-            self._runtime.__exit__(None, None, None)
+            self._http = None
             self._runtime = None
-        if self._db is not None:
-            self._db.__exit__(None, None, None)
             self._db = None
-        self._opened = False
+            self._opened = False
 
 
 _current_worker_context: WorkerChildContext | None = None
