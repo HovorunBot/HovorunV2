@@ -2,18 +2,15 @@
 
 import html
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from hovorunv2.application.media.payloads import RichMediaPayload
 
 CAPTION_LIMIT = 1024
-HEADER_TEMPLATE = (
-    '🗣 <b>{tg_user_name}</b> shared a post by <b>{author_name}</b> (<a href="{author_url}">@{author_handle}</a>)\n\n'
-)
-QUOTE_TEMPLATE = (
-    '<blockquote>🔄 <b>{author_name}</b> (<a href="{author_url}">@{author_handle}</a>)\n{content}</blockquote>\n'
-)
+HEADER_TEMPLATE = "🗣 <b>{tg_user_name}</b> shared a post by <b>{author_name}</b> ({author_link})\n\n"
+QUOTE_TEMPLATE = "<blockquote>🔄 <b>{author_name}</b> ({author_link})\n{content}</blockquote>\n"
 METRICS_TEMPLATE = "{metrics}\n"
-FOOTER_TEMPLATE = '🔗 <a href="{url}">Open on {platform}</a>'
+FOOTER_TEMPLATE = "🔗 {link}"
 MEDIA_UNAVAILABLE_TEXT = "⚠️ Media could not be extracted. View the original post using the link below."
 
 
@@ -25,17 +22,37 @@ class CaptionPlan:
     separate_text: str | None = None
 
 
+def _safe_link(url: str, label: str) -> str:
+    """Render a safe HTML anchor tag or fall back to plain label for invalid or non-HTTP URLs.
+
+    Args:
+        url: Untrusted URL to validate and escape.
+        label: Pre-escaped or raw HTML label to wrap.
+
+    Returns:
+        Anchor tag with quote-escaped href, or label if URL is not a valid HTTP(S) link.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return label
+    if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+        return label
+    return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+
+
 def _header(payload: RichMediaPayload, sender_label: str | None) -> str:
+    author_link = _safe_link(payload.author_url, f"@{payload.author_handle}")
     return HEADER_TEMPLATE.format(
         tg_user_name=html.escape(sender_label or "Someone"),
         author_name=payload.author_name,
-        author_handle=payload.author_handle,
-        author_url=payload.author_url,
+        author_link=author_link,
     )
 
 
 def _footer(payload: RichMediaPayload, platform_name: str) -> str:
-    return FOOTER_TEMPLATE.format(url=payload.original_url, platform=platform_name)
+    link = _safe_link(payload.original_url, f"Open on {html.escape(platform_name)}")
+    return FOOTER_TEMPLATE.format(link=link)
 
 
 def build_caption(payload: RichMediaPayload, sender_label: str | None, platform_name: str) -> str:
@@ -54,10 +71,10 @@ def build_caption(payload: RichMediaPayload, sender_label: str | None, platform_
         content += MEDIA_UNAVAILABLE_TEXT + "\n\n"
     quote = ""
     if payload.quoted_payload:
+        quoted_author_link = _safe_link(payload.quoted_payload.author_url, f"@{payload.quoted_payload.author_handle}")
         quote = QUOTE_TEMPLATE.format(
             author_name=payload.quoted_payload.author_name,
-            author_handle=payload.quoted_payload.author_handle,
-            author_url=payload.quoted_payload.author_url,
+            author_link=quoted_author_link,
             content=payload.quoted_payload.content,
         )
     metrics = ""
