@@ -110,7 +110,7 @@ USER appuser
 CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "media,translation"]
 
 # -----------------------------------------------------------------------------
-# Runtime target: worker-browser (Chromium + DrissionPage fallback)
+# Runtime target: worker-browser (Chromium + pydoll-python fallback)
 # -----------------------------------------------------------------------------
 FROM base AS worker-browser
 

@@ -15,6 +15,10 @@ Instagram declares its ordered extraction actions (executed by the shared `appli
 4. `browser extraction` — the browser worker enumerates complete carousels from structured post data and bounded lazy
    traversal.
 
+The browser worker uses MIT-licensed `pydoll-python` through its synchronous adapter, with a fresh browser context
+per extraction. Cookies and local storage are discarded with that context. Provider JavaScript uses returning
+statements or immediately invoked expressions, and the adapter unwraps Python values and rejects script errors.
+
 Browser extraction reads post-scoped JSON scripts and ordinary article/carousel markup. It resolves the requested
 article before observing media or advancing controls, and waits for slide changes within a bounded allowance.
 OpenGraph media from the rendered page is a partial preview; text-only metadata never completes Instagram extraction.

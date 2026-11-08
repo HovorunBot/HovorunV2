@@ -22,7 +22,7 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Postg
 - **DI Typing Consistency:** Consumer parameter type hints MUST match provider definitions exactly (e.g. bare `async_sessionmaker` instead of generic `async_sessionmaker[AsyncSession]`) to avoid adaptix fallback matching and Python 3.15 deprecation warnings.
 - **Reference Documentation:** See [architecture documentation](docs/architecture.md) for full layer responsibilities, permission policies, audit boundaries, and database deployment details.
 - **Reusable Utilities:** Root `hovorunv2.utils/` holds capability-independent technical helpers. Any layer may import it; it must not import a layer, directly or indirectly. Application contracts live with their capability owner, not in a central ports module.
-- **Execution Model:** Bot, interactive CLI, and bot-facing adapters use async I/O. Native Celery workers and synchronous application use cases use synchronous SQLAlchemy/psycopg, HTTP, Telegram, and browser adapters. Create worker resources inside each child process; never inherit live pools or wrap worker execution in an event loop. Share pure policy, parsing, and rendering rules between bot and workers.
+- **Execution Model:** Bot, interactive CLI, and bot-facing adapters use async I/O. Native Celery workers and synchronous application use cases use synchronous SQLAlchemy/psycopg, HTTP, Telegram, and browser adapters. Create worker resources inside each child process; never inherit live pools or wrap worker execution in an event loop. Share pure policy, parsing, and rendering rules between bot and workers. The browser-only exception is `pydoll.sync`: its `pydoll-sync-loop` daemon starts lazily on first browser use inside the owning worker child. Application and worker callers remain synchronous; no other role may import pydoll or start this loop.
 
 ## 4. Code Conventions
 
@@ -79,7 +79,7 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Postg
 - **Implementation Probes and Durable Tests:** Temporary scripts, diagnostic assertions, and exploratory checks may help investigate or implement a change, but they are not automatically permanent regression tests or acceptance evidence. Retain them in the suite only when they independently protect observable behavior or a lasting operational contract. Remove disposable probes once their purpose is served, without discarding meaningful behavioral or security/privacy regression coverage.
 - **Real Infrastructure:** Test against real PostgreSQL in isolated schemas and local Valkey. Run migration coverage against PostgreSQL in isolated schemas. NEVER use `unittest.mock` for internal services, repositories, or persistence—verify DB/Valkey state directly.
 - **Network Mocking:** Mock external HTTP APIs only (e.g., `api.vxtwitter.com`, `tikwm.com`) using `aioresponses`.
-- **Zero Warnings Policy:** Test suite runs must remain clean of deprecation, resource, and framework warnings. Investigate and eliminate root causes immediately.
+- **Zero Warnings Policy:** Test suite runs must remain clean of deprecation, resource, and framework warnings. Investigate and eliminate root causes immediately. The explicitly accepted upstream exception is pydoll 3.0.1 calling deprecated `asyncio.iscoroutinefunction` on Python 3.15; only that message from pydoll modules may be allowed until upstream uses `inspect.iscoroutinefunction`. All other warnings remain errors.
 
 ## 6. Commit Messages & Versioning
 

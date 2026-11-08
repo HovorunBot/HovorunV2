@@ -41,7 +41,7 @@ make compose-run ARGS="--no-deps bot hovorun-admin role add 123456789 --role own
 make run
 ```
 
-A dedicated migration container applies schema upgrades before the bot starts. Bot, media worker, operations worker and one Beat scheduler run as independent services from dedicated, role-optimized container images and restart independently. Browser fallback is disabled by default. Set `BROWSER_ENABLED=True` in the selected environment file to build and start the separate browser worker with Chromium and DrissionPage. With `BROWSER_ENABLED=False` or an absent setting, Make builds the four standard role images (`hovorunv2-migrate`, `hovorunv2-bot`, `hovorunv2-worker-ops`, `hovorunv2-worker-media`) and stops any previously running browser worker on startup. Direct extraction remains available; requests requiring browser fallback fail promptly without queuing an unavailable worker or consuming quota. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
+A dedicated migration container applies schema upgrades before the bot starts. Bot, media worker, operations worker and one Beat scheduler run as independent services from dedicated, role-optimized container images and restart independently. Browser fallback is disabled by default. Set `BROWSER_ENABLED=True` in the selected environment file to build and start the separate browser worker with Chromium and pydoll-python. With `BROWSER_ENABLED=False` or an absent setting, Make builds the four standard role images (`hovorunv2-migrate`, `hovorunv2-bot`, `hovorunv2-worker-ops`, `hovorunv2-worker-media`) and stops any previously running browser worker on startup. Direct extraction remains available; requests requiring browser fallback fail promptly without queuing an unavailable worker or consuming quota. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
 
 | Command | Purpose |
 | --- | --- |
@@ -77,7 +77,7 @@ Operational logs omit message URLs, exception contents and credentials while ret
 
 ## Development
 
-Built with Python 3.15+, aiogram, SQLAlchemy/PostgreSQL, Valkey, Celery and Dishka; DrissionPage is installed only in the browser-worker image target.
+Built with Python 3.15+, aiogram, SQLAlchemy/PostgreSQL, Valkey, Celery and Dishka; pydoll-python is installed only in the browser-worker image target.
 See the [contributor guide](CONTRIBUTING.md) for setup, checks and contribution conventions, and [architecture](docs/architecture.md) for implementation details.
 
 ## License

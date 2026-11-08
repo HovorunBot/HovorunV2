@@ -61,7 +61,7 @@ The role CLI requires PostgreSQL access but no Telegram, browser or Valkey conne
 Native media, browser and operations workers run as separate services with process-local
 resources and shared PostgreSQL/Valkey addresses. Beat is a singleton service with a private
 schedule volume. Each service uses a dedicated role image (`hovorunv2-worker-media`, `hovorunv2-worker-ops`,
-`hovorunv2-worker-browser`); only the browser worker contains Chromium and DrissionPage and
+`hovorunv2-worker-browser`); only the browser worker contains Chromium and pydoll-python and
 starts the browser lazily inside an execution child.
 
 ## Tests
