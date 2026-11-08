@@ -12,6 +12,8 @@ from enum import Enum
 from types import TracebackType
 from typing import TYPE_CHECKING, Final
 
+from aiogram.exceptions import TelegramAPIError
+
 from hovorunv2.application.access.administration import AdminAction
 from hovorunv2.application.access.permissions import DecisionReason
 from hovorunv2.application.features.beta_prompts import BetaDecision
@@ -312,7 +314,7 @@ class AsyncTelegramHandler(logging.Handler):
             # but we ensure the message isn't insanely large
             safe_msg = message[:MAX_TELEGRAM_MESSAGE_LENGTH]
             await self.bot.send_message(owner_id, f"🚨 <b>Log Alert</b>\n\n{safe_msg}", parse_mode="HTML")
-        except Exception:
+        except TelegramAPIError:
             sys.stderr.write(f"[AsyncTelegramHandler Error] Failed to send to owner {owner_id}.\n")
 
 

@@ -3,7 +3,7 @@
 import logging
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from hovorunv2.application.access.role_service import RoleService
@@ -56,6 +56,6 @@ class OwnerNotifier:
                 sent_count += 1
             except TelegramForbiddenError:
                 logger.warning("Failed to notify owner %d: Bot is blocked by user", owner_id)
-            except Exception:
+            except TelegramAPIError:
                 logger.exception("Failed to notify owner %d", owner_id)
         return sent_count

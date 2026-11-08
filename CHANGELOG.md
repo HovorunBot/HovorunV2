@@ -14,6 +14,7 @@
 
 ### Refactor
 
+- narrow broad Exception suppression to TelegramAPIError
 - **access**: narrow broad Exception suppression to TelegramAPIError
 - **operations**: narrow broad Exception suppression to TelegramAPIError
 

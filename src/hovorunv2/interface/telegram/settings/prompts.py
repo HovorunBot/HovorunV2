@@ -1,7 +1,7 @@
 """Telegram unauthorized prompt presentation and delivery."""
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -86,7 +86,7 @@ class TelegramUnauthorizedPromptSender:
         except TelegramForbiddenError:
             logger.warning("Bot removed or blocked in chat %d", chat_id)
             return False
-        except Exception:
+        except TelegramAPIError:
             logger.exception("Failed to send unauthorized prompt to chat %d", chat_id)
             return False
         return True
