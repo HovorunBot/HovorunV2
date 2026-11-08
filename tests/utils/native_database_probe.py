@@ -57,8 +57,11 @@ def reject_inherited_pool(database: WorkerDatabase) -> None:
 def main() -> None:
     """Use only synthetic fixture data and return operational counters, never payloads."""
     assert "DrissionPage" not in sys.modules
+    assert "pydoll" not in sys.modules
     assert "hovorunv2.infrastructure.browser.async_browser" not in sys.modules
-    sys.meta_path.insert(0, BlockedImportFinder("DrissionPage", "hovorunv2.infrastructure.browser.async_browser"))
+    sys.meta_path.insert(
+        0, BlockedImportFinder("DrissionPage", "pydoll", "hovorunv2.infrastructure.browser.async_browser")
+    )
     try:
         asyncio.get_running_loop()
     except RuntimeError:

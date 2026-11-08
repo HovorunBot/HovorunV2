@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,22 @@ from hovorunv2.infrastructure.queues.feature_queue import (
 
 def _settings() -> BrokerSettings:
     return BrokerSettings(valkey_url="redis://localhost:6379/9", _env_file=None)
+
+
+@pytest.mark.unit
+def test_browser_sdk_dependency_and_lockfile_exclude_replaced_packages() -> None:
+    """Keep the browser SDK in its owning extra and prevent restoring replaced distributions."""
+    root = Path(__file__).resolve().parents[2]
+    project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    extras = project["optional-dependencies"]
+    assert any(dependency.startswith("pydoll-python") for dependency in extras["worker-browser"])
+    assert not any(dependency.startswith("pydoll-python") for dependency in project["dependencies"])
+    for role in ("bot", "migrate", "worker-media", "worker-ops"):
+        assert not any(dependency.startswith("pydoll-python") for dependency in extras[role])
+    lock = tomllib.loads((root / "uv.lock").read_text(encoding="utf-8"))
+    packages = {package["name"] for package in lock["package"]}
+    assert "pydoll-python" in packages
+    assert packages.isdisjoint({"drissionpage", "drissionget", "drissionrecord"})
 
 
 @pytest.mark.unit
@@ -73,11 +90,12 @@ def test_worker_beat_schedule_routes_all_sweeps_to_operations() -> None:
 
 @pytest.mark.subprocess
 async def test_lean_worker_import_does_not_load_browser_packages() -> None:
-    """A media/operations/Beat process starts without importing DrissionPage or the browser adapter."""
+    """A media/operations/Beat process starts without importing either browser SDK or the browser adapter."""
     script = (
         "import sys\n"
         "import hovorunv2.bootstrap.worker_app\n"
         "assert 'DrissionPage' not in sys.modules\n"
+        "assert 'pydoll' not in sys.modules\n"
         "assert 'hovorunv2.infrastructure.browser.async_browser' not in sys.modules\n"
         "assert 'hovorunv2.infrastructure.browser.native_browser' not in sys.modules\n"
     )

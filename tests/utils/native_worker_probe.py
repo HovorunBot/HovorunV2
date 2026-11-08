@@ -47,8 +47,9 @@ def main() -> None:
     """Verify clean child execution without event loops, container imports, or Chromium in media queue."""
     logging.disable(logging.CRITICAL)
     assert "DrissionPage" not in sys.modules
+    assert "pydoll" not in sys.modules
     assert "aiogram" not in sys.modules
-    sys.meta_path.insert(0, BlockedImportFinder("DrissionPage", "aiogram"))
+    sys.meta_path.insert(0, BlockedImportFinder("DrissionPage", "pydoll", "aiogram"))
     try:
         asyncio.get_running_loop()
     except RuntimeError:

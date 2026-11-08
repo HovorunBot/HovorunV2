@@ -54,9 +54,8 @@ worker-media = [
     "yt-dlp[default,curl-cffi,deno]",
 ]
 worker-browser = [
-    "DrissionPage",
     "hovorunv2[worker-media]",
-    "pydoll-python",
+    "pydoll-python>=3.0.1,<4.0",
 ]
 browser = [
     "hovorunv2[worker-browser]",

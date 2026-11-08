@@ -128,7 +128,7 @@ class BlockedFinder(MetaPathFinder):
             raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
         return None
 
-forbidden = ["yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "DrissionPage", "alembic"]
+forbidden = ["yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "DrissionPage", "pydoll", "alembic"]
 sys.meta_path.insert(0, BlockedFinder(*forbidden))
 
 import hovorunv2.__main__
@@ -153,7 +153,7 @@ class BlockedFinder(MetaPathFinder):
             raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
         return None
 
-forbidden = ["aiogram", "yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "DrissionPage"]
+forbidden = ["aiogram", "yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "DrissionPage", "pydoll"]
 sys.meta_path.insert(0, BlockedFinder(*forbidden))
 
 from alembic.config import Config
@@ -180,7 +180,7 @@ class BlockedFinder(MetaPathFinder):
             raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
         return None
 
-forbidden = ["aiogram", "dishka", "alembic", "yt_dlp", "curl_cffi", "instaloader", "bs4", "DrissionPage"]
+forbidden = ["aiogram", "dishka", "alembic", "yt_dlp", "curl_cffi", "instaloader", "bs4", "DrissionPage", "pydoll"]
 sys.meta_path.insert(0, BlockedFinder(*forbidden))
 
 os.environ["WORKER_ROLE"] = "operations"
@@ -211,7 +211,7 @@ class BlockedFinder(MetaPathFinder):
             raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
         return None
 
-forbidden = ["aiogram", "dishka", "alembic", "DrissionPage"]
+forbidden = ["aiogram", "dishka", "alembic", "DrissionPage", "pydoll"]
 sys.meta_path.insert(0, BlockedFinder(*forbidden))
 
 os.environ["WORKER_ROLE"] = "media"

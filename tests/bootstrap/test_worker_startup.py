@@ -64,7 +64,15 @@ async def test_missing_media_dependency_closes_acquired_resources(
 ) -> None:
     """A late dependency failure disposes the database and active browser, retaining caller-owned HTTP."""
     del postgres_database_url
-    arguments = [sys.executable, "-W", "error", "-m", "tests.utils.worker_startup"]
+    arguments = [sys.executable, "-W", "error"]
+    # The user accepted this upstream deprecation; keep every other warning fatal in the child.
+    for module in (
+        "pydoll.browser.tab",
+        "pydoll.browser.chromium.base",
+        "pydoll.connection.managers.events_manager",
+    ):
+        arguments.extend(("-W", f"ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning:{module}"))
+    arguments.extend(("-m", "tests.utils.worker_startup"))
     if cleanup_failure:
         arguments.append("--cleanup-failure")
     process = await asyncio.create_subprocess_exec(
