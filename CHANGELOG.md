@@ -14,6 +14,7 @@
 
 ### Refactor
 
+- **handlers**: narrow broad Exception to TelegramAPIError in failure reply
 - narrow broad Exception suppression to TelegramAPIError
 - **access**: narrow broad Exception suppression to TelegramAPIError
 - **operations**: narrow broad Exception suppression to TelegramAPIError

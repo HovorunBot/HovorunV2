@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, ClassVar
 
 from aiogram import Bot, F
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Filter
 from aiogram.types import Message
 from aiogram.utils.magic_filter import MagicFilter
@@ -334,7 +335,7 @@ class RichMediaCommand(BaseCommand):
             return
         try:
             await message.answer(APPLICATION_FAILURE_NOTICE_TEXT)
-        except Exception:
+        except TelegramAPIError:
             logger.exception("Media admission failure feedback unavailable")
 
     async def _admit_and_enqueue(
