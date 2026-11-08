@@ -536,6 +536,11 @@ class ValkeyAdmissionStore(AdmissionPort):
             msg = "Admission pending state is unavailable."
             raise AdmissionUnavailableError(msg) from None
 
+    async def reap_abandoned(self, job_id: str, now: float) -> AdmissionTicket | None:
+        """Settle an abandoned running ticket whose process-kill window has elapsed."""
+        validate_claim(now, "reaper")
+        return _ticket(await self._apply(job_id, AdmissionTransition(AdmissionOperation.REAP, now=now)))
+
 
 class WorkerAdmissionClient:
     """Native worker transactions share pure state rules while retaining child-owned I/O."""
@@ -777,6 +782,12 @@ class WorkerAdmissionClient:
             ),
         )
         return change is not None and change.success
+
+    def reap_abandoned(self, job_id: str, now: float) -> AdmissionTicket | None:
+        """Settle an abandoned running ticket whose process-kill window has elapsed."""
+        self._require_owner()
+        validate_claim(now, "reaper")
+        return _ticket(self._apply(job_id, AdmissionTransition(AdmissionOperation.REAP, now=now)))
 
     def recovery_page(self, limit: int = RECOVERY_PAGE_LIMIT) -> tuple[AdmissionTicket, ...]:
         """Rotate subject/provider lanes and their tickets with bounded transactional retries."""

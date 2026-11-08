@@ -125,9 +125,14 @@ class WorkerLifecycleService:
         if ticket.state == TicketState.SETTLING:
             self.reconcile(ticket)
             return 1
+        now = self._clock.now()
+        if ticket.state == TicketState.RUNNING:
+            return self._recover_running(ticket, now)
+        return self._recover_pending(ticket, publisher, now)
+
+    def _recover_pending(self, ticket: AdmissionTicket, publisher: SyncQueuePublisherPort, now: float) -> int:
         if ticket.state not in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.WAITING}:
             return 0
-        now = self._clock.now()
         if now >= ticket.envelope.deadline:
             self._admission.claim_stage(ticket.envelope.job_id, ticket.stage, now, "expiry")
             expired = self._admission.get(ticket.envelope.job_id)
@@ -140,3 +145,9 @@ class WorkerLifecycleService:
             return 0
         # Publication may be repeated after an uncertain broker acknowledgement; claims fence duplicates.
         return int(publisher.publish_stage(ticket.envelope, ticket.stage))
+
+    def _recover_running(self, ticket: AdmissionTicket, now: float) -> int:
+        reaped = self._admission.reap_abandoned(ticket.envelope.job_id, now)
+        if reaped is not None and reaped.state == TicketState.SETTLING:
+            self.reconcile(reaped)
+        return int(reaped is not None)

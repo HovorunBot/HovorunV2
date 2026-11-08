@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from hovorunv2.application.jobs.admission import (
     RECOVERY_RETRY_SECONDS,
+    TASK_CLEANUP_GRACE_SECONDS,
+    TASK_EXECUTION_HARD_LIMIT_SECONDS,
     AdmissionConflictError,
     AdmissionTicket,
     AdmissionUnavailableError,
@@ -110,6 +112,7 @@ class AdmissionRecord(BaseModel):
     publication_registered: int = Field(default=0, ge=0, le=1, strict=True)
     retry_at: float = Field(default=0, ge=0)
     not_before: float = Field(ge=0)
+    claimed_at: float = Field(default=0, ge=0)
     subject_key: str
     ingress_key: str
     payload_key: str
@@ -194,6 +197,7 @@ class AdmissionRecord(BaseModel):
             self.budget_reserved,
             self.delayed_notice_requested,
             self.terminal_notice_requested,
+            self.claimed_at,
         )
 
     def encode(self) -> str:
@@ -339,6 +343,7 @@ class AdmissionOperation(StrEnum):
     DEFER = "defer"
     DELIVERY = "delivery"
     PREPARE = "prepare"
+    REAP = "reap"
 
 
 @dataclass(frozen=True, slots=True)
@@ -426,14 +431,46 @@ def _claim(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionCh
         return AdmissionChange(None)
     if request.expected_envelope is not None and record.job != request.expected_envelope:
         return AdmissionChange(None)
-    if request.now >= record.job.deadline:
+    if request.now > record.job.deadline - TASK_CLEANUP_GRACE_SECONDS:
         return _queued_terminal(record, JobOutcome.EXPIRED)
     if request.now < record.not_before or record.stage != request.stage:
         return AdmissionChange(None)
     running = record.model_copy(
-        update={"state": TicketState.RUNNING, "token": request.token, "attempt": record.attempt + 1}
+        update={
+            "state": TicketState.RUNNING,
+            "token": request.token,
+            "attempt": record.attempt + 1,
+            "claimed_at": request.now,
+        }
     )
     return AdmissionChange(running, write=True, handoff=False, success=True)
+
+
+def _reap_running(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if record.state != TicketState.RUNNING:
+        return AdmissionChange(None)
+    claim_basis = record.claimed_at if record.claimed_at > 0 else record.job.deadline
+    threshold = (
+        max(record.job.deadline, claim_basis + TASK_EXECUTION_HARD_LIMIT_SECONDS)
+        + TASK_CLEANUP_GRACE_SECONDS
+        + RECOVERY_RETRY_SECONDS
+    )
+    if request.now < threshold:
+        return AdmissionChange(None)
+    if record.budget_reserved:
+        intent = SettlementIntent(outcome=JobOutcome.EXPIRED, actual=(UnitAmount(UsageUnit.REQUESTS, 0),))
+        settling = record.model_copy(update={"state": TicketState.SETTLING, "settlement": intent})
+        return AdmissionChange(settling, write=True, handoff=False, success=True)
+    intent = SettlementIntent(outcome=JobOutcome.EXPIRED, actual=())
+    terminal = record.model_copy(
+        update={
+            "state": TicketState.TERMINAL,
+            "outcome": JobOutcome.EXPIRED,
+            "terminal_notice_requested": True,
+            "settlement": intent,
+        }
+    )
+    return AdmissionChange(terminal, write=True, release=True, handoff=False, success=True)
 
 
 def _queued_terminal(record: AdmissionRecord, outcome: JobOutcome) -> AdmissionChange:
@@ -646,17 +683,23 @@ def calculate_change(record: AdmissionRecord, request: AdmissionTransition) -> A
             return _execution_change(record, request)
 
 
+def _reserved(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if record.state not in {TicketState.RUNNING, TicketState.CANCELLING} or record.token != request.token:
+        return AdmissionChange(None)
+    return AdmissionChange(record.model_copy(update={"budget_reserved": True}), write=True, success=True)
+
+
 def _execution_change(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
     match request.operation:
         case AdmissionOperation.RESERVED:
-            if record.state not in {TicketState.RUNNING, TicketState.CANCELLING} or record.token != request.token:
-                return AdmissionChange(None)
-            return AdmissionChange(record.model_copy(update={"budget_reserved": True}), write=True, success=True)
+            return _reserved(record, request)
         case AdmissionOperation.DEFER:
             return _defer(record, request)
         case AdmissionOperation.DELIVERY:
             return _delivery(record, request)
         case AdmissionOperation.PREPARE:
             return _prepare(record, request)
+        case AdmissionOperation.REAP:
+            return _reap_running(record, request)
         case _:
             return _acknowledge(record, request)

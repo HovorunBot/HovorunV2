@@ -15,6 +15,8 @@ from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKin
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import (
     RECOVERY_RETRY_SECONDS,
+    TASK_CLEANUP_GRACE_SECONDS,
+    TASK_EXECUTION_HARD_LIMIT_SECONDS,
     AdmissionLimits,
     AdmissionTicket,
     AdmissionUnavailableError,
@@ -437,3 +439,99 @@ async def test_lifecycle_recovery_reclaims_stale_execution_budgets(
             clock.value = envelope.deadline + STALE_RESERVATION_GRACE_SECONDS + 1
             assert lifecycle.recover(publisher) == 1
             assert await cache.client.zscore(namespace.value + "budget:active", envelope.job_id) is None
+
+
+@pytest.mark.parametrize("reserved", [False, True])
+async def test_recovery_reclaims_abandoned_running_ticket_only_after_kill_window(
+    test_container: AsyncContainer, postgres_database_url: str, *, reserved: bool
+) -> None:
+    """Preserve live work, then settle killed execution once and release every admission dimension."""
+    settings = (await test_container.get(Settings)).model_copy(update={"database_url": postgres_database_url})
+    await (await test_container.get(UserStore)).ingest_user(390001, actor=ActorContext.cli())
+    clock = ManualClock(time.time())
+    safety = UsageSafetyCaps()
+    async with runtime_cache(test_container) as (cache, namespace):
+        store = ValkeyAdmissionStore(cache, namespace)
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        envelope = await _admit(store, payloads, clock, "killed-job", feature=FEATURE)
+        with (
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+        ):
+            lifecycle = WorkerLifecycleService(runtime.admission, runtime.budgets, database.ledger, clock)
+            claimed = runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), OWNER)
+            assert claimed is not None
+            if reserved:
+                _reserve(runtime, database, envelope, clock)
+            running = runtime.admission.get(envelope.job_id)
+            threshold = (
+                max(envelope.deadline, (claimed.claimed_at or envelope.deadline) + TASK_EXECUTION_HARD_LIMIT_SECONDS)
+                + TASK_CLEANUP_GRACE_SECONDS
+                + RECOVERY_RETRY_SECONDS
+            )
+            clock.value = threshold - 1
+            assert lifecycle.recover(publisher) == 0
+            assert runtime.admission.get(envelope.job_id) == running
+            keys = admission_keys(namespace.value, envelope)
+            assert await cache.client.hget(keys.totals, "count") == b"1"
+            clock.value += 1
+            assert lifecycle.recover(publisher) == 1
+            terminal = runtime.admission.get(envelope.job_id)
+            assert terminal is not None
+            assert terminal.state == TicketState.TERMINAL
+            assert terminal.outcome == JobOutcome.EXPIRED
+            assert terminal.token == OWNER
+            assert terminal.envelope == envelope
+            assert terminal.settlement == SettlementIntent(outcome=JobOutcome.EXPIRED, actual=ZERO if reserved else ())
+            assert await cache.client.hget(keys.totals, "count") == b"0"
+            assert await cache.client.hget(keys.totals, "bytes") == b"0"
+            assert not await cache.client.exists(keys.subject, keys.ingress, keys.payload)
+            assert not await cache.client.zscore(namespace.value + "budget:active", envelope.job_id)
+            if reserved:
+                assert runtime.budgets.finish(envelope.job_id, ZERO, clock.now()).state == ReservationState.RELEASED
+            assert lifecycle.recover(publisher) == 0
+            assert runtime.admission.claim_notice(envelope.job_id, NoticeKind.TERMINAL)
+            assert not runtime.admission.claim_notice(envelope.job_id, NoticeKind.TERMINAL)
+            assert not broker_envelopes(settings, namespace.value)
+            assert runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), "late-worker") is None
+            following = await _admit(store, payloads, clock, "following-job", feature=FEATURE)
+            new_ticket = runtime.admission.claim_stage(following.job_id, JobStage.MEDIA, clock.now(), "new-worker")
+            assert new_ticket is not None
+
+
+async def test_recovery_preserves_running_ticket_during_broker_delay_execution(
+    test_container: AsyncContainer, postgres_database_url: str
+) -> None:
+    """A claim delayed in queue is not reaped before its execution hard limit elapses."""
+    settings = (await test_container.get(Settings)).model_copy(update={"database_url": postgres_database_url})
+    await (await test_container.get(UserStore)).ingest_user(390002, actor=ActorContext.cli())
+    clock = ManualClock(1000.0)
+    safety = UsageSafetyCaps()
+    async with runtime_cache(test_container) as (cache, namespace):
+        store = ValkeyAdmissionStore(cache, namespace)
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        envelope = await _admit(store, payloads, clock, "delayed-claim-job", feature=FEATURE)
+        with (
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+        ):
+            lifecycle = WorkerLifecycleService(runtime.admission, runtime.budgets, database.ledger, clock)
+            clock.value = envelope.deadline - 20
+            claimed = runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), OWNER)
+            assert claimed is not None
+
+            clock.value = envelope.deadline + 15
+            running = runtime.admission.get(envelope.job_id)
+            assert running is not None
+            assert running.state == TicketState.RUNNING
+            assert lifecycle.recover(publisher) == 0
+
+            kill_window = TASK_EXECUTION_HARD_LIMIT_SECONDS + TASK_CLEANUP_GRACE_SECONDS + RECOVERY_RETRY_SECONDS
+            clock.value = claimed.claimed_at + kill_window
+            assert lifecycle.recover(publisher) == 1
+            terminal = runtime.admission.get(envelope.job_id)
+            assert terminal is not None
+            assert terminal.state == TicketState.TERMINAL
+            assert terminal.outcome == JobOutcome.EXPIRED

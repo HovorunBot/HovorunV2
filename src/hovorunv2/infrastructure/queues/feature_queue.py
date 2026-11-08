@@ -15,6 +15,7 @@ from kombu.exceptions import OperationalError
 from redis.exceptions import RedisError
 
 from hovorunv2.application.jobs.admission import (
+    TASK_CLEANUP_GRACE_SECONDS,
     AdmissionConflictError,
     AdmissionUnavailableError,
     JobStage,
@@ -39,7 +40,6 @@ from hovorunv2.infrastructure.runtime.cache import CacheService
 
 BROKER_VISIBILITY_SECONDS = 2 * RUNTIME_RETENTION_SECONDS
 BROKER_SOCKET_SECONDS = 2
-TASK_CLEANUP_GRACE_SECONDS = 10
 
 
 class FeatureTaskTimeLimits(TypedDict):

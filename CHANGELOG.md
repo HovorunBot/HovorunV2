@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **jobs**: reclaim running tickets abandoned by killed workers
 - **core**: remediate implementation edge cases and security boundaries
 - **media**: enable yt-dlp ejs/deno runtime and edit fallback message in-place
 - **worker**: close opened resources when child startup fails

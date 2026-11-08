@@ -17,6 +17,8 @@ from hovorunv2.application.usage.usage_ledger import UsageEvent
 DEFAULT_INGRESS_PENDING = 10
 RECOVERY_PAGE_LIMIT = 100
 RECOVERY_RETRY_SECONDS = 5
+TASK_CLEANUP_GRACE_SECONDS = 10
+TASK_EXECUTION_HARD_LIMIT_SECONDS = 180
 
 
 class AdmissionUnavailableError(ValueError):
@@ -118,6 +120,7 @@ class AdmissionTicket:
     budget_reserved: bool = False
     delayed_notice_requested: bool = False
     terminal_notice_requested: bool = False
+    claimed_at: float = 0
 
 
 class AdmissionState(StrEnum):
@@ -205,6 +208,10 @@ class AdmissionPort(Protocol):
         """Return a bounded non-terminal page for one normalized provider family."""
         ...
 
+    async def reap_abandoned(self, job_id: str, now: float) -> AdmissionTicket | None:
+        """Settle an abandoned running ticket whose process-kill window has elapsed."""
+        ...
+
 
 class SyncAdmissionPort(Protocol):
     """Synchronous worker admission lifecycle and stage claim contract."""
@@ -261,4 +268,8 @@ class SyncAdmissionPort(Protocol):
 
     def cancel(self, job_id: str) -> bool:
         """Retain running ownership until execution effects are verified terminal."""
+        ...
+
+    def reap_abandoned(self, job_id: str, now: float) -> AdmissionTicket | None:
+        """Settle an abandoned running ticket whose process-kill window has elapsed."""
         ...

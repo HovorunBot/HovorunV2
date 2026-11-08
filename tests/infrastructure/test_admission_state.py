@@ -5,7 +5,15 @@ from dataclasses import replace
 import pytest
 from pydantic import ValidationError
 
-from hovorunv2.application.jobs.admission import AdmissionUnavailableError, JobStage, NoticeKind, TicketState
+from hovorunv2.application.jobs.admission import (
+    RECOVERY_RETRY_SECONDS,
+    TASK_CLEANUP_GRACE_SECONDS,
+    TASK_EXECUTION_HARD_LIMIT_SECONDS,
+    AdmissionUnavailableError,
+    JobStage,
+    NoticeKind,
+    TicketState,
+)
 from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome
 from hovorunv2.infrastructure.runtime.admission_state import (
     AdmissionCapacity,
@@ -230,3 +238,65 @@ def test_publication_replay_keeps_schedule_and_stale_acknowledgement_is_a_noop()
     stale = calculate_change(record, AdmissionTransition(AdmissionOperation.PUBLISHED, attempt=1))
     assert stale.record == record
     assert not stale.write
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("reserved", [False, True])
+def test_claim_expires_work_without_a_cleanup_window(*, reserved: bool) -> None:
+    """A five-second allowance cannot start execution and retains any budget until settlement."""
+    record = RECORD.model_copy(update={"budget_reserved": reserved, "attempt": int(reserved)})
+    result = calculate_change(
+        record, AdmissionTransition(AdmissionOperation.CLAIM, now=JOB.deadline - 5, token=OTHER_OWNER)
+    )
+    assert result.record is not None
+    assert result.record.state == (TicketState.SETTLING if reserved else TicketState.TERMINAL)
+    assert result.release is not reserved
+    if reserved:
+        assert result.record.settlement is not None
+        assert result.record.settlement.outcome == JobOutcome.EXPIRED
+    else:
+        assert result.record.outcome == JobOutcome.EXPIRED
+
+
+@pytest.mark.unit
+def test_claim_allows_exactly_the_cleanup_window() -> None:
+    """The cleanup-grace boundary itself remains eligible for an execution claim."""
+    result = calculate_change(
+        RECORD,
+        AdmissionTransition(AdmissionOperation.CLAIM, now=JOB.deadline - TASK_CLEANUP_GRACE_SECONDS, token=OTHER_OWNER),
+    )
+    assert result.record is not None
+    assert result.record.state == TicketState.RUNNING
+    assert result.record.token == OTHER_OWNER
+    assert result.record.claimed_at == JOB.deadline - TASK_CLEANUP_GRACE_SECONDS
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("reserved", [False, True])
+def test_reap_running_work_only_after_conservative_kill_window(*, reserved: bool) -> None:
+    """Running work is reaped only after Celery hard limit + grace + recovery retry."""
+    claim_time = JOB.deadline - 20
+    record = RECORD.model_copy(
+        update={
+            "state": TicketState.RUNNING,
+            "token": "owner",
+            "attempt": 1,
+            "claimed_at": claim_time,
+            "budget_reserved": reserved,
+        }
+    )
+    threshold = claim_time + TASK_EXECUTION_HARD_LIMIT_SECONDS + TASK_CLEANUP_GRACE_SECONDS + RECOVERY_RETRY_SECONDS
+    before = calculate_change(record, AdmissionTransition(AdmissionOperation.REAP, now=threshold - 0.1))
+    assert before.record is None
+    assert not before.write
+
+    after = calculate_change(record, AdmissionTransition(AdmissionOperation.REAP, now=threshold))
+    assert after.record is not None
+    assert after.record.state == (TicketState.SETTLING if reserved else TicketState.TERMINAL)
+    if reserved:
+        assert after.record.settlement is not None
+        assert after.record.settlement.outcome == JobOutcome.EXPIRED
+        assert not after.release
+    else:
+        assert after.record.outcome == JobOutcome.EXPIRED
+        assert after.release
