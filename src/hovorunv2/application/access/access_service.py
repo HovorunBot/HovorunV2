@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from aiogram.exceptions import TelegramAPIError
+
 from hovorunv2.application.access.ban_ports import BanStore
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.access.permissions import AccessDecision, DecisionReason, PermissionRequest
@@ -119,7 +121,7 @@ class AccessService:
         """
         try:
             member = await bot.get_chat_member(chat_id, user_id)
-        except Exception:
+        except TelegramAPIError:
             logger.exception("Failed to check chat member status for user %s in chat %s", user_id, chat_id)
             return False
         return member.status in ("administrator", "creator")
