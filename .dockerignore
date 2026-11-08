@@ -36,7 +36,6 @@ tests/
 scripts/
 Makefile
 GEMINI.md
-LICENSE
 example.env
 ai-schemes/
 .agents/

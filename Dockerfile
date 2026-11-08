@@ -15,6 +15,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Run as non-root user
 RUN groupadd -g 10001 appuser && useradd -u 10001 -g appuser -d /app -s /sbin/nologin appuser
 
+COPY --chown=appuser:appuser LICENSE ./LICENSE
+
 # -----------------------------------------------------------------------------
 # Builder base: toolchain, uv, and cached source/lockfiles
 # -----------------------------------------------------------------------------
