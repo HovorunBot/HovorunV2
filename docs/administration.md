@@ -63,7 +63,9 @@ Notifications are attempted after the database commit. Delivery failures do not 
 
 Groups need approval and fresh, successful administrator verification. Missing, failed, future or expired evidence pauses processing without revoking approval. Group bans and full bans on current Telegram administrators suspend group processing for everyone. A ban on an ordinary member does not suspend unrelated members. Private bot administration remains available to authorized bot administrators, subject to any personal restriction applied through CLI.
 
-Membership evidence expires after five minutes. The operations worker refreshes up to ten due groups per minute, with up to fifty relevant member checks per group and a thirty-second cycle deadline. Telegram requests have ten-second deadlines. Unprocessed evidence remains expired; runtime full-ban checks cover all retained administrator candidates. Ordinary messages do not trigger administrator-list API calls.
+Membership evidence expires after five minutes. The operations worker refreshes up to ten due groups per minute, with up to fifty relevant member checks per group and a thirty-second cycle deadline. Telegram requests have ten-second deadlines. Unprocessed evidence remains expired; runtime full-ban checks cover all retained administrator candidates. Unmatched ordinary messages do not trigger administrator-list API calls.
+
+Matched protected group actions, including `/settings`, settings callbacks and automatic media links, refresh missing or expired evidence before access checks. Successful verification lets the triggering action proceed under the normal permission rules. The action refresh has a fifteen-second deadline and a thirty-second retry cooldown after unsuccessful verification. Verification failure keeps access denied and preserves approval; approving the group again is unnecessary.
 
 ## Beta entitlements
 
