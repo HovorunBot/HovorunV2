@@ -59,47 +59,45 @@ class ProviderConfig:
 
 
 INSTAGRAM_JS_EXTRACTOR: str = """
-() => {
-    const getMeta = (prop) => {
-        const el = document.querySelector(`meta[property="${prop}"], meta[name="${prop}"]`);
-        return el ? el.content : null;
-    };
+const getMeta = (prop) => {
+    const el = document.querySelector(`meta[property="${prop}"], meta[name="${prop}"]`);
+    return el ? el.content : null;
+};
 
-    let data = {
-        video: getMeta('og:video') || getMeta('og:video:secure_url'),
-        image: getMeta('og:image'),
-        title: getMeta('og:title') || document.title,
-        description: getMeta('og:description') || "",
-        likes: null,
-        views: null,
-        comments: null
-    };
+let data = {
+    video: getMeta('og:video') || getMeta('og:video:secure_url'),
+    image: getMeta('og:image'),
+    title: getMeta('og:title') || document.title,
+    description: getMeta('og:description') || "",
+    likes: null,
+    views: null,
+    comments: null
+};
 
-    const findData = (obj) => {
-        if (obj && obj.items && obj.items[0]) return obj.items[0];
-        if (obj && obj.graphql && obj.graphql.shortcode_media) return obj.graphql.shortcode_media;
-        return null;
-    };
+const findData = (obj) => {
+    if (obj && obj.items && obj.items[0]) return obj.items[0];
+    if (obj && obj.graphql && obj.graphql.shortcode_media) return obj.graphql.shortcode_media;
+    return null;
+};
 
-    const post = findData(window.__additionalDataLoaded && window.__additionalDataLoaded.feed) ||
-                 findData(window._sharedData && window._sharedData.entry_data &&
-                          window._sharedData.entry_data.PostPage &&
-                          window._sharedData.entry_data.PostPage[0]);
+const post = findData(window.__additionalDataLoaded && window.__additionalDataLoaded.feed) ||
+             findData(window._sharedData && window._sharedData.entry_data &&
+                      window._sharedData.entry_data.PostPage &&
+                      window._sharedData.entry_data.PostPage[0]);
 
-    if (post) {
-        data.title = data.title || (post.caption ? (post.caption.text || post.caption) : "");
-        data.video = data.video || (post.video_url ||
-                    (post.video_versions ? post.video_versions[0].url : null));
-        data.image = data.image || (post.display_url ||
-                    (post.image_versions2 ? post.image_versions2.candidates[0].url : null));
-        data.likes = data.likes || (post.like_count ||
-                    (post.edge_media_preview_like ? post.edge_media_preview_like.count : null));
-        data.comments = data.comments || (post.comment_count ||
-                    (post.edge_media_to_comment ? post.edge_media_to_comment.count : null));
-        data.views = data.views || (post.video_view_count || post.view_count || null);
-    }
-    return data;
+if (post) {
+    data.title = data.title || (post.caption ? (post.caption.text || post.caption) : "");
+    data.video = data.video || (post.video_url ||
+                (post.video_versions ? post.video_versions[0].url : null));
+    data.image = data.image || (post.display_url ||
+                (post.image_versions2 ? post.image_versions2.candidates[0].url : null));
+    data.likes = data.likes || (post.like_count ||
+                (post.edge_media_preview_like ? post.edge_media_preview_like.count : null));
+    data.comments = data.comments || (post.comment_count ||
+                (post.edge_media_to_comment ? post.edge_media_to_comment.count : null));
+    data.views = data.views || (post.video_view_count || post.view_count || null);
 }
+return data;
 """
 
 TWITTER_CONFIG = ProviderConfig(

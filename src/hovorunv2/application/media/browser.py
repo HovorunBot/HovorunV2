@@ -42,7 +42,16 @@ class BrowserTab(Protocol):
         ...
 
     def ele(self, locator: str, *, timeout: float) -> BrowserElement | None:
-        """Select an optional element within a bounded timeout."""
+        """Select an optional element using CSS or the explicit text locator convention.
+
+        Args:
+            locator: Standard CSS selector, including compound selectors, or
+                ``text=<substring>`` for a substring match on element text.
+            timeout: Maximum lookup duration in seconds, bounded by the operation deadline.
+
+        Returns:
+            The matching element, or None when no element matches within the timeout.
+        """
         ...
 
     def cookies(self, *, all_domains: bool = False, all_info: bool = False) -> list[dict[str, object]]:
@@ -50,7 +59,15 @@ class BrowserTab(Protocol):
         ...
 
     def run_js(self, script: str) -> object:
-        """Return untrusted provider metadata from JavaScript."""
+        """Evaluate JavaScript expressions or statements and return the unwrapped value.
+
+        Args:
+            script: An expression, immediately invoked function, or statements with
+                top-level return. Bare function declarations are not implicitly invoked.
+
+        Returns:
+            Untrusted provider metadata as a Python value.
+        """
         ...
 
     def close(self) -> None:

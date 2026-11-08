@@ -14,6 +14,7 @@
 
 ### Refactor
 
+- **media**: decouple browser tab port and fix extractor scripts
 - **handlers**: narrow broad Exception to TelegramAPIError in failure reply
 - narrow broad Exception suppression to TelegramAPIError
 - **access**: narrow broad Exception suppression to TelegramAPIError
