@@ -1,17 +1,22 @@
 """Pure shared Telegram caption and quote rendering, independent of transports."""
 
 import html
+import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from hovorunv2.application.media.payloads import RichMediaPayload
 
 CAPTION_LIMIT = 1024
+TELEGRAM_MESSAGE_LIMIT = 4096
 HEADER_TEMPLATE = "🗣 <b>{tg_user_name}</b> shared a post by <b>{author_name}</b> ({author_link})\n\n"
 QUOTE_TEMPLATE = "<blockquote>🔄 <b>{author_name}</b> ({author_link})\n{content}</blockquote>\n"
 METRICS_TEMPLATE = "{metrics}\n"
 FOOTER_TEMPLATE = "🔗 {link}"
 MEDIA_UNAVAILABLE_TEXT = "⚠️ Media could not be extracted. View the original post using the link below."
+
+_TAG_TOKEN_RE = re.compile(r"^</?([a-zA-Z0-9]+)(?:\s+[^>]*)?>$")
+_TOKEN_RE = re.compile(r"<[^>]+>|&[a-zA-Z0-9#]+;|\n\n|\n|\s+|[^\s<&]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +25,147 @@ class CaptionPlan:
 
     caption: str
     separate_text: str | None = None
+
+
+def _tokenize_html(text: str) -> list[str]:
+    tokens: list[str] = []
+    pos = 0
+    length = len(text)
+    while pos < length:
+        match = _TOKEN_RE.match(text, pos)
+        if match:
+            tokens.append(match.group(0))
+            pos = match.end()
+        else:
+            tokens.append(text[pos])
+            pos += 1
+    return tokens
+
+
+def _tag_name_and_type(token: str) -> tuple[bool, str, bool]:
+    if not (token.startswith("<") and token.endswith(">")):
+        return False, "", False
+    if token.endswith("/>"):
+        return False, "", False
+    match = _TAG_TOKEN_RE.match(token)
+    if not match:
+        return False, "", False
+    return True, match.group(1).lower(), token.startswith("</")
+
+
+def _update_open_tags(open_tags: list[tuple[str, str]], token: str) -> None:
+    is_tag, name, is_closing = _tag_name_and_type(token)
+    if not is_tag:
+        return
+    if is_closing:
+        for idx in range(len(open_tags) - 1, -1, -1):
+            if open_tags[idx][0] == name:
+                del open_tags[idx:]
+                break
+    else:
+        open_tags.append((name, token))
+
+
+def _tag_boundary_strings(open_tags: list[tuple[str, str]]) -> tuple[str, str]:
+    prefix = "".join(token for _, token in open_tags)
+    suffix = "".join(f"</{name}>" for name, _ in reversed(open_tags))
+    return prefix, suffix
+
+
+def _find_best_break_point(tokens: list[str]) -> int | None:
+    for idx in range(len(tokens) - 1, 0, -1):
+        if "\n\n" in tokens[idx]:
+            return idx
+    for idx in range(len(tokens) - 1, 0, -1):
+        if "\n" in tokens[idx]:
+            return idx
+    for idx in range(len(tokens) - 1, 0, -1):
+        if tokens[idx].isspace():
+            return idx
+    return None
+
+
+def _build_next_chunk(tokens: list[str], open_tags: list[tuple[str, str]], limit: int) -> tuple[str, int]:
+    prefix, _ = _tag_boundary_strings(open_tags)
+    collected: list[str] = []
+    tentative_tags = list(open_tags)
+    current_len = len(prefix)
+
+    for idx, token in enumerate(tokens):
+        next_tentative = list(tentative_tags)
+        _update_open_tags(next_tentative, token)
+        _, next_suffix = _tag_boundary_strings(next_tentative)
+        candidate_len = current_len + len(token) + len(next_suffix)
+
+        if candidate_len <= limit:
+            collected.append(token)
+            tentative_tags = next_tentative
+            current_len += len(token)
+            continue
+
+        if not collected:
+            avail = max(1, limit - len(prefix) - len(next_suffix))
+            sliced = token[:avail]
+            tokens[idx] = token[avail:]
+            collected.append(sliced)
+            _update_open_tags(tentative_tags, sliced)
+            _, suffix = _tag_boundary_strings(tentative_tags)
+            del open_tags[:]
+            open_tags.extend(tentative_tags)
+            return prefix + "".join(collected) + suffix, idx
+
+        break_idx = _find_best_break_point(collected)
+        if break_idx is not None and break_idx > 0:
+            final_collected = collected[:break_idx]
+            recomputed_tags = list(open_tags)
+            for t in final_collected:
+                _update_open_tags(recomputed_tags, t)
+            _, suffix = _tag_boundary_strings(recomputed_tags)
+            del open_tags[:]
+            open_tags.extend(recomputed_tags)
+            return prefix + "".join(final_collected) + suffix, break_idx + 1
+
+        _, suffix = _tag_boundary_strings(tentative_tags)
+        del open_tags[:]
+        open_tags.extend(tentative_tags)
+        return prefix + "".join(collected) + suffix, idx
+
+    _, suffix = _tag_boundary_strings(tentative_tags)
+    del open_tags[:]
+    open_tags.extend(tentative_tags)
+    return prefix + "".join(collected) + suffix, len(tokens)
+
+
+def split_html_message(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> tuple[str, ...]:
+    """Split an HTML message into well-formed chunks respecting Telegram limits.
+
+    Args:
+        text: HTML-formatted text to split.
+        limit: Maximum character length per chunk.
+
+    Returns:
+        Tuple of balanced HTML chunks, each under the limit.
+    """
+    if not text or len(text) <= limit:
+        return (text,)
+    tokens = _tokenize_html(text)
+    chunks: list[str] = []
+    open_tags: list[tuple[str, str]] = []
+
+    while tokens:
+        if chunks and tokens and tokens[0].isspace():
+            tokens.pop(0)
+            if not tokens:
+                break
+        chunk, consumed = _build_next_chunk(tokens, open_tags, limit)
+        if chunk:
+            chunks.append(chunk)
+        if consumed > 0:
+            del tokens[:consumed]
+        elif not tokens:
+            break
+
+    return tuple(chunks) if chunks else (text,)
 
 
 def _safe_link(url: str, label: str) -> str:
@@ -102,4 +248,7 @@ def plan_caption(
         return CaptionPlan(text)
     footer = _footer(payload, platform_name)
     caption = f"{_header(payload, sender_label)}{footer}".strip()
-    return CaptionPlan(footer if len(caption) > CAPTION_LIMIT else caption, text)
+    fallback = footer if len(caption) > CAPTION_LIMIT else caption
+    if len(fallback) > CAPTION_LIMIT:
+        fallback = fallback[:CAPTION_LIMIT]
+    return CaptionPlan(fallback, text)

@@ -198,3 +198,30 @@ def test_native_empty_download_batch_edits_placeholder_without_upload() -> None:
         assert delivery.deliver(42, 1, payload, "Synthetic", None) == (10,)
         assert _methods(server) == ["sendPhoto", "sendMessage", "missing", "editMessageText"]
         assert "Failed to download media" in parse_qs(server.requests[-1].body.decode())["text"][0]
+
+
+def test_native_oversized_post_text_is_split_into_multiple_bounded_messages() -> None:
+    """Post text longer than 4096 characters is sent across multiple messages within Telegram bounds."""
+    long_text = ("<b>Paragraph</b> " + "word " * 600 + "\n\n") * 3
+    assert len(long_text) > 8000
+    payload = RichMediaPayload(
+        "Author",
+        "handle",
+        "https://synthetic.invalid/author",
+        long_text,
+        original_url="https://synthetic.invalid/post",
+        media_items=[MediaItem("https://synthetic.invalid/photo.jpg", is_video=False)],
+    )
+    routes = {
+        API_PREFIX + "sendMessage": [_ack(_message(101)), _ack(_message(102)), _ack(_message(103))],
+        API_PREFIX + "sendPhoto": _ack(_message(104)),
+    }
+    with _native_delivery(routes) as (delivery, server):
+        receipts = delivery.deliver(42, 1, payload, "Synthetic", "Sender")
+        assert len(receipts) >= 3
+        # Ensure all sendMessage requests sent text <= 4096 chars
+        send_message_requests = [req for req in server.requests if req.path.endswith("/sendMessage")]
+        assert len(send_message_requests) >= 2
+        for req in send_message_requests:
+            sent_text = parse_qs(req.body.decode())["text"][0]
+            assert len(sent_text) <= 4096

@@ -13,7 +13,7 @@ from hovorunv2.application.jobs.http_ports import (
 )
 from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
-from hovorunv2.application.media.rendering import build_caption, plan_caption
+from hovorunv2.application.media.rendering import build_caption, plan_caption, split_html_message
 from hovorunv2.interface.telegram.transport.sync_api import (
     NativeTelegramAPI,
     TelegramMethod,
@@ -169,9 +169,17 @@ class NativeTelegramDelivery:
             raise ValueError(msg)
         total_text = build_caption(payload, sender_label, platform_name)
         if not payload.media_items:
-            return self._text(chat_id, total_text)
+            receipts: list[int] = []
+            for chunk in split_html_message(total_text):
+                receipts.extend(self._text(chat_id, chunk))
+            return tuple(receipts)
         plan = plan_caption(payload, sender_label, platform_name, total_text)
-        preceding = self._text(chat_id, plan.separate_text) if plan.separate_text is not None else ()
+        preceding = ()
+        if plan.separate_text is not None:
+            preceding_receipts: list[int] = []
+            for chunk in split_html_message(plan.separate_text):
+                preceding_receipts.extend(self._text(chat_id, chunk))
+            preceding = tuple(preceding_receipts)
         try:
             return preceding + self._deliver_media(chat_id, message_id, payload, plan.caption)
         except TelegramDeliveryUncertainError as error:

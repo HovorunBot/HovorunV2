@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **media**: split long post text into valid Telegram messages
 - **media**: escape link attributes in shared captions
 - **access**: restore group access after redeployment
 - **deps**: upgrade missing sqlalchemy dependency
