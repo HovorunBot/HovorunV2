@@ -7,6 +7,7 @@ from typing import ClassVar
 
 from aiogram import Bot, Router
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message, User
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -173,14 +174,20 @@ class AccessCommand(BaseCommand):
                 query.from_user.id, target, callback_data.request_id, action, message.chat.type
             )
             if result.outcome == ActivationOutcome.APPROVED:
-                await bot.send_message(callback_data.chat_id, RESULT_TEXT[result.outcome])
+                try:
+                    await bot.send_message(callback_data.chat_id, RESULT_TEXT[result.outcome])
+                except TelegramAPIError:
+                    logger.warning("Failed to deliver approval confirmation to chat %d", callback_data.chat_id)
         if result.outcome in SUCCESS_OUTCOMES:
-            await bot.edit_message_text(
-                text=RESULT_TEXT[result.outcome],
-                chat_id=message.chat.id,
-                message_id=message.message_id,
-                reply_markup=None,
-            )
+            try:
+                await bot.edit_message_text(
+                    text=RESULT_TEXT[result.outcome],
+                    chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    reply_markup=None,
+                )
+            except TelegramAPIError:
+                logger.warning("Failed to edit access request prompt in chat %d", message.chat.id)
         await query.answer(RESULT_TEXT[result.outcome], show_alert=result.outcome not in SUCCESS_OUTCOMES)
 
     def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:

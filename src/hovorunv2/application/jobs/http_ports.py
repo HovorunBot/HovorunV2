@@ -35,7 +35,19 @@ class HTTPTransportError(OSError):
         super().__init__(code.value)
 
 
-class SyncHTTPPort(Protocol):
+class DestinationPolicyPort(Protocol):
+    """External destination validation policy for worker network requests."""
+
+    def validate_url(self, url: str) -> None:
+        """Validate destination URL against public host policy.
+
+        Raises:
+            HTTPTransportError: If the target has an unsupported, malformed, or non-public origin.
+        """
+        ...
+
+
+class SyncHTTPPort(DestinationPolicyPort, Protocol):
     """Bounded native I/O with required reads and explicit transport failures."""
 
     def read_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:

@@ -117,6 +117,98 @@ async def test_settings_modules_toggle(test_container: AsyncContainer) -> None:
         await bot.session.close()
 
 
+async def test_settings_not_modified_and_not_found(test_container: AsyncContainer) -> None:
+    """Settings tolerate not-modified edits and answer cleanly when message is missing or expired."""
+    command = await test_container.get(SettingsCommand)
+    chats = await test_container.get(ChatStore)
+    await chats.get_or_create_chat(-100777)
+    await verify_group_admins(test_container, -100777)
+    status = await test_container.get(ChatStatusService)
+    await status.approve(-100777)
+    await provision_role(test_container, 456)
+    message = Message(
+        message_id=789,
+        date=datetime.now(UTC),
+        chat=Chat(id=-100777, type="supergroup"),
+    )
+    bot = Bot("777:synthetic-token")
+    query = CallbackQuery(
+        id="synthetic",
+        from_user=User(id=456, first_name="Synthetic", is_bot=False),
+        chat_instance="synthetic",
+        message=message.as_(bot),
+    ).as_(bot)
+    callback = await bind_settings_callback(
+        test_container,
+        message,
+        456,
+        SettingsCallback(menu=SettingsMenu.MAIN),
+    )
+    try:
+        # Test 1: message is not modified returns ok
+        with RecordedResponses() as responses:
+            responses.post(
+                "https://api.telegram.org/bot777:synthetic-token/editMessageText",
+                payload={
+                    "ok": False,
+                    "error_code": 400,
+                    "description": (
+                        "Bad Request: message is not modified: specified new message content "
+                        "and reply markup are exactly the same as a current content and reply markup"
+                    ),
+                },
+            )
+            await command.handle_callback(query, callback)
+
+        # Test 2: message to edit not found answers expired alert
+        callback2 = await bind_settings_callback(
+            test_container,
+            message,
+            456,
+            SettingsCallback(menu=SettingsMenu.MAIN),
+        )
+        with RecordedResponses() as responses:
+            responses.post(
+                "https://api.telegram.org/bot777:synthetic-token/editMessageText",
+                payload={"ok": False, "error_code": 400, "description": "Bad Request: message to edit not found"},
+            )
+            responses.post(
+                "https://api.telegram.org/bot777:synthetic-token/answerCallbackQuery",
+                payload={"ok": True, "result": True},
+            )
+            await command.handle_callback(query, callback2)
+            answers = [
+                call
+                for (method, url), calls in responses.requests.items()
+                if "answerCallbackQuery" in str(url)
+                for call in calls
+            ]
+            assert len(answers) == 1
+
+        # Test 3: None/inaccessible message answers expired alert
+        inaccessible_query = CallbackQuery(
+            id="synthetic-inaccessible",
+            from_user=User(id=456, first_name="Synthetic", is_bot=False),
+            chat_instance="synthetic",
+            message=None,
+        ).as_(bot)
+        with RecordedResponses() as responses:
+            responses.post(
+                "https://api.telegram.org/bot777:synthetic-token/answerCallbackQuery",
+                payload={"ok": True, "result": True},
+            )
+            await command.handle_callback(inaccessible_query, callback)
+            answers = [
+                call
+                for (method, url), calls in responses.requests.items()
+                if "answerCallbackQuery" in str(url)
+                for call in calls
+            ]
+            assert len(answers) == 1
+    finally:
+        await bot.session.close()
+
+
 async def test_settings_trigger_mention_filtering(test_container: AsyncContainer, recording_bot: Bot) -> None:
     """Verify settings trigger filter matches exact name and own mention, rejects other bots."""
     settings_cmd = await test_container.get(SettingsCommand)

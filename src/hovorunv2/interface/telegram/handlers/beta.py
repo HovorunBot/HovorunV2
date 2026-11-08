@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from aiogram import Bot, Router
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
@@ -76,6 +77,7 @@ class BetaPromptCommand(BaseCommand):
         """Apply the announced subset decision with current authority revalidation."""
         message = query.message
         if not isinstance(message, Message):
+            await query.answer(BETA_UNAVAILABLE, show_alert=True)
             return
         if callback_data.action == BetaAction.FEATURES:
             await query.answer(BETA_FEATURES_HINT, show_alert=True)
@@ -113,7 +115,7 @@ class BetaPromptCommand(BaseCommand):
             decision.value,
         )
         await query.answer("Activated" if decision == BetaDecision.ACTIVE else "Declined")
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(TelegramAPIError):
             await message.edit_reply_markup(reply_markup=None)
 
     async def _target(self, message: Message, actor_id: int) -> PermissionTarget | None:

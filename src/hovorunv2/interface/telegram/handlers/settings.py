@@ -7,6 +7,7 @@ from functools import partial
 from typing import ClassVar, Final
 
 from aiogram import Bot, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -319,6 +320,9 @@ class SettingsCommand(BaseCommand):
             text: Rendered settings text.
             builder: Keyboard builder holding the actions.
             context: Current settings session context.
+
+        Raises:
+            TelegramAPIError: If the message edit fails for an unexpected Telegram error.
         """
         callbacks = [
             SettingsCallback.unpack(button.callback_data)
@@ -329,7 +333,8 @@ class SettingsCommand(BaseCommand):
         try:
             token = await self._sessions.issue(context, [callback.pack() for callback in callbacks])
         except ValueError:
-            await message.edit_text("Settings expired. Reopen /settings.", reply_markup=None)
+            with contextlib.suppress(TelegramAPIError):
+                await message.edit_text("Settings expired. Reopen /settings.", reply_markup=None)
             return
         markup = builder.as_markup()
         for row in markup.inline_keyboard:
@@ -338,12 +343,23 @@ class SettingsCommand(BaseCommand):
                     callback = SettingsCallback.unpack(button.callback_data)
                     callback.token = token
                     button.callback_data = callback.pack()
-        await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+        try:
+            await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+        except TelegramAPIError as error:
+            if "message is not modified" in str(error):
+                pass
+            elif "message to edit not found" in str(error):
+                await self._sessions.consume(token)
+                raise
+            else:
+                await self._sessions.consume(token)
+                raise
         if context.token is not None:
             await self._sessions.consume(context.token)
-        await self._cleanup_service.reset_ttl(
-            message.chat.id, message.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
-        )
+        with contextlib.suppress(TelegramAPIError):
+            await self._cleanup_service.reset_ttl(
+                message.chat.id, message.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
+            )
 
     async def _show_groups_menu(
         self, message: Message, actor_id: int, context: SettingsContext, after_id: int = 0
@@ -843,6 +859,7 @@ class SettingsCommand(BaseCommand):
         """
         msg = query.message
         if not msg or not isinstance(msg, Message):
+            await query.answer("Settings expired. Reopen /settings.", show_alert=True)
             return
 
         if query.from_user.is_bot or query.bot is None:
@@ -868,7 +885,17 @@ class SettingsCommand(BaseCommand):
             msg.chat.id,
             callback_data.menu.value,
         )
-        await self._dispatch_callback(query, callback_data, context)
+        try:
+            await self._dispatch_callback(query, callback_data, context)
+        except TelegramAPIError as error:
+            if "message to edit not found" in str(error):
+                with contextlib.suppress(TelegramAPIError):
+                    await query.answer("Settings expired. Reopen /settings.", show_alert=True)
+                return
+            logger.warning("Settings callback Telegram operation failed: %s", error)
+            with contextlib.suppress(TelegramAPIError):
+                await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
         if callback_data.menu == SettingsMenu.CLOSE:
             await self._sessions.consume(callback_data.token)
 

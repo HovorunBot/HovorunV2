@@ -77,7 +77,7 @@ def _native_delivery(
         ) as http,
     ):
         api = NativeTelegramAPI(http, SYNTHETIC_BOT_IDENTITY, api_base=server.url(""))
-        yield NativeTelegramDelivery(api, NativeMediaDownloader(http)), server
+        yield NativeTelegramDelivery(api, NativeMediaDownloader(http, destination_policy=http)), server
 
 
 def test_native_later_malformed_ack_retains_caption_and_previous_album_receipts() -> None:

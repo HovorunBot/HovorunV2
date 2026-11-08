@@ -39,6 +39,7 @@ from tests.utils.activation import (
     stub_telegram,
 )
 from tests.utils.recorded_responses import RecordedResponses
+from tests.utils.telegram import API
 
 
 @pytest.mark.parametrize(
@@ -216,6 +217,62 @@ async def test_private_admin_callback_approves_and_closes_exact_request(test_con
             await runtime.command.handle_callback(query, data, runtime.bot)
             assert len(sent_fields(http, "sendMessage")) == 1
             assert int(sent_fields(http, "sendMessage")[0]["chat_id"]) == GROUP
+
+
+async def test_private_admin_callback_approves_when_followup_telegram_fails(test_container: AsyncContainer) -> None:
+    """Committed approval persists and answers callback even when group sendMessage and edit fail."""
+    target = await seed_activation(test_container, trusted=False)
+    await provision_role(test_container, ADMIN)
+    async with activation_runtime(test_container) as runtime:
+        with RecordedResponses() as http:
+            stub_telegram(http)
+            pending = await runtime.service.enable(ACTOR, target, "group")
+        assert pending.request_id is not None
+        data = AccessCallback(
+            chat_id=GROUP,
+            group_id=target.entity_id,
+            generation=1,
+            request_id=pending.request_id,
+            action=AccessAction.APPROVE,
+        )
+        private = Message(
+            message_id=2,
+            date=datetime.now(UTC),
+            chat=Chat(id=ADMIN, type="private"),
+            from_user=User(id=BOT_ID, is_bot=True, first_name="Bot"),
+            text="Review request",
+        )
+        query = CallbackQuery(
+            id="approve-fail",
+            from_user=User(id=ADMIN, is_bot=False, first_name="Admin"),
+            chat_instance="test",
+            message=private,
+            data=data.pack(),
+        ).as_(runtime.bot)
+        with RecordedResponses() as http:
+            http.post(
+                f"{API}/sendMessage",
+                payload={
+                    "ok": False,
+                    "error_code": 403,
+                    "description": "Forbidden: bot was kicked from the supergroup",
+                },
+            )
+            http.post(
+                f"{API}/editMessageText",
+                payload={"ok": False, "error_code": 400, "description": "Bad Request: message to edit not found"},
+            )
+            http.post(
+                f"{API}/answerCallbackQuery",
+                payload={"ok": True, "result": True},
+            )
+            await runtime.command.handle_callback(query, data, runtime.bot)
+            answers = sent_fields(http, "answerCallbackQuery")
+            assert len(answers) == 1
+    sessions = await test_container.get(async_sessionmaker)
+    async with sessions() as session:
+        assert (await session.get(GroupAccessRequestDB, pending.request_id)).status == RequestStatus.APPROVED
+        assert len(list((await session.scalars(select(GroupApprovalDB))).all())) == 1
 
 
 async def test_request_button_cannot_select_another_group(test_container: AsyncContainer) -> None:

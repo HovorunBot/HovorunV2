@@ -14,6 +14,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Role, TargetKind
+from hovorunv2.domain.user import UserDB
 from tests.utils.postgres import reject_audit
 
 
@@ -107,3 +108,34 @@ async def test_ban_audit_failure_rolls_back_and_deleted_targets_are_hidden(test_
     assert await bans.list_active(TargetKind.USER, 101) == []
     with pytest.raises(ValueError, match="active known"):
         await bans.revoke(TargetKind.USER, 101, BanKind.FULL, actor)
+
+
+async def test_ban_fenced_by_generation_rejects_recreated_identity(test_container: AsyncContainer) -> None:
+    """Ban mutation fails and leaves recreated user untouched if generation changed since preview."""
+    users = await test_container.get(UserStore)
+    bans = await test_container.get(BanService)
+    user = await users.ingest_user(101)
+    assert user is not None
+    original_generation = user.generation
+
+    actor = ActorContext.cli(reason="test generation fencing")
+    # Advance generation
+    sessions = await test_container.get(async_sessionmaker)
+    async with sessions() as session:
+        user_row = await session.scalar(select(UserDB).where(UserDB.telegram_id == 101, UserDB.deleted_at.is_(None)))
+        assert user_row is not None
+        user_row.generation += 1
+        await session.commit()
+
+    # Applying ban with previewed generation must fail
+    with pytest.raises(ValueError, match="Target identity changed"):
+        await bans.apply(
+            TargetKind.USER,
+            101,
+            BanKind.FULL,
+            actor,
+            expected_generation=original_generation,
+        )
+
+    # Recreated user is untouched
+    assert await bans.list_active(TargetKind.USER, 101) == []

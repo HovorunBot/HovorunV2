@@ -35,7 +35,7 @@ class ActivationOutcome(StrEnum):
 class ActivationRequest:
     """Bind trusted transport facts, actor and the selected group generation."""
 
-    actor_id: int
+    actor_id: int | None
     target: PermissionTarget
     transport_kind: str
     action: ActivationAction = ActivationAction.ENABLE

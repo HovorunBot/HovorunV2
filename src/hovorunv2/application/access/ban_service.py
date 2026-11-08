@@ -44,6 +44,7 @@ class BanService:
         actor: ActorContext,
         public_explanation: str | None = None,
         *,
+        expected_generation: int | None = None,
         transport_kind: str | None = None,
     ) -> bool:
         """Apply a restriction after authorizing the actor.
@@ -54,6 +55,7 @@ class BanService:
             kind: Restriction kind to apply.
             actor: Audited actor performing the change.
             public_explanation: Optional user-visible reason for the restriction.
+            expected_generation: Optional previewed identity generation to enforce under lock.
             transport_kind: Transport the actor used, required for Telegram authorization.
 
         Returns:
@@ -67,6 +69,7 @@ class BanService:
             active=True,
             actor=actor,
             public_explanation=public_explanation,
+            expected_generation=expected_generation,
         )
         logger.info(
             "Access restriction applied: target=%s target_id=%d kind=%s changed=%s",
@@ -84,6 +87,7 @@ class BanService:
         kind: BanKind,
         actor: ActorContext,
         *,
+        expected_generation: int | None = None,
         transport_kind: str | None = None,
     ) -> bool:
         """Revoke a restriction after authorizing the actor and retain its audit history.
@@ -93,13 +97,21 @@ class BanService:
             telegram_id: Numeric Telegram identity of the restricted entity.
             kind: Restriction kind to revoke.
             actor: Audited actor performing the change.
+            expected_generation: Optional previewed identity generation to enforce under lock.
             transport_kind: Transport the actor used, required for Telegram authorization.
 
         Returns:
             Whether the restriction changed.
         """
         await self._authorize(actor, transport_kind)
-        changed = await self._bans.set_ban(target, telegram_id, kind, active=False, actor=actor)
+        changed = await self._bans.set_ban(
+            target,
+            telegram_id,
+            kind,
+            active=False,
+            actor=actor,
+            expected_generation=expected_generation,
+        )
         logger.info(
             "Access restriction revoked: target=%s target_id=%d kind=%s changed=%s",
             target.value,

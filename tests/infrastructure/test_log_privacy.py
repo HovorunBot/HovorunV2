@@ -10,6 +10,7 @@ from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.access.role_service import RoleService
+from hovorunv2.application.jobs.http_ports import HTTPTransportError
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.errors import MediaDownloadError
@@ -102,7 +103,7 @@ async def test_media_download_failure_logs_no_message_url(
         NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as http,
     ):
         target_url = server.url(f"/media?credential={SENTINEL}")
-        downloader = NativeMediaDownloader(http)
+        downloader = NativeMediaDownloader(http, destination_policy=http)
         with caplog.at_level(logging.WARNING):
             with pytest.raises(MediaDownloadError) as error:
                 await asyncio.to_thread(downloader.download, target_url)
@@ -135,3 +136,19 @@ async def test_backend_diagnostics_never_write_payloads(capsys: pytest.CaptureFi
     backend.error(PRIVATE_URL)
     captured = capsys.readouterr()
     assert SENTINEL not in captured.out + captured.err
+
+
+def test_native_http_read_failure_logs_no_url(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Native HTTP read failures log only failure class without request URL contents."""
+    monkeypatch.setattr(logging.getLogger("hovorunv2.infrastructure.http_transport.native_http"), "disabled", False)
+    with (
+        HTTPFixture({"/fault": HTTPReply(status=500)}) as server,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as http,
+    ):
+        target_url = server.url(f"/fault?credential={SENTINEL}")
+        with caplog.at_level(logging.WARNING), pytest.raises(HTTPTransportError):
+            http.download_bytes(target_url)
+        assert all(target_url not in record.getMessage() for record in caplog.records)
+        assert all(SENTINEL not in record.getMessage() for record in caplog.records)

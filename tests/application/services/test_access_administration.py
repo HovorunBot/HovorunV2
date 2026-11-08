@@ -139,6 +139,27 @@ async def test_explicit_approval_and_request_decision_are_target_bound(test_cont
     assert (await service.execute(request, target, ActorContext.telegram(ADMIN), "private"))["outcome"] == "approved"
     assert len(await grants.approvals(other.id)) == 1
 
+    # CLI activation does not fabricate actor id 0
+    cli_other = await (await test_container.get(ChatStore)).get_or_create_chat(GROUP - 2)
+    cli_target = await service.resolve(TargetKind.GROUP, str(cli_other.chat_id))
+    cli_request = AdminRequest(action=AdminAction.APPROVE, kind=TargetKind.GROUP, target=str(cli_other.chat_id))
+    assert (await service.execute(cli_request, cli_target, ActorContext.cli(), None))["outcome"] == "approved"
+    session_maker = await test_container.get(async_sessionmaker)
+    async with session_maker() as session:
+        cli_audits = list(
+            (
+                await session.scalars(
+                    select(AuditEventDB).where(
+                        AuditEventDB.target_type == "group_activation",
+                        AuditEventDB.target_id == str(cli_other.id),
+                    )
+                )
+            ).all()
+        )
+        assert len(cli_audits) == 1
+        assert cli_audits[0].actor_id is None
+        assert cli_audits[0].actor_origin == "cli"
+
 
 async def test_unknown_handles_and_protected_admins_fail_closed(test_container: AsyncContainer) -> None:
     """Lookup never creates users; Telegram cannot remove protected administrators' access."""

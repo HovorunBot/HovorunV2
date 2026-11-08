@@ -183,6 +183,14 @@ class NativeHTTPClient:
         """Close every pooled connection deterministically."""
         self.close()
 
+    def validate_url(self, url: str) -> None:
+        """Require an HTTP origin without embedded credentials, invalid port, or private destination.
+
+        Args:
+            url: Untrusted destination to validate.
+        """
+        validate_http_url(url, allowed_hosts=self._allowed_hosts)
+
     def _require_session(self) -> requests.Session:
         if self._session is None or self._owner != getpid():
             msg = "Native HTTP requires an open client in its owning process."

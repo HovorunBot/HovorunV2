@@ -235,11 +235,17 @@ class AdministrationService:
                     BanKind(request.ban_kind),
                     actor,
                     request.public_explanation,
+                    expected_generation=target.generation,
                     transport_kind=transport,
                 )
             case AdminAction.UNBAN:
                 changed = await self._bans.revoke(
-                    target.kind, target.telegram_id, BanKind(request.ban_kind), actor, transport_kind=transport
+                    target.kind,
+                    target.telegram_id,
+                    BanKind(request.ban_kind),
+                    actor,
+                    expected_generation=target.generation,
+                    transport_kind=transport,
                 )
             case AdminAction.BETA_GRANT | AdminAction.BETA_REVOKE:
                 changed = await self._beta.set_grant(
@@ -377,7 +383,7 @@ class AdministrationService:
         }[request.action]
         result = await self._activation.execute(
             ActivationRequest(
-                actor.actor_id or 0,
+                actor.actor_id,
                 target,
                 transport or "cli",
                 action,

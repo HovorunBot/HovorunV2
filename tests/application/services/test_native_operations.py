@@ -106,6 +106,9 @@ class RecordingSyncHTTP(SyncHTTPPort):
         """Resolve redirect destination stub."""
         return url
 
+    def validate_url(self, url: str) -> None:
+        """Validate URL stub."""
+
     def download_bytes(
         self, url: str, headers: HTTPHeaders | None = None, *, cookies: Mapping[str, str] | None = None
     ) -> bytes:

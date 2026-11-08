@@ -77,10 +77,18 @@ class SQLAlchemyActivationStore(ActivationStore):
     async def _execute(self, session: AsyncSession, request: ActivationRequest) -> ActivationMutation:
         """Recheck authority and identity inside the serialized audited transaction."""
         await lock_async_mutation(
-            session, MutationLocks(chats=(request.target.telegram_id or 0,), actors=(request.actor_id,))
+            session,
+            MutationLocks(
+                chats=(request.target.telegram_id or 0,),
+                actors=(request.actor_id,) if request.actor_id is not None else (),
+            ),
         )
         repository = SQLAlchemyActivationRepository(session)
-        actor = await SQLAlchemyUserRepository(session).get_by_telegram_id(request.actor_id)
+        actor = (
+            await SQLAlchemyUserRepository(session).get_by_telegram_id(request.actor_id)
+            if request.actor_id is not None
+            else None
+        )
         target = request.target
         chat = await SQLAlchemyChatRepository(session).get_by_id(target.telegram_id or 0)
         cli = self._is_cli_administrator(request)
@@ -158,7 +166,12 @@ class SQLAlchemyActivationStore(ActivationStore):
             Activation result produced by the audited transaction.
         """
         mutation: ActivationMutation = await self._audited_uow.execute(
-            actor=request.administrator_actor or ActorContext.telegram(request.actor_id, reason="group_activation"),
+            actor=request.administrator_actor
+            or (
+                ActorContext.telegram(request.actor_id, reason="group_activation")
+                if request.actor_id is not None
+                else ActorContext.cli(reason="group_activation")
+            ),
             target_type="group_activation",
             target_id=request.target.entity_id or 0,
             action=request.action.value,

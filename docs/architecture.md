@@ -162,6 +162,12 @@ Accounting for retained deleted identities remains supported without restoring t
 payload, profile data or new persistence state. The ORM base inherits DeclarativeBase directly without AsyncAttrs
 or greenlet, using explicit eager selectin relationships across domain models.
 
+### Outbound destination policy and media transport security
+
+Native worker media extraction and downloads enforce public-only network destination policies across direct HTTP requests and downstream backend tools. `NativeHTTPClient` validates target URLs and resolves destination hosts against private, loopback, link-local, multicast, unroutable, and cloud metadata IP ranges. URL validation enforces safe schemes (HTTP/HTTPS only), rejects embedded user credentials and non-standard/forbidden ports, and enforces public-only destination addresses on every redirect hop at socket connect time. Test-specific network hosts are permitted only when explicitly provided in `allowed_hosts`.
+
+Downstream yt-dlp fallback downloads enforce the same public-only destination policy prior to backend invocation, disable local file URL resolution (`enable_file_urls: False`), restrict format protocols to HTTP(S) and HLS m3u8 streams, enforce execution deadlines and socket timeouts, and track streamed bytes via progress hooks to terminate downloads exceeding bounded byte limits. Media transport and extraction diagnostics log generic error codes and omit target URLs and sensitive query parameters.
+
 
 ## Admission runtime ownership
 

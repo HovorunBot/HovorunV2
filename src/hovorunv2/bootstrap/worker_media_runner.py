@@ -64,7 +64,7 @@ def create_feature_runner(
     Returns:
         Configured FeatureJobRunner ready to orchestrate stage execution.
     """
-    downloader = NativeMediaDownloader(http)
+    downloader = NativeMediaDownloader(http, destination_policy=http)
     delivery = custom_delivery or NativeTelegramDelivery(api, downloader)
     translation = NativeTranslationService(http, settings, db.policies)
     extractor = NativeMediaExtractor()

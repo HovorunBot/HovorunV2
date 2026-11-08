@@ -14,6 +14,7 @@ from hovorunv2.infrastructure.browser.native_browser import NativeBrowserService
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from tests.utils.sync_http import HTTPFixture, HTTPReply
+from tests.utils.telegram import BOT_CREDENTIAL
 
 
 class MissingMediaDependency(MetaPathFinder):
@@ -43,7 +44,7 @@ class CleanupFailureBrowser(NativeBrowserService):
 def main() -> None:
     """Report only cleanup outcomes, never configuration or message contents."""
     logging.basicConfig(handlers=[logging.NullHandler()])
-    settings = Settings(_env_file=None)
+    settings = Settings(_env_file=None, bot_token=BOT_CREDENTIAL)
     disposed: list[Engine] = []
     record_disposal = disposed.append
     missing = MissingMediaDependency()

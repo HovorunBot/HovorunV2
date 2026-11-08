@@ -27,6 +27,7 @@ class BanStore(Protocol):
         active: bool,
         actor: ActorContext,
         public_explanation: str | None = None,
+        expected_generation: int | None = None,
     ) -> bool:
         """Apply or revoke a restriction and report whether it changed.
 
@@ -40,6 +41,7 @@ class BanStore(Protocol):
             active: Whether to apply (True) or revoke (False) the restriction.
             actor: Audited actor performing the change.
             public_explanation: Optional user-visible reason for the restriction.
+            expected_generation: Optional previewed identity generation to enforce under lock.
 
         Returns:
             Whether the restriction state changed.

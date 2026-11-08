@@ -101,6 +101,7 @@ class SQLAlchemyBanStore(BanStore):
         active: bool,
         actor: ActorContext,
         public_explanation: str | None,
+        expected_generation: int | None = None,
     ) -> bool:
         """Apply one restriction change inside the locked, audited transaction."""
         await lock_async_mutation(
@@ -114,6 +115,9 @@ class SQLAlchemyBanStore(BanStore):
         entity = await self._target(session, target, telegram_id)
         if entity is None:
             msg = "Ban target must be an active known identity."
+            raise ValueError(msg)
+        if expected_generation is not None and entity.generation != expected_generation:
+            msg = "Target identity changed. Repeat lookup."
             raise ValueError(msg)
         await self._validate_authority(session, actor, entity)
         ban = await session.scalar(
@@ -203,6 +207,7 @@ class SQLAlchemyBanStore(BanStore):
         active: bool,
         actor: ActorContext,
         public_explanation: str | None = None,
+        expected_generation: int | None = None,
     ) -> bool:
         """Validate and atomically mutate restriction plus privacy-limited audit event.
 
@@ -213,6 +218,7 @@ class SQLAlchemyBanStore(BanStore):
             active: Whether to apply or revoke the restriction.
             actor: Actor context recorded on the audit event.
             public_explanation: Optional public explanation recorded on the restriction.
+            expected_generation: Optional previewed identity generation to enforce under lock.
 
         Returns:
             True if the restriction changed, False for an idempotent no-op.
@@ -239,6 +245,7 @@ class SQLAlchemyBanStore(BanStore):
                 active=active,
                 actor=actor,
                 public_explanation=public_explanation,
+                expected_generation=expected_generation,
             ),
             changed_fields={
                 "active": [not active, active],
