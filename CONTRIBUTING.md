@@ -40,6 +40,12 @@ Commit pending work before running `make tag-release VERSION=vX.Y.Z`, or use `IN
 Without either option, Commitizen derives the increment from Conventional Commits. `release-tag` is an alias;
 `TAG=vX.Y.Z` remains supported. `MESSAGE="Release notes"` supplies the annotated tag message as literal text.
 
+Versions follow PEP 440, including explicit four-part hotfix releases such as
+`make tag-release VERSION=v0.4.0.1` and `make tag-release VERSION=v0.4.0.2`.
+Choose the fourth component explicitly; automatic `INCREMENT=patch` advances the third component
+(for example, `0.4.0.2` becomes `0.4.1`). Four-part tags remain included in technical changelogs.
+Run `uv sync` after updating release tooling to register the project's Commitizen version scheme.
+
 The command requires a clean workspace and index. Commitizen's `uv` version provider updates the project version in
 `pyproject.toml` and only the matching project package in `uv.lock`. It generates `CHANGELOG.md` for the target release,
 commits all three files together, then creates an annotated tag pointing at that commit. Unrelated dependency versions

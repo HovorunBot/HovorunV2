@@ -143,3 +143,32 @@ async def test_release_tag_message_is_preserved_as_literal_text(release_repo: Pa
     assert await _git(release_repo, "for-each-ref", "--format=%(contents)", "refs/tags/v0.3.2") == message
     assert not (release_repo / "release-substitution").exists()
     assert not (release_repo / "release-backticks").exists()
+
+
+async def test_four_part_hotfix_releases_and_next_patch(release_repo: Path) -> None:
+    """Preserve explicit hotfix versions and recognize their tags in subsequent releases."""
+    for version in ("0.3.2.1", "0.3.2.2", "0.3.3"):
+        arguments = ("INCREMENT=patch",) if version == "0.3.3" else (f"VERSION=v{version}",)
+        code, output = await _command(release_repo, "make", "tag-release", *arguments)
+        assert code == 0, output
+        assert "Invalid version tag" not in output
+        tag = f"v{version}"
+        assert await _git(release_repo, "cat-file", "-t", tag) == "tag"
+        assert await _git(release_repo, "rev-parse", f"{tag}^{{commit}}") == await _git(
+            release_repo, "rev-parse", "HEAD"
+        )
+        project = tomllib.loads(await _git(release_repo, "show", f"{tag}:pyproject.toml"))
+        lock = tomllib.loads(await _git(release_repo, "show", f"{tag}:uv.lock"))
+        assert project["project"]["version"] == version
+        assert {package["name"]: package["version"] for package in lock["package"]} == {
+            "hovorunv2": version,
+            "unrelated": "0.3.1",
+        }
+        assert f"## {tag}" in await _git(release_repo, "show", f"{tag}:CHANGELOG.md")
+        assert await _git(release_repo, "status", "--porcelain") == ""
+        (release_repo / "change.txt").write_text(f"Synthetic fix after {version}\n")
+        await _git(release_repo, "add", "change.txt")
+        await _git(release_repo, "commit", "--quiet", "-m", "fix(media): keep hotfix requests moving")
+    changelog = await _git(release_repo, "show", "v0.3.3:CHANGELOG.md")
+    assert "## v0.3.2.1" in changelog
+    assert "## v0.3.2.2" in changelog

@@ -157,7 +157,7 @@ verify-build:
 	@echo " Version: $(APP_VERSION)"
 	@echo "======================================================="
 
-## Create one release commit with version metadata/changelog, then an annotated tag.
+## Create a release commit and annotated tag; VERSION=v0.4.0.1 supports explicit hotfix releases.
 tag-release release-tag: export RELEASE_VERSION = $(VERSION)
 tag-release release-tag: export RELEASE_INCREMENT = $(INCREMENT)
 tag-release release-tag: export RELEASE_MESSAGE = $(value MESSAGE)

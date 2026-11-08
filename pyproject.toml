@@ -73,6 +73,9 @@ hovorun-admin = "hovorunv2.bootstrap.admin:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[project.entry-points."commitizen.scheme"]
+hovorun_pep440 = "hovorunv2.utils.release_version:HotfixVersion"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/hovorunv2"]
 
@@ -184,7 +187,7 @@ skip_covered = false
 [tool.commitizen]
 name = "cz_conventional_commits"
 tag_format = "v$version"
-version_scheme = "semver"
+version_scheme = "hovorun_pep440"
 version_provider = "uv"
 update_changelog_on_bump = true
 major_version_zero = true

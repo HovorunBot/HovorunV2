@@ -6,6 +6,7 @@
 
 ### Fix
 
+- **release**: support four-part hotfix versions
 - **browser**: protect SDK diagnostics and complete migration acceptance
 - **jobs**: stop republishing acknowledged queued jobs every sweep
 - **jobs**: reclaim running tickets abandoned by killed workers
@@ -17,7 +18,6 @@
 - **media**: split long post text into valid Telegram messages
 - **media**: escape link attributes in shared captions
 - **access**: restore group access after redeployment
-- **deps**: upgrade missing sqlalchemy dependency
 
 ### Refactor
 
@@ -26,6 +26,12 @@
 - narrow broad Exception suppression to TelegramAPIError
 - **access**: narrow broad Exception suppression to TelegramAPIError
 - **operations**: narrow broad Exception suppression to TelegramAPIError
+
+## v0.3.5.1 (2026-11-07)
+
+### Fix
+
+- **deps**: upgrade missing sqlalchemy dependency
 
 ## v0.3.5 (2026-11-07)
 
@@ -43,9 +49,6 @@
 - **instagram**: continue past text-only generic results
 - **media**: bound Instagram fallback execution
 - **migrations**: preserve caller logging during embedded upgrades
-- **runtime**: increase worker task timeout for browser extraction
-- **logging**: preserve library diagnostics and capture stacktraces on errors
-- **release**: prevent technical changelog fallback and user notification leak
 
 ### Refactor
 
@@ -56,6 +59,14 @@
 - **worker**: split runtime composition by role and decouple prompts from aiogram
 - **media**: decouple bot ingress to provider config and delete legacy async code
 
+## v0.3.4.1 (2026-11-03)
+
+### Fix
+
+- **runtime**: increase worker task timeout for browser extraction
+- **logging**: preserve library diagnostics and capture stacktraces on errors
+- **release**: prevent technical changelog fallback and user notification leak
+
 ## v0.3.4 (2026-11-02)
 
 ### Fix
@@ -64,14 +75,23 @@
 
 ## v0.3.3 (2026-11-02)
 
-### Feat
-
-- **deployment**: make browser builds optional and reduce disk usage
-- **media**: clarify shared quotas and improve extraction diagnostics
-
 ### Fix
 
 - **runtime**: expire stale execution budgets and optimize container lifecycle
+
+## v0.3.2.3 (2026-11-02)
+
+### Feat
+
+- **deployment**: make browser builds optional and reduce disk usage
+
+## v0.3.2.2 (2026-11-02)
+
+### Feat
+
+- **media**: clarify shared quotas and improve extraction diagnostics
+
+## v0.3.2.1 (2026-11-01)
 
 ## v0.3.2 (2026-11-01)
 
