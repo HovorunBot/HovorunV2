@@ -1068,7 +1068,7 @@ class SettingsCommand(BaseCommand):
         if not msg or not isinstance(msg, Message):
             return
 
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(TelegramAPIError):
             await msg.delete()
 
         await self._cleanup_service.unregister_window(msg.chat.id, msg.message_id)

@@ -5,6 +5,8 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from aiogram.exceptions import TelegramAPIError
+
 from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 
@@ -87,7 +89,7 @@ class CleanupService:
         existing_msg_id = await self._cache.get(singleton_key)
 
         if existing_msg_id:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(TelegramAPIError):
                 await bot.delete_message(chat_id=chat_id, message_id=int(existing_msg_id))
             await self.unregister_window(chat_id, int(existing_msg_id))
 
@@ -117,7 +119,7 @@ class CleanupService:
         chat_id, message_id = self._parse_member(member)
         try:
             await bot.delete_message(chat_id=chat_id, message_id=message_id)
-        except Exception:
+        except TelegramAPIError:
             logger.exception("Could not delete message %d in chat %d", message_id, chat_id)
             return False
         else:

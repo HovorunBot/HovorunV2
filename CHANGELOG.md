@@ -12,6 +12,10 @@
 - **access**: restore group access after redeployment
 - **deps**: upgrade missing sqlalchemy dependency
 
+### Refactor
+
+- **operations**: narrow broad Exception suppression to TelegramAPIError
+
 ## v0.3.5 (2026-11-07)
 
 ### Feat
