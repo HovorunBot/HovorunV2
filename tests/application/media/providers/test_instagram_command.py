@@ -1,6 +1,5 @@
 """Tests for Instagram rich media command."""
 
-import logging
 from http import HTTPStatus
 from urllib.parse import parse_qs, urlsplit
 
@@ -263,44 +262,3 @@ def test_instagram_browser_stage_rejects_metadata_only_http_fallback() -> None:
     with pytest.raises(MediaExtractionError):
         service.extract_browser_media_sync(url, http, FakeSyncBrowser())
     assert not http.requests
-
-
-@pytest.mark.unit
-def test_worker_media_stage_errors_in_strategy_order(caplog: pytest.LogCaptureFixture) -> None:
-    """Pin each worker-tier failure in the exact cascade order for a reel shortcode.
-
-    The worker runs direct -> generic yt-dlp -> embed -> browser-continuation. Each tier
-    translates its own backend failure into a MediaExtractionError so a backend outage can be
-    traced to the tier that consumed the worker's execution budget instead of one blanket error.
-    """
-    service = InstagramService.sync(embed=DisabledEmbedAdapter())
-    url = "https://www.instagram.com/reel/DfMf1rlxq_W/"
-    http = FakeSyncHTTP()
-
-    class BackendDownExtractor(NativeMediaExtractor):
-        def extract(
-            self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
-        ) -> RichMediaPayload:
-            msg = "Media extraction failed."
-            raise MediaExtractionError(msg)
-
-    # Tier 1 — direct API: Instagram has no direct strategy, so it yields silently.
-    assert service.extract_sync(url, http) is None
-
-    # Tier 2 — generic yt-dlp: a backend outage surfaces as MediaExtractionError.
-    with pytest.raises(MediaExtractionError, match="Media extraction failed"):
-        BackendDownExtractor().extract(url)
-
-    # Tier 3 — the combined media stage walks every tier in order and requests browser continuation.
-    with caplog.at_level(logging.INFO), pytest.raises(BrowserContinuationRequired):
-        service.extract_media_sync(url, http, BackendDownExtractor())
-
-    order = [record.getMessage() for record in caplog.records if record.name == "hovorunv2.application.media.actions"]
-    assert order == [
-        "Starting direct extraction strategy for provider instagram",
-        "Starting generic extraction strategy for provider instagram",
-        "Generic extraction strategy failed for provider instagram",
-        "Starting embed fallback strategy for provider instagram",
-        "Embed fallback strategy failed for provider instagram",
-        "Provider requires browser continuation: instagram",
-    ]

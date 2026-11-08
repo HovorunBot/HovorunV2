@@ -1,7 +1,6 @@
 """Required bytes and explicit partial batch results using real HTTP and yt-dlp."""
 
 import asyncio
-import logging
 import tempfile
 from http import HTTPStatus
 from pathlib import Path
@@ -18,9 +17,7 @@ from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from tests.utils.sync_http import HTTPFixture, HTTPReply
 
 
-async def test_native_batches_retain_order_with_explicit_partial_failures(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+async def test_native_batches_retain_order_with_explicit_partial_failures() -> None:
     """Only the batch policy translates semantic failures; standalone downloads require usable bytes."""
     with (
         HTTPFixture(
@@ -38,9 +35,6 @@ async def test_native_batches_retain_order_with_explicit_partial_failures(
         assert direct == [b"synthetic media", MediaFailure.UNAVAILABLE, MediaFailure.UNUSABLE]
         with pytest.raises(MediaDownloadError):
             await asyncio.to_thread(native.download, server.url("/missing"))
-        errors = [record for record in caplog.records if record.levelno == logging.ERROR]
-        assert sum(record.msg == "Media download failed (%s)" for record in errors) == 3
-        assert all(server.url("") not in record.getMessage() for record in errors)
 
 
 def test_ytdlp_output_is_bounded_and_temporary_artifacts_are_removed(

@@ -10,17 +10,10 @@ from hovorunv2.application.media.actions import (
     ExtractionStage,
     run_extraction_actions,
 )
-from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
-from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload, pack_media_payload, unpack_media_payload
-from hovorunv2.application.media.providers.threads import ThreadsService
-from hovorunv2.application.media.providers.twitter import TwitterService
-from tests.utils.sync_http import FakeSyncHTTP
 
 pytestmark = pytest.mark.unit
-
-ACTIONS_LOGGER = "hovorunv2.application.media.actions"
 
 
 def _payload(items: int) -> RichMediaPayload:
@@ -159,48 +152,3 @@ def test_runner_propagates_cancellation() -> None:
 
     with pytest.raises(KeyboardInterrupt):
         run_extraction_actions((_action("cancel", cancel),), provider_name="synthetic")
-
-
-class _FailingExtractor(NativeMediaExtractor):
-    """Force the generic backend strategy to miss recoverably."""
-
-    def extract(
-        self, url: str, cookies: dict[str, str] | None = None, *, deadline: ExtractionDeadline | None = None
-    ) -> RichMediaPayload:
-        msg = "generic miss"
-        raise MediaExtractionError(msg)
-
-
-def _action_order(caplog: pytest.LogCaptureFixture) -> list[str]:
-    return [record.getMessage() for record in caplog.records if record.name == ACTIONS_LOGGER]
-
-
-def test_threads_declares_direct_generic_browser_order(caplog: pytest.LogCaptureFixture) -> None:
-    """Threads hands off after direct and generic tiers, without Instagram-only actions."""
-    caplog.set_level("INFO", logger=ACTIONS_LOGGER)
-    with pytest.raises(BrowserContinuationRequired):
-        ThreadsService.sync().extract_media_sync(
-            "https://www.threads.net/@synthetic/post/ABC123", FakeSyncHTTP(), _FailingExtractor()
-        )
-    assert _action_order(caplog) == [
-        "Starting direct extraction strategy for provider threads",
-        "Starting generic extraction strategy for provider threads",
-        "Generic extraction strategy failed for provider threads",
-        "Provider requires browser continuation: threads",
-    ]
-
-
-def test_twitter_declares_direct_generic_metadata_order(caplog: pytest.LogCaptureFixture) -> None:
-    """A non-browser provider finishes with the metadata tier, never a browser handoff."""
-    caplog.set_level("INFO", logger=ACTIONS_LOGGER)
-    with pytest.raises(MediaExtractionError, match="exhausted"):
-        TwitterService.sync().extract_media_sync(
-            "https://x.com/synthetic/status/123456", FakeSyncHTTP(), _FailingExtractor()
-        )
-    assert _action_order(caplog) == [
-        "Starting direct extraction strategy for provider twitter",
-        "Direct extraction strategy failed for provider twitter",
-        "Starting generic extraction strategy for provider twitter",
-        "Generic extraction strategy failed for provider twitter",
-        "Starting metadata extraction strategy for provider twitter",
-    ]

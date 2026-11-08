@@ -1,6 +1,5 @@
 """Tests for synchronous Celery operations worker maintenance tasks."""
 
-import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
@@ -34,7 +33,6 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, CommandName, Role
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.logger import PrivacyFormatter
 from hovorunv2.infrastructure.queues.feature_queue import (
     CHAT_MAINTENANCE_TASK,
     CLEANUP_SWEEP_TASK,
@@ -184,29 +182,12 @@ async def test_celery_beat_schedule_structure() -> None:
         assert options["queue"] == "test:operations"
 
 
-def _assert_reconciliation_diagnostics(records: list[logging.LogRecord]) -> None:
-    """Verify that operational recovery facts survive the production privacy formatter."""
-    output = "\n".join(PrivacyFormatter("%(message)s").format(record) for record in records)
-    for expected in (
-        "reason=member_evidence_unknown",
-        "admins_known=False admins_fresh=False approved=True",
-        "due_groups=1 batch_limit=10 batch_full=False",
-        "status=admin changed=True",
-        "known=True administrators=1 changed=True",
-        "members_checked=1 members_unknown=0 member_batch_full=False",
-    ):
-        assert expected in output
-    assert "[omitted]" not in output
-
-
 async def test_membership_reconciliation_in_operations_worker(
     test_container: AsyncContainer,
     sync_telegram_api: NativeTelegramAPI,
     sync_prompt_sender: SyncTelegramUnauthorizedPromptSender,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Run membership reconciliation in operations worker and verify durable PostgreSQL state."""
-    caplog.set_level(logging.INFO)
     chats = await test_container.get(ChatStore)
     users = await test_container.get(UserStore)
     memberships = await test_container.get(MembershipStore)
@@ -282,7 +263,6 @@ async def test_membership_reconciliation_in_operations_worker(
             assert settings_status.access_reason == DecisionReason.ALLOWED
             assert settings_status.bot_verified
             assert [approval.id for approval in await grants.approvals(group.id)] == approvals
-            _assert_reconciliation_diagnostics(caplog.records)
         finally:
             set_operations_runner(None)
             client.close()

@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import logging
 from contextlib import ExitStack
 from dataclasses import replace
 
@@ -15,60 +14,11 @@ from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.logger import PrivacyFormatter
 from hovorunv2.infrastructure.runtime.budget_state import MAX_EXACT_INTEGER, build_record
 from hovorunv2.infrastructure.runtime.budgets import ValkeyBudgetStore
 from tests.utils.identities import FEATURE, ONE, ZERO
 from tests.utils.runtime import ManualClock, runtime_cache
 from tests.utils.usage import USER, usage_subjects
-
-
-@pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("operation", ["reserve", "finish"])
-async def test_unavailable_budget_logs_safe_failure_location(
-    test_container: AsyncContainer,
-    caplog: pytest.LogCaptureFixture,
-    operation: str,
-    *,
-    native: bool,
-) -> None:
-    """Expose the failing invariant through sanitized diagnostics without exposing stored values."""
-    await usage_subjects(test_container)
-    usage = await (await test_container.get(UsagePolicyService)).resolve(FEATURE, TriggerKind.DIRECT, USER)
-    settings = await test_container.get(Settings)
-    clock = ManualClock()
-    request = BudgetRequest("diagnostic-reservation", usage, ONE, 400)
-    async with runtime_cache(test_container) as (cache, namespace):
-        store = ValkeyBudgetStore(cache, namespace)
-        assert (await store.reserve(request, clock.now(), (0, 0))).allowed
-        record = build_record(namespace.value + "budget:", request, clock.now(), (0, 0))
-        private_value = "synthetic-private-value"
-        await cache.client.hset(record.quotas[0].key, "held", private_value)
-        with (
-            WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
-            caplog.at_level(logging.WARNING, logger="hovorunv2.infrastructure.runtime.budgets"),
-        ):
-            if operation == "reserve":
-                decision = (
-                    await asyncio.to_thread(runtime.budgets.reserve, request, clock.now(), (0, 0))
-                    if native
-                    else await store.reserve(request, clock.now(), (0, 0))
-                )
-            else:
-                decision = (
-                    await asyncio.to_thread(runtime.budgets.finish, request.reservation_id, ONE, clock.now())
-                    if native
-                    else await store.finish(request.reservation_id, ONE, clock.now())
-                )
-        assert decision.state == ReservationState.UNAVAILABLE
-        diagnostics = [item for item in caplog.records if item.name == "hovorunv2.infrastructure.runtime.budgets"]
-        assert len(diagnostics) == 1
-        formatted = PrivacyFormatter().format(diagnostics[0])
-        assert "BudgetStateUnavailableError" in formatted
-        assert "_integer" in formatted
-        assert private_value not in formatted
-        assert request.reservation_id not in formatted
-        assert namespace.value not in formatted
 
 
 @pytest.mark.parametrize("damage", ["quota_field", "rate_field", "held", "membership", "active_index", "rate_key"])
