@@ -37,6 +37,7 @@ from tests.utils.jobs import PRIVATE_BODY, admit_test_job, job_envelope
 from tests.utils.runtime import ManualClock, runtime_cache
 
 GROUP = -440001
+TEST_HOSTS = frozenset({"127.0.0.1", "localhost", "synthetic.invalid", "media.example.invalid"})
 
 
 class AllowGate:
@@ -150,7 +151,7 @@ async def test_expired_job_sends_one_timeout_notice(test_container: AsyncContain
         with (
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
-            NativeHTTPClient() as http,
+            NativeHTTPClient(allowed_hosts=TEST_HOSTS) as http,
         ):
             runner = _runner(database, runtime, http, settings, clock, namespace, telegram)
             clock.value = envelope.deadline + 1
@@ -184,7 +185,7 @@ async def test_delayed_job_sends_one_notice_and_skips_banned_target(
         with (
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
-            NativeHTTPClient() as http,
+            NativeHTTPClient(allowed_hosts=TEST_HOSTS) as http,
         ):
             runner = _runner(database, runtime, http, settings, clock, namespace, telegram)
             token = "t" * 32
@@ -213,7 +214,7 @@ async def test_delayed_job_sends_one_notice_and_skips_banned_target(
         with (
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
-            NativeHTTPClient() as http,
+            NativeHTTPClient(allowed_hosts=TEST_HOSTS) as http,
         ):
             runner = _runner(database, runtime, http, settings, clock, namespace, telegram)
             clock.value = envelope.deadline + 1

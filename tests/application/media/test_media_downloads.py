@@ -27,7 +27,7 @@ async def test_native_batches_retain_order_with_explicit_partial_failures() -> N
                 "/empty": HTTPReply(),
             }
         ) as server,
-        NativeHTTPClient() as http,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as http,
     ):
         native = NativeMediaDownloader(http)
         items = [MediaItem(server.url(path), is_video=False) for path in ("/good", "/missing", "/empty")]

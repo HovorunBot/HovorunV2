@@ -12,8 +12,9 @@ from hovorunv2.infrastructure.http_transport.extraction_http import ExtractionHT
 class VxInstagramEmbedAdapter:
     """Fetch the public status JSON and map it without reproducing the service's parser."""
 
-    def __init__(self, *, base_url: str = VXINSTAGRAM_BASE_URL) -> None:
+    def __init__(self, *, base_url: str = VXINSTAGRAM_BASE_URL, allowed_hosts: frozenset[str] = frozenset()) -> None:
         self._base_url = base_url
+        self._allowed_hosts = allowed_hosts
 
     def extract(self, post: InstagramPost, deadline: ExtractionDeadline) -> InstagramResult:
         """Return usable public media within a shared deadline.
@@ -30,7 +31,7 @@ class VxInstagramEmbedAdapter:
         """
         url = build_status_url(post, base_url=self._base_url)
         try:
-            with ExtractionHTTPClient(deadline) as http:
+            with ExtractionHTTPClient(deadline, allowed_hosts=self._allowed_hosts) as http:
                 raw = http.read_json(url)
         except HTTPTransportError:
             msg = "Instagram embed request failed."

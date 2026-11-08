@@ -17,7 +17,9 @@ def test_download_aborts_oversized_body_with_too_large() -> None:
     """The libcurl write callback aborts an over-bound body instead of truncating it."""
     with (
         HTTPFixture({"/large": HTTPReply(b"1234567890")}) as server,
-        ExtractionHTTPClient(ExtractionDeadline.after(5), max_bytes=4) as client,
+        ExtractionHTTPClient(
+            ExtractionDeadline.after(5), max_bytes=4, allowed_hosts=frozenset({"127.0.0.1", "localhost"})
+        ) as client,
     ):
         with pytest.raises(HTTPTransportError) as error:
             client.download_bytes(server.url("/large"))
@@ -28,7 +30,9 @@ def test_read_json_requires_json_content_type() -> None:
     """An HTML challenge page is rejected, never decoded as public JSON."""
     with (
         HTTPFixture({"/login": HTTPReply(b"<html>sign in</html>", headers={"Content-Type": "text/html"})}) as server,
-        ExtractionHTTPClient(ExtractionDeadline.after(5)) as client,
+        ExtractionHTTPClient(
+            ExtractionDeadline.after(5), allowed_hosts=frozenset({"127.0.0.1", "localhost"})
+        ) as client,
     ):
         with pytest.raises(HTTPTransportError) as error:
             client.read_json(server.url("/login"))
@@ -39,7 +43,9 @@ def test_read_json_decodes_valid_public_payload() -> None:
     """A bounded JSON response is decoded for application-owned validation."""
     with (
         HTTPFixture({"/ok": json_reply({"ok": True})}) as server,
-        ExtractionHTTPClient(ExtractionDeadline.after(5)) as client,
+        ExtractionHTTPClient(
+            ExtractionDeadline.after(5), allowed_hosts=frozenset({"127.0.0.1", "localhost"})
+        ) as client,
     ):
         assert client.read_json(server.url("/ok")) == {"ok": True}
 
@@ -49,7 +55,7 @@ def test_exhausted_deadline_rejects_before_any_request() -> None:
     expired = ExtractionDeadline(time.monotonic() - 0.1)
     with (
         HTTPFixture({"/x": HTTPReply(b"ok")}) as server,
-        ExtractionHTTPClient(expired) as client,
+        ExtractionHTTPClient(expired, allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
         pytest.raises(HTTPTransportError),
     ):
         client.download_bytes(server.url("/x"))
@@ -61,7 +67,7 @@ def test_deadline_bounds_delayed_headers() -> None:
     deadline = ExtractionDeadline.after(0.4)
     with (
         HTTPFixture({"/slow": HTTPReply(b"ok", delay_seconds=2.0)}) as server,
-        ExtractionHTTPClient(deadline) as client,
+        ExtractionHTTPClient(deadline, allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
     ):
         started = time.monotonic()
         with pytest.raises(HTTPTransportError):
@@ -76,7 +82,7 @@ def test_deadline_bounds_drip_fed_body_total_time() -> None:
     deadline = ExtractionDeadline.after(0.4)
     with (
         HTTPFixture({"/drip": HTTPReply(chunks=chunks, chunk_delay_seconds=0.5)}) as server,
-        ExtractionHTTPClient(deadline) as client,
+        ExtractionHTTPClient(deadline, allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
     ):
         started = time.monotonic()
         with pytest.raises(HTTPTransportError):
@@ -89,7 +95,9 @@ def test_disconnect_raises_unavailable_without_retrying() -> None:
     """A closed synthetic connection reports a safe unavailable failure."""
     with (
         HTTPFixture({"/lost": HTTPReply(disconnect=True)}) as server,
-        ExtractionHTTPClient(ExtractionDeadline.after(5)) as client,
+        ExtractionHTTPClient(
+            ExtractionDeadline.after(5), allowed_hosts=frozenset({"127.0.0.1", "localhost"})
+        ) as client,
     ):
         with pytest.raises(HTTPTransportError) as error:
             client.download_bytes(server.url("/lost"))
@@ -104,7 +112,9 @@ def test_cross_origin_redirect_strips_credentials() -> None:
         HTTPFixture(
             {"/start": HTTPReply(status=HTTPStatus.FOUND, headers={"Location": target.url("/target")})}
         ) as origin,
-        ExtractionHTTPClient(ExtractionDeadline.after(5)) as client,
+        ExtractionHTTPClient(
+            ExtractionDeadline.after(5), allowed_hosts=frozenset({"127.0.0.1", "localhost"})
+        ) as client,
     ):
         headers = {"Authorization": "synthetic"}
         assert client.download_bytes(origin.url("/start"), headers, cookies={"synthetic": "1"}) == b"synthetic"
@@ -116,7 +126,9 @@ def test_cross_origin_redirect_strips_credentials() -> None:
 def test_redirect_chain_is_bounded() -> None:
     """A redirect loop stops at the configured hop count without a false resolution."""
     with HTTPFixture({"/loop": HTTPReply(status=HTTPStatus.FOUND, headers={"Location": "/loop"})}) as server:
-        with ExtractionHTTPClient(ExtractionDeadline.after(5), max_redirects=1) as client:
+        with ExtractionHTTPClient(
+            ExtractionDeadline.after(5), max_redirects=1, allowed_hosts=frozenset({"127.0.0.1", "localhost"})
+        ) as client:
             with pytest.raises(HTTPTransportError) as error:
                 client.download_bytes(server.url("/loop"))
             assert error.value.code == HTTPFailure.REJECTED
@@ -124,8 +136,16 @@ def test_redirect_chain_is_bounded() -> None:
 
 
 def test_invalid_url_is_rejected() -> None:
-    """Unsupported origins are rejected before opening a transport."""
+    """Unsupported origins and non-public destinations are rejected before opening a transport."""
     with ExtractionHTTPClient(ExtractionDeadline.after(5)) as client:
         with pytest.raises(HTTPTransportError) as error:
             client.download_bytes("file:///synthetic")
+        assert error.value.code == HTTPFailure.REJECTED
+
+        with pytest.raises(HTTPTransportError) as error:
+            client.download_bytes("http://127.0.0.1/synthetic")
+        assert error.value.code == HTTPFailure.REJECTED
+
+        with pytest.raises(HTTPTransportError) as error:
+            client.download_bytes("http://169.254.169.254/latest/meta-data")
         assert error.value.code == HTTPFailure.REJECTED

@@ -67,7 +67,10 @@ def test_native_missing_video_sends_post_text_and_explanation() -> None:
 
 @contextmanager
 def _native_delivery(routes: RouteReplies) -> Iterator[tuple[NativeTelegramDelivery, HTTPFixture]]:
-    with HTTPFixture(routes) as server, NativeHTTPClient() as http:
+    with (
+        HTTPFixture(routes) as server,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost", "synthetic.invalid"})) as http,
+    ):
         api = NativeTelegramAPI(http, SYNTHETIC_BOT_IDENTITY, api_base=server.url(""))
         yield NativeTelegramDelivery(api, NativeMediaDownloader(http)), server
 

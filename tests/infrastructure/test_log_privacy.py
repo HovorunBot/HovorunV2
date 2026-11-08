@@ -99,7 +99,7 @@ async def test_media_download_failure_logs_no_message_url(
     monkeypatch.setattr(logging.getLogger("hovorunv2.application.media.downloader"), "disabled", False)
     with (
         HTTPFixture({"/media": HTTPReply(status=500)}) as server,
-        NativeHTTPClient() as http,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as http,
     ):
         target_url = server.url(f"/media?credential={SENTINEL}")
         downloader = NativeMediaDownloader(http)

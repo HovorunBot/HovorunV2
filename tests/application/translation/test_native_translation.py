@@ -31,7 +31,7 @@ async def test_native_translation_preserves_defaults_empty_ignores_and_fresh_set
     response = [[["<synthetic translation>", "synthetic source", None, None]], None, "fr"]
     with (
         HTTPFixture({"/translate": json_reply(response)}) as server,
-        NativeHTTPClient() as http,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as http,
         WorkerDatabase(database_config(postgres_database_url)) as worker,
     ):
         service = NativeTranslationService(http, settings, worker.policies, api_url=server.url("/translate"))

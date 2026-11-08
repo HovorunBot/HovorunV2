@@ -71,10 +71,13 @@ def instagram_worker(
     with (
         WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
         WorkerRuntime(settings, clock, namespace, safety) as runtime,
-        NativeHTTPClient() as http,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost", "synthetic.invalid"})) as http,
         closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
     ):
-        embed = VxInstagramEmbedAdapter(base_url=server.url(""))
+        embed = VxInstagramEmbedAdapter(
+            base_url=server.url(""),
+            allowed_hosts=frozenset({"127.0.0.1", "localhost", "synthetic.invalid", "media.example.invalid"}),
+        )
         telegram = NativeTelegramAPI(http, BOT_CREDENTIAL, api_base=server.url(""))
         runner = FeatureJobRunner(
             admission=runtime.admission,

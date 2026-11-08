@@ -39,7 +39,9 @@ async def test_worker_alerts_resolve_current_owners_and_omit_private_arguments(
     settings = await test_container.get(Settings)
     endpoint = "/bot" + settings.bot_token + "/sendMessage"
     with HTTPFixture({endpoint: json_reply({"ok": True, "result": {"message_id": 1}})}) as server:
-        handler = WorkerTelegramHandler(settings, api_base=server.url(""))
+        handler = WorkerTelegramHandler(
+            settings, api_base=server.url(""), allowed_hosts=frozenset({"127.0.0.1", "localhost"})
+        )
         try:
             message = HARD_TIMEOUT_TEMPLATE if name == "celery.worker.request" else "Media failed for %s"
             args = (120, SENTINEL, JOB_ID) if name == "celery.worker.request" else (SENTINEL,)

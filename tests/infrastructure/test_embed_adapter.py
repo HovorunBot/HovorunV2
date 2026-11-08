@@ -28,7 +28,11 @@ def _embed(*attachments: dict[str, object], url: str = POST.canonical_url) -> di
 def _adapter_and_routes(raw: object) -> tuple[VxInstagramEmbedAdapter, HTTPFixture, str]:
     path = build_status_url(POST, base_url="")
     server = HTTPFixture({path: raw if isinstance(raw, HTTPReply) else json_reply(raw)})
-    return VxInstagramEmbedAdapter(base_url=server.url("")), server, server.url("")
+    return (
+        VxInstagramEmbedAdapter(base_url=server.url(""), allowed_hosts=frozenset({"127.0.0.1", "localhost"})),
+        server,
+        server.url(""),
+    )
 
 
 def test_adapter_maps_photo_response() -> None:
@@ -74,7 +78,7 @@ def test_adapter_rejects_html_challenge() -> None:
     """An HTML challenge page is not a valid public JSON status response."""
     path = build_status_url(POST, base_url="")
     server = HTTPFixture({path: HTTPReply(b"<html>sign in</html>", headers={"Content-Type": "text/html"})})
-    adapter = VxInstagramEmbedAdapter(base_url=server.url(""))
+    adapter = VxInstagramEmbedAdapter(base_url=server.url(""), allowed_hosts=frozenset({"127.0.0.1", "localhost"}))
     with server, pytest.raises(MediaExtractionError):
         adapter.extract(POST, ExtractionDeadline.after(5))
 
@@ -83,7 +87,7 @@ def test_adapter_rejects_status_failure() -> None:
     """A 404 status fails recoverably instead of producing a false candidate."""
     path = build_status_url(POST, base_url="")
     server = HTTPFixture({path: HTTPReply(status=HTTPStatus.NOT_FOUND)})
-    adapter = VxInstagramEmbedAdapter(base_url=server.url(""))
+    adapter = VxInstagramEmbedAdapter(base_url=server.url(""), allowed_hosts=frozenset({"127.0.0.1", "localhost"}))
     with server, pytest.raises(MediaExtractionError):
         adapter.extract(POST, ExtractionDeadline.after(5))
 

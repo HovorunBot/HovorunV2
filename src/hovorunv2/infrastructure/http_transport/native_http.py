@@ -1,5 +1,6 @@
 """Bounded synchronous HTTP owned by the native worker process using it."""
 
+import ipaddress
 import json
 import logging
 import time
@@ -11,6 +12,7 @@ from typing import Self
 from urllib.parse import urljoin, urlsplit
 
 import requests
+import requests.adapters
 
 from hovorunv2.application.jobs.http_ports import (
     HTTPFailure,
@@ -20,6 +22,7 @@ from hovorunv2.application.jobs.http_ports import (
     HTTPQuery,
     HTTPTransportError,
 )
+from hovorunv2.utils.network_destinations import is_public_address, require_public_host
 
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -41,17 +44,18 @@ REDIRECT_STATUSES = frozenset(
 SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"})
 
 
-def validate_http_url(url: str) -> tuple[str, str, int | None]:
-    """Require an HTTP origin without embedded credentials or an invalid port.
+def validate_http_url(url: str, *, allowed_hosts: frozenset[str] = frozenset()) -> tuple[str, str, int | None]:
+    """Require an HTTP origin without embedded credentials, invalid port, or private destination.
 
     Args:
         url: Untrusted request or redirect destination.
+        allowed_hosts: Optional test-only explicit allowlist of hostnames or IPs.
 
     Returns:
         Scheme, hostname and optional port for credential-scope comparison.
 
     Raises:
-        HTTPTransportError: If the target has an unsupported or malformed origin.
+        HTTPTransportError: If the target has an unsupported, malformed, or non-public origin.
     """
     try:
         parts = urlsplit(url)
@@ -59,6 +63,8 @@ def validate_http_url(url: str) -> tuple[str, str, int | None]:
             raise HTTPTransportError(HTTPFailure.REJECTED)
         if parts.username or parts.password:
             raise HTTPTransportError(HTTPFailure.REJECTED)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        require_public_host(parts.hostname, port, allowed_hosts=allowed_hosts)
         origin = parts.scheme, parts.hostname, parts.port
     except ValueError:
         raise HTTPTransportError(HTTPFailure.REJECTED) from None
@@ -79,16 +85,61 @@ def _decode_json(raw: bytes) -> object:
         raise HTTPTransportError(HTTPFailure.MALFORMED) from None
 
 
-def _redirect_target(response: requests.Response, current: str, method: str) -> tuple[str, tuple[str, str, int | None]]:
+def _redirect_target(
+    response: requests.Response,
+    current: str,
+    method: str,
+    *,
+    allowed_hosts: frozenset[str] = frozenset(),
+) -> tuple[str, tuple[str, str, int | None]]:
     try:
         target = urljoin(current, response.headers.get("Location", ""))
-        next_origin = validate_http_url(target)
+        next_origin = validate_http_url(target, allowed_hosts=allowed_hosts)
     finally:
         response.close()
     # A mutating request is never automatically resent to a redirect target.
     if method != "GET":
         raise HTTPTransportError(HTTPFailure.REJECTED)
     return target, next_origin
+
+
+def _verify_peer_destination(resp: object, req_url: str | None, allowed_hosts: frozenset[str]) -> None:
+    conn = getattr(resp, "_connection", None)
+    sock = getattr(conn, "sock", None)
+    getpeername = getattr(sock, "getpeername", None)
+    if sock is None or not callable(getpeername):
+        return
+    close_fn = getattr(resp, "close", None)
+    try:
+        peer_ip = str(getpeername()[0])
+        ip = ipaddress.ip_address(peer_ip)
+        host = getattr(conn, "host", "") or req_url or ""
+        parts = urlsplit(host if "://" in host else f"http://{host}")
+        hostname = parts.hostname or ""
+        if hostname not in allowed_hosts and not is_public_address(ip):
+            if callable(close_fn):
+                close_fn()
+            raise HTTPTransportError(HTTPFailure.REJECTED)
+    except ValueError, OSError:
+        if callable(close_fn):
+            close_fn()
+        raise HTTPTransportError(HTTPFailure.REJECTED) from None
+
+
+class _PublicDestinationAdapter(requests.adapters.HTTPAdapter):
+    def __init__(
+        self,
+        *,
+        allowed_hosts: frozenset[str] = frozenset(),
+        pool_connections: int = 10,
+        pool_maxsize: int = 10,
+    ) -> None:
+        self.allowed_hosts = allowed_hosts
+        super().__init__(pool_connections=pool_connections, pool_maxsize=pool_maxsize)
+
+    def build_response(self, req: requests.PreparedRequest, resp: object) -> requests.Response:
+        _verify_peer_destination(resp, req.url, self.allowed_hosts)
+        return super().build_response(req, resp)
 
 
 class NativeHTTPClient:
@@ -103,12 +154,17 @@ class NativeHTTPClient:
         read_timeout: float = READ_TIMEOUT_SECONDS,
         total_timeout: float = TOTAL_TIMEOUT_SECONDS,
         max_redirects: int = MAX_REDIRECTS,
+        allowed_hosts: frozenset[str] = frozenset(),
     ) -> None:
         if min(max_bytes, max_response_bytes, connect_timeout, read_timeout, total_timeout) <= 0 or max_redirects < 0:
             msg = "HTTP bounds must be positive and redirect count nonnegative."
             raise ValueError(msg)
         self._session: requests.Session | None = requests.Session()
         self._session.trust_env = False
+        self._allowed_hosts = allowed_hosts
+        adapter = _PublicDestinationAdapter(allowed_hosts=allowed_hosts)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
         self._owner = getpid()
         self._max_bytes = max_bytes
         self._response_bytes = max_response_bytes
@@ -151,7 +207,7 @@ class NativeHTTPClient:
         cookies: Mapping[str, str] | None = None,
     ) -> requests.Response:
         session = self._require_session()
-        origin = validate_http_url(url)
+        origin = validate_http_url(url, allowed_hosts=self._allowed_hosts)
         current = url
         request_headers = dict(headers or {})
         cookie_values = dict(cookies or {})
@@ -170,7 +226,7 @@ class NativeHTTPClient:
             )
             if response.status_code not in REDIRECT_STATUSES:
                 return response
-            target, next_origin = _redirect_target(response, current, method)
+            target, next_origin = _redirect_target(response, current, method, allowed_hosts=self._allowed_hosts)
             if next_origin != origin:
                 request_headers = {
                     key: value for key, value in request_headers.items() if key.lower() not in SENSITIVE_HEADERS

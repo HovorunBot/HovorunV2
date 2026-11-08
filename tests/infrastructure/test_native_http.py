@@ -19,7 +19,7 @@ def test_strict_json_distinguishes_null_from_transport_and_decode_failure() -> N
                 "/rejected": HTTPReply(status=HTTPStatus.FORBIDDEN),
             }
         ) as server,
-        NativeHTTPClient() as client,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
     ):
         assert client.read_json(server.url("/null")) is None
         with pytest.raises(HTTPTransportError) as malformed:
@@ -36,7 +36,10 @@ def test_strict_reads_enforce_declared_and_streamed_byte_bounds(*, declared: boo
     """Untrusted lengths and actual decoded bytes are independently bounded before returning content."""
     body = b"synthetic body"
     headers = {"Content-Length": "100"} if declared else {}
-    with HTTPFixture({"/large": HTTPReply(body, headers=headers)}) as server, NativeHTTPClient(max_bytes=4) as client:
+    with (
+        HTTPFixture({"/large": HTTPReply(body, headers=headers)}) as server,
+        NativeHTTPClient(max_bytes=4, allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
+    ):
         with pytest.raises(HTTPTransportError) as error:
             client.download_bytes(server.url("/large"))
         assert error.value.code == HTTPFailure.TOO_LARGE
@@ -49,7 +52,7 @@ def test_strict_redirect_strips_cross_origin_credentials_and_never_replays_post(
         HTTPFixture(
             {"/start": HTTPReply(status=HTTPStatus.FOUND, headers={"Location": target.url("/target")})}
         ) as origin,
-        NativeHTTPClient() as client,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
     ):
         headers = {"Authorization": "synthetic", "Cookie": "synthetic=1"}
         assert client.download_bytes(origin.url("/start"), headers, cookies={"synthetic": "1"}) == b"synthetic"
@@ -68,7 +71,7 @@ def test_strict_redirect_count_is_bounded() -> None:
     """A redirect loop stops at the configured hop count without returning a false resolution."""
     with (
         HTTPFixture({"/loop": HTTPReply(status=HTTPStatus.FOUND, headers={"Location": "/loop"})}) as server,
-        NativeHTTPClient(max_redirects=1) as client,
+        NativeHTTPClient(max_redirects=1, allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
     ):
         with pytest.raises(HTTPTransportError) as error:
             client.resolve(server.url("/loop"))
@@ -86,7 +89,7 @@ def test_mutating_json_preserves_explicit_rejection_and_uncertain_single_attempt
                 "/lost": HTTPReply(disconnect=True),
             }
         ) as server,
-        NativeHTTPClient() as client,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
     ):
         assert client.request_json("POST", server.url("/reject")) == {"ok": False}
         with pytest.raises(HTTPTransportError) as error:
@@ -104,5 +107,47 @@ def test_strict_reads_retain_closed_owner_and_url_guards() -> None:
         with pytest.raises(HTTPTransportError) as error:
             client.read_text("file:///synthetic")
         assert error.value.code == HTTPFailure.REJECTED
+        # Rejection of un-allowed private loopback
+        with pytest.raises(HTTPTransportError) as error:
+            client.read_text("http://127.0.0.1/synthetic")
+        assert error.value.code == HTTPFailure.REJECTED
     with pytest.raises(ValueError, match="open client"):
         client.read_text("http://127.0.0.1/synthetic")
+
+
+def test_native_http_rejects_ssrf_destination_and_redirect_hop() -> None:
+    """Direct and redirected requests to private / loopback / metadata destinations are rejected."""
+    with (
+        HTTPFixture(
+            {
+                "/redirect-meta": HTTPReply(
+                    status=HTTPStatus.FOUND,
+                    headers={"Location": "http://169.254.169.254/latest/meta-data"},
+                ),
+                "/redirect-private": HTTPReply(
+                    status=HTTPStatus.FOUND,
+                    headers={"Location": "http://10.0.0.1/secrets"},
+                ),
+            }
+        ) as server,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as client,
+    ):
+        with pytest.raises(HTTPTransportError) as error:
+            client.download_bytes(server.url("/redirect-meta"))
+        assert error.value.code == HTTPFailure.REJECTED
+
+        with pytest.raises(HTTPTransportError) as error:
+            client.download_bytes(server.url("/redirect-private"))
+        assert error.value.code == HTTPFailure.REJECTED
+
+    # Without allowlist, direct requests to loopback/private/metadata are rejected
+    with NativeHTTPClient() as unprivileged_client:
+        for bad_url in [
+            "http://127.0.0.1:8080/test",
+            "http://169.254.169.254/latest/meta-data",
+            "http://10.0.0.1/admin",
+            "http://[::1]/internal",
+        ]:
+            with pytest.raises(HTTPTransportError) as error:
+                unprivileged_client.download_bytes(bad_url)
+            assert error.value.code == HTTPFailure.REJECTED

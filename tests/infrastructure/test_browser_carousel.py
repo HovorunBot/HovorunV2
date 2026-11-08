@@ -179,7 +179,7 @@ def test_browser_downloads_carousel_bytes_in_order() -> None:
             "</body></html>"
         )
         with HTTPFixture({"/post": HTTPReply(document.encode(), headers={"Content-Type": "text/html"})}) as server:
-            service = NativeBrowserService()
+            service = NativeBrowserService(allowed_hosts=frozenset({"127.0.0.1", "localhost", "media.example.invalid"}))
             try:
                 payload, results = service.extract_and_download(server.url("/post"), _extract_loopback_images)
                 assert results == [b"zero", b"one", b"two"]

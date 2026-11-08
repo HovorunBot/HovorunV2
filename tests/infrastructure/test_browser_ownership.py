@@ -95,7 +95,7 @@ def _partial_download_url() -> Iterator[str]:
 def test_native_browser_partial_download_preserves_positions() -> None:
     """Native browser retains successes and explicitly identifies the missing media slot."""
     with _partial_download_url() as url:
-        service = NativeBrowserService()
+        service = NativeBrowserService(allowed_hosts=frozenset({"127.0.0.1", "localhost"}))
         try:
             payload, results = service.extract_and_download(url, _extract_images)
             _require_partial_download(payload, results)

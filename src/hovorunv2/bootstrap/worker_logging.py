@@ -30,10 +30,17 @@ logger = logging.getLogger(__name__)
 class WorkerTelegramHandler(logging.Handler):
     """Send sanitized errors with short-lived resources owned by the emitting process."""
 
-    def __init__(self, settings: Settings, *, api_base: str = "https://api.telegram.org") -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        api_base: str = "https://api.telegram.org",
+        allowed_hosts: frozenset[str] = frozenset(),
+    ) -> None:
         super().__init__(logging.ERROR)
         self._settings = settings
         self._api_base = api_base
+        self._allowed_hosts = allowed_hosts
         self._sending_process: int | None = None
         self.addFilter(LogContextFilter())
 
@@ -86,6 +93,7 @@ class WorkerTelegramHandler(logging.Handler):
             connect_timeout=ALERT_TIMEOUT_SECONDS,
             read_timeout=ALERT_TIMEOUT_SECONDS,
             total_timeout=ALERT_TIMEOUT_SECONDS,
+            allowed_hosts=self._allowed_hosts,
         ) as http:
             api = NativeTelegramAPI(http, self._settings.bot_token, api_base=self._api_base)
             for owner_id in owners:

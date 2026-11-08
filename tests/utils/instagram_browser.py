@@ -31,7 +31,9 @@ class RoutedInstagramBrowser:
 
     def __init__(self, fixture_url: str) -> None:
         self._fixture_url = fixture_url
-        self._native = NativeBrowserService()
+        self._native = NativeBrowserService(
+            allowed_hosts=frozenset({"127.0.0.1", "localhost", "media.example.invalid", "synthetic.invalid"})
+        )
         self.deadlines: list[ExtractionDeadline | None] = []
 
     @property

@@ -63,12 +63,14 @@ class ExtractionHTTPClient:
         max_bytes: int = MAX_DOWNLOAD_BYTES,
         max_response_bytes: int = MAX_RESPONSE_BYTES,
         max_redirects: int = MAX_REDIRECTS,
+        allowed_hosts: frozenset[str] = frozenset(),
     ) -> None:
         if min(max_bytes, max_response_bytes) <= 0 or max_redirects < 0:
             msg = "Extraction HTTP bounds must be positive and redirects nonnegative."
             raise ValueError(msg)
         self._deadline = deadline
         self._session = Session(trust_env=False)
+        self._allowed_hosts = allowed_hosts
         self._owner = getpid()
         self._closed = False
         self._max_bytes = max_bytes
@@ -151,7 +153,7 @@ class ExtractionHTTPClient:
         cookies: Mapping[str, str] | None = None,
     ) -> _ReadResponse:
         self._require_open()
-        origin = validate_http_url(url)
+        origin = validate_http_url(url, allowed_hosts=self._allowed_hosts)
         request_headers, cookie_values = dict(headers or {}), dict(cookies or {})
         current = url
         for _ in range(self._max_redirects + 1):
@@ -163,7 +165,7 @@ class ExtractionHTTPClient:
             if not response.location:
                 raise HTTPTransportError(HTTPFailure.REJECTED)
             current = urljoin(current, response.location)
-            next_origin = validate_http_url(current)
+            next_origin = validate_http_url(current, allowed_hosts=self._allowed_hosts)
             if next_origin != origin:
                 request_headers = {
                     key: value for key, value in request_headers.items() if key.lower() not in SENSITIVE_HEADERS

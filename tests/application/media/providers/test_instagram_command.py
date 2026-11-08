@@ -143,7 +143,7 @@ def test_instagram_browser_fallback_uses_real_dom_and_media(monkeypatch: pytest.
     with (
         HTTPFixture({"/image.jpg": HTTPReply(b"synthetic image")}) as media,
         HTTPFixture({"/post": HTTPReply(document.encode(), headers={"Content-Type": "text/html"})}) as server,
-        NativeHTTPClient() as http,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost", "media.example.invalid"})) as http,
     ):
         route_media_downloads(monkeypatch, media)
         browser = RoutedInstagramBrowser(server.url("/post"))

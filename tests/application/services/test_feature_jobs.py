@@ -419,10 +419,11 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
         delivery = RecordingDelivery()
         telegram = RecordingTelegram()
         video_client = client_type()
+        allowed_test_hosts = frozenset({"127.0.0.1", "localhost", "synthetic.invalid", "media.example.invalid"})
         with (
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
-            NativeHTTPClient() as http,
+            NativeHTTPClient(allowed_hosts=allowed_test_hosts) as http,
             closing(WorkerQueuePublisher(settings.valkey_url, namespace, UsageSafetyCaps(), clock)) as publisher,
         ):
             translation = NativeTranslationService(http, settings, database.policies)
@@ -544,10 +545,11 @@ async def test_denied_budget_reports_limits_separately_from_application_failure(
         )
         await admit_test_job(settings, cache, namespace, clock, envelope)
         telegram = RecordingTelegram()
+        allowed_test_hosts = frozenset({"127.0.0.1", "localhost", "synthetic.invalid", "media.example.invalid"})
         with (
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
-            NativeHTTPClient() as http,
+            NativeHTTPClient(allowed_hosts=allowed_test_hosts) as http,
         ):
             runner = FeatureJobRunner(
                 admission=runtime.admission,

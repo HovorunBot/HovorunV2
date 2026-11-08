@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **security**: reject private network destinations in worker HTTP
 - **jobs**: release admission capacity when claimed work fails
 - **media**: split long post text into valid Telegram messages
 - **media**: escape link attributes in shared captions

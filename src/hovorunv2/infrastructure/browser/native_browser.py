@@ -80,13 +80,18 @@ def download_tab_media(
     referer: str,
     *,
     deadline: ExtractionDeadline | None = None,
+    allowed_hosts: frozenset[str] = frozenset(),
 ) -> list[bytes | MediaFailure]:
     """Keep every media position explicit, retaining successful transient bytes on the payload."""
     cookies = tab.cookies(all_domains=True, all_info=True)
     downloaded: list[bytes | MediaFailure] = []
     total_bytes = 0
     headers = {"Referer": referer, "User-Agent": tab.user_agent}
-    transport = NativeHTTPClient() if deadline is None else ExtractionHTTPClient(deadline)
+    transport = (
+        NativeHTTPClient(allowed_hosts=allowed_hosts)
+        if deadline is None
+        else ExtractionHTTPClient(deadline, allowed_hosts=allowed_hosts)
+    )
     with transport as http:
         for item in payload.media_items:
             if not item.url:
@@ -119,12 +124,19 @@ def download_tab_media(
 class NativeBrowserService:
     """Perform native worker browser I/O without an event loop or inherited browser resources."""
 
-    def __init__(self, max_tabs: int = 1, flags: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        max_tabs: int = 1,
+        flags: list[str] | None = None,
+        *,
+        allowed_hosts: frozenset[str] = frozenset(),
+    ) -> None:
         if max_tabs <= 0:
             msg = "Browser tab capacity must be positive."
             raise ValueError(msg)
         self._browser = OwnedChromium(flags, terminate_with_parent=True)
         self._semaphore = BoundedSemaphore(max_tabs)
+        self._allowed_hosts = allowed_hosts
 
     @property
     def is_running(self) -> bool:
@@ -229,7 +241,7 @@ class NativeBrowserService:
             payload = extractor_fn(tab, url)
             if payload is None:
                 return None, []
-            return payload, download_tab_media(tab, payload, url, deadline=deadline)
+            return payload, download_tab_media(tab, payload, url, deadline=deadline, allowed_hosts=self._allowed_hosts)
         finally:
             self._close_tab(tab, deadline)
 
