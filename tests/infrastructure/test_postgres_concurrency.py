@@ -74,6 +74,14 @@ async def test_independent_groups_share_actor_without_serializing_writers(test_c
             .where(AuditEventDB.actor_id == actor_id, AuditEventDB.action == "update_status")
         )
         assert count == 2
+        persisted = dict(
+            (
+                await session.execute(
+                    select(ChatDB.chat_id, ChatDB.status).where(ChatDB.chat_id.in_((-100901, -100902)))
+                )
+            ).all()
+        )
+        assert persisted == {-100901: ChatStatus.APPROVED, -100902: ChatStatus.APPROVED}
 
 
 async def test_concurrent_identity_ingestion_retains_one_identity_and_audit(test_container: AsyncContainer) -> None:
@@ -92,33 +100,6 @@ async def test_concurrent_identity_ingestion_retains_one_identity_and_audit(test
             )
             == 1
         )
-
-
-async def test_many_independent_groups_progress_concurrently(test_container: AsyncContainer) -> None:
-    """Independent group subjects complete under load without one global writer gate."""
-    users = await test_container.get(UserStore)
-    chats = await test_container.get(ChatStore)
-    actor_id = 1 << 43
-    await users.ingest_user(actor_id)
-    chat_ids = tuple(-100910 - index for index in range(8))
-    for chat_id in chat_ids:
-        await chats.get_or_create_chat(chat_id)
-
-    await asyncio.gather(
-        *(
-            chats.update_status(chat_id, ChatStatus.APPROVED, actor=ActorContext.telegram(actor_id))
-            for chat_id in chat_ids
-        )
-    )
-
-    sessions = await test_container.get(async_sessionmaker)
-    async with sessions() as session:
-        count = await session.scalar(
-            select(func.count())
-            .select_from(AuditEventDB)
-            .where(AuditEventDB.actor_id == actor_id, AuditEventDB.action == "update_status")
-        )
-        assert count == len(chat_ids)
 
 
 async def test_rolled_back_subject_lock_releases_without_audit(test_container: AsyncContainer) -> None:

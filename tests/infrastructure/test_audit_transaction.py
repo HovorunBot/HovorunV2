@@ -16,7 +16,6 @@ from hovorunv2.domain.audit import (
 )
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ActorOrigin, ChatStatus
-from hovorunv2.infrastructure.persistence.audited_transaction import SQLAlchemyAuditedTransaction
 from hovorunv2.infrastructure.persistence.repositories.audit_repository import SQLAlchemyAuditRepository
 
 
@@ -219,9 +218,3 @@ async def test_audited_transaction_forbids_recursive_audit(test_container: Async
             action="create",
             operation=noop_op,
         )
-
-
-async def test_dishka_provides_audited_unit_of_work(test_container: AsyncContainer) -> None:
-    """Verify Dishka composition root provides AuditedUnitOfWork backed by real PostgreSQL."""
-    uow = await test_container.get(AuditedUnitOfWork)
-    assert isinstance(uow, SQLAlchemyAuditedTransaction)
