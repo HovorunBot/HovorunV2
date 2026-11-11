@@ -7,7 +7,7 @@ from typing import Annotated, Final, Literal
 from pydantic import AfterValidator, ConfigDict, Field, StrictBool, StrictInt, StrictStr, TypeAdapter, ValidationError
 
 from hovorunv2.domain.ban import BanKind
-from hovorunv2.domain.enums import ChatStatus, CommandName, Platform, Role
+from hovorunv2.domain.enums import ChatStatus, CommandName, Platform, Role, SpeechMode
 from hovorunv2.domain.group_grant import ApprovalBasis, RequestStatus
 
 type Pair[T] = Annotated[list[T], Field(min_length=2, max_length=2)]
@@ -42,6 +42,7 @@ HANDLE_PAIR: Final = _adapter(Pair[StrictStr | None])
 COMMAND: Final = _adapter(CommandValue)
 COMMAND_LIST: Final = _adapter(list[CommandValue])
 LANGUAGE_LIST: Final = _adapter(list[StrictStr])
+SPEECH_MODE: Final = _adapter(Annotated[StrictStr, AfterValidator(partial(_enum, kind=SpeechMode))])
 REQUEST_STATUS: Final = _adapter(RequestStatusValue)
 REQUEST_STATUS_PAIR: Final = _adapter(Pair[RequestStatusValue])
 BASIS: Final = _adapter(Annotated[StrictStr, AfterValidator(partial(_enum, kind=ApprovalBasis))])
@@ -140,6 +141,7 @@ AUDIT_SCHEMAS: Final[dict[tuple[str, str], dict[str, TypeAdapter[object]]]] = {
     ("chat", "delete"): DELETION_FIELDS.copy(),
     ("chat", "update_status"): {"status": STATUS, "old_status": OLD_STATUS},
     ("chat", "update_translation_settings"): {"target_lang": TEXT, "ignored_langs": LANGUAGE_LIST},
+    ("speech_settings", "set_mode"): {"mode": SPEECH_MODE},
     ("chat", "set_encryption_salt"): {"encryption_salt": TEXT},
     ("chat", "observe_identity"): {"telegram_id": NUMBER, "title": PUBLIC_TEXT, "chat_type": PUBLIC_TEXT},
     ("user", "create"): {"telegram_id": NUMBER, "platform": PLATFORM, "generation": NUMBER},

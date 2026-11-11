@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from hovorunv2.domain.base import Base
 from hovorunv2.domain.command import CommandDB
-from hovorunv2.domain.enums import ChatStatus, Platform
+from hovorunv2.domain.enums import ChatStatus, Platform, SpeechMode
 
 # Association table for M2M relationship between Chats and Commands
 chat_commands = Table(
@@ -62,6 +62,18 @@ class ChatDB(Base):
     generation: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     legacy_empty_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     features_configured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    speech_mode: Mapped[SpeechMode] = mapped_column(
+        Enum(
+            SpeechMode,
+            native_enum=False,
+            values_callable=lambda modes: [mode.value for mode in modes],
+            create_constraint=True,
+            name="speech_mode_values",
+        ),
+        nullable=False,
+        default=SpeechMode.OFF,
+        server_default=SpeechMode.OFF.value,
+    )
     target_lang: Mapped[str | None] = mapped_column(String, nullable=True)
     ignored_langs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     encryption_salt: Mapped[str | None] = mapped_column(String, nullable=True)

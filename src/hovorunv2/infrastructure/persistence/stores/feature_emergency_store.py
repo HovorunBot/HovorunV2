@@ -12,7 +12,7 @@ from hovorunv2.application.features.emergency import (
     resolve_emergency_key,
 )
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
+from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, SPEECH_COMMANDS, CommandName
 from hovorunv2.infrastructure.persistence.admin_authorization import require_private_administrator
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.feature_emergency_repository import (
@@ -43,8 +43,8 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
         except ValueError:
             msg = "Unknown feature for emergency state."
             raise ValueError(msg) from None
-        if command not in PROVIDER_SPLIT_COMMANDS:
-            msg = "Emergency state applies to media provider commands."
+        if command not in PROVIDER_SPLIT_COMMANDS and command not in SPEECH_COMMANDS:
+            msg = "Emergency state applies to media providers or speech features."
             raise ValueError(msg)
         return key
 

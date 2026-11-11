@@ -34,6 +34,7 @@ from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.application.usage.usage_view import FeatureUsage, UsageSummary, UsageViewService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
+    SPEECH_COMMANDS,
     CommandName,
 )
 from hovorunv2.infrastructure.logger import get_logger
@@ -825,6 +826,8 @@ class SettingsCommand(BaseCommand):
 
         guidance: set[str] = set()
         for definition in self._access_service.features.registry.all():
+            if definition.key in SPEECH_COMMANDS:
+                continue
             decision = await self._access_service.features.evaluate(
                 definition.key, chat_id, query.from_user.id, configure=True
             )
@@ -974,6 +977,9 @@ class SettingsCommand(BaseCommand):
         chat_id = context.target_chat_id
         if callback_data.action == SettingsAction.TOGGLE and callback_data.value:
             cmd_name = callback_data.value
+            if cmd_name in SPEECH_COMMANDS:
+                await query.answer("Feature unavailable.", show_alert=True)
+                return
             decision = await self._access_service.features.evaluate(
                 cmd_name, chat_id, query.from_user.id, configure=True
             )

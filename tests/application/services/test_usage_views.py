@@ -6,6 +6,7 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.identity.ports import UserStore
+from hovorunv2.application.speech.policies import SPEECH_BUCKET
 from hovorunv2.application.usage.policies import (
     MEDIA_BUCKET,
     UsagePolicy,
@@ -64,7 +65,7 @@ async def test_user_summary_reports_consumed_and_remaining(test_container: Async
     assert summary.subject_kind == TargetKind.USER
     assert summary.subject_telegram_id == USER
     assert summary.unlimited_personal_quota is False
-    assert len(summary.features) == 1
+    assert {entry.feature for entry in summary.features} == {MEDIA_BUCKET, SPEECH_BUCKET, "feature:transcribe"}
     feature = _feature_entry(summary, FEATURE)
     assert "shared across all providers" in feature.display_name
     assert feature.unit == UsageUnit.REQUESTS
@@ -97,7 +98,11 @@ async def test_group_scope_never_includes_member_personal_usage(test_container: 
     await _charge(test_container, AccountingSubject(TargetKind.USER, USER), amount=5)
     group_summary = await views.for_group(GROUP)
     personal_summary = await views.for_user(USER)
-    assert len(group_summary.features) == 1
+    assert {entry.feature for entry in group_summary.features} == {
+        MEDIA_BUCKET,
+        SPEECH_BUCKET,
+        "feature:transcribe_auto",
+    }
     assert _feature_entry(group_summary, FEATURE).limit == 12
     assert group_summary.subject_kind == TargetKind.GROUP
     assert personal_summary.subject_kind == TargetKind.USER
@@ -144,4 +149,6 @@ async def test_shared_quota_keeps_distinct_windows(test_container: AsyncContaine
     assert {(entry.feature, entry.window_seconds, entry.limit) for entry in summary.features} == {
         (MEDIA_BUCKET, WINDOW_SECONDS, 6),
         (MEDIA_BUCKET, hourly_seconds, hourly_limit),
+        (SPEECH_BUCKET, WINDOW_SECONDS, 6),
+        ("feature:transcribe", WINDOW_SECONDS, 6),
     }

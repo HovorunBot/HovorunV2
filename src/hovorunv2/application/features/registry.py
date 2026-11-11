@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
+from hovorunv2.application.speech.policies import SPEECH_POLICY
 from hovorunv2.domain.enums import DEFAULT_COMMANDS, PROVIDER_SPLIT_COMMANDS, CommandName
 
 _MISSING_FEATURE_METADATA_MESSAGE: Final = "Feature identity, introduction, scopes and triggers must be defined"
@@ -162,15 +163,35 @@ class FeatureRegistry:
 
 
 FEATURE_REGISTRY = FeatureRegistry(
-    FeatureDefinition(
-        key=str(key),
-        display_name=f"{provider.capitalize()} {'video' if is_video else 'image/text'} links",
-        default_enabled=True,
-        provider=provider,
-        is_video=is_video,
+    (
+        *(
+            FeatureDefinition(
+                key=str(key),
+                display_name=f"{provider.capitalize()} {'video' if is_video else 'image/text'} links",
+                default_enabled=True,
+                provider=provider,
+                is_video=is_video,
+            )
+            for provider, splits in PROVIDER_SPLIT_COMMANDS.items()
+            for key, is_video in zip(splits, (True, False), strict=True)
+        ),
+        FeatureDefinition(
+            key=CommandName.TRANSCRIBE,
+            display_name="Speech transcription",
+            introduction="local-speech-recognition",
+            triggers=frozenset({TriggerKind.DIRECT}),
+            usage_policy=SPEECH_POLICY,
+            queue_policy=SPEECH_POLICY,
+        ),
+        FeatureDefinition(
+            key=CommandName.TRANSCRIBE_AUTO,
+            display_name="Automatic speech transcription",
+            introduction="local-speech-recognition",
+            triggers=frozenset({TriggerKind.AUTOMATIC}),
+            usage_policy=SPEECH_POLICY,
+            queue_policy=SPEECH_POLICY,
+        ),
     )
-    for provider, splits in PROVIDER_SPLIT_COMMANDS.items()
-    for key, is_video in zip(splits, (True, False), strict=True)
 )
 
 

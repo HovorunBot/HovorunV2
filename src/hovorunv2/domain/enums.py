@@ -59,6 +59,8 @@ class CommandName(StrEnum):
     HELP = "help"
     FEEDBACK = "feedback"
     START = "start"
+    TRANSCRIBE = "transcribe"
+    TRANSCRIBE_AUTO = "transcribe_auto"
     TWITTER = "twitter"
     TWITTER_VIDEO = "twitter_video"
     TWITTER_POST = "twitter_post"
@@ -83,6 +85,17 @@ class CommandName(StrEnum):
     REDDIT = "reddit"
     REDDIT_VIDEO = "reddit_video"
     REDDIT_POST = "reddit_post"
+
+
+SPEECH_COMMANDS: Final = (CommandName.TRANSCRIBE, CommandName.TRANSCRIBE_AUTO)
+
+
+class SpeechMode(StrEnum):
+    """Select speech triggers together; automatic mode always includes manual requests."""
+
+    OFF = "off"
+    MANUAL_ONLY = "manual"
+    MANUAL_AND_AUTOMATIC = "manual_and_automatic"
 
 
 class ChatStatus(StrEnum):

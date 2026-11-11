@@ -19,12 +19,13 @@ from hovorunv2.application.features.feature_policy import FeatureFacts
 from hovorunv2.application.features.registry import FeatureChannel, FeatureDefinition, FeatureScope, TriggerKind
 from hovorunv2.application.groups.group_policy import GroupAccessFacts, group_access
 from hovorunv2.application.identity.membership import MembershipStatus
+from hovorunv2.application.speech.policies import speech_selected
 from hovorunv2.application.usage.policies import UsagePolicy, UsageSubject, UsageUnit, UsageWindow
 from hovorunv2.domain.ban import BanDB, BanKind
 from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.emergency import FeatureEmergencyDB
-from hovorunv2.domain.enums import ChatStatus, TargetKind
+from hovorunv2.domain.enums import SPEECH_COMMANDS, ChatStatus, TargetKind
 from hovorunv2.domain.group_beta import GroupBetaFeatureDB
 from hovorunv2.domain.group_grant import GroupApprovalDB
 from hovorunv2.domain.membership import GroupMembershipStateDB
@@ -125,6 +126,8 @@ class PolicyFactReader:
         chat = self.session.scalar(active_chat(chat_id))
         if chat is None:
             return False
+        if definition.key in SPEECH_COMMANDS:
+            return speech_selected(chat.speech_mode, definition.key)
         names = {command.name for command in chat.commands}
         return definition.key in names or (
             not names

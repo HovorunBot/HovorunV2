@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from hovorunv2.application.features.registry import FeatureRegistry, TriggerKind
+from hovorunv2.application.speech.policies import SPEECH_BUCKET
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsagePolicy, UsageSafetyCaps, UsageUnit
 from hovorunv2.application.usage.usage_ledger import AccountingSubject, UsageLedgerStore
@@ -107,7 +108,7 @@ class UsageViewService:
         seen: set[tuple[str, UsageUnit, int]] = set()
         unlimited = False
         for definition in self._registry.all():
-            if UsageUnit.REQUESTS not in definition.units:
+            if UsageUnit.REQUESTS not in definition.units or trigger not in definition.triggers:
                 continue
             if definition.provider is not None:
                 resolved = await self._policies.resolve_media(definition.provider, trigger, actor_id, group_id=group_id)
@@ -119,11 +120,11 @@ class UsageViewService:
                 if dimension in seen:
                     continue
                 seen.add(dimension)
-                name = (
-                    "Media uploads — shared across all providers"
-                    if policy.bucket == MEDIA_BUCKET
-                    else definition.display_name
-                )
+                name = definition.display_name
+                if policy.bucket == MEDIA_BUCKET:
+                    name = "Media uploads — shared across all providers"
+                if policy.bucket == SPEECH_BUCKET:
+                    name = "Speech recognition — shared across manual and automatic"
                 features.append(await self._quota_entry(subject, policy, name, observed))
         return UsageSummary(subject.kind, subject.telegram_id, unlimited, self._safety, tuple(features))
 

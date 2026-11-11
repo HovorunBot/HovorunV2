@@ -14,7 +14,7 @@ from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.chat import ChatDB, chat_commands
 from hovorunv2.domain.command import CommandDB
-from hovorunv2.domain.enums import ActorOrigin, ChatStatus, Platform, TargetKind
+from hovorunv2.domain.enums import SPEECH_COMMANDS, ActorOrigin, ChatStatus, Platform, TargetKind
 from hovorunv2.domain.group_route import GroupRouteDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.chat_repository import SQLAlchemyChatRepository
@@ -115,6 +115,8 @@ class SQLAlchemyCommandStore(CommandStore):
             commands: Command names to apply as defaults.
             platform: Platform of the chat identity.
         """
+        for command in commands:
+            self._require_toggle_command(command)
         await self._audited_uow.execute(
             actor=ActorContext.system("initialize_defaults"),
             target_type="command_selection",
@@ -267,6 +269,12 @@ class SQLAlchemyCommandStore(CommandStore):
         chat.features_configured = True
         return legacy, first_selection
 
+    def _require_toggle_command(self, command_name: str) -> None:
+        """Keep speech mode outside independent command-association switches."""
+        if command_name in SPEECH_COMMANDS:
+            msg = "Speech configuration requires an atomic speech mode change."
+            raise ValueError(msg)
+
     async def enable_command(
         self, chat_id: int, command_name: str, platform: str = "telegram", actor: ActorContext | None = None
     ) -> bool:
@@ -281,6 +289,7 @@ class SQLAlchemyCommandStore(CommandStore):
         Returns:
             True if the command is now associated with the chat.
         """
+        self._require_toggle_command(command_name)
         operation = partial(
             self._execute_enable_command,
             actor=actor or ActorContext.system("enable_command"),
@@ -317,6 +326,7 @@ class SQLAlchemyCommandStore(CommandStore):
         Returns:
             True if the command association was removed.
         """
+        self._require_toggle_command(command_name)
         operation = partial(
             self._execute_disable_command,
             actor=actor or ActorContext.system("disable_command"),

@@ -1,6 +1,7 @@
 """Pure bounded usage resolution shared by bot and worker fact loaders."""
 
 from hovorunv2.application.features.registry import FeatureDefinition
+from hovorunv2.application.speech.policies import SPEECH_POLICY
 from hovorunv2.application.usage.policies import (
     MINUTE_SECONDS,
     ResolvedUsage,
@@ -73,7 +74,11 @@ def _default_policies(
     Returns:
         Default policies keyed by bucket and window seconds.
     """
-    if unit != UsageUnit.REQUESTS or definition.usage_policy != "media":
+    if unit != UsageUnit.REQUESTS:
+        return {}
+    if definition.usage_policy == SPEECH_POLICY:
+        return _speech_policies(buckets, group=group, trusted=trusted)
+    if definition.usage_policy != "media":
         return {}
     elevated = group or trusted
     return {
@@ -82,6 +87,30 @@ def _default_policies(
             TRUSTED_REQUEST_LIMIT if elevated else NORMAL_REQUEST_LIMIT,
             TRUSTED_BURST if elevated else NORMAL_BURST,
             TRUSTED_CONCURRENCY if elevated else NORMAL_CONCURRENCY,
+            GROUP_PENDING if group else NORMAL_PENDING,
+        )
+        for bucket in sorted(buckets)
+    }
+
+
+def _speech_policies(buckets: set[str], *, group: bool, trusted: bool) -> dict[tuple[str, int], UsagePolicy]:
+    """Use existing request quotas while serializing expensive speech work.
+
+    Args:
+        buckets: Speech feature and shared family buckets.
+        group: Whether a group owns the usage.
+        trusted: Whether the personal subject is trusted.
+
+    Returns:
+        Bounded speech request policies with one execution per subject.
+    """
+    elevated = group or trusted
+    return {
+        (bucket, MINUTE_SECONDS): UsagePolicy(
+            bucket,
+            TRUSTED_REQUEST_LIMIT if elevated else NORMAL_REQUEST_LIMIT,
+            TRUSTED_BURST if elevated else NORMAL_BURST,
+            NORMAL_CONCURRENCY,
             GROUP_PENDING if group else NORMAL_PENDING,
         )
         for bucket in sorted(buckets)
