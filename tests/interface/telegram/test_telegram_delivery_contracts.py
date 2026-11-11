@@ -1,13 +1,18 @@
 """Real loopback Telegram acknowledgements, partial receipts and explicit delivery recovery."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
+from email.parser import BytesParser
+from email.policy import default
 from http import HTTPStatus
+from pathlib import Path
 from urllib.parse import parse_qs
 
 import pytest
 
 from hovorunv2.application.media.downloader import NativeMediaDownloader
+from hovorunv2.application.media.extractor import NativeMediaExtractor
+from hovorunv2.application.media.limits import MAX_SOURCE_MEDIA_BYTES
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.rendering import MEDIA_UNAVAILABLE_TEXT
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
@@ -17,6 +22,7 @@ from hovorunv2.interface.telegram.transport.sync_delivery import (
     TelegramDeliveryUncertainError,
     TelegramRejectedError,
 )
+from tests.utils.split_media import media_stream_types, split_media_routes, synthetic_video
 from tests.utils.sync_http import HTTPFixture, HTTPReply, json_reply
 
 # Synthetic loopback-only credentials, never an external account.
@@ -68,10 +74,11 @@ def test_native_missing_video_sends_post_text_and_explanation() -> None:
 @contextmanager
 def _native_delivery(
     routes: RouteReplies, *, total_timeout: float = 60.0
-) -> Iterator[tuple[NativeTelegramDelivery, HTTPFixture]]:
+) -> Generator[tuple[NativeTelegramDelivery, HTTPFixture]]:
     with (
         HTTPFixture(routes) as server,
         NativeHTTPClient(
+            max_bytes=MAX_SOURCE_MEDIA_BYTES,
             total_timeout=total_timeout,
             allowed_hosts=frozenset({"127.0.0.1", "localhost", "synthetic.invalid"}),
         ) as http,
@@ -278,3 +285,84 @@ def test_native_oversized_post_text_is_split_into_multiple_bounded_messages() ->
         for req in send_message_requests:
             sent_text = parse_qs(req.body.decode())["text"][0]
             assert len(sent_text) <= 4096
+
+
+def test_split_stream_video_upload_contains_audio(tmp_path: Path) -> None:
+    """Merge independent streams before submitting a Telegram video attachment."""
+    routes = split_media_routes(tmp_path)
+    routes.update(
+        {
+            API_PREFIX + "sendVideo": _ack(_message(21)),
+            API_PREFIX + "sendMessage": _ack(_message(10)),
+            API_PREFIX + "editMessageMedia": _ack(_message(10)),
+        }
+    )
+    with _native_delivery(routes) as (delivery, server):
+        payload = NativeMediaExtractor().extract(server.url("/manifest.mpd"))
+        delivery.deliver(42, 1, payload, "YouTube", None)
+        uploads = [request for request in server.requests if request.path.startswith(API_PREFIX)]
+        attachments = []
+        for request in uploads:
+            message = BytesParser(policy=default).parsebytes(
+                f"Content-Type: {request.headers['Content-Type']}\r\n\r\n".encode() + request.body
+            )
+            attachments.extend(
+                part.get_payload(decode=True) for part in message.iter_attachments() if part.get_filename()
+            )
+        assert len(attachments) == 1
+        assert isinstance(attachments[0], bytes)
+        output = tmp_path / "uploaded.mp4"
+        output.write_bytes(attachments[0])
+        assert media_stream_types(output) == {"audio", "video"}
+
+
+@pytest.mark.parametrize("buffered", [False, True])
+def test_oversized_provider_video_is_compressed_for_upload(tmp_path: Path, *, buffered: bool) -> None:
+    """Any provider can recover from oversized direct or browser-buffered video."""
+    source = synthetic_video(tmp_path)
+    oversized = source + bytes(50 * 1024 * 1024)
+    routes = {
+        API_PREFIX + "sendVideo": _reject("Request Entity Too Large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
+        API_PREFIX + "sendMessage": _ack(_message(10)),
+        API_PREFIX + "editMessageMedia": _ack(_message(10)),
+        API_PREFIX + "editMessageText": _ack(_message(10)),
+        "/video.mp4": HTTPReply(oversized, headers={"Content-Type": "video/mp4"}),
+    }
+    with _native_delivery(routes) as (delivery, server):
+        payload = _payload(1)
+        payload.media_items[0] = MediaItem(server.url("/video.mp4"), True, oversized if buffered else None)
+        delivery.deliver(42, 1, payload, "Any provider", None)
+        uploads = [request for request in server.requests if request.path.endswith("editMessageMedia")]
+        assert len(uploads) == 1
+        message = BytesParser(policy=default).parsebytes(
+            f"Content-Type: {uploads[0].headers['Content-Type']}\r\n\r\n".encode() + uploads[0].body
+        )
+        attachment = next(part for part in message.iter_attachments() if part.get_filename())
+        content = attachment.get_payload(decode=True)
+        assert isinstance(content, bytes)
+        assert len(content) < 50_000_000
+        output = tmp_path / "compressed.mp4"
+        output.write_bytes(content)
+        assert media_stream_types(output) == {"video", "audio"}
+
+
+def test_failed_split_audio_download_never_uploads_silent_video(tmp_path: Path) -> None:
+    """An unavailable audio track must fail the merge rather than degrade to video-only delivery."""
+    routes = split_media_routes(tmp_path)
+    for path in routes:
+        if "stream1" in path:
+            routes[path] = HTTPReply(status=HTTPStatus.NOT_FOUND)
+    routes.update(
+        {
+            API_PREFIX + "sendVideo": _ack(_message(21)),
+            API_PREFIX + "sendMessage": _ack(_message(10)),
+            API_PREFIX + "editMessageText": _ack(_message(10)),
+            API_PREFIX + "editMessageMedia": _ack(_message(10)),
+        }
+    )
+    with _native_delivery(routes) as (delivery, server):
+        payload = NativeMediaExtractor().extract(server.url("/manifest.mpd"))
+        delivery.deliver(42, 1, payload, "YouTube", None)
+        assert "sendVideo" not in _methods(server)
+        assert "editMessageMedia" not in _methods(server)
+        assert "Failed to download media" in parse_qs(server.requests[-1].body.decode())["text"][0]

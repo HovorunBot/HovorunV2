@@ -102,6 +102,12 @@ CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app",
 # -----------------------------------------------------------------------------
 FROM base AS worker-media
 
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get -o Acquire::Queue-Mode=access -o Acquire::Retries=3 install -y --no-install-recommends \
+        ffmpeg ca-certificates
+
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION} \
     WORKER_ROLE=media
@@ -126,7 +132,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get -o Acquire::Queue-Mode=access -o Acquire::Retries=3 install -y --no-install-recommends \
-        chromium fonts-liberation ca-certificates
+        chromium fonts-liberation ca-certificates ffmpeg
 
 COPY --from=builder-worker-browser --chown=appuser:appuser /app/.venv /app/.venv
 
@@ -136,4 +142,9 @@ CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app",
 # -----------------------------------------------------------------------------
 # Default target
 # -----------------------------------------------------------------------------
+FROM worker-browser AS worker-compression
+
+ENV WORKER_ROLE=compression
+CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "work:{work}:compression", "--concurrency=2"]
+
 FROM bot AS default

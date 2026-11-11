@@ -13,6 +13,7 @@ from hovorunv2.domain.enums import TargetKind
 MAX_JOB_LIFETIME_SECONDS = 5 * MINUTE_SECONDS
 PAYLOAD_CLEANUP_SECONDS = 60
 FEATURE_JOB_FUNCTION = "run_feature_job"
+COMPRESSION_JOB_FUNCTION = "run_compression_job"
 APPLICATION_FAILURE_NOTICE_TEXT = "⚠️ The bot encountered a problem while processing this request."
 _INVALID_JOB_TARGET_MESSAGE: Final = "Job target kind and Telegram identity disagree."
 _INVALID_JOB_DEADLINE_MESSAGE: Final = "Feature job requires an original deadline within five minutes of acceptance."

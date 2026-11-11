@@ -12,8 +12,10 @@ from pathlib import Path
 import pytest
 import redis.asyncio as redis
 from billiard.exceptions import SoftTimeLimitExceeded
+from celery import Celery
 from dishka import AsyncContainer
 
+from hovorunv2.application.features.ports import CommandStore
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
@@ -24,6 +26,7 @@ from hovorunv2.application.jobs.feature_job_runner import (
     LIMIT_FAILURE_NOTICE_TEXT,
     LIMIT_WAIT_NOTICE_TEXT,
     TIMEOUT_NOTICE_TEXT,
+    VIDEO_PREPARATION_NOTICE_TEXT,
     FeatureJobRunner,
 )
 from hovorunv2.application.jobs.feature_jobs import (
@@ -62,7 +65,11 @@ from hovorunv2.bootstrap.worker_runtime import (
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.queues.feature_queue import (
+    CeleryFeatureQueue,
+    register_feature_tasks,
+    set_feature_task_runner,
+)
 from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.jobs import (
@@ -221,13 +228,14 @@ class RecordingDelivery:
     def deliver(
         self,
         chat_id: int,
-        reply_to_message_id: int,
+        message_id: int,
         payload: RichMediaPayload,
-        platform_label: str,
+        platform_name: str,
         sender_label: str | None = None,
-    ) -> None:
+    ) -> tuple[int, ...]:
         """Capture delivery payload without real Telegram network calls."""
         self.calls.append({"chat_id": chat_id, "payload": payload})
+        return (1000 + len(self.calls),)
 
 
 async def _seed_entities(test_container: AsyncContainer, user_id: int, group_id: int) -> tuple[int, int]:
@@ -733,3 +741,86 @@ async def test_claimed_failure_releases_admission_without_refunding_uncertain_bu
             assert (
                 await admission.admit(next_envelope, next_payload, limits, clock.now())
             ).state == AdmissionState.ACCEPTED
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_video_handoff_notifies_then_delivers_only_from_compression_task(
+    test_container: AsyncContainer, postgres_database_url: str, *, cancel: bool
+) -> None:
+    """A video keeps its original reservation and cannot deliver before its fenced processing task."""
+    settings = (await test_container.get(Settings)).model_copy(update={"database_url": postgres_database_url})
+    users = await test_container.get(UserStore)
+    user = await users.ingest_user(390001)
+    assert user is not None
+    await users.set_trust(390001, is_trusted=True, actor=ActorContext.cli())
+    await (await test_container.get(CommandStore)).enable_command(390001, "instagram_video", actor=ActorContext.cli())
+    clock = ManualClock(time.time())
+    safety = UsageSafetyCaps()
+    async with runtime_cache(test_container) as (cache, namespace):
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        sealed = await payloads.seal("video-stage", PRIVATE_BODY, clock.now() + 300)
+        await payloads.put(sealed)
+        envelope = job_envelope(
+            sealed.reference,
+            clock,
+            job_id=sealed.job_id,
+            feature="instagram_video",
+            target=JobTarget(kind=TargetKind.USER, entity_id=user.id, generation=user.generation, telegram_id=390001),
+        )
+        await admit_test_job(settings, cache, namespace, clock, envelope)
+        delivery, telegram = RecordingDelivery(), RecordingTelegram()
+        with (
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            NativeHTTPClient() as http,
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+        ):
+            runner = FeatureJobRunner(
+                admission=runtime.admission,
+                payloads=runtime.payloads,
+                budgets=runtime.budgets,
+                policies=database.policies,
+                ledger=database.ledger,
+                http=http,
+                delivery=delivery,
+                translation=NativeTranslationService(http, settings, database.policies),
+                extractor=NativeMediaExtractor(),
+                clock=clock,
+                settings=settings,
+                publisher=publisher,
+                clients=[VideoMediaClient()],
+                telegram=telegram,
+                feedback=AllowFeedback(),
+                gate=AllowGate(),
+                embed=DisabledEmbedAdapter(),
+            )
+            assert runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA) == JobOutcome.COMPLETE.value
+            assert not delivery.calls
+            assert telegram.calls == [(390001, VIDEO_PREPARATION_NOTICE_TEXT)]
+            ticket = runtime.admission.get(envelope.job_id)
+            assert ticket is not None
+            assert ticket.stage == JobStage.COMPRESSION
+            assert ticket.envelope == envelope
+            assert ticket.budget_reserved
+            messages = broker_envelopes(settings, namespace.value, "compression")
+            assert messages == [envelope.model_dump(mode="json")]
+            runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
+            assert not delivery.calls
+            assert len(telegram.calls) == 1
+            if cancel:
+                runtime.admission.cancel(envelope.job_id)
+                runner.recover()
+            app = Celery("compression-regression")
+            register_feature_tasks(app)
+            set_feature_task_runner(runner.run)
+            try:
+                app.tasks["run_compression_job"].apply(kwargs={"envelope": messages[0]}, throw=True)
+            finally:
+                set_feature_task_runner(None)
+                app.close()
+            assert len(delivery.calls) == (0 if cancel else 1)
+            runner.run(messages[0], JobStage.COMPRESSION)
+            assert len(delivery.calls) == (0 if cancel else 1)
+            terminal = runtime.admission.get(envelope.job_id)
+            assert terminal is not None
+            assert terminal.outcome == (JobOutcome.CANCELLED if cancel else JobOutcome.COMPLETE)

@@ -180,6 +180,44 @@ services:
       - --without-heartbeat
       - "--queues=work:{work}:browser"
 
+  worker-compression:
+    mem_limit: ${WORKER_COMPRESSION_MEMORY_LIMIT:-1536m}
+    pids_limit: 512
+    logging: *logging
+    image: hovorunv2-worker-compression:${APP_TAG:-latest}
+    build:
+      context: .
+      target: worker-compression
+      args:
+        APP_VERSION: ${APP_VERSION:-}
+    stop_grace_period: 150s
+    healthcheck: *worker-health
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    environment:
+      <<: *app-environment
+      WORKER_ROLE: compression
+      INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
+      TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
+      TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
+    command:
+      - /app/.venv/bin/celery
+      - -A
+      - hovorunv2.bootstrap.worker_app:celery_app
+      - worker
+      - --pool=prefork
+      - --concurrency=2
+      - --max-tasks-per-child=1
+      - --loglevel=INFO
+      - --without-gossip
+      - --without-mingle
+      - --without-heartbeat
+      - "--queues=work:{work}:compression"
+
   worker-operations:
     mem_limit: ${WORKER_OPERATIONS_MEMORY_LIMIT:-512m}
     pids_limit: 128

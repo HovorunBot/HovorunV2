@@ -6,7 +6,6 @@ import tempfile
 import time
 from collections.abc import Mapping
 from contextlib import nullcontext
-from functools import partial
 from pathlib import Path
 from threading import current_thread, main_thread
 
@@ -21,7 +20,9 @@ from hovorunv2.application.jobs.http_ports import (
 from hovorunv2.application.media.backend_logging import MediaBackendLogger
 from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import MediaDownloadError, MediaExtractionError, MediaFailure
+from hovorunv2.application.media.limits import MAX_SOURCE_MEDIA_BYTES
 from hovorunv2.application.media.payloads import MediaItem
+from hovorunv2.application.media.video_processing import prepare_video
 from hovorunv2.utils.operation_timeout import OperationTimeout
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ MAX_MEDIA_BYTES = 50 * 1024 * 1024
 DOWNLOAD_CHUNK_BYTES = 64 * 1024
 HLS_MANIFEST_SIZE_THRESHOLD = 1024
 DOWNLOAD_TIMEOUT_SECONDS = 30
+BATCH_TIMEOUT_SECONDS = 90
 DEFAULT_DOWNLOAD_HEADERS: Mapping[str, str] = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -57,6 +59,25 @@ def _enforce_download_limit(event: dict[str, object], *, max_bytes: int) -> None
         raise yt_dlp.utils.DownloadError(msg)
 
 
+class _DownloadBudget:
+    """Bound combined video/audio transfers instead of granting each stream a full allowance."""
+
+    def __init__(self, max_bytes: int) -> None:
+        self._max_bytes = max_bytes
+        self._downloaded: dict[str, int] = {}
+
+    def check(self, event: dict[str, object]) -> None:
+        """Reject cumulative transfer bytes above the source limit."""
+        _enforce_download_limit(event, max_bytes=self._max_bytes)
+        filename, downloaded = event.get("filename"), event.get("downloaded_bytes")
+        if not isinstance(filename, str) or not isinstance(downloaded, int):
+            return
+        self._downloaded[filename] = max(self._downloaded.get(filename, 0), downloaded)
+        if sum(self._downloaded.values()) > self._max_bytes:
+            msg = "Media download exceeds the configured byte bound."
+            raise yt_dlp.utils.DownloadError(msg)
+
+
 def _require_content(content: bytes, max_bytes: int = MAX_MEDIA_BYTES) -> bytes:
     if len(content) > max_bytes:
         raise MediaDownloadError(MediaFailure.TOO_LARGE)
@@ -81,6 +102,7 @@ def _download_options(
     bounded_timeout = max(1, int(timeout_seconds))
     return {
         "format": '(bestvideo+bestaudio/best)[protocol~="^(https?|m3u8)"]',
+        "merge_output_format": "mp4",
         "outtmpl": str(root / "downloaded.%(ext)s"),
         "quiet": True,
         "logger": MediaBackendLogger(),
@@ -89,9 +111,11 @@ def _download_options(
         "retries": 0,
         "extractor_retries": 0,
         "fragment_retries": 0,
+        "skip_unavailable_fragments": False,
+        "noplaylist": True,
         "enable_file_urls": False,
         "max_filesize": max_bytes,
-        "progress_hooks": [partial(_enforce_download_limit, max_bytes=max_bytes)],
+        "progress_hooks": [_DownloadBudget(max_bytes).check],
     }
 
 
@@ -117,7 +141,7 @@ def download_ytdlp_bytes(
     url: str,
     *,
     destination_policy: DestinationPolicyPort,
-    max_bytes: int = MAX_MEDIA_BYTES,
+    max_bytes: int = MAX_SOURCE_MEDIA_BYTES,
     deadline: ExtractionDeadline | None = None,
 ) -> bytes:
     """Require bounded output while owning and cleaning every temporary backend artifact.
@@ -178,7 +202,7 @@ class NativeMediaDownloader:
         except HTTPTransportError as error:
             code = MediaFailure.TOO_LARGE if error.code == HTTPFailure.TOO_LARGE else MediaFailure.UNAVAILABLE
             raise MediaDownloadError(code) from None
-        return _require_content(content)
+        return _require_content(content, MAX_SOURCE_MEDIA_BYTES)
 
     def download(self, url: str, *, is_video: bool = False, deadline: ExtractionDeadline | None = None) -> bytes:
         """Require direct bytes or fall back to the video-only strategy.
@@ -197,6 +221,7 @@ class NativeMediaDownloader:
         logger.info("Worker starting media download")
         try:
             content = self._download(url, is_video=is_video, deadline=deadline)
+            content = prepare_video(content, deadline=deadline) if is_video else _require_content(content)
         except MediaDownloadError as error:
             logger.warning("Media download failed (%s)", error.code)
             raise
@@ -220,7 +245,10 @@ class NativeMediaDownloader:
     def _download_item(self, item: MediaItem, *, deadline: ExtractionDeadline | None = None) -> bytes | MediaFailure:
         try:
             if item.data is not None:
-                return _require_content(item.data)
+                return prepare_video(item.data, deadline=deadline) if item.is_video else _require_content(item.data)
+            if item.requires_download:
+                content = download_ytdlp_bytes(item.url, destination_policy=self._destination_policy, deadline=deadline)
+                return prepare_video(content, deadline=deadline) if item.is_video else _require_content(content)
             return self.download(item.url, is_video=item.is_video, deadline=deadline)
         except MediaDownloadError as error:
             return error.code
@@ -239,4 +267,5 @@ class NativeMediaDownloader:
         Returns:
             One bytes payload or MediaFailure per input item, in input order.
         """
-        return [self._download_item(item, deadline=deadline) for item in items]
+        allowance = deadline or ExtractionDeadline.after(BATCH_TIMEOUT_SECONDS)
+        return [self._download_item(item, deadline=allowance) for item in items]

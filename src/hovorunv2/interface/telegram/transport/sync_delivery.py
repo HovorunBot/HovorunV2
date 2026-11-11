@@ -12,6 +12,8 @@ from hovorunv2.application.jobs.http_ports import (
     TelegramRejection,
 )
 from hovorunv2.application.media.downloader import NativeMediaDownloader
+from hovorunv2.application.media.errors import MediaFailure
+from hovorunv2.application.media.limits import TELEGRAM_VIDEO_BYTES
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.media.rendering import build_caption, plan_caption, split_html_message
 from hovorunv2.interface.telegram.transport.sync_api import (
@@ -124,9 +126,12 @@ class NativeTelegramDelivery:
 
     def _fallback(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
         logger.info("Telegram could not fetch media URLs; starting download and upload fallback")
-        placeholder = self._text(
-            chat_id, caption + "\n\n⏳ <i>Downloading media...</i>", reply_to_message_id=message_id
-        )[0]
+        progress = (
+            "Preparing video; oversized files will be compressed to fit Telegram..."
+            if payload.is_video
+            else "Downloading media..."
+        )
+        placeholder = self._text(chat_id, caption + f"\n\n⏳ <i>{progress}</i>", reply_to_message_id=message_id)[0]
         try:
             return self._upload_fallback(chat_id, message_id, payload, caption, placeholder)
         except TelegramDeliveryUncertainError as error:
@@ -145,7 +150,12 @@ class NativeTelegramDelivery:
         ]
         if not items:
             logger.error("Worker media download fallback produced no usable media")
-            return self._text(chat_id, caption + "\n\n⚠️ <i>Failed to download media.</i>", message_id=placeholder)
+            reason = (
+                "Media is too large, view on original resource."
+                if MediaFailure.TOO_LARGE in contents
+                else "Failed to download media."
+            )
+            return self._text(chat_id, caption + f"\n\n⚠️ <i>{reason}</i>", message_id=placeholder)
         try:
             if len(items) == 1:
                 return self._edit_media(chat_id, placeholder, items[0], caption)
@@ -213,12 +223,21 @@ class NativeTelegramDelivery:
             raise
 
     def _deliver_media(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
+        if any(item.requires_download and item.data is None for item in payload.media_items):
+            return self._fallback(chat_id, message_id, payload, caption)
+        if any(
+            item.is_video and item.data is not None and len(item.data) > TELEGRAM_VIDEO_BYTES
+            for item in payload.media_items
+        ):
+            return self._fallback(chat_id, message_id, payload, caption)
         try:
             return self._send_items(chat_id, message_id, payload.media_items, caption)
         except TelegramRejectedError as exc:
             if exc.reason == TelegramRejection.FETCH:
                 return self._fallback(chat_id, message_id, payload, caption)
             if exc.reason == TelegramRejection.TOO_LARGE:
+                if any(item.is_video and item.data is None for item in payload.media_items):
+                    return self._fallback(chat_id, message_id, payload, caption)
                 logger.exception("Telegram rejected oversized worker media")
                 return self._text(chat_id, caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>")
             raise

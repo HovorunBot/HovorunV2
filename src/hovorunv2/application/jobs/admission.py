@@ -67,6 +67,7 @@ class NoticeKind(StrEnum):
     DELAYED = "delayed"
     TERMINAL = "terminal"
     FAILURE = "failure"
+    PREPARING_VIDEO = "preparing_video"
 
 
 class JobStage(StrEnum):
@@ -74,6 +75,7 @@ class JobStage(StrEnum):
 
     MEDIA = "media"
     BROWSER = "browser"
+    COMPRESSION = "compression"
 
 
 class SettlementIntent(BaseModel):

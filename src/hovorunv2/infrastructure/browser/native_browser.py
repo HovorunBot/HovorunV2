@@ -21,6 +21,7 @@ from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPTransportErro
 from hovorunv2.application.media.browser import BrowserTab
 from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserError, MediaFailure
+from hovorunv2.application.media.limits import MAX_SOURCE_MEDIA_BYTES
 from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.infrastructure.browser.bounded_tab import BoundedBrowserTab
 from hovorunv2.infrastructure.browser.browser_process import OwnedChromium
@@ -33,7 +34,7 @@ SELECTOR_TIMEOUT_SECONDS = 10
 CONTEXT_CLEANUP_SECONDS = 3
 MAX_BROWSER_ATTEMPTS = 2
 MAX_BROWSER_HTML_BYTES = 2 * 1024 * 1024
-MAX_BROWSER_MEDIA_BYTES = 50 * 1024 * 1024
+MAX_BROWSER_MEDIA_BYTES = MAX_SOURCE_MEDIA_BYTES
 logger = logging.getLogger(__name__)
 
 
@@ -96,9 +97,9 @@ def download_tab_media(
     total_bytes = 0
     headers = {"Referer": referer, "User-Agent": tab.user_agent}
     transport = (
-        NativeHTTPClient(allowed_hosts=allowed_hosts)
+        NativeHTTPClient(max_bytes=MAX_SOURCE_MEDIA_BYTES, allowed_hosts=allowed_hosts)
         if deadline is None
-        else ExtractionHTTPClient(deadline, allowed_hosts=allowed_hosts)
+        else ExtractionHTTPClient(deadline, max_bytes=MAX_SOURCE_MEDIA_BYTES, allowed_hosts=allowed_hosts)
     )
     with transport as http:
         for item in payload.media_items:

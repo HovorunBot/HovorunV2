@@ -24,6 +24,7 @@ BUILD_ROLES = (
     "bot",
     "worker-operations",
     "worker-media",
+    "worker-compression",
     "worker-browser",
 )
 TRUE_VALUES = frozenset({"true", "1", "yes", "on"})

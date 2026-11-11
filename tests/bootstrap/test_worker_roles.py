@@ -19,6 +19,7 @@ def test_worker_role_enum_values() -> None:
     assert WorkerRole.OPERATIONS == "operations"
     assert WorkerRole.MEDIA == "media"
     assert WorkerRole.BROWSER == "browser"
+    assert WorkerRole.COMPRESSION == "compression"
     assert WorkerRole.ALL == "all"
 
 
@@ -85,7 +86,10 @@ async def test_media_worker_role_composition(test_container: object, postgres_da
         context.close()
 
 
-async def test_browser_worker_role_composition(test_container: object, postgres_database_url: str) -> None:
+@pytest.mark.parametrize("role", [WorkerRole.BROWSER, WorkerRole.COMPRESSION])
+async def test_browser_capable_worker_role_composition(
+    test_container: object, postgres_database_url: str, role: WorkerRole
+) -> None:
     """Browser worker initializes FeatureJobRunner with browser support."""
     del test_container
     settings = Settings(
@@ -101,11 +105,11 @@ async def test_browser_worker_role_composition(test_container: object, postgres_
         namespace=namespace,
         safety=UsageSafetyCaps(),
         clock=clock,
-        role=WorkerRole.BROWSER,
+        role=role,
     )
     try:
         context.open()
-        assert context.role == WorkerRole.BROWSER
+        assert context.role == role
         assert context.runner is not None
         assert context.browser is not None
     finally:

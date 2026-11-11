@@ -73,6 +73,10 @@ def _scenario(root: Path, browser_enabled: str) -> StackScenario:
                     "BOT_TOKEN": "synthetic-private-credential",
                 },
             },
+            "worker-compression": {
+                "image": "hovorunv2-dev-compression:test",
+                "build": {"target": "worker-compression"},
+            },
             "worker-browser": {"image": "hovorunv2-dev-browser:test", "build": {"target": "worker-browser"}},
         },
     }
@@ -95,9 +99,9 @@ async def test_build_selects_browser_and_uses_persistent_caching(tmp_path: Path,
     calls = scenario.calls()
     builds = [call for call in calls if call[:2] == ["buildx", "build"]]
     expected_targets = (
-        ["migrate", "bot", "worker-operations", "worker-media", "worker-browser"]
+        ["migrate", "bot", "worker-operations", "worker-media", "worker-compression", "worker-browser"]
         if enabled == "True"
-        else ["migrate", "bot", "worker-operations", "worker-media"]
+        else ["migrate", "bot", "worker-operations", "worker-media", "worker-compression"]
     )
     assert [call[call.index("--target") + 1] for call in builds] == expected_targets
     assert all("--load" in call for call in builds)
@@ -124,12 +128,13 @@ async def test_build_skips_when_all_images_already_exist(tmp_path: Path) -> None
         "hovorunv2-dev-bot:test\n"
         "hovorunv2-dev-ops:test\n"
         "hovorunv2-dev-media:test\n"
+        "hovorunv2-dev-compression:test\n"
         "hovorunv2-dev-browser:test\n"
     )
     assert await scenario.run("build") == 0
     calls = scenario.calls()
     inspects = [call for call in calls if call[:2] == ["image", "inspect"]]
-    assert len(inspects) == 5
+    assert len(inspects) == 6
     assert not any(call[:1] == ["buildx"] for call in calls)
 
 
@@ -137,7 +142,7 @@ async def test_build_builds_only_missing_image_when_one_exists(tmp_path: Path) -
     """Build only the absent image target when another role is already present."""
     scenario = _scenario(tmp_path, "True")
     scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
-        "hovorunv2-dev-migrate:test\nhovorunv2-dev-bot:test\nhovorunv2-dev-ops:test\nhovorunv2-dev-media:test\n"
+        "hovorunv2-dev-migrate:test\nhovorunv2-dev-bot:test\nhovorunv2-dev-ops:test\nhovorunv2-dev-media:test\nhovorunv2-dev-compression:test\n"
     )
     assert await scenario.run("build") == 0
     calls = scenario.calls()
@@ -154,6 +159,7 @@ async def test_build_force_rebuilds_all_existing_images(tmp_path: Path) -> None:
         "hovorunv2-dev-bot:test\n"
         "hovorunv2-dev-ops:test\n"
         "hovorunv2-dev-media:test\n"
+        "hovorunv2-dev-compression:test\n"
         "hovorunv2-dev-browser:test\n"
     )
     assert await scenario.run("build", "--force") == 0
@@ -164,6 +170,7 @@ async def test_build_force_rebuilds_all_existing_images(tmp_path: Path) -> None:
         "bot",
         "worker-operations",
         "worker-media",
+        "worker-compression",
         "worker-browser",
     ]
     assert all("--no-cache" in call and "--load" in call for call in builds)
@@ -178,6 +185,7 @@ async def test_build_force_via_environment_rebuilds_all_existing_images(tmp_path
         "hovorunv2-dev-bot:test\n"
         "hovorunv2-dev-ops:test\n"
         "hovorunv2-dev-media:test\n"
+        "hovorunv2-dev-compression:test\n"
         "hovorunv2-dev-browser:test\n"
     )
     assert await scenario.run("build") == 0
@@ -188,6 +196,7 @@ async def test_build_force_via_environment_rebuilds_all_existing_images(tmp_path
         "bot",
         "worker-operations",
         "worker-media",
+        "worker-compression",
         "worker-browser",
     ]
     assert all("--no-cache" in call and "--load" in call for call in builds)
@@ -274,7 +283,7 @@ async def test_build_executes_with_buildkit_enabled(tmp_path: Path) -> None:
     assert await scenario.run("build") == 0
     calls = scenario.calls()
     builds = [call for call in calls if call[:2] == ["buildx", "build"]]
-    assert len(builds) == 4
+    assert len(builds) == 5
 
 
 async def test_active_stack_lock_blocks_cleanup(tmp_path: Path) -> None:

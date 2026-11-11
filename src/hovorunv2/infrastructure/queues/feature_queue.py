@@ -22,6 +22,7 @@ from hovorunv2.application.jobs.admission import (
     TicketState,
 )
 from hovorunv2.application.jobs.feature_jobs import (
+    COMPRESSION_JOB_FUNCTION,
     FEATURE_JOB_FUNCTION,
     EnqueueState,
     FeatureQueuePort,
@@ -229,8 +230,29 @@ def _register_maintenance_tasks(app: Celery) -> None:
         app.task(name=UNAUTHORIZED_REMINDER_TASK, ignore_result=True)(send_unauthorized_reminder_task)
 
 
+def run_compression_job(envelope: dict[str, object], stage: str = "compression") -> str:
+    """Execute the fenced video preparation stage in its dedicated worker queue.
+
+    Args:
+        envelope: Operational job metadata without media contents.
+        stage: Required compression stage marker.
+
+    Returns:
+        Allowlisted job outcome.
+
+    Raises:
+        ValueError: If publication requests another stage.
+    """
+    if JobStage(stage) != JobStage.COMPRESSION:
+        msg = "Compression tasks require the compression stage."
+        raise ValueError(msg)
+    return get_feature_task_runner()(envelope, JobStage.COMPRESSION)
+
+
 def _register_feature_execution_tasks(app: Celery) -> None:
     """Register feature execution tasks on a Celery application instance."""
+    if COMPRESSION_JOB_FUNCTION not in app.tasks:
+        app.task(name=COMPRESSION_JOB_FUNCTION, ignore_result=True)(run_compression_job)
     if FEATURE_JOB_FUNCTION not in app.tasks:
 
         @app.task(name=FEATURE_JOB_FUNCTION, bind=True)
@@ -274,6 +296,7 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
         self._admission = ValkeyAdmissionStore(self._cache, namespace)
         self._media_queue = namespace.value + "media"
         self._browser_queue = namespace.value + "browser"
+        self._compression_queue = namespace.value + "compression"
         self._operations_queue = namespace.value + OPERATIONS_QUEUE_NAME
         self._queue_name = self._media_queue
         self._app = Celery("hovorun_features", broker=settings.valkey_url)
@@ -282,6 +305,7 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
             task_queues=[
                 Queue(self._media_queue),
                 Queue(self._browser_queue),
+                Queue(self._compression_queue),
                 Queue(self._operations_queue),
             ],
             beat_schedule=build_beat_schedule(namespace.value),
@@ -327,7 +351,11 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
 
     def publish_stage(self, envelope: JobEnvelope, stage: JobStage, not_before: float = 0) -> bool:
         """Publish an envelope to the appropriate stage queue."""
-        queue = self._browser_queue if stage == JobStage.BROWSER else self._media_queue
+        queue = {
+            JobStage.MEDIA: self._media_queue,
+            JobStage.BROWSER: self._browser_queue,
+            JobStage.COMPRESSION: self._compression_queue,
+        }[stage]
         return self._publish(envelope, not_before, queue_name=queue, stage=stage)
 
     def _publish(
@@ -346,7 +374,7 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
         logger.info("Publishing feature job task to broker (stage=%s)", stage.value)
         with self._app.connection_for_write() as connection, self._app.amqp.Producer(connection) as producer:
             self._app.send_task(
-                FEATURE_JOB_FUNCTION,
+                COMPRESSION_JOB_FUNCTION if stage == JobStage.COMPRESSION else FEATURE_JOB_FUNCTION,
                 kwargs={"envelope": envelope.model_dump(mode="json"), "stage": stage.value},
                 task_id=envelope.job_id,
                 producer=producer,

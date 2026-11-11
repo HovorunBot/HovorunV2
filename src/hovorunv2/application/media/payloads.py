@@ -11,6 +11,7 @@ class MediaItem:
     url: str
     is_video: bool
     data: bytes | None = None
+    requires_download: bool = False
 
 
 @dataclass
@@ -26,6 +27,7 @@ class RichMediaPayload:
     media_items: list[MediaItem] = field(default_factory=list)
     quoted_payload: RichMediaPayload | None = None
     video_unavailable: bool = False
+    browser_download: bool = False
 
     @property
     def is_video(self) -> bool:
@@ -50,7 +52,12 @@ def pack_media_payload(payload: RichMediaPayload) -> bytes:
         "footer_text": payload.footer_text,
         "original_url": payload.original_url,
         "video_unavailable": payload.video_unavailable,
-        "media_items": [{"url": item.url, "is_video": item.is_video} for item in payload.media_items],
+        "browser_download": payload.browser_download,
+        "quoted_payload": pack_media_payload(payload.quoted_payload).decode() if payload.quoted_payload else None,
+        "media_items": [
+            {"url": item.url, "is_video": item.is_video, "requires_download": item.requires_download}
+            for item in payload.media_items
+        ],
     }
     return json.dumps(content, separators=(",", ":")).encode()
 
@@ -75,8 +82,14 @@ def unpack_media_payload(data: bytes) -> RichMediaPayload:
     if not isinstance(raw_items, list):
         msg = "Retained candidate media is malformed."
         raise TypeError(msg)
+    raw_quote = content.get("quoted_payload")
+    if raw_quote is not None and not isinstance(raw_quote, str):
+        msg = "Retained quoted candidate is malformed."
+        raise TypeError(msg)
     media_items = [
-        MediaItem(str(item["url"]), bool(item["is_video"]))
+        MediaItem(
+            str(item["url"]), bool(item["is_video"]), requires_download=bool(item.get("requires_download", False))
+        )
         for item in raw_items
         if isinstance(item, dict) and item.get("url")
     ]
@@ -89,4 +102,6 @@ def unpack_media_payload(data: bytes) -> RichMediaPayload:
         original_url=str(content["original_url"]),
         media_items=media_items,
         video_unavailable=bool(content["video_unavailable"]),
+        browser_download=bool(content.get("browser_download", False)),
+        quoted_payload=unpack_media_payload(raw_quote.encode()) if raw_quote is not None else None,
     )

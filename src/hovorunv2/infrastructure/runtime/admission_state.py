@@ -129,6 +129,7 @@ class AdmissionRecord(BaseModel):
     delayed_notice_claimed: bool = False
     terminal_notice_claimed: bool = False
     failure_notice_claimed: bool = False
+    preparing_video_notice_claimed: bool = False
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> Self:
@@ -509,7 +510,11 @@ def _handoff(record: AdmissionRecord, request: AdmissionTransition) -> Admission
 def _require_stage_handoff(record: AdmissionRecord, request: AdmissionTransition) -> None:
     if record.token != request.token:
         raise ValueError(_HANDOFF_CONFLICT_ERROR)
-    if record.stage != JobStage.MEDIA or request.stage != JobStage.BROWSER:
+    allowed = {
+        JobStage.MEDIA: {JobStage.BROWSER, JobStage.COMPRESSION},
+        JobStage.BROWSER: {JobStage.COMPRESSION},
+    }
+    if request.stage not in allowed.get(record.stage, set()):
         raise ValueError(_HANDOFF_CONFLICT_ERROR)
 
 
@@ -560,6 +565,8 @@ def _acknowledge(record: AdmissionRecord, request: AdmissionTransition) -> Admis
 
 
 def _notice(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
+    if request.notice == NoticeKind.PREPARING_VIDEO:
+        return _preparing_video_notice(record)
     if request.notice == NoticeKind.FAILURE:
         return _failure_notice(record)
     if request.notice == NoticeKind.DELAYED:
@@ -578,6 +585,15 @@ def _notice(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionC
         return AdmissionChange(claimed, write=True, success=True)
     msg = "Feedback requires a typed notice kind."
     raise TypeError(msg)
+
+
+def _preparing_video_notice(record: AdmissionRecord) -> AdmissionChange:
+    if record.stage != JobStage.COMPRESSION or record.preparing_video_notice_claimed:
+        return AdmissionChange(record)
+    if record.state not in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.RUNNING}:
+        return AdmissionChange(record)
+    claimed = record.model_copy(update={"preparing_video_notice_claimed": True})
+    return AdmissionChange(claimed, write=True, success=True)
 
 
 def _failure_notice(record: AdmissionRecord) -> AdmissionChange:

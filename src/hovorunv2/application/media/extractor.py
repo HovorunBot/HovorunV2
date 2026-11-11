@@ -74,12 +74,15 @@ def _format_rank(value: dict[str, object]) -> tuple[bool, int]:
     return value.get("protocol") in {"http", "https"}, _count(value, "height")
 
 
-def _media_items(info: dict[str, object]) -> list[MediaItem]:
+def _media_items(info: dict[str, object], source_url: str) -> list[MediaItem]:
     entries = info.get("entries")
     if isinstance(entries, list | tuple):
-        items = [item for entry in entries[:MAX_PLAYLIST_ITEMS] for item in _media_items(_mapping(entry))]
+        items = [item for entry in entries[:MAX_PLAYLIST_ITEMS] for item in _media_items(_mapping(entry), source_url)]
         if items:
             return items
+    selected = info.get("requested_formats")
+    if isinstance(selected, list | tuple) and len(selected) > 1:
+        return [MediaItem(_text(info, "webpage_url") or source_url, is_video=True, requires_download=True)]
     media_url = _text(info, "url")
     is_video = info.get("vcodec") != "none"
     raw_formats = info.get("formats")
@@ -124,7 +127,7 @@ def process_extraction_info(raw: object, url: str) -> RichMediaPayload:
         stats.append(f"❤️ {format_number(likes)}")
     if views:
         stats.append(f"👁️ {format_number(views)}")
-    items = _media_items(info)
+    items = _media_items(info, url)
     if not items and not (_text(info, "title") or _text(info, "description")):
         msg = "Media extraction returned unusable metadata."
         raise MediaExtractionError(msg)

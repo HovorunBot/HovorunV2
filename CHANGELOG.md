@@ -1,3 +1,9 @@
+## Unreleased
+
+### Feat
+
+- **media**: prepare oversized videos in a dedicated compression worker
+
 ## v0.4.0 (2026-11-08)
 
 ### Feat

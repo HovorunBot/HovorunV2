@@ -40,6 +40,7 @@ class WorkerRole(StrEnum):
     OPERATIONS = "operations"
     MEDIA = "media"
     BROWSER = "browser"
+    COMPRESSION = "compression"
     ALL = "all"
 
 

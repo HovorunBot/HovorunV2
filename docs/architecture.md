@@ -117,15 +117,42 @@ The following process ownership is the implemented production architecture. Medi
 | Process | Responsibilities |
 | --- | --- |
 | Async bot | Telegram update ingestion, interactive commands/settings/feedback, current-authority checks, bounded startup/action membership verification, bounded admission and publication |
-| Native synchronous media worker | Fresh authority and budget checks, API/yt-dlp extraction, translation, formatting and Telegram delivery |
-| Native synchronous browser worker | Browser continuation, lazy child-owned Chromium, remaining fallback tiers and final delivery |
+| Native synchronous media worker | Fresh authority and budget checks, API/yt-dlp extraction, post delivery and video preparation handoff |
+| Native synchronous browser worker | Browser continuation, lazy child-owned Chromium, post delivery and video preparation handoff |
+| Native synchronous compression worker | Video delivery, split-stream merging and bounded oversized-video compression |
 | Native synchronous operations worker | Bounded reminders, membership reconciliation, cleanup, notifications and lifecycle/accounting recovery |
 | Singleton Beat | Publish periodic operations; no business mutations or per-bot scheduler |
 | Explicit migration/import tool | Schema upgrades and verified one-time transfer without bot/browser initialization |
 
 PostgreSQL owns durable business records, audit and accounting. Valkey owns broker traffic and bounded encrypted runtime state. The admission ticket owns execution claims, stages and terminal state; queue transport never creates a second receipt ledger or bypasses admission. Celery supplies delivery, routing and native process pools. Each child creates and closes its own database/network/browser resources. No worker asyncio pool, asyncio.run wrapper or live dependency passed from the bot is permitted.
 
-Bot, media, browser, operations, singleton Beat and migration run as independent Compose services with direct `/app/.venv/bin/*` entrypoints from dedicated role images (`hovorunv2-migrate`, `hovorunv2-bot`, `hovorunv2-worker-ops`, `hovorunv2-worker-media`, `hovorunv2-worker-browser`). Each runtime role includes only its required optional dependencies (e.g. `aiogram` only in `bot`; `yt-dlp` only in `worker-media`; `pydoll-python` only in `worker-browser`; `alembic` only in `migrate`). Runtime composition is partitioned by `WORKER_ROLE` (`operations`, `media`, `browser`). `BROWSER_ENABLED` defaults to false; Make selects the browser build target and Compose profile only when enabled in the selected environment. Disabled runtime workers reject browser continuation before queue handoff and settle failed extraction with zero consumption. The browser target installs Chromium at build time and starts it lazily inside a browser worker child. Beat stores its schedule in a private named volume, and no embedded scheduler or worker starts with the bot.
+Bot, media, browser, compression, operations, singleton Beat and migration run as independent Compose services with direct `/app/.venv/bin/*` entrypoints from dedicated role images (`hovorunv2-migrate`, `hovorunv2-bot`, `hovorunv2-worker-ops`, `hovorunv2-worker-media`, `hovorunv2-worker-browser`, `hovorunv2-worker-compression`). Each runtime role includes only its required optional dependencies (e.g. `aiogram` only in `bot`; `yt-dlp` in media-capable workers; `pydoll-python` in browser and compression workers; `alembic` only in `migrate`). Runtime composition is partitioned by `WORKER_ROLE` (`operations`, `media`, `browser`, `compression`). `BROWSER_ENABLED` defaults to false; Make selects the browser build target and Compose profile only when enabled in the selected environment. Disabled runtime workers reject browser continuation before queue handoff and settle failed extraction with zero consumption. The browser target installs Chromium at build time and starts it lazily inside a browser worker child. Beat stores its schedule in a private named volume, and no embedded scheduler or worker starts with the bot.
+
+Every extracted video hands off to the `compression` stage before delivery. Its dedicated Celery task is
+`run_compression_job`, routed to `work:{work}:compression`; both Compose stacks start `worker-compression` with
+prefork concurrency two and prefetch one. The existing Valkey execution reservation remains held across the handoff:
+the default global concurrency ceiling of two applies across worker replicas, including administrator requests.
+Cancellation, original deadlines, current access checks and duplicate-execution fences remain admission-owned.
+A deduplicated preparation notice tells the requester that oversized videos will be compressed before delivery.
+
+Video handoffs store bounded encrypted metadata in the existing candidate store; neither broker arguments nor stored
+candidates contain video bytes. Quoted posts and source URLs survive the handoff. Browser-backed video downloads are
+refreshed in an isolated authenticated browser context inside the compression child, using retained media identities.
+Consequently the compression image derives from the browser image and launches Chromium lazily only when needed;
+this trades a second browser download for avoiding a shared plaintext media spool or large broker/Valkey payloads.
+The compression worker is required even when browser fallback is disabled.
+
+The common downloader preserves selected split streams by downloading their source page through yt-dlp and merging
+with FFmpeg before upload. Missing audio fragments fail the operation rather than yielding a silent fallback.
+Oversized videos from every provider, including transient browser buffers, use two-pass H.264/AAC encoding with a
+49,000,000-byte output ceiling. Small files remain unchanged. Processing bounds include a 200 MiB source allowance
+(combined across split-stream transfers), ten-minute duration limit, 4096-by-2160 input pixel ceiling, two codec
+threads, 45-second compression budget and 90-second download-batch budget. Encoding uses at most 1280-by-720 output,
+30 fps and 4 Mbit/s video, retaining a 200 kbit/s video floor and 64 kbit/s audio budget. Local processing rejects
+network/playlist protocols, removes metadata and temporary files, and checks output size, duration and audio
+presence before accepting compressed output. Limits or processing failures produce an explicit failure response;
+photos retain their existing delivery policy. FFmpeg and FFprobe are installed in the media, browser and compression
+runtime images.
 
 The browser adapter uses `pydoll.sync` through the synchronous application port. Its internal `pydoll-sync-loop`
 daemon starts on first use in the worker child and resets after a fork; it does not change Celery's native execution

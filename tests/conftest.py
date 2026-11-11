@@ -260,8 +260,8 @@ async def test_container(test_engine: AsyncEngine) -> AsyncGenerator[AsyncContai
 
 @pytest.fixture(scope="module")
 def vcr_config() -> dict[str, Any]:
-    """Configure pytest-recording to record once when cassette is missing."""
-    return {"record_mode": "once"}
+    """Replay provider cassettes while allowing real synthetic loopback services."""
+    return {"record_mode": "once", "ignore_hosts": ["127.0.0.1", "localhost"]}
 
 
 @pytest.fixture(autouse=True)

@@ -350,6 +350,33 @@ class BaseMediaClient(MediaParser):
         else:
             return self._require_usable_payload(payload)
 
+    def download_retained_browser_media(
+        self, url: str, payload: RichMediaPayload, browser: SyncBrowserPort, *, deadline: ExtractionDeadline
+    ) -> RichMediaPayload:
+        """Refresh retained media bytes in an isolated authenticated browser context.
+
+        Args:
+            url: Original provider page used as the download referer.
+            payload: Retained metadata identifying the selected media.
+            browser: Child-owned browser transport.
+            deadline: Original processing stage cutoff.
+
+        Returns:
+            Retained payload with refreshed transient media bytes.
+        """
+        config = self._config.browser_config
+        _, downloaded = browser.extract_and_download(
+            url,
+            extractor_fn=lambda _tab, _source: payload,
+            wait_selector=config.wait_selector if config is not None else None,
+            cookies=self.get_browser_cookies(),
+            deadline=deadline,
+        )
+        for item, content in zip(payload.media_items, downloaded, strict=True):
+            if isinstance(content, bytes):
+                item.data = content
+        return payload
+
     # Compatibility aliases
     extract_payload_sync = extract_sync
     extract_metadata_payload_sync = extract_metadata_sync

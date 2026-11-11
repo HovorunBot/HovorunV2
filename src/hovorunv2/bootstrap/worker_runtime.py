@@ -14,8 +14,9 @@ from celery.signals import worker_process_init, worker_process_shutdown
 
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.jobs.admission import JobStage
-from hovorunv2.application.jobs.feature_jobs import FEATURE_JOB_FUNCTION, JobEnvelope
+from hovorunv2.application.jobs.feature_jobs import COMPRESSION_JOB_FUNCTION, FEATURE_JOB_FUNCTION, JobEnvelope
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
+from hovorunv2.application.media.limits import MAX_SOURCE_MEDIA_BYTES
 from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
 from hovorunv2.application.operations.operations_runner import WorkerOperationsRunner
 from hovorunv2.application.operations.release_updates import ReleaseUpdateService
@@ -143,6 +144,7 @@ class WorkerQueuePublisher:
         self._safety = safety
         self._media_queue = namespace.value + "media"
         self._browser_queue = namespace.value + "browser"
+        self._compression_queue = namespace.value + "compression"
         self._app = Celery("worker_publisher", broker=broker_url)
         self._app.conf.update(
             broker_connection_timeout=BROKER_SOCKET_SECONDS,
@@ -161,10 +163,14 @@ class WorkerQueuePublisher:
         remaining = envelope.deadline - max(self._clock.now(), not_before)
         if remaining <= 0:
             return False
-        queue = self._browser_queue if stage == JobStage.BROWSER else self._media_queue
+        queue = {
+            JobStage.MEDIA: self._media_queue,
+            JobStage.BROWSER: self._browser_queue,
+            JobStage.COMPRESSION: self._compression_queue,
+        }[stage]
         with self._app.connection_for_write() as connection, self._app.amqp.Producer(connection) as producer:
             self._app.send_task(
-                FEATURE_JOB_FUNCTION,
+                COMPRESSION_JOB_FUNCTION if stage == JobStage.COMPRESSION else FEATURE_JOB_FUNCTION,
                 kwargs={"envelope": envelope.model_dump(mode="json"), "stage": stage.value},
                 task_id=envelope.job_id,
                 producer=producer,
@@ -289,7 +295,7 @@ class WorkerChildContext:
         if self._custom_http is not None:
             http = self._custom_http
         else:
-            http = self._resources.enter_context(NativeHTTPClient())
+            http = self._resources.enter_context(NativeHTTPClient(max_bytes=MAX_SOURCE_MEDIA_BYTES))
             self._owned_http = http
         self._http = http
         api = NativeTelegramAPI(http, self._settings.bot_token)
@@ -299,7 +305,7 @@ class WorkerChildContext:
             self._operations = self._open_operations_runner(database, runtime, api)
 
         # 2. Initialize feature job runner if role includes media or browser
-        if self._role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.ALL}:
+        if self._role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.COMPRESSION, WorkerRole.ALL}:
             self._runner = self._open_feature_runner(database, runtime, http, api)
 
     def _open_operations_runner(
@@ -334,7 +340,9 @@ class WorkerChildContext:
     def _open_feature_runner(
         self, database: WorkerDatabase, runtime: WorkerRuntime, http: SyncHTTPPort, api: NativeTelegramAPI
     ) -> FeatureJobRunner:
-        if self._role == WorkerRole.BROWSER or (self._role == WorkerRole.ALL and self._settings.browser_enabled):
+        if self._role in {WorkerRole.BROWSER, WorkerRole.COMPRESSION} or (
+            self._role == WorkerRole.ALL and self._settings.browser_enabled
+        ):
             self._browser = self._custom_browser or LazyBrowserService()
             self._resources.callback(self._browser.close)
         publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
@@ -438,7 +446,7 @@ def init_worker_child(
     context = WorkerChildContext(settings, namespace, safety, role=role)
     context.open()
     _current_worker_context = context
-    if context.role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.ALL}:
+    if context.role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.COMPRESSION, WorkerRole.ALL}:
         set_feature_task_runner(_execute_task_in_child)
     else:
         set_feature_task_runner(None)
@@ -502,7 +510,7 @@ def _apply_worker_context(context: WorkerChildContext | None) -> None:
         set_operations_runner(None)
         return
 
-    is_media = context.role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.ALL}
+    is_media = context.role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.COMPRESSION, WorkerRole.ALL}
     set_feature_task_runner(_execute_task_in_child if is_media else None)
     set_recovery_runner(context.recover)
     is_ops = context.role in {WorkerRole.OPERATIONS, WorkerRole.ALL}

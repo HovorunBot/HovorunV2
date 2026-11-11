@@ -79,7 +79,10 @@ async def test_duplicate_claim_at_deadline_keeps_running_owner_and_capacity(test
         assert finished.state == TicketState.TERMINAL
 
 
-async def test_browser_handoff_is_recoverable_and_fences_previous_owner(test_container: AsyncContainer) -> None:
+@pytest.mark.parametrize("next_stage", [JobStage.BROWSER, JobStage.COMPRESSION])
+async def test_stage_handoff_is_recoverable_and_fences_previous_owner(
+    test_container: AsyncContainer, next_stage: JobStage
+) -> None:
     """A crash before browser publication retains the same ticket, ciphertext and original deadline."""
     settings = await test_container.get(Settings)
     clock = ManualClock(time.time())
@@ -100,18 +103,18 @@ async def test_browser_handoff_is_recoverable_and_fences_previous_owner(test_con
             )
             assert media is not None
             assert media.attempt == 1
-            ready = await asyncio.to_thread(worker.handoff_stage, envelope.job_id, media_owner, JobStage.BROWSER)
+            ready = await asyncio.to_thread(worker.handoff_stage, envelope.job_id, media_owner, next_stage)
             assert ready is not None
             assert ready.envelope == envelope
-            assert ready.stage == JobStage.BROWSER
+            assert ready.stage == next_stage
             recoverable = await store.recoverable(clock.now())
             assert len(recoverable) == 1
             assert recoverable[0].envelope == envelope
-            assert recoverable[0].stage == JobStage.BROWSER
+            assert recoverable[0].stage == next_stage
             assert (await payloads.load(envelope.payload_ref, envelope.job_id)).state == PayloadState.READY
             assert await store.finish(envelope.job_id, JobOutcome.COMPLETE, token=media_owner) is None
             assert await store.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), secrets.token_hex(16)) is None
-            browser = await store.claim_stage(envelope.job_id, JobStage.BROWSER, clock.now(), browser_owner)
+            browser = await store.claim_stage(envelope.job_id, next_stage, clock.now(), browser_owner)
             assert browser is not None
             assert browser.attempt == 2
             assert browser.envelope == envelope

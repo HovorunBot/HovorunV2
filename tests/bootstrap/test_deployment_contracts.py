@@ -50,8 +50,10 @@ def test_worker_application_uses_namespaced_role_queues() -> None:
         assert {queue.name for queue in app.conf.task_queues} == {
             namespace.value + "media",
             namespace.value + "browser",
+            namespace.value + "compression",
             namespace.value + "operations",
         }
+        assert "run_compression_job" in app.tasks
         assert app.conf.task_default_queue == namespace.value + "media"
         assert app.conf.broker_transport_options["global_keyprefix"] == namespace.value
     finally:
@@ -157,6 +159,7 @@ def test_compose_role_targets_and_direct_entrypoints(compose_file: str) -> None:
         "bot": "bot",
         "worker-media": "worker-media",
         "worker-browser": "worker-browser",
+        "worker-compression": "worker-compression",
         "worker-operations": "worker-operations",
         "beat": "worker-operations",
     }
@@ -167,6 +170,7 @@ def test_compose_role_targets_and_direct_entrypoints(compose_file: str) -> None:
     expected_roles = {
         "worker-media": "media",
         "worker-browser": "browser",
+        "worker-compression": "compression",
         "worker-operations": "operations",
         "beat": "operations",
     }
@@ -186,7 +190,7 @@ def test_docker_stack_build_roles_match_compose_build_services() -> None:
     """Every role configured for building in docker-stack.py matches a distinct Compose build target."""
     script_path = Path(__file__).resolve().parents[2] / "scripts/docker-stack.py"
     content = script_path.read_text(encoding="utf-8")
-    expected_roles = {"migrate", "bot", "worker-operations", "worker-media", "worker-browser"}
+    expected_roles = {"migrate", "bot", "worker-operations", "worker-media", "worker-browser", "worker-compression"}
     for role in expected_roles:
         assert f'"{role}"' in content or f"'{role}'" in content
 

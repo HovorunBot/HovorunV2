@@ -8,6 +8,7 @@ from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
+from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_jobs import JobOutcome
 from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
@@ -27,6 +28,7 @@ from tests.utils.instagram_worker import instagram_worker, route_instagram_backe
 from tests.utils.jobs import broker_envelopes
 from tests.utils.sync_browser import FakeSyncBrowser
 from tests.utils.sync_http import FakeSyncHTTP, HTTPFixture, HTTPReply, json_reply
+from tests.utils.telegram import BOT_CREDENTIAL
 from tests.utils.telegram.recording_delivery import RecordingTelegramDelivery
 
 
@@ -66,6 +68,7 @@ async def _assert_instagram_command(
         "/unavailable": HTTPReply(status=HTTPStatus.NOT_FOUND),
         build_status_url(post, base_url=""): json_reply(raw),
         "/translate": json_reply([[["Synthetic translation", "Synthetic caption ❤️ 7 💬 2"]], None, "en"]),
+        f"/bot{BOT_CREDENTIAL}/sendMessage": json_reply({"ok": True, "result": {"message_id": 100}}),
     }
     delivery = RecordingTelegramDelivery(bot)
     with HTTPFixture(routes) as server:
@@ -74,6 +77,11 @@ async def _assert_instagram_command(
             messages = broker_envelopes(settings, namespace.value)
             assert len(messages) == 1
             assert runner.run(messages[0]) == JobOutcome.COMPLETE.value
+            if video:
+                compression = broker_envelopes(settings, namespace.value, "compression")
+                assert compression == messages
+                assert runner.run(compression[0], JobStage.COMPRESSION) == JobOutcome.COMPLETE.value
+                assert runner.run(compression[0], JobStage.COMPRESSION) == JobOutcome.COMPLETE.value
             assert runner.run(messages[0]) == JobOutcome.COMPLETE.value
             assert runtime.payloads.load_candidate(str(messages[0]["job_id"])) is None
         translations = [
