@@ -1,7 +1,7 @@
 """Private group selection with real PostgreSQL/Valkey and external Telegram HTTP only."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -10,7 +10,7 @@ import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from aiohttp import FormData
-from aioresponses import CallbackResult
+from aioresponses import CallbackResult, aioresponses
 from dishka import AsyncContainer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -64,7 +64,7 @@ OTHER = GROUP - 1
 @asynccontextmanager
 async def private_runtime(
     container: AsyncContainer,
-) -> AsyncIterator[tuple[Bot, SettingsCommand, GroupManagementService]]:
+) -> AsyncGenerator[tuple[Bot, SettingsCommand, GroupManagementService]]:
     """Compose actual management and transport adapters with synthetic credentials."""
     await feature_runtime(container)
     groups = await container.get(GroupIdentityStore)
@@ -111,9 +111,7 @@ async def membership_http(url: object, *, statuses: dict[int, str], **kwargs: ob
     return CallbackResult(payload={"ok": True, "result": result}, response_class=RecordedResponse)
 
 
-def private_http(
-    http: RecordedResponses, actor: int, statuses: dict[int, str], *, group_transport: bool = False
-) -> None:
+def private_http(http: aioresponses, actor: int, statuses: dict[int, str], *, group_transport: bool = False) -> None:
     """Intercept Telegram; never replace application services, repositories or cache."""
     message = settings_message(chat_id=GROUP if group_transport else actor, actor_id=actor)
     for method in ("sendMessage", "editMessageText"):
@@ -133,7 +131,7 @@ def private_http(
     )
 
 
-def rendered_text(http: RecordedResponses) -> str:
+def rendered_text(http: aioresponses) -> str:
     """Read only fields shown by the actual private settings keyboard."""
     fields = sent_fields(http, "editMessageText")[-1]
     return fields["text"] + json.dumps(json.loads(fields.get("reply_markup", "{}")), ensure_ascii=False)
@@ -150,13 +148,31 @@ async def mark_bot_absent(container: AsyncContainer, telegram_id: int) -> None:
     )
 
 
+async def _assert_audit_events(sessions: async_sessionmaker, actor_id: int, group_id: int) -> None:
+    async with sessions() as session:
+        events = (
+            await session.scalars(
+                select(AuditEventDB).where(
+                    AuditEventDB.action.in_(("update_translation_settings", "enable")),
+                    AuditEventDB.actor_id == actor_id,
+                )
+            )
+        ).all()
+        assert any(event.target_type == "group_beta" for event in events)
+        assert any(
+            event.action == "update_translation_settings" and event.target_id == str(group_id) for event in events
+        )
+
+
 @pytest.mark.slow
 async def test_untrusted_admin_private_workflow_reuses_group_settings_and_audit(test_container: AsyncContainer) -> None:
     """Private group management does not grant private feature execution or change private chat settings."""
     async with private_runtime(test_container) as (bot, command, _service):
         access = await test_container.get(AccessService)
         users = await test_container.get(UserStore)
-        assert not (await users.get_by_telegram_id(SECOND)).is_trusted
+        second_user = await users.get_by_telegram_id(SECOND)
+        assert second_user is not None
+        assert not second_user.is_trusted
         settings = Settings(_env_file=None, bot_token=BOT_CREDENTIAL, cache_encryption_key="synthetic-private-test-key")
         dispatcher = Dispatcher()
         media = await get_media_command(test_container, CommandName.TWITTER)
@@ -207,19 +223,8 @@ async def test_untrusted_admin_private_workflow_reuses_group_settings_and_audit(
             await command.handle_callback(query_for(group_message, bot, SECOND), button(http, SettingsMenu.MODULES))
             assert "✅ Synthetic group beta" in rendered_text(http)
         sessions = await test_container.get(async_sessionmaker)
-        async with sessions() as session:
-            events = (
-                await session.scalars(
-                    select(AuditEventDB).where(
-                        AuditEventDB.action.in_(("update_translation_settings", "enable")),
-                        AuditEventDB.actor_id == SECOND,
-                    )
-                )
-            ).all()
-            assert any(event.target_type == "group_beta" for event in events)
-            assert any(
-                event.action == "update_translation_settings" and event.target_id == str(GROUP) for event in events
-            )
+        await _assert_audit_events(sessions, SECOND, GROUP)
+        assert from_user is not None
         assert from_user.id == SECOND
 
 

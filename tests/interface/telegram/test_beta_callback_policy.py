@@ -1,5 +1,7 @@
 """Beta announcement callbacks use the non-admin callback policy."""
 
+from datetime import UTC, datetime
+
 from aiogram import Bot, Router
 from aiogram.types import CallbackQuery, Chat, Message, User
 from dishka import AsyncContainer
@@ -59,7 +61,7 @@ async def test_beta_callback_handles_inaccessible_and_telegram_error(test_contai
         # Accessible query where edit_reply_markup fails with TelegramAPIError
         msg = Message(
             message_id=55,
-            date=1,
+            date=datetime.now(UTC),
             chat=Chat(id=-100123, type="supergroup"),
             from_user=User(id=101, is_bot=False, first_name="User"),
         )

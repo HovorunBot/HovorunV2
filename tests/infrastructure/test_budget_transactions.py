@@ -39,13 +39,13 @@ async def test_missing_resource_ownership_never_partially_settles_or_refunds(
         assert (await store.reserve(request, clock.now(), (0, 0))).allowed
         quota = record.quotas[0]
         if damage == "quota_field":
-            await cache.client.hdel(quota.key, "used")
+            await cache.client.execute_command("HDEL", quota.key, "used")
         elif damage == "rate_field":
-            await cache.client.hdel(quota.rate, "tokens")
+            await cache.client.execute_command("HDEL", quota.rate, "tokens")
         elif damage == "held":
-            await cache.client.hset(quota.key, "held", 0)
+            await cache.client.execute_command("HSET", quota.key, "held", "0")
         elif damage == "membership":
-            await cache.client.srem(record.concurrency[0].key, request.reservation_id)
+            await cache.client.execute_command("SREM", record.concurrency[0].key, request.reservation_id)
         elif damage == "active_index":
             await cache.client.zrem(prefix + "active", request.reservation_id)
         else:
@@ -90,13 +90,13 @@ async def test_malformed_record_and_counter_overflow_fail_before_any_mutation(
         elif damage == "redirect_concurrency":
             record["concurrency"][0]["key"] = prefix + "unrelated"
         else:
-            await cache.client.hset(quota["key"], "used", MAX_EXACT_INTEGER)
+            await cache.client.execute_command("HSET", quota["key"], "used", str(MAX_EXACT_INTEGER))
         await cache.client.set(key, json.dumps(record))
         before = await cache.client.get(key)
         assert (await store.finish(request.reservation_id, ONE, clock.now())).state == ReservationState.UNAVAILABLE
         assert await cache.client.get(key) == before
         assert not await cache.client.exists(prefix + "unrelated")
-        assert await cache.client.sismember(prefix + "global", request.reservation_id)
+        assert await cache.client.execute_command("SISMEMBER", prefix + "global", request.reservation_id)
 
 
 async def test_async_and_native_competing_reservations_and_settlements_are_atomic(
@@ -137,9 +137,9 @@ async def test_async_and_native_competing_reservations_and_settlements_are_atomi
             ]
         record = build_record(namespace.value + "budget:", winner, clock.now(), (0, 0))
         for quota in record.quotas:
-            assert await cache.client.hget(quota.key, "used") == b"1"
-            assert await cache.client.hget(quota.key, "held") == b"0"
-        assert await cache.client.scard(namespace.value + "budget:global") == 0
+            assert await cache.client.execute_command("HGET", quota.key, "used") == b"1"
+            assert await cache.client.execute_command("HGET", quota.key, "held") == b"0"
+        assert await cache.client.execute_command("SCARD", namespace.value + "budget:global") == 0
 
 
 async def test_terminal_receipt_replay_preserves_expiry_and_admin_empty_quota_record(

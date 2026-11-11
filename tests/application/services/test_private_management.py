@@ -88,6 +88,7 @@ async def test_private_settings_require_selected_target(
         from_user=User(id=330001, is_bot=False, first_name="Synthetic"),
         text="/settings",
     )
+    assert message.from_user is not None
     event = (
         CallbackQuery(
             id="synthetic",

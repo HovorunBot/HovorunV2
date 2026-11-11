@@ -8,14 +8,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from hovorunv2.application.identity.ports import PublicHandleStore, UserStore
-from hovorunv2.domain.audit import ActorContext, AuditEventDB
+from hovorunv2.domain.audit import ActorContext, ActorOrigin, AuditEventDB
 from hovorunv2.domain.enums import Platform, TargetKind
 from hovorunv2.domain.handle import PublicHandleDB, normalize_handle, validate_handle
 
 
 def _public_handle_indexes(connection: Connection) -> dict[str, dict[str, object]]:
     """Reflect the public-handle indexes inside a synchronous run_sync callback."""
-    return {index["name"]: index for index in inspect(connection).get_indexes("public_handles")}
+    return {
+        str(index["name"]): dict(index)
+        for index in inspect(connection).get_indexes("public_handles")
+        if index.get("name") is not None
+    }
 
 
 def test_normalize_and_validate_handle() -> None:
@@ -123,7 +127,7 @@ async def test_soft_deletion_awareness_and_audit(test_container: AsyncContainer)
     handle_store = await test_container.get(PublicHandleStore)
     session_maker = await test_container.get(async_sessionmaker)
 
-    actor = ActorContext(origin="telegram", actor_id=99999)
+    actor = ActorContext(origin=ActorOrigin.TELEGRAM, actor_id=99999)
     target_id = 888123
 
     # Ingest user and assign handle
@@ -167,7 +171,7 @@ async def test_stale_handle_reassignment_on_fresh_evidence(test_container: Async
     user_store = await test_container.get(UserStore)
     handle_store = await test_container.get(PublicHandleStore)
 
-    actor = ActorContext(origin="telegram", actor_id=111)
+    actor = ActorContext(origin=ActorOrigin.TELEGRAM, actor_id=111)
     user_1 = 111111
     user_2 = 222222
 
@@ -221,7 +225,9 @@ async def test_public_handles_schema_has_expected_unique_indexes(test_engine: As
     }
     for name, columns in expected.items():
         assert indexes[name]["unique"] is True
-        assert tuple(indexes[name]["column_names"]) == columns
+        col_names = indexes[name]["column_names"]
+        assert isinstance(col_names, list)
+        assert tuple(col_names) == columns
 
 
 async def test_public_handles_target_uniqueness_enforced_by_postgresql(test_container: AsyncContainer) -> None:

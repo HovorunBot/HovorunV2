@@ -1,7 +1,6 @@
 """Tests for Facebook rich media command."""
 
 import pytest
-from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
@@ -16,6 +15,7 @@ from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_http import FakeSyncHTTP
 from tests.utils.telegram.recording_delivery import drain_and_run_media
+from tests.utils.telegram.session import RecordingBot
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ async def facebook_command(test_container: AsyncContainer) -> RichMediaCommand:
 
 @pytest.mark.vcr
 async def test_handle_facebook_photo_post(
-    facebook_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    facebook_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test handling a Facebook photo post using real extraction and VCR."""
     chat_id = 789
@@ -50,7 +50,7 @@ async def test_handle_facebook_photo_post(
 
 @pytest.mark.vcr
 async def test_handle_facebook_video_fallback(
-    facebook_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    facebook_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test handling a Facebook video using real extraction and VCR (yt-dlp fallback)."""
     chat_id = 789

@@ -130,9 +130,10 @@ async def test_child_crash_converges_after_each_accounting_phase(
             )
             assert runtime.budgets.finish(envelope.job_id, ONE, clock.now()).state == ReservationState.COMMITTED
         keys = admission_keys(namespace.value, envelope)
-        assert await cache.client.hget(keys.totals, "count") == b"0"
-        assert await cache.client.hget(keys.totals, "bytes") == b"0"
+        assert await cache.client.execute_command("HGET", keys.totals, "count") == b"0"
+        assert await cache.client.execute_command("HGET", keys.totals, "bytes") == b"0"
         assert (await payloads.load(envelope.payload_ref, envelope.job_id)).state == PayloadState.MISSING
+        assert ticket.settlement is not None
         assert PRIVATE_URL not in json.dumps(ticket.settlement.model_dump(mode="json"))
 
 
@@ -275,12 +276,12 @@ async def test_expiry_never_refunds_live_cancelled_or_uncertain_execution(
             assert ticket is not None
             assert ticket.state == state
             keys = admission_keys(namespace.value, envelope)
-            assert await cache.client.hget(keys.totals, "count") == b"1"
+            assert await cache.client.execute_command("HGET", keys.totals, "count") == b"1"
             assert await cache.client.exists(keys.payload)
             assert not await asyncio.to_thread(broker_envelopes, settings, namespace.value)
             if state == TicketState.CANCELLING:
                 lifecycle.complete(envelope.job_id, OWNER, SettlementIntent(outcome=JobOutcome.CANCELLED, actual=ZERO))
-                assert await cache.client.hget(keys.totals, "count") == b"0"
+                assert await cache.client.execute_command("HGET", keys.totals, "count") == b"0"
 
 
 @pytest.mark.parametrize("cancel", [True, False])
@@ -337,14 +338,16 @@ async def _interrupt_runtime_backend(
     ticket: AdmissionTicket,
 ) -> None:
     """Simulate a missing budget backend resource across a durable receipt commit, then restore it."""
-    budget = await cache.get(namespace.value + "budget:reservation:" + envelope.job_id)
+    raw_budget = await cache.get(namespace.value + "budget:reservation:" + envelope.job_id)
+    assert raw_budget is not None
+    budget = json.loads(raw_budget)
     quota_key = budget["quotas"][0]["key"]
     saved = await cache.client.dump(quota_key)
     ttl = await cache.client.pttl(quota_key)
     await cache.client.delete(quota_key)
     with pytest.raises(AdmissionUnavailableError):
         lifecycle.reconcile(ticket)
-    assert await cache.client.hget(admission_keys(namespace.value, envelope).totals, "count") == b"1"
+    assert await cache.client.execute_command("HGET", admission_keys(namespace.value, envelope).totals, "count") == b"1"
     current = await ValkeyAdmissionStore(cache, namespace).get(envelope.job_id)
     assert current is not None
     assert current.state == TicketState.SETTLING
@@ -475,7 +478,7 @@ async def test_recovery_reclaims_abandoned_running_ticket_only_after_kill_window
             assert lifecycle.recover(publisher) == 0
             assert runtime.admission.get(envelope.job_id) == running
             keys = admission_keys(namespace.value, envelope)
-            assert await cache.client.hget(keys.totals, "count") == b"1"
+            assert await cache.client.execute_command("HGET", keys.totals, "count") == b"1"
             clock.value += 1
             assert lifecycle.recover(publisher) == 1
             terminal = runtime.admission.get(envelope.job_id)
@@ -485,8 +488,8 @@ async def test_recovery_reclaims_abandoned_running_ticket_only_after_kill_window
             assert terminal.token == OWNER
             assert terminal.envelope == envelope
             assert terminal.settlement == SettlementIntent(outcome=JobOutcome.EXPIRED, actual=ZERO if reserved else ())
-            assert await cache.client.hget(keys.totals, "count") == b"0"
-            assert await cache.client.hget(keys.totals, "bytes") == b"0"
+            assert await cache.client.execute_command("HGET", keys.totals, "count") == b"0"
+            assert await cache.client.execute_command("HGET", keys.totals, "bytes") == b"0"
             assert not await cache.client.exists(keys.subject, keys.ingress, keys.payload)
             assert not await cache.client.zscore(namespace.value + "budget:active", envelope.job_id)
             if reserved:

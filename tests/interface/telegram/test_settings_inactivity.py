@@ -65,7 +65,9 @@ async def test_settings_activity_renews_session_until_idle(
         await command.handle_callback(query, callback)
         edits = [call for call in transport.calls if isinstance(call, EditMessageText)]
         assert len(edits) == before + 1
-        assert "expired" not in edits[-1].text.lower()
+        last_edit_text = edits[-1].text
+        assert last_edit_text is not None
+        assert "expired" not in last_edit_text.lower()
         assert not any(isinstance(call, DeleteMessage) for call in transport.calls)
     current = next(item for item in _buttons(transport) if item.menu == SettingsMenu.MAIN)
     clock.value += IDLE_INTERVAL

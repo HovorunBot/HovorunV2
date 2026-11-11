@@ -2,13 +2,20 @@
 
 import logging
 import sys
+from collections.abc import Mapping
+from types import TracebackType
 
 from hovorunv2.infrastructure.logger import PrivacyFormatter, redact_sensitive_text
 
 FORMAT = "%(message)s"
 
 
-def _record(name: str, msg: object, args: object = (), exc_info: object = None) -> logging.LogRecord:
+def _record(
+    name: str,
+    msg: object,
+    args: tuple[object, ...] | Mapping[str, object] | None = (),
+    exc_info: tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None] | None = None,
+) -> logging.LogRecord:
     return logging.LogRecord(name, logging.INFO, __file__, 1, msg, args, exc_info)
 
 

@@ -1,7 +1,7 @@
 """Tests for Feedback and ChatReminderService components."""
 
 import pytest
-from aiogram import Bot
+from aiogram.methods import SendMessage
 from aiogram.types import Message
 from dishka import AsyncContainer
 
@@ -14,6 +14,7 @@ from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.domain.enums import CommandName, Role
 from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from tests.conftest import provision_role
+from tests.utils.telegram.session import RecordingBot
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ async def owner_notifier(test_container: AsyncContainer) -> OwnerNotifier:
     return await test_container.get(OwnerNotifier)
 
 
-async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier, recording_bot: Bot) -> None:
+async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier, recording_bot: RecordingBot) -> None:
     """Test feedback service properly formats and delivers feedback to all owners."""
     service = FeedbackService(owner_notifier)
     bot = recording_bot
@@ -42,11 +43,13 @@ async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier,
 
     assert delivered is True
     assert len(bot.session.calls) == 2
-    called_owner_ids = [call.chat_id for call in bot.session.calls]
+    called_owner_ids = [call.chat_id for call in bot.session.calls if isinstance(call, SendMessage)]
     assert 111 in called_owner_ids
     assert 222 in called_owner_ids
 
-    sent_text = bot.session.calls[0].text
+    first_call = bot.session.calls[0]
+    assert isinstance(first_call, SendMessage)
+    sent_text = first_call.text
     assert "Alice Smith" in sent_text
     assert "Developers Chat" in sent_text
     assert "Please add Bluesky media support!" in sent_text
@@ -54,7 +57,7 @@ async def test_feedback_service_submits_to_owners(owner_notifier: OwnerNotifier,
 
 async def test_feedback_cooldown_blocks_repeat_sender(
     owner_notifier: OwnerNotifier,
-    recording_bot: Bot,
+    recording_bot: RecordingBot,
     test_container: AsyncContainer,
 ) -> None:
     """A second feedback from the same sender is replying without notifying owners."""
@@ -72,13 +75,15 @@ async def test_feedback_cooldown_blocks_repeat_sender(
     first_calls = len(recording_bot.session.calls)
     repeat = message.model_copy(update={"message_id": 11, "text": "/feedback second"})
     await command.handle(repeat, recording_bot)
-    assert "wait" in recording_bot.session.calls[-1].text.lower()
+    last_call = recording_bot.session.calls[-1]
+    assert isinstance(last_call, SendMessage)
+    assert "wait" in last_call.text.lower()
     assert len(recording_bot.session.calls) == first_calls + 1
 
 
 async def test_feedback_command_validation_and_delegation(
     owner_notifier: OwnerNotifier,
-    recording_bot: Bot,
+    recording_bot: RecordingBot,
     test_container: AsyncContainer,
 ) -> None:
     """Validate input and deliver through the real feedback service to durable owners."""
@@ -96,22 +101,27 @@ async def test_feedback_command_validation_and_delegation(
     ).as_(recording_bot)
     await command.handle(empty_msg, recording_bot)
     assert len(recording_bot.session.calls) == 1
-    assert "How to send feedback" in recording_bot.session.calls[0].text
+    call0 = recording_bot.session.calls[0]
+    assert isinstance(call0, SendMessage)
+    assert "How to send feedback" in call0.text
     recording_bot.session.calls.clear()
     valid_msg = empty_msg.model_copy(update={"text": "/feedback Hello world"}).as_(recording_bot)
     await command.handle(valid_msg, recording_bot)
     assert len(recording_bot.session.calls) == 3
     deliveries = recording_bot.session.calls[:2]
-    assert {call.chat_id for call in deliveries} == {111, 222}
+    assert {call.chat_id for call in deliveries if isinstance(call, SendMessage)} == {111, 222}
     for call in deliveries:
+        assert isinstance(call, SendMessage)
         assert "User" in call.text
         assert "Chat" in call.text
         assert "Hello world" in call.text
-    assert "Thank you!" in recording_bot.session.calls[-1].text
+    final_call = recording_bot.session.calls[-1]
+    assert isinstance(final_call, SendMessage)
+    assert "Thank you!" in final_call.text
 
 
 async def test_reminder_service_send_prompt_cooldown(
-    owner_notifier: OwnerNotifier, test_container: AsyncContainer, recording_bot: Bot
+    owner_notifier: OwnerNotifier, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test ChatReminderService sets Valkey cooldown when sending unauthorized prompt."""
     reminder_service = await test_container.get(ChatReminderService)
@@ -133,7 +143,7 @@ async def test_reminder_service_send_prompt_cooldown(
     assert bot.session.calls == []
 
 
-async def test_scheduled_job_callbacks(test_container: AsyncContainer, recording_bot: Bot) -> None:
+async def test_scheduled_job_callbacks(test_container: AsyncContainer, recording_bot: RecordingBot) -> None:
     """Run maintenance through real reminder service and check durable cooldown."""
     reminder_service = await test_container.get(ChatReminderService)
     chats = await test_container.get(ChatStore)

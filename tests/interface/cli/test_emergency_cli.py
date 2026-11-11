@@ -3,7 +3,7 @@
 from dishka import AsyncContainer
 
 from hovorunv2.bootstrap.admin import run_admin
-from hovorunv2.interface.cli.roles import build_parser
+from hovorunv2.interface.cli.roles import RoleArguments, build_parser
 from tests.conftest import provision_role
 
 ADMIN = 520001
@@ -13,7 +13,8 @@ async def test_cli_feature_disable_persists_durable_state(test_container: AsyncC
     """CLI origin applies the transition and reports its durable epoch."""
     await provision_role(test_container, ADMIN)
     arguments = build_parser().parse_args(
-        ["feature", "disable", "--feature", "twitter", "--reason", "synthetic", "--public", "Temporary outage"]
+        ["feature", "disable", "--feature", "twitter", "--reason", "synthetic", "--public", "Temporary outage"],
+        namespace=RoleArguments(),
     )
     output = await run_admin(arguments)
     assert "twitter" in output

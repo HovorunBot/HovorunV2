@@ -1,6 +1,7 @@
 """LogContextMiddleware binds user and chat identity onto logging ContextVars and LogRecords."""
 
 import logging
+from datetime import UTC, datetime
 
 import pytest
 from aiogram.types import Chat, Message, Update, User
@@ -26,7 +27,7 @@ async def test_log_context_middleware_tracks_user_and_chat_id() -> None:
             update_id=1,
             message=Message(
                 message_id=10,
-                date=123456789,
+                date=datetime.now(UTC),
                 chat=Chat(id=54321, type="group", title="Test"),
                 from_user=User(id=98765, is_bot=False, first_name="Test"),
                 text="unhandled text",

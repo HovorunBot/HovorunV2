@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 from dishka import AsyncContainer
-from sqlalchemy import func, select, text
+from sqlalchemy import func, insert, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -238,7 +238,7 @@ async def test_concurrent_replay_and_distinct_events_serialize_without_double_ch
     try:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
-            await connection.execute(UserDB.__table__.insert().values(telegram_id=USER))
+            await connection.execute(insert(UserDB).values(telegram_id=USER))
         store = SQLAlchemyUsageLedgerStore(sessions, SQLAlchemyAuditedTransaction(sessions), FEATURE_REGISTRY)
         results = await asyncio.gather(
             *[store.apply_batch((usage_event("concurrent-replay"),), actor=ACTOR) for _index in range(4)]

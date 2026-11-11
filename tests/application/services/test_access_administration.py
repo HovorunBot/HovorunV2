@@ -2,6 +2,7 @@
 
 import json
 import time
+from typing import Any
 
 import pytest
 from aiogram import Bot
@@ -48,11 +49,11 @@ async def setup_admin(container: AsyncContainer) -> AdministrationService:
     return await container.get(AdministrationService)
 
 
-def _limit_kwargs(action: AdminAction) -> dict[str, object]:
+def _limit_kwargs(action: AdminAction) -> dict[str, Any]:
     """Supply complete typed dimensions for override actions in the authority matrix."""
     if action not in {AdminAction.LIMIT_SET, AdminAction.LIMIT_RESET}:
         return {}
-    kwargs: dict[str, object] = {"bucket": "family:media", "unit": "requests", "window_seconds": 60}
+    kwargs: dict[str, Any] = {"bucket": "family:media", "unit": "requests", "window_seconds": 60}
     if action == AdminAction.LIMIT_SET:
         kwargs.update(limit=6, burst=3, concurrency=1, pending=10)
     return kwargs
@@ -195,14 +196,20 @@ async def test_private_preview_requires_confirmation_and_rejects_replay(test_con
                 response_class=RecordedResponse,
             )
             await command.handle(message.as_(bot), bot)
-            assert not (await users.get_by_telegram_id(USER)).is_trusted
+            user_state = await users.get_by_telegram_id(USER)
+            assert user_state is not None
+            assert not user_state.is_trusted
             markup = json.loads(sent_fields(http, "editMessageReplyMarkup")[-1]["reply_markup"])
             callback = AdminCallback.unpack(markup["inline_keyboard"][0][0]["callback_data"])
             assert str(USER) not in callback.pack()
             await command.handle_callback(query_for(message, bot, USER), callback)
-            assert not (await users.get_by_telegram_id(USER)).is_trusted
+            user_state = await users.get_by_telegram_id(USER)
+            assert user_state is not None
+            assert not user_state.is_trusted
             await command.handle_callback(query_for(message, bot, ADMIN), callback)
-            assert (await users.get_by_telegram_id(USER)).is_trusted
+            user_state = await users.get_by_telegram_id(USER)
+            assert user_state is not None
+            assert user_state.is_trusted
             await command.handle_callback(query_for(message, bot, ADMIN), callback)
             assert sent_fields(http, "answerCallbackQuery")[-1]["show_alert"] == "true"
     session_maker = await test_container.get(async_sessionmaker)
@@ -229,13 +236,16 @@ async def test_encrypted_confirmation_expires_and_rechecks_lifecycle_and_authori
         action=AdminAction.BAN, kind=TargetKind.USER, target=str(USER), reason="synthetic private note"
     )
     token = await sessions.issue(request, target, ADMIN, 1)
+    assert request.reason is not None
     assert request.reason not in json.dumps(await cache.get(f"admin:confirmation:{token}"))
     assert await sessions.resolve(token, USER, 1, consume=True) is None
     assert await sessions.resolve(token, ADMIN, 2, consume=True) is None
     confirmation = await sessions.resolve(token, ADMIN, 1)
     assert confirmation is not None
     assert confirmation.expires_at <= time.time() + 30
-    raw = await cache.get(f"admin:confirmation:{token}")
+    raw_text = await cache.get(f"admin:confirmation:{token}")
+    assert raw_text is not None
+    raw = json.loads(raw_text)
     settings = await test_container.get(AppSettings)
     assert settings.cache_encryption_key
     fernet = get_fernet_for_chat(settings.cache_encryption_key, raw["salt"])

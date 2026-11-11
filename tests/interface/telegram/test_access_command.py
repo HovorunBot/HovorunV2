@@ -78,6 +78,7 @@ async def test_request_callback_uses_human_actor_and_deduplicates_admin_notifica
 ) -> None:
     """A bot-authored menu persists the clicking human and notifies current ADMIN/OWNER once."""
     target = await seed_activation(test_container, trusted=False)
+    assert target.entity_id is not None
     await provision_role(test_container, ADMIN)
     await provision_role(test_container, OWNER, Role.OWNER)
     data = AccessCallback(
@@ -119,6 +120,7 @@ async def test_request_callback_uses_human_actor_and_deduplicates_admin_notifica
 async def test_trusted_button_click_activates_without_group_admin_call(test_container: AsyncContainer) -> None:
     """A trusted human can activate through a group menu authored by the bot."""
     target = await seed_activation(test_container)
+    assert target.entity_id is not None
     data = AccessCallback(chat_id=GROUP, group_id=target.entity_id, generation=1, action=AccessAction.REQUEST)
     query = CallbackQuery(
         id="trusted",
@@ -142,11 +144,13 @@ async def test_trusted_button_click_activates_without_group_admin_call(test_cont
 async def test_forged_or_stale_approval_callback_rejected(test_container: AsyncContainer, invalid: str) -> None:
     """Private decisions recheck current authority, target generation and pending request binding."""
     target = await seed_activation(test_container, trusted=False)
+    assert target.entity_id is not None
     await provision_role(test_container, ADMIN)
     async with activation_runtime(test_container) as runtime:
         with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
+            assert pending.request_id is not None
             actor = ACTOR if invalid == "non_admin" else ADMIN
             data = AccessCallback(
                 chat_id=GROUP,
@@ -187,11 +191,13 @@ async def test_forged_or_stale_approval_callback_rejected(test_container: AsyncC
 async def test_private_admin_callback_approves_and_closes_exact_request(test_container: AsyncContainer) -> None:
     """Current bot ADMIN can approve from their private notification; replays send no group alert."""
     target = await seed_activation(test_container, trusted=False)
+    assert target.entity_id is not None
     await provision_role(test_container, ADMIN)
     async with activation_runtime(test_container) as runtime:
         with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
+            assert pending.request_id is not None
             data = AccessCallback(
                 chat_id=GROUP,
                 group_id=target.entity_id,
@@ -222,6 +228,7 @@ async def test_private_admin_callback_approves_and_closes_exact_request(test_con
 async def test_private_admin_callback_approves_when_followup_telegram_fails(test_container: AsyncContainer) -> None:
     """Committed approval persists and answers callback even when group sendMessage and edit fail."""
     target = await seed_activation(test_container, trusted=False)
+    assert target.entity_id is not None
     await provision_role(test_container, ADMIN)
     async with activation_runtime(test_container) as runtime:
         with RecordedResponses() as http:
@@ -278,6 +285,7 @@ async def test_private_admin_callback_approves_when_followup_telegram_fails(test
 async def test_request_button_cannot_select_another_group(test_container: AsyncContainer) -> None:
     """The physical group carrying a request must match its callback target."""
     target = await seed_activation(test_container)
+    assert target.entity_id is not None
     data = AccessCallback(chat_id=GROUP - 1, group_id=target.entity_id, generation=1, action=AccessAction.REQUEST)
     query = CallbackQuery(
         id="wrong-target",
@@ -326,6 +334,7 @@ async def test_real_router_activates_trusted_user_in_unapproved_group(test_conta
         )
         dispatcher = Dispatcher()
         dispatcher.include_router(router)
+        assert target.entity_id is not None
         data = AccessCallback(chat_id=GROUP, group_id=target.entity_id, generation=1, action=AccessAction.REQUEST)
         query = CallbackQuery(
             id="router",

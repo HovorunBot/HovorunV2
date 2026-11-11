@@ -365,6 +365,7 @@ async def test_cleanup_sweep_in_operations_worker(
             assert delete_calls[0][2] == {"chat_id": -100888111, "message_id": 501}
 
             remaining = client.zrange(f"{namespace.value}cleanup:index", 0, -1)
+            assert isinstance(remaining, list)
             assert expired_member not in remaining
             assert future_member in remaining
         finally:
@@ -427,7 +428,9 @@ async def test_release_notifications_in_operations_worker(
             assert deliver_notifications_task() >= 1
             send_calls = [c for c in sync_http.calls if "sendMessage" in c[1]]
             assert send_calls
-            assert send_calls[0][2]["chat_id"] == approved_chat_id
+            payload = send_calls[0][2]
+            assert isinstance(payload, dict)
+            assert payload["chat_id"] == approved_chat_id
 
             # 3. Same version: no new event or receipt; delivery is a no-op.
             sync_http.calls.clear()

@@ -75,14 +75,19 @@ async def test_limit_inspect_reports_default_source_and_independent_safety(test_
     actor = ActorContext.telegram(ADMIN)
     target = await service.resolve(TargetKind.USER, str(USER))
     before = await service.execute(_request(AdminAction.LIMITS), target, actor, "private")
-    assert {policy["source"] for policy in before["policies"]} == {"default"}
+    policies = before["policies"]
+    assert isinstance(policies, list)
+    assert {policy["source"] for policy in policies} == {"default"}
     safety = before["safety"]
+    assert isinstance(safety, dict)
     assert safety["global_concurrency"] == 2
     assert safety["global_pending"] == 500
     assert safety["payload_bytes"] == 64 * 1024
     assert await service.execute(_request(AdminAction.LIMIT_SET), target, actor, "private") == {"changed": True}
     after = await service.execute(_request(AdminAction.LIMITS), target, actor, "private")
-    sources = {policy["bucket"]: policy["source"] for policy in after["policies"]}
+    after_policies = after["policies"]
+    assert isinstance(after_policies, list)
+    sources = {policy["bucket"]: policy["source"] for policy in after_policies}
     assert sources[MEDIA_BUCKET] == "override"
     assert sources[f"feature:{FEATURE}"] == "default"
     assert after["safety"] == safety
@@ -105,7 +110,9 @@ async def test_limit_reset_restores_default_without_resetting_consumption(
     assert await service.execute(_request(AdminAction.LIMIT_SET), target, actor, "private") == {"changed": True}
     assert await service.execute(_request(AdminAction.LIMIT_RESET), target, actor, "private") == {"changed": True}
     after = await service.execute(_request(AdminAction.LIMITS), target, actor, "private")
-    assert {policy["source"] for policy in after["policies"]} == {"default"}
+    after_policies = after["policies"]
+    assert isinstance(after_policies, list)
+    assert {policy["source"] for policy in after_policies} == {"default"}
     assert await ledger.total(subject, MEDIA_BUCKET, UsageUnit.REQUESTS, window, observed) == 1
 
 

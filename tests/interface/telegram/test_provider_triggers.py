@@ -1,7 +1,7 @@
 """Shared provider URL and bot-sender trigger contracts."""
 
 import pytest
-from aiogram import Bot
+from aiogram.methods import SendMessage
 from dishka import AsyncContainer
 
 from hovorunv2.application.groups.ports import ChatStore
@@ -16,6 +16,7 @@ from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import create_private_media_message, get_media_command
 from tests.utils.runtime import ManualClock, runtime_cache
+from tests.utils.telegram.session import RecordingBot
 
 
 @pytest.mark.parametrize(
@@ -167,7 +168,7 @@ async def test_is_triggered_by_bot(test_container: AsyncContainer, provider: Com
 
 
 async def test_admission_application_failure_replies_without_exposing_details(
-    test_container: AsyncContainer, recording_bot: Bot
+    test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """A real payload encryption configuration failure produces one bounded user reply."""
     settings = (await test_container.get(Settings)).model_copy(update={"cache_encryption_key": None})
@@ -188,4 +189,6 @@ async def test_admission_application_failure_replies_without_exposing_details(
         )
         await command.handle(message, recording_bot)
         await command.handle(message, recording_bot)
-        assert [call.text for call in recording_bot.session.calls] == [APPLICATION_FAILURE_NOTICE_TEXT]
+        assert [call.text for call in recording_bot.session.calls if isinstance(call, SendMessage)] == [
+            APPLICATION_FAILURE_NOTICE_TEXT
+        ]

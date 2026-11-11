@@ -64,6 +64,7 @@ async def test_trusted_activation_is_durable_idempotent_and_audited(test_contain
     statuses = await test_container.get(ChatStatusService)
     assert (await statuses.evaluate_access(GROUP)).allowed
     grants = await test_container.get(GroupGrantStore)
+    assert target.entity_id is not None
     assert len(await grants.approvals(target.entity_id)) == 1
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:
@@ -138,6 +139,7 @@ async def test_mutation_rechecks_current_facts_after_menu_open(test_container: A
 async def test_selected_target_and_transport_are_required(test_container: AsyncContainer, invalid: str) -> None:
     """Never provision a target, select another group, or activate through private transport."""
     target = await seed_activation(test_container)
+    assert target.entity_id is not None
     transport = "private" if invalid == "transport" else "group"
     if invalid == "generation":
         target = replace(target, generation=target.generation + 1)
@@ -162,6 +164,7 @@ async def test_reapproval_and_empty_config_preserve_selections(test_container: A
     assert (await store.execute(ActivationRequest(ACTOR, target, "group"))).outcome == ActivationOutcome.APPROVED
     assert await commands.get_allowed_commands(GROUP) == set()
     grants = await test_container.get(GroupGrantStore)
+    assert target.entity_id is not None
     await grants.revoke_approval(target.entity_id, ApprovalBasis.EXPLICIT, ActorContext.cli())
     assert (await store.execute(ActivationRequest(ACTOR, target, "group"))).outcome == ActivationOutcome.APPROVED
     assert await commands.get_allowed_commands(GROUP) == set()
@@ -178,6 +181,7 @@ async def test_actor_full_ban_only_suspends_while_current_admin(test_container: 
     statuses = await test_container.get(ChatStatusService)
     assert (await statuses.evaluate_access(GROUP)).allowed
     memberships = await test_container.get(MembershipStore)
+    assert target.entity_id is not None
     now = datetime.now(UTC)
     await memberships.save_member(
         target.entity_id,
@@ -210,6 +214,7 @@ async def test_bot_administrator_decides_pending_request_in_private(
         with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
+        assert pending.request_id is not None
         action = ActivationAction.APPROVE if approved else ActivationAction.REJECT
         result = await runtime.service.decide(ADMIN, target, pending.request_id, action, "private")
         assert result.outcome == (ActivationOutcome.APPROVED if approved else ActivationOutcome.REJECTED)
@@ -233,6 +238,7 @@ async def test_open_admin_decision_rechecks_demotion_and_target(test_container: 
         with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
+        assert pending.request_id is not None
         roles = await test_container.get(RoleService)
         await roles.set_role(ADMIN, Role.USER, ActorContext.cli())
         assert (
@@ -262,6 +268,7 @@ async def test_audit_failure_rolls_back_approval_defaults_status_and_request(tes
         with RecordedResponses() as http:
             stub_telegram(http)
             pending = await runtime.service.enable(ACTOR, target, "group")
+        assert pending.request_id is not None
         async with sessions() as session:
             await reject_audit(
                 session,
@@ -284,6 +291,7 @@ async def test_audit_failure_rolls_back_approval_defaults_status_and_request(tes
 async def test_request_evidence_is_actor_target_and_time_scoped(test_container: AsyncContainer, scope: str) -> None:
     """Old or unrelated administrator evidence cannot submit an untrusted request."""
     target = await seed_activation(test_container, trusted=False)
+    assert target.entity_id is not None
     now = datetime.now(UTC)
     evidence = GroupAdminEvidence(
         ACTOR + 1 if scope == "other_actor" else ACTOR,
@@ -314,6 +322,7 @@ async def test_concurrent_activation_is_idempotent_on_real_postgres_connections(
             session.add_all([group, UserDB(telegram_id=ACTOR, is_trusted=trusted)])
             await session.commit()
             target = PermissionTarget("group", group.id, group.generation, GROUP)
+        assert target.entity_id is not None
         now = datetime.now(UTC)
         evidence = GroupAdminEvidence(ACTOR, target.entity_id, target.generation, now, now + timedelta(minutes=5))
         request = ActivationRequest(ACTOR, target, "group", group_admin=evidence)

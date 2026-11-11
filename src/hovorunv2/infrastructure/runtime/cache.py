@@ -1,6 +1,7 @@
 """Cache application data through a bounded Valkey client."""
 
 import json
+from collections.abc import Mapping
 
 import redis.asyncio as redis
 
@@ -72,7 +73,7 @@ class CacheService:
         """Delete a key from the cache."""
         await self._cache.delete(key)
 
-    async def zadd(self, name: str, mapping: dict[str, float]) -> None:
+    async def zadd(self, name: str, mapping: Mapping[str, float]) -> None:
         """Add members to a sorted set."""
         await self._cache.zadd(name, mapping)
 

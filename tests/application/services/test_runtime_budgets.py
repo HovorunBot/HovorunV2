@@ -339,7 +339,7 @@ async def test_rollover_does_not_hide_missing_prior_ownership(
                 "active": namespace.value + "budget:active",
             }
             if missing == "membership":
-                await cache.client.srem(namespace.value + "budget:global", "prior")
+                await cache.client.execute_command("SREM", namespace.value + "budget:global", "prior")
             else:
                 await cache.client.delete(keys[missing])
             decision = await _reserve_budget(store, BudgetRequest("new-minute", usage, ONE, 400), 180)
@@ -374,9 +374,11 @@ async def test_stale_reservation_reclaimed_after_grace_and_unblocks_future_windo
             assert await _expire_budget(store, now) == 1
             assert await cache.client.zscore(namespace.value + "budget:active", "stuck-job") is None
 
-            global_members = await cache.client.smembers(namespace.value + "budget:global")
+            global_members = await cache.client.execute_command("SMEMBERS", namespace.value + "budget:global")
+            assert isinstance(global_members, (set, list))
             assert b"stuck-job" not in global_members
-            concurrency_members = await cache.client.smembers(record["concurrency"][1]["key"])
+            concurrency_members = await cache.client.execute_command("SMEMBERS", record["concurrency"][1]["key"])
+            assert isinstance(concurrency_members, (set, list))
             assert b"stuck-job" not in concurrency_members
 
             settled_record = json.loads(await cache.client.get(reservation_key))

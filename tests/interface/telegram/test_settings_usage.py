@@ -80,6 +80,7 @@ async def test_group_usage_lists_shared_media_quota_once(test_container: AsyncCo
     edits = [call for call in transport.calls if isinstance(call, EditMessageText)]
     assert len(edits) == 1
     text = edits[0].text
+    assert text is not None
     assert text.count("Media uploads — shared across all providers") == 1
     assert "0/12 requests" in text
     assert "Youtube video links" not in text

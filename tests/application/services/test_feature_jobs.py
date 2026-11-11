@@ -1,6 +1,7 @@
 """Real encrypted payloads, Celery broker serialization, and synchronous worker execution."""
 
 import asyncio
+import inspect
 import json
 import secrets
 import sys
@@ -122,6 +123,16 @@ class TimedOutMediaClient(VideoMediaClient):
         raise SoftTimeLimitExceeded
 
 
+class _FakeDetector:
+    def detect(self, text: str) -> str:
+        return "en"
+
+
+class _FakeEngine:
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        return text
+
+
 class FailedMediaClient(VideoMediaClient):
     """Exhaust extraction without usable post metadata."""
 
@@ -218,6 +229,12 @@ class AllowGate:
     def claim_delayed(self, target_key: str, ttl: int) -> bool:
         """Return True for the controlled test target."""
         return True
+
+
+async def _delete_quota_used(client: redis.Redis, key: str) -> None:
+    del_result = client.hdel(key, "used")
+    if inspect.isawaitable(del_result):
+        await del_result
 
 
 class RecordingDelivery:
@@ -724,7 +741,7 @@ async def test_claimed_failure_releases_admission_without_refunding_uncertain_bu
                 request = BudgetRequest(envelope.job_id, usage, (UnitAmount(UsageUnit.REQUESTS, 1),), envelope.deadline)
                 assert runtime.budgets.reserve(request, clock.now(), (0,)).allowed
                 record = json.loads(await cache.client.get(budget_prefix + "reservation:" + envelope.job_id))
-                await cache.client.hdel(record["quotas"][0]["key"], "used")
+                await _delete_quota_used(cache.client, record["quotas"][0]["key"])
             else:
                 payload_key = namespace.value + "payload:" + sealed.reference
                 metadata = json.loads(await cache.client.get(payload_key))

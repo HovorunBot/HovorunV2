@@ -63,6 +63,7 @@ def test_browser_complete_structured_album_in_order() -> None:
         service = NativeBrowserService()
         try:
             payload, _ = service.extract_and_download(url, _extract_carousel, deadline=ExtractionDeadline.after(60))
+            assert payload is not None
             assert [item.url for item in payload.media_items] == [_media_url(position) for position in range(3)]
             assert [item.is_video for item in payload.media_items] == [False, False, False]
             assert payload.footer_text == ""
@@ -79,6 +80,7 @@ def test_browser_lazy_carousel_enumerates_remaining_slides() -> None:
         service = NativeBrowserService()
         try:
             payload, _ = service.extract_and_download(url, _extract_carousel, deadline=ExtractionDeadline.after(60))
+            assert payload is not None
             assert [item.url for item in payload.media_items] == [_media_url(position) for position in range(5)]
             assert payload.footer_text == ""
         finally:
@@ -103,6 +105,7 @@ def test_browser_dom_traversal_excludes_other_articles_and_profile_images() -> N
         service = NativeBrowserService()
         try:
             payload, _ = service.extract_and_download(url, _extract_carousel, deadline=ExtractionDeadline.after(60))
+            assert payload is not None
             assert [item.url for item in payload.media_items] == [_media_url(position) for position in range(3)]
             assert payload.footer_text == ""
         finally:
@@ -118,6 +121,7 @@ def test_browser_seventeen_slide_album_above_embed_cap() -> None:
         service = NativeBrowserService()
         try:
             payload, _ = service.extract_and_download(url, _extract_carousel, deadline=ExtractionDeadline.after(60))
+            assert payload is not None
             assert len(payload.media_items) == 17
             assert [item.url for item in payload.media_items] == [_media_url(position) for position in range(17)]
             assert payload.footer_text == ""
@@ -134,6 +138,7 @@ def test_browser_mixed_album_preserves_video_order() -> None:
         service = NativeBrowserService()
         try:
             payload, _ = service.extract_and_download(url, _extract_carousel, deadline=ExtractionDeadline.after(60))
+            assert payload is not None
             assert [item.is_video for item in payload.media_items] == [False, True, False, True]
             assert [item.url for item in payload.media_items] == [slide_url for slide_url, _ in slides]
         finally:
@@ -149,6 +154,7 @@ def test_browser_wrapped_carousel_retains_partial_not_complete() -> None:
         service = NativeBrowserService()
         try:
             payload, _ = service.extract_and_download(url, _extract_carousel, deadline=ExtractionDeadline.after(60))
+            assert payload is not None
             assert len(payload.media_items) == 3
             assert payload.footer_text
         finally:
@@ -182,6 +188,7 @@ def test_browser_downloads_carousel_bytes_in_order() -> None:
             service = NativeBrowserService(allowed_hosts=frozenset({"127.0.0.1", "localhost", "media.example.invalid"}))
             try:
                 payload, results = service.extract_and_download(server.url("/post"), _extract_loopback_images)
+                assert payload is not None
                 assert results == [b"zero", b"one", b"two"]
                 assert [item.data for item in payload.media_items] == [b"zero", b"one", b"two"]
             finally:

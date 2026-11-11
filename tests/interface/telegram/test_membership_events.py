@@ -62,10 +62,14 @@ async def test_admin_events_and_revision_reject_stale_evidence(test_container: A
     group_id, user_id = await seed_membership_subjects(test_container)
     store = await test_container.get(MembershipStore)
     assert await store.save_member(group_id, member_evidence(101, MembershipStatus.ADMIN))
-    revision = (await store.get_state(group_id)).policy_revision
+    state = await store.get_state(group_id)
+    assert state is not None
+    revision = state.policy_revision
     later = NOW + timedelta(seconds=10)
     assert await store.save_member(group_id, member_evidence(101, MembershipStatus.LEFT, later))
-    assert (await store.get_state(group_id)).policy_revision == revision + 1
+    state_after = await store.get_state(group_id)
+    assert state_after is not None
+    assert state_after.policy_revision == revision + 1
     assert not await store.save_member(group_id, member_evidence(101, MembershipStatus.ADMIN))
     assert await store.get_member(group_id, user_id) is None
     assert not await store.relevant_users(group_id)
@@ -123,8 +127,11 @@ async def test_unknown_admin_listing_retains_candidates_and_freshness_is_bounded
     failed = AdministratorEvidence(-100101, known=False, members=(), verified_at=later, expires_at=later + FRESHNESS)
     assert await store.save_admins(group_id, failed)
     unknown = await store.get_member(group_id, candidates[0].id)
+    assert unknown is not None
     assert unknown.status == MembershipStatus.UNKNOWN
-    assert not (await store.get_state(group_id)).admins_known
+    state = await store.get_state(group_id)
+    assert state is not None
+    assert not state.admins_known
     assert not await store.due_groups(later + timedelta(seconds=1))
     recovered = AdministratorEvidence(
         -100101,
@@ -157,9 +164,13 @@ async def test_bot_presence_does_not_change_bans_or_grants_and_unknown_preserves
         assert group.status == ChatStatus.BANNED
         assert group.is_bot_present is False
     assert len(await grants.approvals(group_id)) == 1
-    assert (await store.get_state(group_id)).can_delete_messages is None
+    state_before = await store.get_state(group_id)
+    assert state_before is not None
+    assert state_before.can_delete_messages is None
     assert await store.save_bot(group_id, bot_evidence(MembershipStatus.MEMBER, NOW + timedelta(seconds=2)))
-    assert (await store.get_state(group_id)).can_delete_messages is False
+    state_after = await store.get_state(group_id)
+    assert state_after is not None
+    assert state_after.can_delete_messages is False
     async with sessions() as session:
         group = await session.get(ChatDB, group_id)
         assert group.is_bot_present is True
@@ -214,6 +225,7 @@ def telegram_member_update(user: User, status: str, date: datetime) -> ChatMembe
             can_post_stories=False,
             can_edit_stories=False,
             can_delete_stories=False,
+            can_send_welcome_messages=False,
         )
     else:
         new_member = ChatMemberMember(user=user)
@@ -243,7 +255,9 @@ async def test_real_member_and_bot_events_preserve_banned_group(test_container: 
         await bot_join.handle_my_chat_member_update(
             telegram_member_update(bot_user, "member", NOW + timedelta(seconds=1)), bot
         )
-        assert (await store.get_state(group_id)).bot_status == MembershipStatus.MEMBER
+        bot_state = await store.get_state(group_id)
+        assert bot_state is not None
+        assert bot_state.bot_status == MembershipStatus.MEMBER
     finally:
         await bot.session.close()
     sessions = await test_container.get(async_sessionmaker)

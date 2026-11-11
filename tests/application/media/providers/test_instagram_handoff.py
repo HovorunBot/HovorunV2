@@ -28,6 +28,7 @@ from tests.utils.instagram_worker import instagram_worker, route_instagram_backe
 from tests.utils.jobs import broker_envelopes
 from tests.utils.sync_http import HTTPFixture, HTTPReply, json_reply
 from tests.utils.telegram.recording_delivery import RecordingTelegramDelivery
+from tests.utils.telegram.session import RecordingBot
 
 pytestmark = [pytest.mark.browser, pytest.mark.slow]
 POST = InstagramPost("Synthetic_1", "p")
@@ -109,7 +110,7 @@ async def _assert_single_charge(engine: AsyncEngine, chat_id: int, job_id: str) 
 )
 async def test_retained_candidate_selection_and_cleanup_across_real_worker_stages(
     test_container: AsyncContainer,
-    recording_bot: Bot,
+    recording_bot: RecordingBot,
     postgres_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
     browser_count: int,
@@ -145,9 +146,10 @@ async def test_retained_candidate_selection_and_cleanup_across_real_worker_stage
                 assert runner.run(messages[0]) == JobOutcome.COMPLETE.value
                 assert runtime.payloads.load_candidate(envelope.job_id) is not None
                 stored = runtime.client.get(namespace.value + "payload:candidate:" + envelope.job_id)
-                assert stored is not None
-                assert "Synthetic embed caption" not in stored
-                assert "media.example.invalid" not in stored
+                assert isinstance(stored, (str, bytes))
+                stored_text = stored.decode("utf-8") if isinstance(stored, bytes) else str(stored)
+                assert "Synthetic embed caption" not in stored_text
+                assert "media.example.invalid" not in stored_text
                 queued = broker_envelopes(settings, namespace.value, "browser")
                 assert len(queued) == 1
                 assert JobEnvelope.model_validate(queued[0]).deadline == envelope.deadline
@@ -186,7 +188,10 @@ async def test_retained_candidate_selection_and_cleanup_across_real_worker_stage
 
 
 async def test_worker_browser_deadline_aborts_navigation_and_preserves_retained_candidate(
-    test_container: AsyncContainer, recording_bot: Bot, postgres_database_url: str, monkeypatch: pytest.MonkeyPatch
+    test_container: AsyncContainer,
+    recording_bot: RecordingBot,
+    postgres_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Activate the real worker's browser timeout and reap Chromium before retained delivery."""
     await _enqueue(test_container, recording_bot, CHAT_ID + 20)

@@ -5,7 +5,7 @@ import re
 from collections.abc import Callable
 from functools import partial
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from aiohttp import ClientResponse
 from aioresponses import CallbackResult, aioresponses
@@ -22,7 +22,7 @@ class RecordedResponse(ClientResponse):
     """Supply aiohttp's new stream_writer argument until aioresponses supports it."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, stream_writer=SimpleNamespace(output_size=0), **kwargs)
+        super().__init__(*args, stream_writer=cast(Any, SimpleNamespace(output_size=0)), **kwargs)
 
 
 async def _recorded_callback(callback: Callable[..., Any], *args: Any, **kwargs: Any) -> CallbackResult | None:

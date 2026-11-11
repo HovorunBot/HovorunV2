@@ -3,7 +3,7 @@
 import time
 
 import pytest
-import yt_dlp
+from yt_dlp.networking.exceptions import RequestError
 
 from hovorunv2.application.media.backend_logging import MediaBackendFailure, MediaBackendLogger
 from hovorunv2.application.media.deadlines import ExtractionDeadline
@@ -42,7 +42,7 @@ def test_ytdlp_request_budget_stops_slow_request_and_prevents_another() -> None:
     """A real slow external response consumes the shared budget instead of restarting it per request."""
     with HTTPFixture({"/slow": HTTPReply(disconnect=True, delay_seconds=SLOW_REQUEST_SECONDS)}) as server:
         with BoundedYoutubeDL({"logger": MediaBackendLogger()}, EXTRACTION_BUDGET_SECONDS) as backend:
-            with pytest.raises(yt_dlp.networking.exceptions.RequestError):
+            with pytest.raises(RequestError):
                 backend.urlopen(server.url("/slow"))
             with pytest.raises(MediaExtractionError, match="request budget expired"):
                 backend.urlopen(server.url("/slow"))

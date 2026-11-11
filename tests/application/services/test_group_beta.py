@@ -73,6 +73,7 @@ async def test_multiple_enablers_suspend_and_recover_only_the_selected_beta(test
     assert not await runtime.service.is_available(runtime.target, BETA.key, emergency_disabled=False)
     assert (await runtime.service.facts(runtime.target, BETA.key)).selected
     grants = await test_container.get(GroupGrantStore)
+    assert runtime.target.entity_id is not None
     assert await grants.approvals(runtime.target.entity_id)
     assert await commands.get_allowed_commands(GROUP) == [standard]
     assert await runtime.eligibility.set_grant(runtime.first, ALL_BETA, granted=True, actor=ActorContext.cli())
@@ -253,6 +254,7 @@ async def test_expired_enabler_suspends_and_fresh_admin_evidence_recovers(test_c
     future = datetime.now(UTC) + timedelta(minutes=10)
     assert not (await runtime.service.facts(runtime.target, BETA.key, now=future)).qualifying_enabler
     memberships = await test_container.get(MembershipStore)
+    assert runtime.target.entity_id is not None
     now = datetime.now(UTC)
     await memberships.save_member(
         runtime.target.entity_id,
@@ -297,6 +299,7 @@ async def test_exact_target_binding_and_bot_admin_demotion_are_rechecked(test_co
         for user_id in (FIRST, SECOND)
     )
     memberships = await test_container.get(MembershipStore)
+    assert current.entity_id is not None
     await memberships.save_admins(
         current.entity_id,
         AdministratorEvidence(new_route, True, members, now, now + timedelta(minutes=5)),

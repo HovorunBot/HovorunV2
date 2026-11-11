@@ -70,7 +70,7 @@ async def test_deleted_entity_history_remains_and_secrets_are_filtered(
         await test_container.get(ChatStore),
         await test_container.get(PublicHandleStore),
     )
-    await lifecycle.delete_user(USER, reason="cleanup", actor=ActorContext.cli())
+    await lifecycle.delete_user(str(USER), reason="cleanup", actor=ActorContext.cli())
     session_maker = await test_container.get(async_sessionmaker)
     async with session_maker() as session:
         session.add(

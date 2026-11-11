@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import pytest
 import redis
-from aiogram import Bot
 from dishka import AsyncContainer, Scope, make_async_container, provide
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -36,7 +35,7 @@ from hovorunv2.infrastructure.fixtures import setup_fixtures
 from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.utils.postgres import DEFAULT_TEST_DATABASE_URL, postgres_database
 from tests.utils.telegram import BOT_CREDENTIAL, create_mock_message, create_private_media_message
-from tests.utils.telegram.session import RecordingSession
+from tests.utils.telegram.session import RecordingBot, RecordingSession
 
 __all__ = [
     "DEFAULT_TEST_VALKEY_URL",
@@ -302,9 +301,9 @@ async def authorize_private_media(container: AsyncContainer, telegram_id: int) -
 
 
 @pytest.fixture
-async def recording_bot() -> AsyncGenerator[Bot]:
+async def recording_bot() -> AsyncGenerator[RecordingBot]:
     """Use real Telegram models with a recording external transport."""
-    async with Bot(BOT_CREDENTIAL, session=RecordingSession()) as bot:
+    async with RecordingBot(BOT_CREDENTIAL, session=RecordingSession()) as bot:
         yield bot
 
 
@@ -340,6 +339,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         if "domain" in item.path.parts or item.path.stem in pure_modules:
             item.add_marker(pytest.mark.unit)
         if item.get_closest_marker("unit") is None:
+            continue
+        if not isinstance(item, pytest.Function):
             continue
         dependencies = forbidden.intersection(item.fixturenames)
         if dependencies:

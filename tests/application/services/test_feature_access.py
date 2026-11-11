@@ -124,12 +124,16 @@ async def test_guessed_execution_and_stale_callbacks_recheck_current_group_suppo
         await test_container.get(ChatReminderService),
     )
     bot = Bot(BOT_CREDENTIAL)
-    event = message().as_(bot)
-    if callback:
-        event = CallbackQuery(id="synthetic", from_user=event.from_user, chat_instance="synthetic", message=event).as_(
-            bot
-        )
-    data = {"policy": CommandPolicy(is_toggleable=True), "command_name": BETA.key}
+    base_msg = message()
+    assert base_msg.from_user is not None
+    event = (
+        CallbackQuery(
+            id="synthetic", from_user=base_msg.from_user, chat_instance="synthetic", message=base_msg.as_(bot)
+        ).as_(bot)
+        if callback
+        else base_msg.as_(bot)
+    )
+    data: dict[str, object] = {"policy": CommandPolicy(is_toggleable=True), "command_name": BETA.key}
     try:
         with RecordedResponses() as http:
             stub_telegram(http)
@@ -152,6 +156,7 @@ async def test_help_and_modules_hide_future_beta_and_guessed_toggle_writes_nothi
     help_command = await test_container.get(HelpCommand)
     bot = Bot(BOT_CREDENTIAL)
     menu = message(FIRST).as_(bot)
+    assert menu.from_user is not None
     query = CallbackQuery(id="settings", from_user=menu.from_user, chat_instance="synthetic", message=menu).as_(bot)
     sessions = await test_container.get(async_sessionmaker)
     async with sessions() as session:

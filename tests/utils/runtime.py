@@ -1,6 +1,7 @@
 """Isolated real Valkey namespaces and controlled clocks for runtime integration tests."""
 
-from collections.abc import AsyncIterator
+import inspect
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import uuid4
@@ -25,14 +26,16 @@ class ManualClock:
 
 
 @asynccontextmanager
-async def runtime_cache(container: AsyncContainer) -> AsyncIterator[tuple[CacheService, RuntimeNamespace]]:
+async def runtime_cache(container: AsyncContainer) -> AsyncGenerator[tuple[CacheService, RuntimeNamespace]]:
     """Use only a fresh random test namespace; never clear another test or application's keys."""
     settings = await container.get(Settings)
     namespace = RuntimeNamespace(f"test:{{{uuid4().hex}}}:")
     cache = CacheService(settings.valkey_url)
     client = redis.from_url(settings.valkey_url)
     try:
-        await client.ping()
+        ping = client.ping()
+        if inspect.isawaitable(ping):
+            await ping
         yield cache, namespace
     finally:
         try:

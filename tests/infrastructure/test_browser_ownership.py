@@ -6,7 +6,7 @@ import signal
 import sys
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from http import HTTPStatus
 from pathlib import Path
@@ -83,7 +83,7 @@ def test_startup_timeout_reaps_process_and_removes_profile(tmp_path: Path, monke
 
 
 @contextmanager
-def _partial_download_url() -> Iterator[str]:
+def _partial_download_url() -> Generator[str]:
     routes = {"/image": HTTPReply(b"synthetic image"), "/missing": HTTPReply(status=HTTPStatus.NOT_FOUND)}
     with HTTPFixture(routes) as media:
         document = f'<html><body><img src="{media.url("/image")}"><img src="{media.url("/missing")}"></body></html>'
@@ -144,6 +144,7 @@ def test_sigkilled_worker_child_terminates_owned_chromium(tmp_path: Path) -> Non
         chromium_pid = int(pid_file.read_text())
         assert Path(f"/proc/{chromium_pid}").exists()
 
+        assert process.pid is not None
         os.kill(process.pid, signal.SIGKILL)
         process.join(10)
         assert not process.is_alive()

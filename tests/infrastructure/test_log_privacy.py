@@ -4,6 +4,7 @@ import asyncio
 import io
 import logging
 import sys
+from http import HTTPStatus
 
 import pytest
 from aiogram import Bot
@@ -101,7 +102,7 @@ async def test_media_download_failure_logs_no_message_url(
     # Alembic migration tests disable pre-existing loggers through fileConfig.
     monkeypatch.setattr(logging.getLogger("hovorunv2.application.media.downloader"), "disabled", False)
     with (
-        HTTPFixture({"/media": HTTPReply(status=500)}) as server,
+        HTTPFixture({"/media": HTTPReply(status=HTTPStatus.INTERNAL_SERVER_ERROR)}) as server,
         NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as http,
     ):
         target_url = server.url(f"/media?credential={SENTINEL}")
@@ -146,7 +147,7 @@ def test_native_http_read_failure_logs_no_url(
     """Native HTTP read failures log only failure class without request URL contents."""
     monkeypatch.setattr(logging.getLogger("hovorunv2.infrastructure.http_transport.native_http"), "disabled", False)
     with (
-        HTTPFixture({"/fault": HTTPReply(status=500)}) as server,
+        HTTPFixture({"/fault": HTTPReply(status=HTTPStatus.INTERNAL_SERVER_ERROR)}) as server,
         NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as http,
     ):
         target_url = server.url(f"/fault?credential={SENTINEL}")

@@ -2,6 +2,7 @@
 
 import pytest
 
+from hovorunv2.application.media.browser import BrowserElement, BrowserTabSettings
 from hovorunv2.application.media.errors import MediaExtractionError
 from hovorunv2.application.media.instagram.browser_extraction import extract_browser_post
 from hovorunv2.application.media.instagram.results import InstagramPost
@@ -42,6 +43,11 @@ def _album(count: int, *, observed: int | None = None) -> dict[str, object]:
     }
 
 
+class _FakeSettings:
+    def cookies(self, cookie: dict[str, object], /) -> None:
+        pass
+
+
 class _CarouselTab:
     """Duck-typed browser tab exposing only the operations used by carousel extraction."""
 
@@ -59,6 +65,26 @@ class _CarouselTab:
         self._index = 0
         self.clicks = 0
         self._html = html
+
+    @property
+    def set(self) -> BrowserTabSettings:
+        return _FakeSettings()
+
+    @property
+    def user_agent(self) -> str:
+        return "fake-ua"
+
+    def get(self, url: str, *, timeout: float) -> bool | None:
+        return True
+
+    def ele(self, locator: str, *, timeout: float) -> BrowserElement | None:
+        return None
+
+    def cookies(self, *, all_domains: bool = False, all_info: bool = False) -> list[dict[str, object]]:
+        return []
+
+    def close(self) -> None:
+        pass
 
     def run_js(self, script: str) -> object:
         if "window._sharedData" in script:
@@ -123,7 +149,7 @@ def test_wrapped_carousel_stops_with_partial_not_complete() -> None:
 
 def test_video_slide_without_url_is_unavailable_not_a_photo() -> None:
     """A missing video source leaves a gap rather than fabricating a successful image."""
-    slides = [
+    slides: list[dict[str, object]] = [
         _slide(0),
         {"position": 1, "id": "slide-1", "url": "", "is_video": True},
         _slide(2),

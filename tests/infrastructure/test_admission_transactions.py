@@ -44,8 +44,8 @@ async def test_concurrent_same_job_admission_returns_original_ticket(test_contai
         assert sum(result.state == AdmissionState.DUPLICATE for result in results) == 19
         assert all(result.ticket is not None and result.ticket.envelope == envelope for result in results)
         keys = admission_keys(namespace.value, envelope)
-        assert await cache.client.hget(keys.totals, "count") == b"1"
-        assert await cache.client.hget(keys.totals, "bytes") == str(sealed.byte_size).encode()
+        assert await cache.client.execute_command("HGET", keys.totals, "count") == b"1"
+        assert await cache.client.execute_command("HGET", keys.totals, "bytes") == str(sealed.byte_size).encode()
 
 
 async def test_nontext_dedupe_pointer_fails_closed_without_mutation(test_container: AsyncContainer) -> None:
@@ -101,7 +101,7 @@ async def test_wrong_key_types_never_partially_release_admission(
         if corrupt_key in {"totals", "handoff", "pending"}:
             await cache.client.set(key, "wrong-type")
         else:
-            await cache.client.hset(key, mapping={"unexpected": "wrong-type"})
+            await cache.client.execute_command("HSET", key, "unexpected", "wrong-type")
         before = await asyncio.gather(*(cache.client.dump(key) for key in keys.watched))
         with pytest.raises(AdmissionUnavailableError):
             await store.cancel(envelope.job_id)
@@ -159,7 +159,9 @@ async def test_corrupt_ticket_pointer_cannot_delete_another_payload(test_contain
         keys = admission_keys(namespace.value, envelope)
         other = namespace.value + "payload:" + "f" * 32
         await cache.client.set(other, "synthetic-other-payload")
-        raw = await cache.get(keys.ticket)
+        raw_ticket = await cache.get(keys.ticket)
+        assert raw_ticket is not None
+        raw = json.loads(raw_ticket)
         raw["payload_key"] = other
         await cache.set(keys.ticket, raw)
         with pytest.raises(AdmissionUnavailableError):

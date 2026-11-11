@@ -39,7 +39,7 @@ async def test_delete_user_tombstones_and_invalidates_generation(
     await chats.get_or_create_chat(GROUP)
     await (await test_container.get(ChatStatusService)).set_status(GROUP, ChatStatus.APPROVED)
     service = await _service(test_container)
-    assert "deleted" in await service.delete_user(USER, reason="test cleanup", actor=ActorContext.cli())
+    assert "deleted" in await service.delete_user(str(USER), reason="test cleanup", actor=ActorContext.cli())
     assert await users.get_by_telegram_id(USER) is None
     assert await users.ingest_user(USER) is None
     session_maker = await test_container.get(async_sessionmaker)
@@ -62,8 +62,8 @@ async def test_protected_admin_requires_cli(test_container: AsyncContainer) -> N
     await provision_role(test_container, ADMIN, Role.ADMIN)
     service = await _service(test_container)
     with pytest.raises(PermissionError):
-        await service.delete_user(ADMIN, reason="telegram attempt", actor=ActorContext.telegram(ADMIN))
-    assert "deleted" in await service.delete_user(ADMIN, reason="cli cleanup", actor=ActorContext.cli())
+        await service.delete_user(str(ADMIN), reason="telegram attempt", actor=ActorContext.telegram(ADMIN))
+    assert "deleted" in await service.delete_user(str(ADMIN), reason="cli cleanup", actor=ActorContext.cli())
 
 
 async def test_handle_mapping_cannot_alias_deleted_target(test_container: AsyncContainer) -> None:
@@ -77,7 +77,7 @@ async def test_handle_mapping_cannot_alias_deleted_target(test_container: AsyncC
     assert resolved is not None
     assert await handles.get_handle_by_target(TargetKind.USER, USER) is not None
     service = await _service(test_container)
-    await service.delete_user(USER, reason="cleanup", actor=ActorContext.cli())
+    await service.delete_user(str(USER), reason="cleanup", actor=ActorContext.cli())
     assert await handles.get_handle_by_target(TargetKind.USER, USER) is None
     assert await handles.resolve_handle("lifecycle_alias") is None
 

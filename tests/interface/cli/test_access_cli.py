@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from dishka import make_async_container
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from hovorunv2.application.groups.group_grants import GroupGrantStore
@@ -45,10 +45,8 @@ async def offline_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     try:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
-            await connection.execute(UserDB.__table__.insert().values(telegram_id=USER))
-            await connection.execute(
-                ChatDB.__table__.insert().values(chat_id=GROUP, platform="telegram", chat_type="group")
-            )
+            await connection.execute(insert(UserDB).values(telegram_id=USER))
+            await connection.execute(insert(ChatDB).values(chat_id=GROUP, platform="telegram", chat_type="group"))
         from_session = AdminProvider()
         container = make_async_container(from_session)
         try:

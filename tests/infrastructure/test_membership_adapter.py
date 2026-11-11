@@ -2,30 +2,22 @@
 
 from datetime import UTC, datetime
 from http import HTTPStatus
-from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from aiogram import Bot
-from aiohttp import ClientConnectionError, ClientResponse
+from aiohttp import ClientConnectionError
 from aioresponses import CallbackResult, aioresponses
 from dishka import AsyncContainer
 from yarl import URL
 
 from hovorunv2.application.identity.membership import MembershipPort, MembershipStatus
 from hovorunv2.interface.telegram.transport.membership import MEMBERSHIP_FRESHNESS, TelegramMembershipAdapter
+from tests.utils.telegram.transport import RecordedResponse
 
 BOT_CREDENTIAL = "123456:synthetic-membership-token"
 API = f"https://api.telegram.org/bot{BOT_CREDENTIAL}"
 GROUP_ID = -180018
 USER_ID = 180018
-
-
-class RecordedResponse(ClientResponse):
-    """Supply aiohttp's new stream_writer argument until aioresponses supports it."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, stream_writer=SimpleNamespace(output_size=0), **kwargs)
 
 
 def member_payload(status: str = "member", *, is_bot: bool = False) -> dict[str, object]:

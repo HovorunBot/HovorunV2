@@ -39,13 +39,13 @@ async def test_competing_payload_cas_keeps_winning_ciphertext_and_original_expir
             async with redis.from_url(settings.valkey_url) as client:
                 key = namespace.value + "payload:" + first.reference
                 original = await client.get(key)
-                expiry = await client.pexpiretime(key)
+                expiry = await client.execute_command("PEXPIRETIME", key)
                 clock.value += 30
                 assert await bot.put(winner) == PayloadState.READY
                 assert await asyncio.to_thread(runtime.payloads.put, winner) == PayloadState.READY
                 assert await bot.put(loser) == PayloadState.UNREADABLE
                 assert await client.get(key) == original == winner.blob.encode()
-                assert await client.pexpiretime(key) == expiry
+                assert await client.execute_command("PEXPIRETIME", key) == expiry
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,7 @@
 """Exercise first-action verification through production routing and real persistence."""
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import ClassVar
 
 import pytest
@@ -25,6 +26,7 @@ from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.transport.membership import TelegramMembershipAdapter
 from tests.utils.telegram import GROUP_ID, USER_ID, member_payload
+from tests.utils.telegram.session import RecordingBot
 
 
 class RecordedProtectedCommand(BaseCommand):
@@ -56,12 +58,12 @@ class RecordedProtectedCommand(BaseCommand):
 
     def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:
         """Register a protected callback under the same production middleware."""
-        router.callback_query.register(self.handle_callback, F.data == "membership:retry", flags=flags)
+        router.callback_query.register(self.handle_callback, F.data == "membership:retry", flags=dict(flags))
 
 
 @pytest.mark.parametrize("callback", [False, True])
 async def test_first_protected_action_recovers_and_reuses_membership(
-    test_container: AsyncContainer, recording_bot: Bot, callback: bool
+    test_container: AsyncContainer, recording_bot: RecordingBot, callback: bool
 ) -> None:
     """Verify missing snapshots before the triggering action, with no API calls for unmatched or fresh actions."""
     chats = await test_container.get(ChatStore)
@@ -88,7 +90,7 @@ async def test_first_protected_action_recovers_and_reuses_membership(
     )
     message = Message(
         message_id=1,
-        date=1,
+        date=datetime.now(UTC),
         chat=Chat(id=GROUP_ID, type="supergroup"),
         from_user=User(id=USER_ID, is_bot=False, first_name="Synthetic"),
         text="Unmatched synthetic message",
@@ -100,6 +102,7 @@ async def test_first_protected_action_recovers_and_reuses_membership(
         [member_payload(is_bot=True), [member_payload("creator")], member_payload("creator")]
     )
     protected = message.model_copy(update={"text": "https://www.instagram.com/p/Synthetic_1/"})
+    assert message.from_user is not None
     query = CallbackQuery(
         id="synthetic",
         from_user=message.from_user,

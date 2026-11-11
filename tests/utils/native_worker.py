@@ -5,10 +5,11 @@ import logging
 import multiprocessing
 import os
 import signal
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
+from multiprocessing.process import BaseProcess
 from uuid import uuid4
 
 import redis
@@ -72,7 +73,7 @@ def _run_worker(
 
 async def _wait_ready(
     cache: CacheService,
-    process: multiprocessing.Process,
+    process: BaseProcess,
     ready_key: str,
     child_key: str,
 ) -> None:
@@ -82,7 +83,7 @@ async def _wait_ready(
             await asyncio.sleep(0.05)
 
 
-async def _stop_worker(process: multiprocessing.Process) -> None:
+async def _stop_worker(process: BaseProcess) -> None:
     if process.is_alive():
         process.terminate()
     await asyncio.to_thread(process.join, STOP_SECONDS)
@@ -96,7 +97,7 @@ async def _stop_worker(process: multiprocessing.Process) -> None:
 class NativeWorkerHandle:
     """Control one real worker parent and its current prefork child."""
 
-    process: multiprocessing.Process
+    process: BaseProcess
     child_key: str
     cache: CacheService
 
@@ -128,7 +129,7 @@ async def native_feature_worker(
     settings: Settings,
     namespace: RuntimeNamespace,
     queues: tuple[str, ...],
-) -> AsyncIterator[NativeWorkerHandle]:
+) -> AsyncGenerator[NativeWorkerHandle]:
     """Start a real synchronous Celery worker and always terminate its process tree."""
     ready_key = namespace.value + "probe:ready:" + uuid4().hex
     child_key = namespace.value + "probe:child:" + uuid4().hex

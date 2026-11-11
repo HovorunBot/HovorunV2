@@ -1,6 +1,6 @@
 """Synthetic Telegram HTTP helpers backed by real activation services and PostgreSQL stores."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,7 +39,7 @@ class ActivationRuntime:
 
 
 @asynccontextmanager
-async def activation_runtime(container: AsyncContainer) -> AsyncIterator[ActivationRuntime]:
+async def activation_runtime(container: AsyncContainer) -> AsyncGenerator[ActivationRuntime]:
     """Use the real external adapter without starting Telegram polling or browser extraction."""
     async with Bot(BOT_CREDENTIAL) as bot:
         service = GroupActivationService(

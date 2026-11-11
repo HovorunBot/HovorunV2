@@ -1,7 +1,6 @@
 """Tests for Threads rich media command."""
 
 import pytest
-from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
@@ -18,6 +17,7 @@ from tests.conftest import authorize_private_media, create_private_media_message
 from tests.utils.sync_browser import FakeSyncBrowser
 from tests.utils.sync_http import FakeSyncHTTP
 from tests.utils.telegram.recording_delivery import drain_and_run_media
+from tests.utils.telegram.session import RecordingBot
 
 EXPECTED_MEDIA_COUNT: int = 1
 
@@ -31,7 +31,7 @@ async def threads_command(test_container: AsyncContainer) -> RichMediaCommand:
 @pytest.mark.slow
 @pytest.mark.vcr
 async def test_handle_threads_post(
-    threads_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    threads_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test handling a Threads post using real extraction and VCR through staged continuation."""
     chat_id = 456

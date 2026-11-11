@@ -47,6 +47,7 @@ from tests.utils.jobs import broker_envelopes
 from tests.utils.runtime import runtime_cache
 from tests.utils.settings import query_for, settings_message
 from tests.utils.telegram import GROUP_ID, USER_ID, member_payload
+from tests.utils.telegram.session import RecordingBot
 
 MEDIA_URL = "https://www.instagram.com/p/Synthetic_1/"
 
@@ -112,7 +113,7 @@ async def _dispatcher(container: AsyncContainer, bot: Bot, command: BaseCommand)
     return dispatcher
 
 
-def _record_successful_refresh(bot: Bot) -> None:
+def _record_successful_refresh(bot: RecordingBot) -> None:
     """Supply successful external bot, administrator-list and administrator-member responses."""
     bot.session.responses.extend(
         [member_payload("creator", is_bot=True), [member_payload("creator")], member_payload("creator")]
@@ -135,7 +136,7 @@ def _settings_callback(render: EditMessageText, menu: SettingsMenu) -> SettingsC
 
 @pytest.mark.parametrize("chat_type", [ChatType.GROUP, ChatType.SUPERGROUP])
 async def test_expired_settings_command_and_callback_recover_on_the_triggering_request(
-    recovery_container: AsyncContainer, recording_bot: Bot, chat_type: ChatType
+    recovery_container: AsyncContainer, recording_bot: RecordingBot, chat_type: ChatType
 ) -> None:
     """Open real settings and its bound language menu despite separately expired administrator snapshots."""
     await _expire_administrators(recovery_container)
@@ -171,7 +172,7 @@ async def test_expired_settings_command_and_callback_recover_on_the_triggering_r
 
 @pytest.mark.parametrize("restriction", ["none", "group_ban", "admin_ban", "unselected"])
 async def test_expired_media_evidence_recovers_without_bypassing_restrictions(
-    recovery_container: AsyncContainer, recording_bot: Bot, restriction: str
+    recovery_container: AsyncContainer, recording_bot: RecordingBot, restriction: str
 ) -> None:
     """Publish the triggering Instagram job only when refreshed evidence and existing policy both allow it."""
     await _expire_administrators(recovery_container)
@@ -210,7 +211,7 @@ async def test_expired_media_evidence_recovers_without_bypassing_restrictions(
 
 
 async def test_unavailable_media_verification_preserves_approval_and_recovers_after_cooldown(
-    recovery_container: AsyncContainer, recording_bot: Bot
+    recovery_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Deny uncertain requests without publication, bound immediate retries and recover the same approved group."""
     group_id = await _expire_administrators(recovery_container)

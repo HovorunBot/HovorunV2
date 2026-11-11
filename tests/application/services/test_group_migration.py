@@ -69,14 +69,18 @@ async def test_migration_keeps_identity_configuration_bans_and_encryption(test_c
         decrypt_payload(encrypted, get_fernet_for_chat("synthetic-key", current.encryption_salt))
         == "synthetic encrypted content"
     )
-    assert (await chats.get_chat(OLD)).id == original.id
+    old_chat = await chats.get_chat(OLD)
+    assert old_chat is not None
+    assert old_chat.id == original.id
     assert (await chats.get_or_create_chat(OLD)).id == original.id
     assert await migrations.canonical_id(OLD) == NEW
     assert await bans.list_active(TargetKind.GROUP, NEW)
     assert not (await (await test_container.get(ChatStatusService)).evaluate_access(OLD)).allowed
     assert not (await (await test_container.get(ChatStatusService)).evaluate_access(NEW)).allowed
     assert len(await grants.approvals(original.id)) == 1
-    assert (await handles.resolve_handle("synthetic_group")).target_id == NEW
+    resolved_handle = await handles.resolve_handle("synthetic_group")
+    assert resolved_handle is not None
+    assert resolved_handle.target_id == NEW
     observed = await (await test_container.get(GroupIdentityStore)).ingest_group(OLD, "Stale title", "group")
     assert observed is not None
     assert observed.chat_id == NEW
@@ -105,7 +109,9 @@ async def test_migration_rejects_target_identity_collisions(test_container: Asyn
         await chats.soft_delete_chat(NEW, ActorContext.cli(), "Synthetic tombstone")
     with pytest.raises(ValueError, match="conflicts"):
         await (await test_container.get(GroupMigrationStore)).migrate(OLD, NEW)
-    assert (await chats.get_chat(OLD)).chat_id == OLD
+    old_chat = await chats.get_chat(OLD)
+    assert old_chat is not None
+    assert old_chat.chat_id == OLD
 
 
 @pytest.mark.fresh_schema
@@ -118,7 +124,9 @@ async def test_migration_rolls_back_when_audit_fails(test_container: AsyncContai
         await reject_audit(session, "reject_migration_audit", "NEW.action = 'migrate_route'", "synthetic audit failure")
     with pytest.raises(IntegrityError, match="synthetic audit failure"):
         await (await test_container.get(GroupMigrationStore)).migrate(OLD, NEW)
-    assert (await chats.get_chat(OLD)).chat_id == OLD
+    old_chat = await chats.get_chat(OLD)
+    assert old_chat is not None
+    assert old_chat.chat_id == OLD
     assert await chats.get_chat(NEW) is None
     async with sessions() as session:
         assert await session.scalar(select(func.count()).select_from(GroupRouteDB)) == 0
@@ -129,13 +137,15 @@ async def test_service_events_migrate_before_identity_ingestion(test_container: 
     chats = await test_container.get(ChatStore)
     original = await chats.get_or_create_chat(OLD)
     middleware = await test_container.get(IdentityMiddleware)
-    for chat_id, kind, fields in (
-        (OLD, "group", {"migrate_to_chat_id": NEW}),
-        (NEW, "supergroup", {"migrate_from_chat_id": OLD}),
-    ):
-        message = Message(message_id=1, date=datetime.now(UTC), chat=Chat(id=chat_id, type=kind), **fields)
-        await middleware(unreachable_handler, message, {})
-    assert (await chats.get_chat(NEW)).id == original.id
+    message1 = Message(message_id=1, date=datetime.now(UTC), chat=Chat(id=OLD, type="group"), migrate_to_chat_id=NEW)
+    await middleware(unreachable_handler, message1, {})
+    message2 = Message(
+        message_id=1, date=datetime.now(UTC), chat=Chat(id=NEW, type="supergroup"), migrate_from_chat_id=OLD
+    )
+    await middleware(unreachable_handler, message2, {})
+    new_chat = await chats.get_chat(NEW)
+    assert new_chat is not None
+    assert new_chat.id == original.id
 
 
 async def unreachable_handler(_event: object, _data: object) -> None:
@@ -159,7 +169,9 @@ async def test_migration_rejects_conflicting_handle_target(test_container: Async
         )
     with pytest.raises(ValueError, match="public handle"):
         await (await test_container.get(GroupMigrationStore)).migrate(OLD, NEW)
-    assert (await chats.get_chat(OLD)).chat_id == OLD
+    old_chat = await chats.get_chat(OLD)
+    assert old_chat is not None
+    assert old_chat.chat_id == OLD
 
 
 async def test_stale_callbacks_and_membership_cannot_reclaim_handle(test_container: AsyncContainer) -> None:

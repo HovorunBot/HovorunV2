@@ -60,8 +60,12 @@ async def test_parallel_admission_bounds_subject_ingress_and_duplicate_capacity(
         assert len(accepted) == 2
         assert len(await store.recoverable(clock.now(), 1)) == 1
         first = accepted[0]
-        assert (await store.finish(first.envelope.job_id, JobOutcome.COMPLETE)).state == TicketState.TERMINAL
-        assert (await store.finish(first.envelope.job_id, JobOutcome.COMPLETE)).state == TicketState.TERMINAL
+        finished = await store.finish(first.envelope.job_id, JobOutcome.COMPLETE)
+        assert finished is not None
+        assert finished.state == TicketState.TERMINAL
+        finished_retry = await store.finish(first.envelope.job_id, JobOutcome.COMPLETE)
+        assert finished_retry is not None
+        assert finished_retry.state == TicketState.TERMINAL
         with pytest.raises(ValueError, match="conflicts"):
             await store.finish(first.envelope.job_id, JobOutcome.FAILED)
         loser = next(index for index, result in enumerate(results) if result.state == AdmissionState.FULL)
@@ -168,7 +172,9 @@ async def test_handoff_recovers_crashes_before_enqueue_and_before_acknowledgemen
             assert (
                 await store.admit(envelope, sealed, AdmissionLimits(10, 10, UsageSafetyCaps()), clock.now())
             ).state == AdmissionState.ACCEPTED
-            assert (await store.get(envelope.job_id)).envelope == envelope
+            ticket = await store.get(envelope.job_id)
+            assert ticket is not None
+            assert ticket.envelope == envelope
             paused = await admission_service(test_container, store, unavailable, clock)
             assert (await paused.handoff(envelope.job_id)).state == AdmissionState.UNAVAILABLE
             assert len(await store.recoverable(clock.now())) == 1
@@ -180,9 +186,13 @@ async def test_handoff_recovers_crashes_before_enqueue_and_before_acknowledgemen
             assert result[0].state == AdmissionState.ENQUEUED
             assert not await store.recoverable(clock.now())
             assert (await recovered.handoff(envelope.job_id)).state == AdmissionState.ENQUEUED
-            assert (await queue.inspect(envelope.job_id)).envelope == envelope
+            inspected = await queue.inspect(envelope.job_id)
+            assert inspected is not None
+            assert inspected.envelope == envelope
             assert await queue.cancel(envelope.job_id)
-            assert (await queue.inspect(envelope.job_id)).status == JobStatus.TERMINAL
+            inspected_after = await queue.inspect(envelope.job_id)
+            assert inspected_after is not None
+            assert inspected_after.status == JobStatus.TERMINAL
             await store.finish(envelope.job_id, JobOutcome.CANCELLED)
             assert (await recovered.handoff(envelope.job_id)).state == AdmissionState.TERMINAL
         finally:
@@ -246,11 +256,15 @@ async def test_application_admission_rechecks_actor_target_access_and_original_d
             clock.value = envelope.deadline
             assert (await service.admit(envelope, sealed)).state == AdmissionState.EXPIRED
             assert (await service.handoff(envelope.job_id)).state == AdmissionState.EXPIRED
-            assert (await store.get(envelope.job_id)).state == TicketState.ACCEPTED
+            ticket = await store.get(envelope.job_id)
+            assert ticket is not None
+            assert ticket.state == TicketState.ACCEPTED
             assert not await store.recoverable(clock.now())
             # Terminal cleanup must first verify execution is stopped; expiry alone does not free capacity.
             await store.finish(envelope.job_id, JobOutcome.EXPIRED)
-            assert (await store.get(envelope.job_id)).state == TicketState.TERMINAL
+            ticket_after = await store.get(envelope.job_id)
+            assert ticket_after is not None
+            assert ticket_after.state == TicketState.TERMINAL
         finally:
             await queue.close()
 
@@ -276,7 +290,8 @@ async def test_concurrent_duplicate_actions_keep_original_envelope_and_one_paylo
         assert sum(result.state == AdmissionState.ACCEPTED for result in results) == 1
         assert sum(result.state == AdmissionState.DUPLICATE for result in results) == 7
         original = next(result.ticket for result in results if result.state == AdmissionState.ACCEPTED)
-        assert all(result.ticket.envelope == original.envelope for result in results)
+        assert original is not None
+        assert all(result.ticket is not None and result.ticket.envelope == original.envelope for result in results)
         assert original.envelope.deadline == entries[0][0].deadline
         assert len(await store.recoverable(clock.now())) == 1
         states = [(await payloads.load(envelope.payload_ref, envelope.job_id)).state for envelope, _sealed in entries]

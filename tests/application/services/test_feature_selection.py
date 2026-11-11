@@ -72,6 +72,7 @@ async def test_legacy_compatibility_ends_on_intentional_edit(test_engine: AsyncE
         event = (
             await session.scalars(select(AuditEventDB).where(AuditEventDB.target_type == "command_association"))
         ).one()
+        assert event.changed_fields is not None
         assert event.changed_fields["legacy_empty_capture"] is False
 
 

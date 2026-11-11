@@ -45,6 +45,7 @@ async def test_group_notification_menu_binds_every_category(test_container: Asyn
     assert isinstance(transport, RecordingSession)
     edits = [call for call in transport.calls if isinstance(call, EditMessageText)]
     assert len(edits) == 1
+    assert edits[0].text is not None
     assert "Notification preferences" in edits[0].text
     markup = edits[0].reply_markup
     assert markup is not None

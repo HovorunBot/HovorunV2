@@ -21,7 +21,7 @@ from hovorunv2.infrastructure.persistence.repositories.audit_repository import S
 
 def test_sanitize_audit_changes_redacts_secrets_and_payloads() -> None:
     """Verify sensitive fields and payload texts are redacted while safe fields are kept."""
-    raw_changes = {
+    raw_changes: dict[str, object] = {
         "status": "approved",
         "encryption_salt": "0123456789abcdef",
         "cache_encryption_key": "super_secret_key",
@@ -41,9 +41,11 @@ def test_sanitize_audit_changes_redacts_secrets_and_payloads() -> None:
     assert sanitized["encryption_salt"] == SENSITIVE_FIELD_MARKER
     assert sanitized["cache_encryption_key"] == SENSITIVE_FIELD_MARKER
     assert sanitized["api_token"] == SENSITIVE_FIELD_MARKER
-    assert sanitized["nested_dict"]["title"] == "My Group"
-    assert sanitized["nested_dict"]["salt"] == SENSITIVE_FIELD_MARKER
-    assert sanitized["nested_dict"]["message_text"] == SENSITIVE_FIELD_MARKER
+    nested = sanitized["nested_dict"]
+    assert isinstance(nested, dict)
+    assert nested["title"] == "My Group"
+    assert nested["salt"] == SENSITIVE_FIELD_MARKER
+    assert nested["message_text"] == SENSITIVE_FIELD_MARKER
 
 
 def test_actor_contexts_support_cli_system_and_telegram() -> None:
@@ -66,7 +68,7 @@ def test_actor_contexts_support_cli_system_and_telegram() -> None:
 
 def test_sanitize_nested_containers_and_mixed_case_without_mutating_input() -> None:
     """Redact at every depth while preserving benign falsey values and input data."""
-    raw_changes = {
+    raw_changes: dict[str, object] = {
         "BODY": "synthetic private content",
         "settings": {
             "api_key": "synthetic secret",

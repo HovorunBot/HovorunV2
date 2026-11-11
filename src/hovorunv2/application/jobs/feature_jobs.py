@@ -61,6 +61,9 @@ class JobEnvelope(BaseModel):
     message_id: int = Field(gt=0)
 
     @model_validator(mode="after")
+    def _validate_model_binding(self) -> JobEnvelope:
+        return self.validate_binding()
+
     def validate_binding(self) -> JobEnvelope:
         """Keep charging, original deadline and canonical transport facts consistent."""
         self._validate_deadline()

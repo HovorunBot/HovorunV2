@@ -1,7 +1,6 @@
 """Tests for Reddit rich media command."""
 
 import pytest
-from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.features.command_service import CommandService
@@ -13,6 +12,7 @@ from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_http import FakeSyncHTTP
 from tests.utils.telegram.recording_delivery import drain_and_run_media
+from tests.utils.telegram.session import RecordingBot
 
 EXPECTED_GALLERY_COUNT: int = 2
 
@@ -24,7 +24,7 @@ async def reddit_command(test_container: AsyncContainer) -> RichMediaCommand:
 
 
 async def test_handle_reddit_gallery_post(
-    reddit_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    reddit_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test handling a Reddit multi-image gallery post."""
     chat_id = 456
@@ -56,14 +56,15 @@ async def test_handle_reddit_gallery_post(
     assert outcome == JobOutcome.COMPLETE
     assert len(recording_bot.session.calls) == 1
     call = recording_bot.session.calls[0]
-    caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
+    call_media = getattr(call, "media", None)
+    caption = call_media[0].caption if isinstance(call_media, list) else getattr(call, "caption", "")
     assert "Awesome Gallery Post" in caption
     assert "reddit_user (r/pics)" in caption
     assert "⬆️ 1.5K" in caption
 
 
 async def test_handle_reddit_video_post_respects_split_toggle(
-    reddit_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    reddit_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test that Reddit video post is skipped when reddit_video is disabled."""
     chat_id = 987
@@ -109,7 +110,7 @@ async def test_handle_reddit_video_post_respects_split_toggle(
 
 @pytest.mark.vcr
 async def test_handle_reddit_post_vcr(
-    reddit_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    reddit_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test handling a real Reddit post via vxReddit using VCR."""
     chat_id = 457
@@ -126,7 +127,8 @@ async def test_handle_reddit_post_vcr(
     assert outcome == JobOutcome.COMPLETE
     assert len(recording_bot.session.calls) == 1
     call = recording_bot.session.calls[0]
-    caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
+    call_media = getattr(call, "media", None)
+    caption = call_media[0].caption if isinstance(call_media, list) else getattr(call, "caption", "")
     assert "Lycanthrope- (r/DotA2)" in caption
     assert "Please bring back blood mist aghs for seeker" in caption
 

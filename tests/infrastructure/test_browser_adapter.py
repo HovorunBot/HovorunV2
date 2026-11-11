@@ -121,7 +121,7 @@ def test_jobs_isolate_supplied_cookies_and_browser_storage() -> None:
     with HTTPFixture({"/post": HTTPReply(b"<html><main>ready</main></html>")}) as server:
         service = NativeBrowserService()
         try:
-            cookie = {"name": "session", "value": "synthetic", "domain": "127.0.0.1", "path": "/"}
+            cookie: dict[str, object] = {"name": "session", "value": "synthetic", "domain": "127.0.0.1", "path": "/"}
             assert service.extract_and_download(server.url("/post"), _require_cookie, cookies=[cookie]) == (None, [])
             assert service.extract_and_download(server.url("/post"), _require_empty_state) == (None, [])
             assert service.extract_and_download(server.url("/post"), _store_state) == (None, [])

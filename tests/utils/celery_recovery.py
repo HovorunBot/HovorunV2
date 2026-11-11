@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import multiprocessing
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from functools import partial
 from os import getpid
@@ -69,7 +69,7 @@ async def native_recovery_worker(
     settings: Settings,
     namespace: RuntimeNamespace,
     cache: CacheService,
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None]:
     """Start a real worker parent and prefork child; always terminate and join both on exit."""
     process = multiprocessing.get_context("spawn").Process(target=_run_worker, args=(settings, namespace))
     process.start()

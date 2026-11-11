@@ -66,7 +66,7 @@ def test_adapter_two_item_album_is_complete_below_cap() -> None:
 
 def test_adapter_four_item_response_is_capped_not_complete() -> None:
     """A four-item response may be rotation-capped and cannot claim completion."""
-    attachments = [{"type": "image", "url": IMAGE} for _ in range(4)]
+    attachments: list[dict[str, object]] = [{"type": "image", "url": IMAGE} for _ in range(4)]
     adapter, server, _ = _adapter_and_routes(_embed(*attachments))
     with server:
         result = adapter.extract(POST, ExtractionDeadline.after(5))

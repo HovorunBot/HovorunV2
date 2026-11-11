@@ -114,6 +114,7 @@ async def test_trust_cli_uses_offline_database(test_container: AsyncContainer, m
     assert await run_admin(arguments) == "880018\ttrusted=true"
     assert await run_admin(arguments) == "880018\ttrusted=true"
     user = await users.get_by_telegram_id(880018)
+    assert user is not None
     assert user.is_trusted
     assert user.trust_revision == 1
     async with (await test_container.get(async_sessionmaker))() as session:

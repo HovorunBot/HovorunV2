@@ -34,7 +34,7 @@ async def _deleted_user(container: AsyncContainer) -> None:
     users = await container.get(UserStore)
     await users.ingest_user(USER)
     await users.set_trust(USER, is_trusted=True, actor=ActorContext.cli())
-    await (await _lifecycle(container)).delete_user(USER, reason="accident", actor=ActorContext.cli())
+    await (await _lifecycle(container)).delete_user(str(USER), reason="accident", actor=ActorContext.cli())
 
 
 async def test_restore_preserves_prior_state_and_bans(test_container: AsyncContainer) -> None:
@@ -45,7 +45,7 @@ async def test_restore_preserves_prior_state_and_bans(test_container: AsyncConta
     await (await test_container.get(BanStore)).set_ban(
         TargetKind.USER, USER, BanKind.PERSONAL, active=True, actor=ActorContext.cli(reason="restriction")
     )
-    await (await _lifecycle(test_container)).delete_user(USER, reason="accident", actor=ActorContext.cli())
+    await (await _lifecycle(test_container)).delete_user(str(USER), reason="accident", actor=ActorContext.cli())
     await _admin(test_container)
     result = await (await test_container.get(RecoveryPreviewService)).execute_user(
         USER, RecoveryOption.RESTORE, 2, actor=ActorContext.telegram(ADMIN)
@@ -62,7 +62,7 @@ async def test_admin_restore_requires_cli(test_container: AsyncContainer) -> Non
     users = await test_container.get(UserStore)
     await users.ingest_user(ADMIN)
     await provision_role(test_container, ADMIN, Role.ADMIN)
-    await (await _lifecycle(test_container)).delete_user(ADMIN, reason="cleanup", actor=ActorContext.cli())
+    await (await _lifecycle(test_container)).delete_user(str(ADMIN), reason="cleanup", actor=ActorContext.cli())
     other = 650004
     await users.ingest_user(other)
     await provision_role(test_container, other, Role.ADMIN)

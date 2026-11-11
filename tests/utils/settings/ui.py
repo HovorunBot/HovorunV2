@@ -5,11 +5,12 @@ from datetime import UTC, datetime
 
 from aiogram import Bot
 from aiogram.types import CallbackQuery, Chat, Message, User
+from aioresponses import aioresponses
 
 from hovorunv2.interface.telegram.settings.callbacks import SettingsCallback, SettingsMenu
 from tests.utils.activation import sent_fields
 from tests.utils.runtimes.beta import FIRST, GROUP
-from tests.utils.telegram.transport import API, RecordedResponse, RecordedResponses
+from tests.utils.telegram.transport import API, RecordedResponse
 
 DENIED = "Settings unavailable. Reopen /settings."
 
@@ -35,7 +36,7 @@ def query_for(message: Message, bot: Bot, actor_id: int = FIRST) -> CallbackQuer
     ).as_(bot)
 
 
-def settings_http(http: RecordedResponses, message: Message, *, admin: bool = True) -> None:
+def settings_http(http: aioresponses, message: Message, *, admin: bool = True) -> None:
     """Intercept external Telegram calls only, including fresh membership queries."""
     for method in ("sendMessage", "editMessageText"):
         http.post(
@@ -55,7 +56,7 @@ def settings_http(http: RecordedResponses, message: Message, *, admin: bool = Tr
     )
 
 
-def button(http: RecordedResponses, menu: SettingsMenu, *, value: str | None = None) -> SettingsCallback:
+def button(http: aioresponses, menu: SettingsMenu, *, value: str | None = None) -> SettingsCallback:
     """Read the real server-rendered callback rather than fabricate trusted state."""
     markup = json.loads(sent_fields(http, "editMessageText")[-1]["reply_markup"])
     for row in markup["inline_keyboard"]:

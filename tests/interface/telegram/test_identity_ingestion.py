@@ -42,7 +42,9 @@ async def test_observation_updates_public_metadata_without_moving_authority(test
     assert stored.status == ChatStatus.APPROVED
     assert stored.encryption_salt == "synthetic-salt"
     assert await handles.get_handle_by_target(TargetKind.GROUP, chat.id) is None
-    assert (await handles.resolve_handle("public_old")).target_id == 1702
+    resolved = await handles.resolve_handle("public_old")
+    assert resolved is not None
+    assert resolved.target_id == 1702
 
 
 async def test_tombstones_block_downstream_ingestion(test_container: AsyncContainer) -> None:

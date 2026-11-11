@@ -1,5 +1,6 @@
 """Tests for unified access control and permission rules."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -33,13 +34,14 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.middlewares import AccessMiddleware
 from tests.conftest import provision_role, verify_group_admins
+from tests.utils.telegram.session import RecordingBot
 
 
 def create_message(chat_id: int, user_id: int, chat_type: ChatType = ChatType.SUPERGROUP) -> Message:
     """Build a real synthetic Telegram message."""
     return Message(
         message_id=1,
-        date=1,
+        date=datetime.now(UTC),
         chat=Chat(id=chat_id, type=chat_type),
         from_user=User(id=user_id, is_bot=False, first_name="Test User"),
     )
@@ -90,7 +92,9 @@ async def get_persisted_chat_and_commands(
         return status, commands
 
 
-async def test_access_middleware_private_chat_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
+async def test_access_middleware_private_chat_admin(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
     """Test that admins have access in private chats."""
     access_service = await test_container.get(AccessService)
     middleware = AccessMiddleware(
@@ -106,7 +110,11 @@ async def test_access_middleware_private_chat_admin(test_container: AsyncContain
     handler = RecordedHandler()
     # Any policy
     policy = CommandPolicy()
-    data = {"handler": SimpleNamespace(flags={"policy": policy}), "bot": recording_bot, "policy": policy}
+    data: dict[str, object] = {
+        "handler": SimpleNamespace(flags={"policy": policy}),
+        "bot": recording_bot,
+        "policy": policy,
+    }
     data["handler"].flags = {"policy": policy}
 
     result = await middleware(handler, message, data)
@@ -114,7 +122,9 @@ async def test_access_middleware_private_chat_admin(test_container: AsyncContain
     assert handler.calls == [message]
 
 
-async def test_access_middleware_private_chat_non_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
+async def test_access_middleware_private_chat_non_admin(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
     """Test that non-admins are blocked in private chats and receive help text."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
@@ -127,18 +137,23 @@ async def test_access_middleware_private_chat_non_admin(test_container: AsyncCon
 
     handler = RecordedHandler()
     policy = CommandPolicy()
-    data = {"handler": SimpleNamespace(flags={"policy": policy}), "bot": recording_bot, "policy": policy}
+    data: dict[str, object] = {
+        "handler": SimpleNamespace(flags={"policy": policy}),
+        "bot": recording_bot,
+        "policy": policy,
+    }
     data["handler"].flags = {"policy": policy}
 
     result = await middleware(handler, message, data)
     assert result is None
     assert handler.calls == []
     assert len(recording_bot.session.calls) == 1
-    assert "Hovorun" in recording_bot.session.calls[0].text
-    assert settings.project_description in recording_bot.session.calls[0].text
+    call0 = recording_bot.session.calls[0]
+    assert "Hovorun" in getattr(call0, "text", "")
+    assert settings.project_description in getattr(call0, "text", "")
 
 
-async def test_access_middleware_allowed_group(test_container: AsyncContainer, recording_bot: Bot) -> None:
+async def test_access_middleware_allowed_group(test_container: AsyncContainer, recording_bot: RecordingBot) -> None:
     """Test that allowed interaction in group proceeds to handler."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
@@ -154,7 +169,11 @@ async def test_access_middleware_allowed_group(test_container: AsyncContainer, r
     policy = CommandPolicy(requires_approval=False, is_toggleable=False)
 
     handler = RecordedHandler()
-    data = {"handler": SimpleNamespace(flags={"policy": policy}), "bot": recording_bot, "policy": policy}
+    data: dict[str, object] = {
+        "handler": SimpleNamespace(flags={"policy": policy}),
+        "bot": recording_bot,
+        "policy": policy,
+    }
     data["handler"].flags = {"policy": policy}
 
     result = await middleware(handler, message, data)
@@ -162,7 +181,7 @@ async def test_access_middleware_allowed_group(test_container: AsyncContainer, r
     assert handler.calls == [message]
 
 
-async def test_access_middleware_denied_group(test_container: AsyncContainer, recording_bot: Bot) -> None:
+async def test_access_middleware_denied_group(test_container: AsyncContainer, recording_bot: RecordingBot) -> None:
     """Test that denied interaction in group is blocked."""
     access_service = await test_container.get(AccessService)
     settings = await test_container.get(Settings)
@@ -178,7 +197,11 @@ async def test_access_middleware_denied_group(test_container: AsyncContainer, re
     policy = CommandPolicy(requires_approval=True)
 
     handler = RecordedHandler()
-    data = {"handler": SimpleNamespace(flags={"policy": policy}), "bot": recording_bot, "policy": policy}
+    data: dict[str, object] = {
+        "handler": SimpleNamespace(flags={"policy": policy}),
+        "bot": recording_bot,
+        "policy": policy,
+    }
     data["handler"].flags = {"policy": policy}
 
     result = await middleware(handler, message, data)
@@ -232,7 +255,7 @@ async def test_policy_requires_access(test_container: AsyncContainer, recording_
     assert await access_service.is_allowed(user_id, non_approved_chat_id, policy) is False
 
 
-async def test_policy_requires_group_admin(test_container: AsyncContainer, recording_bot: Bot) -> None:
+async def test_policy_requires_group_admin(test_container: AsyncContainer, recording_bot: RecordingBot) -> None:
     """Test policy with requires_group_admin=True."""
     access_service = await test_container.get(AccessService)
     bot = recording_bot
@@ -617,7 +640,7 @@ async def test_characterize_legacy_default_activation(test_container: AsyncConta
 
 @pytest.mark.parametrize("status", [ChatStatus.APPROVED, ChatStatus.BANNED, ChatStatus.REJECTED])
 async def test_removal_and_rejoin_preserve_access_status(
-    test_container: AsyncContainer, status: ChatStatus, recording_bot: Bot
+    test_container: AsyncContainer, status: ChatStatus, recording_bot: RecordingBot
 ) -> None:
     """Physical bot removal/rejoin preserves durable status and command selections (019)."""
     session_maker = await test_container.get(async_sessionmaker)

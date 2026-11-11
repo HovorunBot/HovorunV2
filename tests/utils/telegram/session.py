@@ -3,7 +3,7 @@
 import json
 from collections.abc import AsyncGenerator
 from http import HTTPStatus
-from typing import Any
+from typing import Any, Self
 
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
@@ -17,7 +17,7 @@ class RecordingSession(BaseSession):
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[TelegramMethod[Any]] = []
-        self.responses: list[dict[str, object] | bool | Exception] = []
+        self.responses: list[object] = []
 
     async def close(self) -> None:
         """No network resources are opened."""
@@ -41,6 +41,9 @@ class RecordingSession(BaseSession):
                 "chat": {"id": getattr(method, "chat_id", 1), "type": "private"},
             }
         response = self.check_response(bot, method, HTTPStatus.OK, json.dumps({"ok": True, "result": result}))
+        if response.result is None:
+            msg = "Telegram response did not return a result"
+            raise ValueError(msg)
         return response.result
 
     async def stream_content(
@@ -55,3 +58,14 @@ class RecordingSession(BaseSession):
         msg = "RecordingSession does not provide file downloads"
         raise ValueError(msg)
         yield b""
+
+
+class RecordingBot(Bot):
+    """Bot subtype with guaranteed RecordingSession transport for test assertions."""
+
+    session: RecordingSession
+
+    async def __aenter__(self) -> Self:
+        """Enter the async context manager and return the typed bot instance."""
+        await super().__aenter__()
+        return self

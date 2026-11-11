@@ -82,6 +82,7 @@ async def test_minimal_encrypted_cache_roundtrip(
     """Real encrypted bytes exclude unrelated data while content and media handles round-trip."""
     service, cache, chat_id = private_cache_service
     message = synthetic_message(chat_id)
+    assert message.text is not None
     await service.cache_message(message)
     payload = await cache.get(f"msg:{chat_id}:1")
     assert isinstance(payload, str)
@@ -90,6 +91,7 @@ async def test_minimal_encrypted_cache_roundtrip(
     assert chat is not None
     assert chat.encryption_salt
     salt = chat.encryption_salt
+    assert service.settings.cache_encryption_key is not None
     fernet = get_fernet_for_chat(service.settings.cache_encryption_key, salt)
     plain = decrypt_payload(payload, fernet)
     assert "PRIVATE_" not in plain
@@ -101,6 +103,7 @@ async def test_minimal_encrypted_cache_roundtrip(
     assert result is not None
     assert result.text == message.text
     assert result.video is not None
+    assert message.video is not None
     assert result.video.file_id == message.video.file_id
     assert result.contact is None
     assert result.location is None
@@ -120,6 +123,7 @@ async def test_legacy_cache_read_removes_private_fields(
     chat = await service.chat_service.get_chat(chat_id)
     assert chat is not None
     assert chat.encryption_salt
+    assert service.settings.cache_encryption_key is not None
     fernet = get_fernet_for_chat(service.settings.cache_encryption_key, chat.encryption_salt)
     legacy = encrypt_payload(json.dumps(message.model_dump(mode="json")), fernet)
     await cache.set(f"msg:{chat_id}:1", legacy, expire=service.ttl)
@@ -209,6 +213,7 @@ async def test_cache_middleware_continues_after_required_storage_failure(
     settings = Settings(_env_file=None, bot_token=BOT_CREDENTIAL, cache_encryption_key=None)
     unavailable = MessageService(cache, service.chat_service, settings)
     message = synthetic_message(chat_id)
+    assert message.text is not None
     result = await MessageCacheMiddleware(unavailable)(_accepted_handler, message, {})
     assert result == "accepted"
     assert message.text not in caplog.text

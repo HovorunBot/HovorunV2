@@ -5,6 +5,8 @@ import json
 import logging
 import time
 from collections.abc import Mapping
+from contextlib import suppress
+from email.utils import parsedate_to_datetime
 from http import HTTPStatus
 from os import getpid
 from types import TracebackType
@@ -31,6 +33,9 @@ MAX_REDIRECTS = 5
 CONNECT_TIMEOUT_SECONDS = 5
 READ_TIMEOUT_SECONDS = 30
 TOTAL_TIMEOUT_SECONDS = 60
+MAX_RATE_LIMIT_RETRIES = 2
+MIN_RATE_LIMIT_DELAY_SECONDS = 1.0
+MAX_RATE_LIMIT_DELAY_SECONDS = 10.0
 logger = logging.getLogger(__name__)
 REDIRECT_STATUSES = frozenset(
     {
@@ -76,6 +81,35 @@ def _require_success(response: requests.Response) -> None:
     if response.status_code != HTTPStatus.OK:
         logger.error("HTTP media request rejected (status %s)", response.status_code)
         raise HTTPTransportError(HTTPFailure.REJECTED)
+
+
+def _parse_retry_seconds(retry_after: str) -> float | None:
+    try:
+        seconds = float(retry_after)
+        if seconds >= 0:
+            return seconds
+    except ValueError:
+        with suppress(ValueError, TypeError):
+            date = parsedate_to_datetime(retry_after)
+            seconds = date.timestamp() - time.time()
+            if seconds >= 0:
+                return seconds
+    return None
+
+
+def _parse_retry_delay(
+    response: requests.Response,
+    attempt: int,
+    *,
+    min_delay: float = MIN_RATE_LIMIT_DELAY_SECONDS,
+    max_delay: float = MAX_RATE_LIMIT_DELAY_SECONDS,
+) -> float:
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        seconds = _parse_retry_seconds(retry_after)
+        if seconds is not None:
+            return min(max(seconds, min_delay), max_delay)
+    return min(max(min_delay * (2**attempt), min_delay), max_delay)
 
 
 def _decode_json(raw: bytes) -> object:
@@ -143,7 +177,7 @@ class _PublicDestinationAdapter(requests.adapters.HTTPAdapter):
 
 
 class NativeHTTPClient:
-    """Never retry requests automatically or retain URL-bearing exception diagnostics."""
+    """Never retry mutating requests automatically or retain URL-bearing exception diagnostics."""
 
     def __init__(
         self,
@@ -154,10 +188,26 @@ class NativeHTTPClient:
         read_timeout: float = READ_TIMEOUT_SECONDS,
         total_timeout: float = TOTAL_TIMEOUT_SECONDS,
         max_redirects: int = MAX_REDIRECTS,
+        max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
+        min_rate_limit_delay: float = MIN_RATE_LIMIT_DELAY_SECONDS,
+        max_rate_limit_delay: float = MAX_RATE_LIMIT_DELAY_SECONDS,
         allowed_hosts: frozenset[str] = frozenset(),
     ) -> None:
-        if min(max_bytes, max_response_bytes, connect_timeout, read_timeout, total_timeout) <= 0 or max_redirects < 0:
-            msg = "HTTP bounds must be positive and redirect count nonnegative."
+        if (
+            min(
+                max_bytes,
+                max_response_bytes,
+                connect_timeout,
+                read_timeout,
+                total_timeout,
+                min_rate_limit_delay,
+                max_rate_limit_delay,
+            )
+            <= 0
+            or max_redirects < 0
+            or max_rate_limit_retries < 0
+        ):
+            msg = "HTTP bounds must be positive and retry/redirect counts nonnegative."
             raise ValueError(msg)
         self._session: requests.Session | None = requests.Session()
         self._session.trust_env = False
@@ -171,6 +221,9 @@ class NativeHTTPClient:
         self._timeout = (connect_timeout, read_timeout)
         self._total_timeout = total_timeout
         self._max_redirects = max_redirects
+        self._max_rate_limit_retries = max_rate_limit_retries
+        self._min_rate_limit_delay = min_rate_limit_delay
+        self._max_rate_limit_delay = max_rate_limit_delay
 
     def __enter__(self) -> Self:
         """Keep context-managed clients in their owning process."""
@@ -203,23 +256,27 @@ class NativeHTTPClient:
         session.close()
         self._session = None
 
-    def _request(
+    def _should_retry_rate_limit(self, response: requests.Response, method: str, attempt: int) -> bool:
+        return (
+            response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+            and method == "GET"
+            and attempt < self._max_rate_limit_retries
+        )
+
+    def _execute_attempt(
         self,
+        session: requests.Session,
         method: str,
-        url: str,
+        current: str,
         *,
-        params: HTTPQuery | None = None,
-        headers: HTTPHeaders | None = None,
-        data: HTTPForm | None = None,
-        files: HTTPFiles | None = None,
-        cookies: Mapping[str, str] | None = None,
+        params: HTTPQuery | None,
+        request_headers: dict[str, str],
+        data: HTTPForm | None,
+        files: HTTPFiles | None,
+        cookie_values: dict[str, str],
+        start_time: float,
     ) -> requests.Response:
-        session = self._require_session()
-        origin = validate_http_url(url, allowed_hosts=self._allowed_hosts)
-        current = url
-        request_headers = dict(headers or {})
-        cookie_values = dict(cookies or {})
-        for _ in range(self._max_redirects + 1):
+        for attempt in range(self._max_rate_limit_retries + 1):
             response = session.request(
                 method,
                 current,
@@ -231,6 +288,57 @@ class NativeHTTPClient:
                 timeout=self._timeout,
                 stream=True,
                 allow_redirects=False,
+            )
+            if not self._should_retry_rate_limit(response, method, attempt):
+                return response
+            delay = _parse_retry_delay(
+                response,
+                attempt,
+                min_delay=self._min_rate_limit_delay,
+                max_delay=self._max_rate_limit_delay,
+            )
+            remaining = self._total_timeout - (time.monotonic() - start_time)
+            if delay >= remaining:
+                return response
+            logger.warning(
+                "HTTP media request rate limited (status 429), retrying in %.2fs (attempt %d/%d)",
+                delay,
+                attempt + 1,
+                self._max_rate_limit_retries,
+            )
+            response.close()
+            time.sleep(delay)
+        return response
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: HTTPQuery | None = None,
+        headers: HTTPHeaders | None = None,
+        data: HTTPForm | None = None,
+        files: HTTPFiles | None = None,
+        cookies: Mapping[str, str] | None = None,
+        started: float | None = None,
+    ) -> requests.Response:
+        session = self._require_session()
+        origin = validate_http_url(url, allowed_hosts=self._allowed_hosts)
+        current = url
+        request_headers = dict(headers or {})
+        cookie_values = dict(cookies or {})
+        start_time = started if started is not None else time.monotonic()
+        for _ in range(self._max_redirects + 1):
+            response = self._execute_attempt(
+                session,
+                method,
+                current,
+                params=params,
+                request_headers=request_headers,
+                data=data,
+                files=files,
+                cookie_values=cookie_values,
+                start_time=start_time,
             )
             if response.status_code not in REDIRECT_STATUSES:
                 return response
@@ -270,7 +378,9 @@ class NativeHTTPClient:
         started = time.monotonic()
         self._require_session()
         try:
-            with self._request("GET", url, params=params, headers=headers, cookies=cookies) as response:
+            with self._request(
+                "GET", url, params=params, headers=headers, cookies=cookies, started=started
+            ) as response:
                 _require_success(response)
                 return self._read(response, limit, started)
         except requests.RequestException, UnicodeError:
@@ -289,9 +399,10 @@ class NativeHTTPClient:
 
     def resolve(self, url: str, headers: HTTPHeaders | None = None) -> str:
         """Require a successful response after the bounded credential-safe redirect chain."""
+        started = time.monotonic()
         self._require_session()
         try:
-            with self._request("GET", url, headers=headers) as response:
+            with self._request("GET", url, headers=headers, started=started) as response:
                 _require_success(response)
                 return response.url
         except requests.RequestException, UnicodeError:

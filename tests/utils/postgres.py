@@ -1,7 +1,7 @@
 """Isolated real PostgreSQL schemas; never truncate or drop a caller's database."""
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -15,7 +15,7 @@ DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://hovorun:hovorun@localhost:5432
 
 
 @asynccontextmanager
-async def postgres_database() -> AsyncIterator[str]:
+async def postgres_database() -> AsyncGenerator[str]:
     """Create and drop only a fresh random schema, including when migration or tests fail."""
     url = make_url(os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL))
     schema = "test_" + uuid4().hex

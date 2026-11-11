@@ -1,6 +1,7 @@
 """Real Valkey ownership and cancellation contracts around Celery's at-least-once publication."""
 
 import asyncio
+import inspect
 import json
 import time
 from contextlib import AsyncExitStack
@@ -52,13 +53,17 @@ async def test_republication_after_lost_ack_preserves_envelope_and_exclusive_cla
             claims = await asyncio.gather(*(queue.claim(envelope) for _ in range(12)))
             owners = [claim for claim in claims if claim is not None]
             assert len(owners) == 1
-            assert (await queue.inspect(envelope.job_id)).status == JobStatus.RUNNING
+            running_job = await queue.inspect(envelope.job_id)
+            assert running_job is not None
+            assert running_job.status == JobStatus.RUNNING
             assert not await queue.finish(envelope.job_id, "wrong-owner", JobOutcome.COMPLETE)
             assert await queue.finish(envelope.job_id, owners[0], JobOutcome.COMPLETE)
             assert await queue.finish(envelope.job_id, owners[0], JobOutcome.COMPLETE)
             assert not await queue.finish(envelope.job_id, owners[0], JobOutcome.FAILED)
             assert await queue.claim(envelope) is None
-            assert (await queue.inspect(envelope.job_id)).outcome == JobOutcome.COMPLETE
+            finished_job = await queue.inspect(envelope.job_id)
+            assert finished_job is not None
+            assert finished_job.outcome == JobOutcome.COMPLETE
         finally:
             await queue.close()
 
@@ -78,6 +83,7 @@ async def test_cancellation_tombstones_pending_but_does_not_complete_active_work
             assert await queue.cancel(pending.job_id)
             assert await queue.claim(pending) is None
             inspected = await queue.inspect(pending.job_id)
+            assert inspected is not None
             assert inspected.status == JobStatus.TERMINAL
             assert inspected.outcome == JobOutcome.CANCELLED
             assert not await queue.cancel(pending.job_id)
@@ -88,11 +94,14 @@ async def test_cancellation_tombstones_pending_but_does_not_complete_active_work
             assert owner is not None
             assert await queue.cancel(active.job_id)
             inspected = await queue.inspect(active.job_id)
+            assert inspected is not None
             assert inspected.status == JobStatus.CANCELLING
             assert inspected.outcome is None
             assert await queue.claim(active) is None
             assert await queue.finish(active.job_id, owner, JobOutcome.COMPLETE)
-            assert (await queue.inspect(active.job_id)).outcome == JobOutcome.COMPLETE
+            completed_job = await queue.inspect(active.job_id)
+            assert completed_job is not None
+            assert completed_job.outcome == JobOutcome.COMPLETE
             assert not await queue.cancel("unknown-job")
         finally:
             await queue.close()
@@ -116,7 +125,9 @@ async def test_original_schedule_deadline_and_missing_claim_fail_closed(test_con
             assert owner is not None
             clock.value = envelope.deadline
             assert await queue.claim(envelope) is None
-            assert (await queue.inspect(envelope.job_id)).status == JobStatus.RUNNING
+            running_job = await queue.inspect(envelope.job_id)
+            assert running_job is not None
+            assert running_job.status == JobStatus.RUNNING
             assert await queue.finish(envelope.job_id, owner, JobOutcome.EXPIRED)
             fresh = job_envelope("b" * 32, clock, job_id="expires-before-start", dedupe_key="b" * 64)
             await admit_test_job(settings, cache, namespace, clock, fresh)
@@ -124,6 +135,7 @@ async def test_original_schedule_deadline_and_missing_claim_fail_closed(test_con
             clock.value = fresh.deadline
             assert await queue.claim(fresh) is None
             inspected = await queue.inspect(fresh.job_id)
+            assert inspected is not None
             assert inspected.status == JobStatus.TERMINAL
             assert inspected.outcome == JobOutcome.EXPIRED
             with pytest.raises(ValueError, match="finite"):
@@ -159,6 +171,7 @@ async def test_runner_bridge_claims_before_private_payload_load(test_container: 
                     == JobOutcome.PAYLOAD_UNAVAILABLE
                 )
             inspected = await queue.inspect(missing.job_id)
+            assert inspected is not None
             assert inspected.status == JobStatus.TERMINAL
             assert inspected.outcome == JobOutcome.PAYLOAD_UNAVAILABLE
         finally:
@@ -203,7 +216,9 @@ async def test_unreadable_admission_raises_inside_queue_and_is_contained_at_work
         assert (await service.recover())[0].state == AdmissionState.UNAVAILABLE
         # A wrong Redis type is an inaccessible ticket, never expected absence.
         await cache.client.delete(key)
-        await cache.client.hset(key, mapping={"invalid": "shape"})
+        hset_res = cache.client.hset(key, mapping={"invalid": "shape"})
+        if inspect.isawaitable(hset_res):
+            await hset_res
         with pytest.raises(AdmissionUnavailableError):
             await queue.inspect(envelope.job_id)
         with pytest.raises(AdmissionUnavailableError):

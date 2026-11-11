@@ -82,7 +82,7 @@ async def test_group_ban_denies_admin_with_cooldown_safe_explanation(test_contai
             with aioresponses() as http:
                 stub_telegram(http)
                 message = group_message(chat_id=group).as_(runtime.bot)
-                data = {"policy": CommandPolicy(is_toggleable=False), "bot": runtime.bot}
+                data: dict[str, object] = {"policy": CommandPolicy(is_toggleable=False), "bot": runtime.bot}
                 await middleware(forbidden_handler, message, data)
                 other = group_message(chat_id=group, user_id=ACTOR + 1).as_(runtime.bot)
                 await middleware(forbidden_handler, other, data)

@@ -3,7 +3,6 @@
 from http import HTTPStatus
 
 import pytest
-from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
@@ -29,6 +28,7 @@ from tests.utils.sync_browser import FakeSyncBrowser
 from tests.utils.sync_http import FakeSyncHTTP, HTTPFixture, HTTPReply, json_reply
 from tests.utils.telegram import BOT_CREDENTIAL
 from tests.utils.telegram.recording_delivery import RecordingTelegramDelivery
+from tests.utils.telegram.session import RecordingBot
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ async def instagram_command(test_container: AsyncContainer) -> RichMediaCommand:
 async def _assert_instagram_command(
     command: RichMediaCommand,
     container: AsyncContainer,
-    bot: Bot,
+    bot: RecordingBot,
     database_url: str,
     monkeypatch: pytest.MonkeyPatch,
     kind: str,
@@ -89,7 +89,8 @@ async def _assert_instagram_command(
     assert isinstance(payload, RichMediaPayload)
     assert payload.is_video is video
     call = bot.session.calls[0]
-    caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
+    call_media = getattr(call, "media", None)
+    caption = call_media[0].caption if isinstance(call_media, list) else getattr(call, "caption", "")
     assert "Mock User" in caption
     assert "instagram.com" in caption
 
@@ -97,7 +98,7 @@ async def _assert_instagram_command(
 async def test_handle_instagram_post(
     instagram_command: RichMediaCommand,
     test_container: AsyncContainer,
-    recording_bot: Bot,
+    recording_bot: RecordingBot,
     postgres_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -110,7 +111,7 @@ async def test_handle_instagram_post(
 async def test_handle_instagram_reel(
     instagram_command: RichMediaCommand,
     test_container: AsyncContainer,
-    recording_bot: Bot,
+    recording_bot: RecordingBot,
     postgres_database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

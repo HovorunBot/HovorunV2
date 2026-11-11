@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socket import SHUT_RDWR
 from threading import Event, Lock, Thread
 from types import TracebackType
-from typing import Self
+from typing import Any, Self
 
 from hovorunv2.application.jobs.http_ports import (
     HTTPFailure,
@@ -52,7 +52,7 @@ def json_reply(value: object, *, status: HTTPStatus = HTTPStatus.OK) -> HTTPRepl
 
 
 class _FixtureHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args: object, fixture: HTTPFixture, **kwargs: object) -> None:
+    def __init__(self, *args: Any, fixture: HTTPFixture, **kwargs: Any) -> None:
         self._fixture = fixture
         super().__init__(*args, **kwargs)
 
@@ -188,6 +188,9 @@ class FakeSyncHTTP:
         self.redirects: dict[str, str] = dict(redirects or {})
         self.byte_responses: dict[str, bytes] = dict(byte_responses or {})
         self.requests: list[dict[str, object]] = []
+
+    def validate_url(self, url: str) -> None:
+        """Destination policy no-op for tests."""
 
     def read_json(
         self,

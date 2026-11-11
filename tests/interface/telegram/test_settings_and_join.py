@@ -24,6 +24,7 @@ from tests.conftest import provision_role, verify_group_admins
 from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.settings import bind_settings_callback
 from tests.utils.telegram import RecordedResponse
+from tests.utils.telegram.session import RecordingBot
 
 
 async def test_bot_join_prompt(test_container: AsyncContainer) -> None:
@@ -209,7 +210,7 @@ async def test_settings_not_modified_and_not_found(test_container: AsyncContaine
         await bot.session.close()
 
 
-async def test_settings_trigger_mention_filtering(test_container: AsyncContainer, recording_bot: Bot) -> None:
+async def test_settings_trigger_mention_filtering(test_container: AsyncContainer, recording_bot: RecordingBot) -> None:
     """Verify settings trigger filter matches exact name and own mention, rejects other bots."""
     settings_cmd = await test_container.get(SettingsCommand)
     bot = recording_bot
@@ -229,4 +230,4 @@ async def test_settings_trigger_mention_filtering(test_container: AsyncContainer
 
 
 def _settings_message(text: str) -> Message:
-    return Message(message_id=1, date=1, chat=Chat(id=1, type="private"), text=text)
+    return Message(message_id=1, date=datetime.now(UTC), chat=Chat(id=1, type="private"), text=text)

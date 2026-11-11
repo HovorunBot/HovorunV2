@@ -3,7 +3,6 @@
 import json
 
 import pytest
-from aiogram import Bot
 from dishka import AsyncContainer
 
 from hovorunv2.application.features.command_service import CommandService
@@ -18,6 +17,7 @@ from hovorunv2.interface.telegram.handlers.base import RichMediaCommand
 from tests.conftest import authorize_private_media, create_private_media_message, get_media_command
 from tests.utils.sync_http import FakeSyncHTTP
 from tests.utils.telegram.recording_delivery import drain_and_run_media
+from tests.utils.telegram.session import RecordingBot
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ async def youtube_command(test_container: AsyncContainer) -> RichMediaCommand:
 
 
 async def test_handle_youtube_community_post(
-    youtube_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    youtube_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test extracting and sending a YouTube Community image+text post."""
     chat_id = 456
@@ -79,7 +79,7 @@ async def test_handle_youtube_community_post(
 
 
 async def test_youtube_split_video_vs_post_toggles(
-    youtube_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    youtube_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test that YouTube video vs community post toggles filter independently."""
     chat_id = 654
@@ -103,7 +103,7 @@ async def test_youtube_split_video_vs_post_toggles(
 
 
 async def test_handle_youtube_community_post_canonicalization(
-    youtube_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    youtube_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test that channel community URLs canonicalize to post URL."""
     chat_id = 789
@@ -145,7 +145,7 @@ async def test_handle_youtube_community_post_canonicalization(
 
 
 async def test_youtube_community_post_skips_ytdlp(
-    youtube_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: Bot
+    youtube_command: RichMediaCommand, test_container: AsyncContainer, recording_bot: RecordingBot
 ) -> None:
     """Test that failed community post extraction skips yt-dlp fallback."""
     chat_id = 999

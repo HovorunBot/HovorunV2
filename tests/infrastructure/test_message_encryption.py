@@ -1,6 +1,7 @@
 """Tests for MessageService per-chat encryption."""
 
 import json
+from datetime import UTC, datetime
 from functools import partial
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 import hovorunv2.application.messaging.message_service as message_module
 from hovorunv2.application.messaging.crypto import get_fernet_for_chat, verify_encryption_key
 from hovorunv2.application.messaging.message_service import MessageService
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.cache import CacheService
 from hovorunv2.utils.crypto import decrypt_payload, encrypt_payload
 
@@ -28,7 +30,12 @@ async def encryption_service(test_container: AsyncContainer) -> MessageService:
 
 def encrypted_message(text: str, chat_id: int = 123, message_id: int = 456) -> types.Message:
     """Build the minimum real Telegram message."""
-    return types.Message(message_id=message_id, date=123456789, chat=types.Chat(id=chat_id, type="private"), text=text)
+    return types.Message(
+        message_id=message_id,
+        date=datetime.now(UTC),
+        chat=types.Chat(id=chat_id, type="private"),
+        text=text,
+    )
 
 
 async def test_cache_message_encryption(encryption_service: MessageService) -> None:
@@ -130,18 +137,28 @@ def test_existing_passphrase_format_decrypts_synthetic_salt_fixture() -> None:
 
 async def test_cache_message_rejects_missing_encryption_key(encryption_service: MessageService) -> None:
     """Missing encryption key never writes plaintext."""
-    encryption_service.settings.cache_encryption_key = None
+    assert isinstance(encryption_service.settings, Settings)
+    service = MessageService(
+        encryption_service.cache,
+        encryption_service.chat_service,
+        encryption_service.settings.model_copy(update={"cache_encryption_key": None}),
+    )
     with pytest.raises(ValueError, match="encryption key is unavailable"):
-        await encryption_service.cache_message(encrypted_message("sensitive message", 12345, 67890))
-    assert await encryption_service.cache.get_text("msg:12345:67890") is None
+        await service.cache_message(encrypted_message("sensitive message", 12345, 67890))
+    assert await service.cache.get_text("msg:12345:67890") is None
 
 
 async def test_get_message_rejects_missing_encryption_key(encryption_service: MessageService) -> None:
     """Missing key rejects an existing cache entry."""
-    encryption_service.settings.cache_encryption_key = None
-    await encryption_service.cache.set("msg:12345:67890", "some_encrypted_or_plain_data")
+    assert isinstance(encryption_service.settings, Settings)
+    service = MessageService(
+        encryption_service.cache,
+        encryption_service.chat_service,
+        encryption_service.settings.model_copy(update={"cache_encryption_key": None}),
+    )
+    await service.cache.set("msg:12345:67890", "some_encrypted_or_plain_data")
     with pytest.raises(ValueError, match="encryption key is unavailable"):
-        await encryption_service.get_message(12345, 67890)
+        await service.get_message(12345, 67890)
 
 
 async def test_get_message_rejects_corrupted_ciphertext(encryption_service: MessageService) -> None:

@@ -166,4 +166,4 @@ def test_valid_reservation_retains_fractional_deadline_and_frozen_value_semantic
     assert hash(replace(REQUEST)) == hash(REQUEST)
     assert REQUEST.deadline == 400.125
     with pytest.raises(FrozenInstanceError):
-        REQUEST.deadline = 500
+        REQUEST.__setattr__("deadline", 500)

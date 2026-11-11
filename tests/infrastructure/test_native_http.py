@@ -151,3 +151,92 @@ def test_native_http_rejects_ssrf_destination_and_redirect_hop() -> None:
             with pytest.raises(HTTPTransportError) as error:
                 unprivileged_client.download_bytes(bad_url)
             assert error.value.code == HTTPFailure.REJECTED
+
+
+def test_rate_limiting_429_retries_and_succeeds() -> None:
+    """A transient 429 response backs off using Retry-After and returns content on retry."""
+    with (
+        HTTPFixture(
+            {
+                "/transient-429": [
+                    HTTPReply(status=HTTPStatus.TOO_MANY_REQUESTS, headers={"Retry-After": "0.01"}),
+                    HTTPReply(b"recovered"),
+                ]
+            }
+        ) as server,
+        NativeHTTPClient(
+            max_rate_limit_retries=2,
+            min_rate_limit_delay=0.01,
+            max_rate_limit_delay=0.1,
+            allowed_hosts=frozenset({"127.0.0.1", "localhost"}),
+        ) as client,
+    ):
+        result = client.download_bytes(server.url("/transient-429"))
+        assert result == b"recovered"
+        assert len(server.requests) == 2
+
+
+def test_rate_limiting_429_exhausted_raises_rejected() -> None:
+    """Persistent 429 rate limiting exhausts attempts and raises HTTPFailure.REJECTED."""
+    with (
+        HTTPFixture(
+            {
+                "/persistent-429": [
+                    HTTPReply(status=HTTPStatus.TOO_MANY_REQUESTS, headers={"Retry-After": "0.01"}),
+                    HTTPReply(status=HTTPStatus.TOO_MANY_REQUESTS, headers={"Retry-After": "0.01"}),
+                    HTTPReply(status=HTTPStatus.TOO_MANY_REQUESTS, headers={"Retry-After": "0.01"}),
+                ]
+            }
+        ) as server,
+        NativeHTTPClient(
+            max_rate_limit_retries=1,
+            min_rate_limit_delay=0.01,
+            max_rate_limit_delay=0.1,
+            allowed_hosts=frozenset({"127.0.0.1", "localhost"}),
+        ) as client,
+    ):
+        with pytest.raises(HTTPTransportError) as error:
+            client.download_bytes(server.url("/persistent-429"))
+        assert error.value.code == HTTPFailure.REJECTED
+        assert len(server.requests) == 2
+
+
+def test_mutating_request_never_retries_on_429() -> None:
+    """Mutating POST requests never automatically retry even when receiving 429."""
+    with (
+        HTTPFixture(
+            {
+                "/post-429": json_reply({"ok": False}, status=HTTPStatus.TOO_MANY_REQUESTS),
+            }
+        ) as server,
+        NativeHTTPClient(
+            max_rate_limit_retries=2,
+            min_rate_limit_delay=0.01,
+            max_rate_limit_delay=0.1,
+            allowed_hosts=frozenset({"127.0.0.1", "localhost"}),
+        ) as client,
+    ):
+        assert client.request_json("POST", server.url("/post-429")) == {"ok": False}
+        assert len(server.requests) == 1
+
+
+def test_rate_limiting_429_respects_total_timeout() -> None:
+    """When retry delay would exceed total timeout, request is rejected without sleeping past deadline."""
+    with (
+        HTTPFixture(
+            {
+                "/timeout-429": HTTPReply(status=HTTPStatus.TOO_MANY_REQUESTS, headers={"Retry-After": "100"}),
+            }
+        ) as server,
+        NativeHTTPClient(
+            total_timeout=0.2,
+            max_rate_limit_retries=2,
+            min_rate_limit_delay=0.01,
+            max_rate_limit_delay=100.0,
+            allowed_hosts=frozenset({"127.0.0.1", "localhost"}),
+        ) as client,
+    ):
+        with pytest.raises(HTTPTransportError) as error:
+            client.download_bytes(server.url("/timeout-429"))
+        assert error.value.code == HTTPFailure.REJECTED
+        assert len(server.requests) == 1

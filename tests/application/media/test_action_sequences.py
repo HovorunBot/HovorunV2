@@ -1,5 +1,6 @@
 """Verify the shared extraction-action runner and distinct provider sequences."""
 
+from collections.abc import Callable
 from functools import partial
 
 import pytest
@@ -49,8 +50,11 @@ class _Recorder:
         self.calls.append(name)
 
 
-def _action(name: str, run: object, stage: ExtractionStage = ExtractionStage.MEDIA) -> ExtractionAction:
-    assert callable(run)
+def _action(
+    name: str,
+    run: Callable[[], ActionOutcome | None],
+    stage: ExtractionStage = ExtractionStage.MEDIA,
+) -> ExtractionAction:
     return ExtractionAction(name, stage, run)
 
 

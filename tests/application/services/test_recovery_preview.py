@@ -38,7 +38,7 @@ async def test_user_preview_recommends_but_never_selects(test_container: AsyncCo
     """A recent deletion shows both options and a restore recommendation only."""
     users = await test_container.get(UserStore)
     await users.ingest_user(USER)
-    await (await _service(test_container)).delete_user(USER, reason="accident", actor=ActorContext.cli())
+    await (await _service(test_container)).delete_user(str(USER), reason="accident", actor=ActorContext.cli())
     await _admin(test_container)
     preview = await (await test_container.get(RecoveryPreviewService)).preview_user(
         USER, actor=ActorContext.telegram(ADMIN)
@@ -56,7 +56,7 @@ async def test_preview_requires_current_bot_admin(test_container: AsyncContainer
     users = await test_container.get(UserStore)
     await users.ingest_user(USER)
     await users.ingest_user(ADMIN)
-    await (await _service(test_container)).delete_user(USER, reason="accident", actor=ActorContext.cli())
+    await (await _service(test_container)).delete_user(str(USER), reason="accident", actor=ActorContext.cli())
     service = await test_container.get(RecoveryPreviewService)
     with pytest.raises(PermissionError):
         await service.preview_user(USER, actor=ActorContext.telegram(ADMIN))
@@ -66,7 +66,7 @@ async def test_old_deletion_and_protected_role_warnings(test_container: AsyncCon
     """Age changes only the recommendation; a deleted admin warns that role restoration needs CLI."""
     users = await test_container.get(UserStore)
     await users.ingest_user(USER)
-    await (await _service(test_container)).delete_user(USER, reason="old accident", actor=ActorContext.cli())
+    await (await _service(test_container)).delete_user(str(USER), reason="old accident", actor=ActorContext.cli())
     session_maker = await test_container.get(async_sessionmaker)
     async with session_maker() as session:
         row = await session.scalar(select(UserDB).where(UserDB.telegram_id == USER))
@@ -80,7 +80,7 @@ async def test_old_deletion_and_protected_role_warnings(test_container: AsyncCon
     assert preview.options == (RecoveryOption.RESTORE, RecoveryOption.FRESH)
     await users.ingest_user(ADMIN)
     await provision_role(test_container, ADMIN, Role.ADMIN)
-    await (await _service(test_container)).delete_user(ADMIN, reason="admin cleanup", actor=ActorContext.cli())
+    await (await _service(test_container)).delete_user(str(ADMIN), reason="admin cleanup", actor=ActorContext.cli())
     admin_preview = await service.preview_user(ADMIN, actor=ActorContext.cli())
     assert admin_preview.role_restore_requires_cli is True
 
@@ -89,7 +89,7 @@ async def test_collision_reflects_an_active_fresh_identity(test_container: Async
     """A fresh active identity at the same ID is reported as a collision."""
     users = await test_container.get(UserStore)
     await users.ingest_user(USER)
-    await (await _service(test_container)).delete_user(USER, reason="accident", actor=ActorContext.cli())
+    await (await _service(test_container)).delete_user(str(USER), reason="accident", actor=ActorContext.cli())
     session_maker = await test_container.get(async_sessionmaker)
     async with session_maker() as session:
         session.add(

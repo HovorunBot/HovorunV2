@@ -4,7 +4,7 @@ import time
 
 import redis
 from dishka import AsyncContainer
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
 
 from hovorunv2.application.access.permissions import PermissionTarget
@@ -73,7 +73,7 @@ class FailingSender:
         raise OSError(msg)
 
 
-def _sync_store(database_url: str) -> tuple[WorkerNotificationStore, object]:
+def _sync_store(database_url: str) -> tuple[WorkerNotificationStore, Engine]:
     engine = create_engine(database_url, hide_parameters=True)
     sessions = sessionmaker(engine, expire_on_commit=False)
     return WorkerNotificationStore(sessions, lambda: None), engine
