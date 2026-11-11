@@ -417,7 +417,7 @@ class SettingsCommand(BaseCommand):
         await self._render(message, text, builder, listing)
 
     async def _select_group(self, query: CallbackQuery, callback: SettingsCallback, context: SettingsContext) -> None:
-        """Resolve an opaque list slot, preserving the original absolute session deadline.
+        """Resolve an opaque list slot within the renewed inactivity window.
 
         Args:
             query: Callback query carrying the group selection.
@@ -944,7 +944,6 @@ class SettingsCommand(BaseCommand):
         """
         if callback_data.action == SettingsAction.PAGE:
             await query.answer()
-            return
         match callback_data.menu:
             case SettingsMenu.MODULES:
                 await self._handle_modules_callback(query, callback_data, context)

@@ -105,7 +105,7 @@ Application bans and rejected access requests do not make the bot leave a group.
 
 ## Settings windows
 
-Settings windows expire after 30 seconds. Reopen `/settings` after expiry or a bot restart that clears the cache. Each click consumes the current menu token and replaces the keyboard; old or copied buttons cannot change another group or window. Opening a new settings window invalidates the previous window in that chat.
+Settings windows expire after 30 seconds of inactivity. Successful menu navigation and setting changes restart the timer, including clicks on the current page indicator. Rejected or expired callbacks do not extend the window. Reopen `/settings` after expiry or a bot restart that clears the cache. Each click consumes the current menu token and replaces the keyboard; old or copied buttons cannot change another group or window. Opening a new settings window invalidates the previous window in that chat.
 
 Every settings action checks the current actor and target again. Group administrators lose access immediately when Telegram reports demotion; bot administrators use their current persisted authority. Anonymous sender-chat identities cannot open user-specific settings. Language and feature changes retain the authenticated actor in their transactional audit.
 

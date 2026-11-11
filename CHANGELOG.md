@@ -4,6 +4,10 @@
 
 - **media**: prepare oversized videos in a dedicated compression worker
 
+### Fix
+
+- **settings**: expire menus after 30 seconds of inactivity
+
 ## v0.4.0 (2026-11-08)
 
 ### Feat

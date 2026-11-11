@@ -1,6 +1,7 @@
 """Bounded, single-use settings windows independent of Telegram callback fields."""
 
 import logging
+import math
 import secrets
 import time
 from typing import Final
@@ -140,7 +141,7 @@ class SettingsSessionService:
         Raises:
             ValueError: If the settings window has expired.
         """
-        remaining = int(context.expires_at - time.time())
+        remaining = math.ceil(context.expires_at - time.time())
         if remaining <= 0:
             msg = "Settings window expired."
             raise ValueError(msg)
@@ -184,7 +185,8 @@ class SettingsSessionService:
             consume: True to delete the token on successful resolution.
 
         Returns:
-            The validated settings context, or None when invalid or mismatched.
+            The validated context with a fresh inactivity deadline for the next render,
+            or None when invalid or mismatched. Resolution alone does not persist renewal.
         """
         context = await self._resolve_window(token, operation, actor_id, transport_chat_id, message_id, consume=consume)
         logger.debug(
@@ -216,7 +218,8 @@ class SettingsSessionService:
             consume: True to delete the token on successful resolution.
 
         Returns:
-            The validated settings context, or None when invalid or mismatched.
+            The validated context with a fresh inactivity deadline for the next render,
+            or None when invalid or mismatched.
         """
         key = f"settings:session:{token}"
         raw = await self._cache.get(key)
@@ -233,7 +236,7 @@ class SettingsSessionService:
             return None
         if consume and await self._cache.pop(key) != raw:
             return None
-        return context
+        return context.model_copy(update={"expires_at": time.time() + SETTINGS_SESSION_TTL})
 
     async def consume(self, token: str) -> None:
         """Remove one consumed session token after a replacement render."""

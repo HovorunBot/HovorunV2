@@ -15,13 +15,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from hovorunv2.application.groups.group_migration import GroupMigrationStore
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
-from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.settings.settings_session_service import SETTINGS_SESSION_TTL, SettingsSessionService
 from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.infrastructure.runtime.cache import CacheService
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.settings.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 from tests.conftest import provision_role
@@ -242,10 +242,12 @@ async def test_expiry_checks_absolute_deadline_and_sets_bounded_cache(test_conta
     """Clock-controlled expired context is rejected even when its cache entry still exists."""
     await group_beta_runtime(test_container)
     service = await test_container.get(SettingsSessionService)
-    cache = await test_container.get(CachePort)
+    cache = await test_container.get(CacheService)
     context = await service.prepare(GROUP, FIRST, GROUP, 31)
     token = await service.issue(context, ["select"])
-    raw = await cache.get(f"settings:session:{token}")
+    raw_text = await cache.client.get(f"settings:session:{token}")
+    assert raw_text is not None
+    raw = json.loads(raw_text)
     assert raw["expires_at"] == context.expires_at
     raw["expires_at"] = 0.0
     await cache.set(f"settings:session:{token}", raw, expire=30)
