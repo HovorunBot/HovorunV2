@@ -199,3 +199,33 @@ def test_docker_stack_build_roles_match_compose_build_services() -> None:
         services = yaml.safe_load(compose_path.read_text(encoding="utf-8"))["services"]
         build_targets = {svc["build"]["target"] for svc in services.values() if "build" in svc}
         assert build_targets == expected_roles
+
+
+@pytest.mark.unit
+def test_translation_dependencies_are_unversioned_and_owned_by_media_extra() -> None:
+    """Keep model runtimes role-scoped while the lockfile owns exact resolved versions."""
+    root = Path(__file__).resolve().parents[2]
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+    extras = project["optional-dependencies"]
+    runtimes = {"ctranslate2", "sentencepiece", "py3langid"}
+    assert runtimes <= set(extras["worker-media"])
+    assert runtimes.isdisjoint(project["dependencies"])
+    for role in ("bot", "migrate", "worker-ops"):
+        assert runtimes.isdisjoint(extras[role])
+    locked = tomllib.loads((root / "uv.lock").read_text())
+    packages = {package["name"]: package for package in locked["package"]}
+    assert all(packages[name]["version"] for name in runtimes)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("filename", ["docker-compose.prod.yml", "docker-compose.dev.yml"])
+def test_translation_model_volume_is_persistent_and_role_scoped(filename: str) -> None:
+    """Both inference roles share the model cache, while lean roles have no model mount."""
+    root = Path(__file__).resolve().parents[2]
+    compose = yaml.safe_load((root / filename).read_text())
+    assert "translation_models" in compose["volumes"]
+    for role in ("worker-media", "worker-browser"):
+        assert "translation_models:/app/data/models" in compose["services"][role]["volumes"]
+        assert compose["services"][role]["environment"]["TRANSLATION_MODEL_DIR"].startswith("/app/data/models/")
+    for role in ("bot", "migrate", "worker-operations", "beat"):
+        assert not any("translation_models" in mount for mount in compose["services"][role].get("volumes", []))

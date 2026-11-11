@@ -3,7 +3,6 @@
 import asyncio
 from collections.abc import Generator
 from contextlib import ExitStack, closing, contextmanager
-from http import HTTPStatus
 from typing import Any
 
 from aiogram import Bot
@@ -21,7 +20,6 @@ from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.media.payloads import RichMediaPayload
 from hovorunv2.application.media.rendering import build_caption
-from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import RuntimeNamespace, WallClock
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -32,9 +30,10 @@ from hovorunv2.infrastructure.media.embed_adapter import VxInstagramEmbedAdapter
 from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from tests.utils.jobs.envelopes import broker_envelopes
-from tests.utils.sync_http import HTTPFixture, HTTPReply, json_reply
+from tests.utils.sync_http import HTTPFixture, json_reply
 from tests.utils.telegram import BOT_CREDENTIAL
 from tests.utils.telegram.session import RecordingSession
+from tests.utils.translation import unavailable_translation
 
 
 class RecordingTelegramDelivery(SyncTelegramDeliveryPort):
@@ -119,7 +118,6 @@ def _recording_worker(
     safety = UsageSafetyCaps()
     routes = {
         f"/bot{BOT_CREDENTIAL}/sendMessage": json_reply({"ok": True, "result": {"message_id": 100}}),
-        "/translate": HTTPReply(status=HTTPStatus.SERVICE_UNAVAILABLE),
     }
     with (
         ExitStack() as resources,
@@ -128,6 +126,7 @@ def _recording_worker(
         WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
         WorkerRuntime(settings, clock, namespace, safety) as runtime,
         closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+        unavailable_translation(settings, database.policies, server) as translation,
     ):
         provider_http = http if http is not None else resources.enter_context(NativeHTTPClient())
         worker_browser = browser
@@ -143,9 +142,7 @@ def _recording_worker(
             ledger=database.ledger,
             http=provider_http,
             telegram=NativeTelegramAPI(telegram_http, BOT_CREDENTIAL, api_base=server.url("")),
-            translation=NativeTranslationService(
-                telegram_http, settings, database.policies, api_url=server.url("/translate")
-            ),
+            translation=translation,
             extractor=NativeMediaExtractor(),
             feedback=database.policies,
             gate=ValkeyFeedbackGate(runtime.client, namespace),

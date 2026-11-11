@@ -67,7 +67,6 @@ def _routes(browser_reply: HTTPReply) -> dict[str, HTTPReply]:
         "/unavailable": HTTPReply(status=HTTPStatus.NOT_FOUND),
         build_status_url(POST, base_url=""): json_reply(embed),
         "/browser": browser_reply,
-        "/translate": json_reply([[["Synthetic translation"]], None, "en"]),
         **{f"/browser/{index}.jpg": HTTPReply(f"image-{index}".encode()) for index in range(5)},
     }
 

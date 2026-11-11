@@ -132,7 +132,8 @@ class BlockedFinder(MetaPathFinder):
             raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
         return None
 
-forbidden = ["yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "pydoll", "alembic"]
+forbidden = ["ctranslate2", "sentencepiece", "py3langid", "hovorunv2.infrastructure.translation",
+             "yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "pydoll", "alembic"]
 sys.meta_path.insert(0, BlockedFinder(*forbidden))
 
 import hovorunv2.__main__
@@ -157,7 +158,8 @@ class BlockedFinder(MetaPathFinder):
             raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
         return None
 
-forbidden = ["aiogram", "yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "pydoll"]
+forbidden = ["ctranslate2", "sentencepiece", "py3langid", "hovorunv2.infrastructure.translation",
+             "aiogram", "yt_dlp", "curl_cffi", "instaloader", "bs4", "requests", "pydoll"]
 sys.meta_path.insert(0, BlockedFinder(*forbidden))
 
 from alembic.config import Config
@@ -184,7 +186,8 @@ class BlockedFinder(MetaPathFinder):
             raise ImportError(f"Import of blocked module '{fullname}' is forbidden")
         return None
 
-forbidden = ["aiogram", "dishka", "alembic", "yt_dlp", "curl_cffi", "instaloader", "bs4", "pydoll"]
+forbidden = ["ctranslate2", "sentencepiece", "py3langid", "hovorunv2.infrastructure.translation",
+             "aiogram", "dishka", "alembic", "yt_dlp", "curl_cffi", "instaloader", "bs4", "pydoll"]
 sys.meta_path.insert(0, BlockedFinder(*forbidden))
 
 os.environ["WORKER_ROLE"] = "operations"

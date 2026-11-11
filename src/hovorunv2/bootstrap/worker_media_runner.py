@@ -1,5 +1,7 @@
 """Feature job runner and media extraction composition for native media/browser workers."""
 
+from contextlib import ExitStack
+
 import redis
 
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
@@ -23,12 +25,16 @@ from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
 from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
+from hovorunv2.infrastructure.translation.ctranslate2_engine import CTranslate2Engine
+from hovorunv2.infrastructure.translation.language_detector import Py3LangIdDetector
+from hovorunv2.infrastructure.translation.model_store import MODEL_DOWNLOAD_SECONDS, ModelHTTPClient, ModelStore
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramDelivery
 
 
 def create_feature_runner(
     settings: Settings,
+    resources: ExitStack,
     admission: WorkerAdmissionClient,
     payloads: WorkerPayloadClient,
     budgets: WorkerBudgetClient,
@@ -47,6 +53,7 @@ def create_feature_runner(
 
     Args:
         settings: Application runtime settings.
+        resources: Child-owned resource stack that closes the translation engine and transport.
         admission: Child-owned admission client.
         payloads: Child-owned encrypted payload client.
         budgets: Child-owned budget reservation client.
@@ -66,7 +73,10 @@ def create_feature_runner(
     """
     downloader = NativeMediaDownloader(http, destination_policy=http)
     delivery = custom_delivery or NativeTelegramDelivery(api, downloader)
-    translation = NativeTranslationService(http, settings, db.policies)
+    model_http = resources.enter_context(ModelHTTPClient(total_timeout=MODEL_DOWNLOAD_SECONDS))
+    engine = CTranslate2Engine(ModelStore(settings.translation_model_dir, model_http))
+    resources.callback(engine.close)
+    translation = NativeTranslationService(Py3LangIdDetector(), engine, settings, db.policies)
     extractor = NativeMediaExtractor()
     embed = VxInstagramEmbedAdapter() if settings.vxinstagram_enabled else DisabledEmbedAdapter()
     return FeatureJobRunner(

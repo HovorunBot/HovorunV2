@@ -50,7 +50,6 @@ from hovorunv2.application.media.payloads import (
 )
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.media.providers.instagram import INSTAGRAM_CONFIG
-from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import BudgetRequest, ReservationDecision, ReservationState, UnitAmount
 from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AccountingSubject
@@ -80,6 +79,8 @@ from tests.utils.jobs import (
     job_envelope,
 )
 from tests.utils.runtime import ManualClock, runtime_cache
+from tests.utils.sync_http import HTTPFixture
+from tests.utils.translation import unavailable_translation
 
 
 class VideoMediaClient(BaseMediaClient):
@@ -432,9 +433,10 @@ async def test_blocked_video_or_extraction_timeout_prevents_delivery_and_charges
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
             NativeHTTPClient(allowed_hosts=allowed_test_hosts) as http,
+            HTTPFixture({}) as model_server,
+            unavailable_translation(settings, database.policies, model_server) as translation,
             closing(WorkerQueuePublisher(settings.valkey_url, namespace, UsageSafetyCaps(), clock)) as publisher,
         ):
-            translation = NativeTranslationService(http, settings, database.policies)
             extractor = NativeMediaExtractor()
             browser = LazyBrowserService()
             runner = FeatureJobRunner(
@@ -558,6 +560,8 @@ async def test_denied_budget_reports_limits_separately_from_application_failure(
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
             NativeHTTPClient(allowed_hosts=allowed_test_hosts) as http,
+            HTTPFixture({}) as model_server,
+            unavailable_translation(settings, database.policies, model_server) as translation,
         ):
             runner = FeatureJobRunner(
                 admission=runtime.admission,
@@ -567,7 +571,7 @@ async def test_denied_budget_reports_limits_separately_from_application_failure(
                 ledger=database.ledger,
                 http=http,
                 delivery=RecordingDelivery(),
-                translation=NativeTranslationService(http, settings, database.policies),
+                translation=translation,
                 extractor=NativeMediaExtractor(),
                 clock=clock,
                 settings=settings,
@@ -773,6 +777,8 @@ async def test_video_handoff_notifies_then_delivers_only_from_compression_task(
             WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
             WorkerRuntime(settings, clock, namespace, safety) as runtime,
             NativeHTTPClient() as http,
+            HTTPFixture({}) as model_server,
+            unavailable_translation(settings, database.policies, model_server) as translation,
             closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
         ):
             runner = FeatureJobRunner(
@@ -783,7 +789,7 @@ async def test_video_handoff_notifies_then_delivers_only_from_compression_task(
                 ledger=database.ledger,
                 http=http,
                 delivery=delivery,
-                translation=NativeTranslationService(http, settings, database.policies),
+                translation=translation,
                 extractor=NativeMediaExtractor(),
                 clock=clock,
                 settings=settings,

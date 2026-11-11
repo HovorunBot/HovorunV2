@@ -350,6 +350,7 @@ class WorkerChildContext:
         self._publisher = publisher
         return create_feature_runner(
             settings=self._settings,
+            resources=self._resources,
             admission=runtime.admission,
             payloads=runtime.payloads,
             budgets=runtime.budgets,

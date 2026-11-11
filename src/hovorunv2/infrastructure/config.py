@@ -52,6 +52,7 @@ class Settings(BrokerSettings, DatabaseSettings, ErrorLoggingSettings):
     """Application settings schema with bot credentials and runtime tunables."""
 
     bot_token: str
+    translation_model_dir: Path = Path("/app/data/models/nllb-200-distilled-600M-int8")
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
     browser_enabled: bool = False

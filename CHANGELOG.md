@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **translation**: translate captions locally with NLLB
 - **media**: prepare oversized videos in a dedicated compression worker
 
 ### Fix

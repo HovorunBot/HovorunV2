@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Run as non-root user
 RUN groupadd -g 10001 appuser && useradd -u 10001 -g appuser -d /app -s /sbin/nologin appuser
 
-COPY --chown=appuser:appuser LICENSE ./LICENSE
+COPY --chown=appuser:appuser LICENSE THIRD_PARTY_NOTICES.md ./
 
 # -----------------------------------------------------------------------------
 # Builder base: toolchain, uv, and cached source/lockfiles
@@ -112,6 +112,8 @@ ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION} \
     WORKER_ROLE=media
 
+RUN mkdir -p /app/data/models && chown -R appuser:appuser /app/data
+
 COPY --from=builder-worker-media --chown=appuser:appuser /app/.venv /app/.venv
 
 USER appuser
@@ -133,6 +135,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
     apt-get -o Acquire::Queue-Mode=access -o Acquire::Retries=3 install -y --no-install-recommends \
         chromium fonts-liberation ca-certificates ffmpeg
+
+RUN mkdir -p /app/data/models && chown -R appuser:appuser /app/data
 
 COPY --from=builder-worker-browser --chown=appuser:appuser /app/.venv /app/.venv
 

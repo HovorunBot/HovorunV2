@@ -67,6 +67,12 @@ Use Make to apply the `.env` browser switch. Raw `docker compose` commands requi
 
 See [administration](docs/administration.md) for role and trust commands, access rules and troubleshooting.
 
+## Local caption translation
+
+Caption language detection runs locally with py3langid. Ignored languages, the selected target language, and captions with insufficient alphabetic text skip neural inference. Other supported captions use an on-demand CTranslate2 NLLB-200 int8 CPU model; captions are never sent to a translation API. Model errors leave original captions deliverable.
+
+The first required translation downloads about 630 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. Both media and browser workers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. A cold download can delay or skip the first translation. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's separate noncommercial license.
+
 ## Access and privacy
 
 Bot authority, trust and group approval are separate. Only CLI operations can change bot-administrator authority or their personal restrictions.
@@ -82,4 +88,4 @@ See the [contributor guide](CONTRIBUTING.md) for setup, checks and contribution 
 
 ## License
 
-[BSD 3-Clause](LICENSE).
+Application code: [BSD 3-Clause](LICENSE). Separately downloaded NLLB translation model assets: **CC BY-NC 4.0, noncommercial use only**. See [third-party notices](THIRD_PARTY_NOTICES.md) for model attribution, the full license, and commercial-use restrictions.

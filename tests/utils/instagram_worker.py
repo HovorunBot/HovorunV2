@@ -14,7 +14,6 @@ from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncTelegramDeliveryPort
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.providers.instagram import InstagramService
-from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import RuntimeNamespace, WallClock
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -26,6 +25,7 @@ from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from tests.utils.sync_http import HTTPFixture
 from tests.utils.telegram import BOT_CREDENTIAL
+from tests.utils.translation import unavailable_translation
 
 TEST_SAFETY = UsageSafetyCaps()
 
@@ -73,6 +73,7 @@ def instagram_worker(
         WorkerRuntime(settings, clock, namespace, safety) as runtime,
         NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost", "synthetic.invalid"})) as http,
         closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+        unavailable_translation(settings, database.policies, server) as translation,
     ):
         embed = VxInstagramEmbedAdapter(
             base_url=server.url(""),
@@ -87,7 +88,7 @@ def instagram_worker(
             ledger=database.ledger,
             http=http,
             delivery=delivery,
-            translation=NativeTranslationService(http, settings, database.policies, api_url=server.url("/translate")),
+            translation=translation,
             extractor=NativeMediaExtractor(),
             clock=clock,
             settings=settings,

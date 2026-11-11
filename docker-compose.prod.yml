@@ -115,6 +115,8 @@ services:
         APP_VERSION: ${APP_VERSION:-}
     stop_grace_period: 150s
     healthcheck: *worker-health
+    volumes:
+      - translation_models:/app/data/models
     restart: unless-stopped
     depends_on:
       migrate:
@@ -125,6 +127,7 @@ services:
       <<: *app-environment
       WORKER_ROLE: media
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
+      TRANSLATION_MODEL_DIR: /app/data/models/nllb-200-distilled-600M-int8
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
     command:
@@ -154,6 +157,8 @@ services:
     profiles: [browser]
     stop_grace_period: 150s
     healthcheck: *worker-health
+    volumes:
+      - translation_models:/app/data/models
     restart: unless-stopped
     depends_on:
       migrate:
@@ -164,6 +169,7 @@ services:
       <<: *app-environment
       WORKER_ROLE: browser
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
+      TRANSLATION_MODEL_DIR: /app/data/models/nllb-200-distilled-600M-int8
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
     command:
@@ -287,3 +293,4 @@ volumes:
   postgres_data:
   valkey_data:
   beat_state:
+  translation_models:

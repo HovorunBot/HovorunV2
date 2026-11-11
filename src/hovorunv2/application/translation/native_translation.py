@@ -1,17 +1,18 @@
-"""Native worker translation with fresh settings and shared pure provider rules."""
+"""Select optional local caption translation using fresh persisted preferences."""
 
 import html
 from typing import Protocol
 
 from hovorunv2.application.configuration import AppSettings
-from hovorunv2.application.jobs.http_ports import HTTPTransportError, SyncHTTPPort
+from hovorunv2.application.translation.ports import LanguageDetectorPort, TranslationEnginePort, TranslationError
 from hovorunv2.application.translation.translation_rules import (
-    GOOGLE_TRANSLATION_URL,
+    MIN_DETECTABLE_CHARS,
     TranslationResult,
-    google_translation_params,
-    parse_google_translation,
-    select_translation,
+    sanitize_for_detection,
+    should_translate_language,
+    translation_flag,
 )
+from hovorunv2.domain.languages import normalize_language_code
 
 
 class TranslationSettingsPort(Protocol):
@@ -23,20 +24,19 @@ class TranslationSettingsPort(Protocol):
 
 
 class NativeTranslationService:
-    """Translate synchronously with the same parsing, defaults and ignored-source rules as the bot."""
+    """Gate local inference with text detection and current chat preferences."""
 
     def __init__(
         self,
-        http: SyncHTTPPort,
+        detector: LanguageDetectorPort,
+        engine: TranslationEnginePort,
         settings: AppSettings,
         preferences: TranslationSettingsPort,
-        *,
-        api_url: str = GOOGLE_TRANSLATION_URL,
     ) -> None:
-        self._http = http
+        self._detector = detector
+        self._engine = engine
         self._settings = settings
         self._preferences = preferences
-        self._api_url = api_url
 
     def translate_if_needed(self, text: str, chat_id: int) -> TranslationResult | None:
         """Read preferences for each operation and keep provider failures independent of media delivery.
@@ -48,15 +48,21 @@ class NativeTranslationService:
         Returns:
             Selected translation, or None for blank text, ignored languages, or provider failure.
         """
-        if not text.strip():
+        raw_text = html.unescape(text)
+        clean = sanitize_for_detection(raw_text)
+        if sum(character.isalpha() for character in clean) < MIN_DETECTABLE_CHARS:
             return None
         target, ignored = self._current_languages(chat_id)
         try:
-            raw = self._http.read_json(self._api_url, params=google_translation_params(text, target))
-            result = parse_google_translation(raw)
-        except HTTPTransportError:
+            source = normalize_language_code(self._detector.detect(clean))
+            if not should_translate_language(source, target, ignored):
+                return None
+            translated = self._engine.translate(raw_text, source, normalize_language_code(target))
+        except TranslationError, ValueError:
             return None
-        return select_translation(result, target, ignored)
+        if not translated.strip():
+            return None
+        return TranslationResult(translated.strip(), target, translation_flag(source))
 
     def _current_languages(self, chat_id: int) -> tuple[str, tuple[str, ...]]:
         preferences = self._preferences.chat_translation_settings(chat_id)

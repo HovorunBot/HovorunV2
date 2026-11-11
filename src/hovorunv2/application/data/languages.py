@@ -5,6 +5,8 @@ from typing import Final
 
 import pycountry
 
+from hovorunv2.domain.languages import normalize_language_code
+
 ISO_CODE_LEN: Final = 2
 REGIONAL_INDICATOR_OFFSET: Final = 127397
 
@@ -106,7 +108,7 @@ def _generate_languages() -> dict[str, Language]:
 
         languages[code] = Language(code=code, name=name, flag=flag, bot_translation_available=(code == "en"))
 
-    _add_google_variants(languages)
+    _add_chinese_variants(languages)
     _add_language_aliases(languages)
 
     return languages
@@ -129,13 +131,13 @@ def _language_flag(code: str) -> str:
     return _get_flag_emoji(_LANGUAGE_COUNTRIES.get(code, code.upper()))
 
 
-def _add_google_variants(languages: dict[str, Language]) -> None:
-    """Add Google Translate Chinese variants to the catalog.
+def _add_chinese_variants(languages: dict[str, Language]) -> None:
+    """Add simplified and traditional Chinese variants to the catalog.
 
     Args:
         languages: Language catalog to extend.
     """
-    # Add special Google Translate variants
+    # Preserve the regional identifiers used by existing settings.
     if "zh" in languages:
         languages["zh-CN"] = Language(
             code="zh-CN", name="Chinese (Simplified)", flag=_get_flag_emoji("CN"), bot_translation_available=False
@@ -146,16 +148,16 @@ def _add_google_variants(languages: dict[str, Language]) -> None:
 
 
 def _add_language_aliases(languages: dict[str, Language]) -> None:
-    """Add common Google Translate aliases to the catalog.
+    """Preserve legacy catalog identifiers using shared language normalization.
 
     Args:
         languages: Language catalog to extend.
     """
-    # Add common aliases for Google Translate
-    if "he" in languages:
-        languages["iw"] = languages["he"]
-    if "yi" in languages:
-        languages["ji"] = languages["yi"]
+    # Keep existing catalog keys while sharing canonical identity with translation and speech.
+    for alias in ("iw", "ji"):
+        canonical = normalize_language_code(alias)
+        if canonical in languages:
+            languages[alias] = languages[canonical]
 
 
 LANGUAGES: Final[dict[str, Language]] = _generate_languages()

@@ -5,6 +5,7 @@ no-op or acceptance outcome; they are not generic availability checks. Required
 operations propagate failures to the owning workflow. Injected adapters are mandatory.
 """
 
+from pathlib import Path
 from typing import Protocol
 
 
@@ -24,6 +25,11 @@ class AppSettings(Protocol):
     @property
     def cache_encryption_key(self) -> str | None:
         """Return the optional encryption key; absence disables encrypted caching."""
+        ...
+
+    @property
+    def translation_model_dir(self) -> Path:
+        """Return the persistent directory for local translation model artifacts."""
         ...
 
     @property

@@ -1,7 +1,6 @@
 """Tests for Instagram rich media command."""
 
 from http import HTTPStatus
-from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from aiogram import Bot
@@ -67,7 +66,6 @@ async def _assert_instagram_command(
     routes = {
         "/unavailable": HTTPReply(status=HTTPStatus.NOT_FOUND),
         build_status_url(post, base_url=""): json_reply(raw),
-        "/translate": json_reply([[["Synthetic translation", "Synthetic caption ❤️ 7 💬 2"]], None, "en"]),
         f"/bot{BOT_CREDENTIAL}/sendMessage": json_reply({"ok": True, "result": {"message_id": 100}}),
     }
     delivery = RecordingTelegramDelivery(bot)
@@ -84,25 +82,12 @@ async def _assert_instagram_command(
                 assert runner.run(compression[0], JobStage.COMPRESSION) == JobOutcome.COMPLETE.value
             assert runner.run(messages[0]) == JobOutcome.COMPLETE.value
             assert runtime.payloads.load_candidate(str(messages[0]["job_id"])) is None
-        translations = [
-            parse_qs(urlsplit(request.path).query)
-            for request in server.requests
-            if request.path.startswith("/translate?")
-        ]
+        assert not any(request.path.startswith("/models/") for request in server.requests)
     assert len(bot.session.calls) == 1
     assert len(delivery.calls) == 1
     payload = delivery.calls[0]["payload"]
     assert isinstance(payload, RichMediaPayload)
     assert payload.is_video is video
-    assert translations == [
-        {
-            "client": ["gtx"],
-            "sl": ["auto"],
-            "tl": [settings.translation_target_lang],
-            "dt": ["t"],
-            "q": ["Synthetic caption ❤️ 7 💬 2"],
-        }
-    ]
     call = bot.session.calls[0]
     caption = call.media[0].caption if hasattr(call, "media") else getattr(call, "caption", "")
     assert "Mock User" in caption

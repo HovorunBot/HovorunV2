@@ -35,6 +35,8 @@ from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from hovorunv2.interface.telegram.handlers.base import BusyNoticeGate
 from tests.utils.jobs import PRIVATE_BODY, admit_test_job, job_envelope
 from tests.utils.runtime import ManualClock, runtime_cache
+from tests.utils.sync_http import HTTPFixture
+from tests.utils.translation import unavailable_translation
 
 GROUP = -440001
 TEST_HOSTS = frozenset({"127.0.0.1", "localhost", "synthetic.invalid", "media.example.invalid"})
@@ -71,9 +73,9 @@ class RecordingDelivery:
     def deliver(
         self,
         chat_id: int,
-        reply_to_message_id: int,
+        message_id: int,
         payload: RichMediaPayload,
-        platform_label: str,
+        platform_name: str,
         sender_label: str | None = None,
     ) -> tuple[int, ...]:
         """Capture one delivery payload."""
@@ -106,6 +108,7 @@ def _runner(
     clock: ManualClock,
     namespace: RuntimeNamespace,
     telegram: RecordingTelegram,
+    translation: NativeTranslationService,
 ) -> FeatureJobRunner:
     return FeatureJobRunner(
         admission=runtime.admission,
@@ -115,7 +118,7 @@ def _runner(
         ledger=database.ledger,
         http=http,
         delivery=RecordingDelivery(),
-        translation=NativeTranslationService(http, settings, database.policies),
+        translation=translation,
         extractor=NativeMediaExtractor(),
         clock=clock,
         settings=settings,
@@ -152,8 +155,10 @@ async def test_expired_job_sends_one_timeout_notice(test_container: AsyncContain
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
             NativeHTTPClient(allowed_hosts=TEST_HOSTS) as http,
+            HTTPFixture({}) as model_server,
+            unavailable_translation(settings, database.policies, model_server) as translation,
         ):
-            runner = _runner(database, runtime, http, settings, clock, namespace, telegram)
+            runner = _runner(database, runtime, http, settings, clock, namespace, telegram, translation)
             clock.value = envelope.deadline + 1
             outcome = runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
             assert outcome == JobOutcome.EXPIRED.value
@@ -186,8 +191,10 @@ async def test_delayed_job_sends_one_notice_and_skips_banned_target(
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
             NativeHTTPClient(allowed_hosts=TEST_HOSTS) as http,
+            HTTPFixture({}) as model_server,
+            unavailable_translation(settings, database.policies, model_server) as translation,
         ):
-            runner = _runner(database, runtime, http, settings, clock, namespace, telegram)
+            runner = _runner(database, runtime, http, settings, clock, namespace, telegram, translation)
             token = "t" * 32
             assert runtime.admission.claim_stage(envelope.job_id, JobStage.MEDIA, clock.now(), token) is not None
             waiting = ReservationDecision(ReservationState.WAITING, clock.now() + DELAYED_NOTICE_SECONDS + 1)
@@ -215,8 +222,10 @@ async def test_delayed_job_sends_one_notice_and_skips_banned_target(
             WorkerDatabase(settings, FEATURE_REGISTRY, UsageSafetyCaps()) as database,
             WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
             NativeHTTPClient(allowed_hosts=TEST_HOSTS) as http,
+            HTTPFixture({}) as model_server,
+            unavailable_translation(settings, database.policies, model_server) as translation,
         ):
-            runner = _runner(database, runtime, http, settings, clock, namespace, telegram)
+            runner = _runner(database, runtime, http, settings, clock, namespace, telegram, translation)
             clock.value = envelope.deadline + 1
             runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
             assert telegram.calls == []
