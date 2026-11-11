@@ -161,7 +161,7 @@ async def test_corrupt_ticket_pointer_cannot_delete_another_payload(test_contain
         await cache.client.set(other, "synthetic-other-payload")
         raw_ticket = await cache.get(keys.ticket)
         assert raw_ticket is not None
-        raw = json.loads(raw_ticket)
+        raw = json.loads(raw_ticket) if isinstance(raw_ticket, (str, bytes)) else dict(raw_ticket)
         raw["payload_key"] = other
         await cache.set(keys.ticket, raw)
         with pytest.raises(AdmissionUnavailableError):

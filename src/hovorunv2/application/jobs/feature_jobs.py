@@ -14,6 +14,7 @@ MAX_JOB_LIFETIME_SECONDS = 5 * MINUTE_SECONDS
 PAYLOAD_CLEANUP_SECONDS = 60
 FEATURE_JOB_FUNCTION = "run_feature_job"
 COMPRESSION_JOB_FUNCTION = "run_compression_job"
+SPEECH_JOB_FUNCTION = "run_speech_job"
 APPLICATION_FAILURE_NOTICE_TEXT = "⚠️ The bot encountered a problem while processing this request."
 _INVALID_JOB_TARGET_MESSAGE: Final = "Job target kind and Telegram identity disagree."
 _INVALID_JOB_DEADLINE_MESSAGE: Final = "Feature job requires an original deadline within five minutes of acceptance."
@@ -81,13 +82,23 @@ class JobEnvelope(BaseModel):
             raise ValueError(_INVALID_JOB_DEADLINE_MESSAGE)
 
     def _validate_automatic_binding(self) -> None:
-        """Charge only the canonical group and retain complete or absent actor metadata."""
-        if self.target.kind != TargetKind.GROUP:
-            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
-        if self.charged_kind != TargetKind.GROUP or self.charged_telegram_id != self.target.telegram_id:
-            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
-        if (self.actor_id is None) != (self.actor_generation is None):
-            raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+        """Charge the canonical group or private actor-bound target consistently."""
+        if self.target.kind == TargetKind.GROUP:
+            if self.charged_kind != TargetKind.GROUP or self.charged_telegram_id != self.target.telegram_id:
+                raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+            if (self.actor_id is None) != (self.actor_generation is None):
+                raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+            return
+
+        if self.target.kind == TargetKind.USER:
+            actor_id = self._require_direct_actor()
+            if self.target.telegram_id != actor_id:
+                raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+            if self.charged_kind != TargetKind.USER or self.charged_telegram_id != actor_id:
+                raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
+            return
+
+        raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
 
     def _require_direct_actor(self) -> int:
         """Establish the required current actor identity for a direct request."""

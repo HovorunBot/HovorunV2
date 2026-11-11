@@ -41,6 +41,7 @@ class WorkerRole(StrEnum):
     MEDIA = "media"
     BROWSER = "browser"
     COMPRESSION = "compression"
+    SPEECH = "speech"
     ALL = "all"
 
 

@@ -513,6 +513,7 @@ def _require_stage_handoff(record: AdmissionRecord, request: AdmissionTransition
     allowed = {
         JobStage.MEDIA: {JobStage.BROWSER, JobStage.COMPRESSION},
         JobStage.BROWSER: {JobStage.COMPRESSION},
+        JobStage.SPEECH: set(),
     }
     if request.stage not in allowed.get(record.stage, set()):
         raise ValueError(_HANDOFF_CONFLICT_ERROR)

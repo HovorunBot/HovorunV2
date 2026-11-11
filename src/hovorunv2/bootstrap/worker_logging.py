@@ -126,7 +126,14 @@ def log_received_feature_task(request: Request, **kwargs: object) -> None:
         return
     try:
         envelope = JobEnvelope.model_validate(request.kwargs.get("envelope"))
-        default_stage = JobStage.BROWSER if request.name == "run_browser_job" else JobStage.MEDIA
+        if request.name == "run_browser_job":
+            default_stage = JobStage.BROWSER
+        elif request.name == "run_speech_job":
+            default_stage = JobStage.SPEECH
+        elif request.name == "run_compression_job":
+            default_stage = JobStage.COMPRESSION
+        else:
+            default_stage = JobStage.MEDIA
         stage = JobStage(request.kwargs.get("stage", default_stage))
     except ValueError, TypeError:
         logger.exception("Worker parent received an invalid feature task")

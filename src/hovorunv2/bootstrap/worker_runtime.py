@@ -14,7 +14,12 @@ from celery.signals import worker_process_init, worker_process_shutdown
 
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.jobs.admission import JobStage
-from hovorunv2.application.jobs.feature_jobs import COMPRESSION_JOB_FUNCTION, FEATURE_JOB_FUNCTION, JobEnvelope
+from hovorunv2.application.jobs.feature_jobs import (
+    COMPRESSION_JOB_FUNCTION,
+    FEATURE_JOB_FUNCTION,
+    SPEECH_JOB_FUNCTION,
+    JobEnvelope,
+)
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
 from hovorunv2.application.media.limits import MAX_SOURCE_MEDIA_BYTES
 from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
@@ -145,6 +150,7 @@ class WorkerQueuePublisher:
         self._media_queue = namespace.value + "media"
         self._browser_queue = namespace.value + "browser"
         self._compression_queue = namespace.value + "compression"
+        self._speech_queue = namespace.value + "speech"
         self._app = Celery("worker_publisher", broker=broker_url)
         self._app.conf.update(
             broker_connection_timeout=BROKER_SOCKET_SECONDS,
@@ -167,10 +173,13 @@ class WorkerQueuePublisher:
             JobStage.MEDIA: self._media_queue,
             JobStage.BROWSER: self._browser_queue,
             JobStage.COMPRESSION: self._compression_queue,
+            JobStage.SPEECH: self._speech_queue,
         }[stage]
         with self._app.connection_for_write() as connection, self._app.amqp.Producer(connection) as producer:
             self._app.send_task(
-                COMPRESSION_JOB_FUNCTION if stage == JobStage.COMPRESSION else FEATURE_JOB_FUNCTION,
+                SPEECH_JOB_FUNCTION
+                if stage == JobStage.SPEECH
+                else (COMPRESSION_JOB_FUNCTION if stage == JobStage.COMPRESSION else FEATURE_JOB_FUNCTION),
                 kwargs={"envelope": envelope.model_dump(mode="json"), "stage": stage.value},
                 task_id=envelope.job_id,
                 producer=producer,
@@ -305,7 +314,13 @@ class WorkerChildContext:
             self._operations = self._open_operations_runner(database, runtime, api)
 
         # 2. Initialize feature job runner if role includes media or browser
-        if self._role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.COMPRESSION, WorkerRole.ALL}:
+        if self._role in {
+            WorkerRole.MEDIA,
+            WorkerRole.BROWSER,
+            WorkerRole.COMPRESSION,
+            WorkerRole.SPEECH,
+            WorkerRole.ALL,
+        }:
             self._runner = self._open_feature_runner(database, runtime, http, api)
 
     def _open_operations_runner(
@@ -447,7 +462,13 @@ def init_worker_child(
     context = WorkerChildContext(settings, namespace, safety, role=role)
     context.open()
     _current_worker_context = context
-    if context.role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.COMPRESSION, WorkerRole.ALL}:
+    if context.role in {
+        WorkerRole.MEDIA,
+        WorkerRole.BROWSER,
+        WorkerRole.COMPRESSION,
+        WorkerRole.SPEECH,
+        WorkerRole.ALL,
+    }:
         set_feature_task_runner(_execute_task_in_child)
     else:
         set_feature_task_runner(None)
@@ -511,7 +532,13 @@ def _apply_worker_context(context: WorkerChildContext | None) -> None:
         set_operations_runner(None)
         return
 
-    is_media = context.role in {WorkerRole.MEDIA, WorkerRole.BROWSER, WorkerRole.COMPRESSION, WorkerRole.ALL}
+    is_media = context.role in {
+        WorkerRole.MEDIA,
+        WorkerRole.BROWSER,
+        WorkerRole.COMPRESSION,
+        WorkerRole.SPEECH,
+        WorkerRole.ALL,
+    }
     set_feature_task_runner(_execute_task_in_child if is_media else None)
     set_recovery_runner(context.recover)
     is_ops = context.role in {WorkerRole.OPERATIONS, WorkerRole.ALL}

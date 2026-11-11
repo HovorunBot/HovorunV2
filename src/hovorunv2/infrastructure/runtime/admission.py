@@ -73,7 +73,9 @@ def _initial_record(envelope: JobEnvelope, payload: SealedPayload, keys: Admissi
     return AdmissionRecord(
         envelope=envelope_json(envelope),
         state=TicketState.ACCEPTED,
-        stage=JobStage.MEDIA,
+        stage=JobStage.SPEECH
+        if envelope.feature in {"transcribe", "transcribe_auto", "feature:transcribe", "feature:transcribe_auto"}
+        else JobStage.MEDIA,
         byte_size=payload.byte_size,
         attempt=0,
         token="",

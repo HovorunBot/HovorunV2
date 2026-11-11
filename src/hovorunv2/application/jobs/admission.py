@@ -76,6 +76,7 @@ class JobStage(StrEnum):
     MEDIA = "media"
     BROWSER = "browser"
     COMPRESSION = "compression"
+    SPEECH = "speech"
 
 
 class SettlementIntent(BaseModel):

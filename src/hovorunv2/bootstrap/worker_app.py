@@ -24,6 +24,7 @@ WORKER_APP_NAME = "hovorun_workers"
 MEDIA_QUEUE_NAME = "media"
 BROWSER_QUEUE_NAME = "browser"
 COMPRESSION_QUEUE_NAME = "compression"
+SPEECH_QUEUE_NAME = "speech"
 OPERATIONS_QUEUE_NAME = "operations"
 
 
@@ -40,11 +41,18 @@ def build_worker_application(settings: BrokerSettings, namespace: RuntimeNamespa
     media_queue = namespace.value + MEDIA_QUEUE_NAME
     browser_queue = namespace.value + BROWSER_QUEUE_NAME
     compression_queue = namespace.value + COMPRESSION_QUEUE_NAME
+    speech_queue = namespace.value + SPEECH_QUEUE_NAME
     operations_queue = namespace.value + OPERATIONS_QUEUE_NAME
     app = Celery(WORKER_APP_NAME, broker=settings.valkey_url)
     app.conf.update(
         task_default_queue=media_queue,
-        task_queues=[Queue(media_queue), Queue(browser_queue), Queue(compression_queue), Queue(operations_queue)],
+        task_queues=[
+            Queue(media_queue),
+            Queue(browser_queue),
+            Queue(compression_queue),
+            Queue(speech_queue),
+            Queue(operations_queue),
+        ],
         beat_schedule=build_beat_schedule(namespace.value),
         task_serializer="json",
         accept_content=["json"],
