@@ -175,3 +175,4 @@ cython_debug/
 
 # Local Harness plugins (installed into the DSH profile, never shipped)
 /.agents/plugins/
+src/hovorunv2/infrastructure/speech/whisper_helper

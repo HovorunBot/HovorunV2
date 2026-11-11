@@ -1,0 +1,8 @@
+MIT License
+
+whisper.cpp - Port of OpenAI's Whisper model in C/C++
+Copyright (c) 2023-2026 Georgi Gerganov and whisper.cpp contributors
+
+Model ggml-small-q8_0.bin
+Derived from OpenAI Whisper small model weights.
+Copyright (c) 2022 OpenAI. Licensed under the MIT License.

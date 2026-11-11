@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **speech**: add on-demand local CPU inference
 - **speech**: define per-chat recognition controls
 - **translation**: translate captions locally with NLLB
 - **media**: prepare oversized videos in a dedicated compression worker

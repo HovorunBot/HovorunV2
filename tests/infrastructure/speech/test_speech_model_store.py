@@ -1,0 +1,61 @@
+"""Verify speech model storage, integrity checks, and cache reuse."""
+
+import hashlib
+from pathlib import Path
+
+import pytest
+
+from hovorunv2.application.speech.contracts import SpeechFailure, SpeechRecognitionError
+from hovorunv2.infrastructure.speech.model_store import (
+    ModelFile,
+    SpeechModelHTTPClient,
+    SpeechModelStore,
+)
+from tests.utils.sync_http import HTTPFixture, HTTPReply
+
+pytestmark = pytest.mark.unit
+
+
+def test_speech_model_provisioning_verifies_hash_and_reuses_cache(tmp_path: Path) -> None:
+    """Store saves verified file and serves subsequent requests from disk."""
+    content = b"synthetic speech model weights"
+    artifact = ModelFile("ggml-small-q8_0.bin", len(content), hashlib.sha256(content).hexdigest())
+    directory = tmp_path / "models"
+
+    with (
+        HTTPFixture({"/ggml-small-q8_0.bin": HTTPReply(body=content)}) as server,
+        SpeechModelHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http,
+    ):
+        store = SpeechModelStore(directory, http, base_url=server.url(""), artifacts=(artifact,))
+        assert store.ensure() == directory
+        assert (directory / artifact.name).read_bytes() == content
+        assert (directory / "NOTICE.txt").is_file()
+        assert (directory / "MIT.txt").is_file()
+
+        # Second ensure reuses file without re-downloading
+        assert store.ensure() == directory
+        assert len(server.requests) == 1
+        assert not list(directory.glob("*.part"))
+
+
+@pytest.mark.parametrize("corrupted", [b"bad", b"x" * 100])
+def test_speech_model_rejects_corrupted_download(tmp_path: Path, corrupted: bytes) -> None:
+    """Oversized or corrupted download raises SpeechRecognitionError and leaves no partial files."""
+    valid = b"synthetic valid model"
+    artifact = ModelFile("ggml-small-q8_0.bin", len(valid), hashlib.sha256(valid).hexdigest())
+    directory = tmp_path / "models"
+
+    with (
+        HTTPFixture({"/ggml-small-q8_0.bin": [HTTPReply(body=corrupted), HTTPReply(body=valid)]}) as server,
+        SpeechModelHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http,
+    ):
+        store = SpeechModelStore(directory, http, base_url=server.url(""), artifacts=(artifact,))
+        with pytest.raises(SpeechRecognitionError) as exc_info:
+            store.ensure()
+        assert exc_info.value.reason == SpeechFailure.MODEL_UNAVAILABLE
+        assert not (directory / artifact.name).exists()
+        assert not list(directory.glob("*.part"))
+
+        # Recovers on subsequent valid download
+        assert store.ensure() == directory
+        assert (directory / artifact.name).read_bytes() == valid
