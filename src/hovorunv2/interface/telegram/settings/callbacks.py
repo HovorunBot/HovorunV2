@@ -28,6 +28,7 @@ class SettingsMenu(StrEnum):
     MODULES = "modules"
     LANG_TARGET = "lang_target"
     LANG_IGNORED = "lang_ignored"
+    SPEECH = "speech"
 
 
 class SettingsAction(StrEnum):

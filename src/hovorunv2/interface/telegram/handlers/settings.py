@@ -29,6 +29,7 @@ from hovorunv2.application.settings.settings_session_service import (
     SettingsSessionService,
     SettingsTarget,
 )
+from hovorunv2.application.speech.ports import SpeechSettingsStore
 from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.application.usage.usage_view import FeatureUsage, UsageSummary, UsageViewService
@@ -36,6 +37,7 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import (
     SPEECH_COMMANDS,
     CommandName,
+    SpeechMode,
 )
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.settings.callbacks import SettingsAction, SettingsCallback, SettingsMenu
@@ -227,6 +229,7 @@ class SettingsCommand(BaseCommand):
         groups: GroupManagementService,
         usage_views: UsageViewService,
         notification_preferences: NotificationPreferenceService,
+        speech_settings: SpeechSettingsStore,
     ) -> None:
         """Initialize command."""
         self._language_service = language_service
@@ -237,6 +240,7 @@ class SettingsCommand(BaseCommand):
         self._groups = groups
         self._usage_views = usage_views
         self._notification_preferences = notification_preferences
+        self._speech_settings = speech_settings
 
     @property
     def name(self) -> str:
@@ -454,6 +458,11 @@ class SettingsCommand(BaseCommand):
         builder.row(
             InlineKeyboardButton(text="🌐 Languages", callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()),
             InlineKeyboardButton(text="⚙️ Modules", callback_data=SettingsCallback(menu=SettingsMenu.MODULES).pack()),
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="🗣 Speech recognition", callback_data=SettingsCallback(menu=SettingsMenu.SPEECH).pack()
+            )
         )
         if context.target_chat_id < 0:
             builder.row(
@@ -929,7 +938,11 @@ class SettingsCommand(BaseCommand):
             case SettingsMenu.LANG:
                 await self._show_lang_menu(query, context)
             case (
-                SettingsMenu.MODULES | SettingsMenu.LANG_TARGET | SettingsMenu.LANG_IGNORED | SettingsMenu.NOTIFICATIONS
+                SettingsMenu.MODULES
+                | SettingsMenu.LANG_TARGET
+                | SettingsMenu.LANG_IGNORED
+                | SettingsMenu.NOTIFICATIONS
+                | SettingsMenu.SPEECH
             ):
                 await self._dispatch_action(query, callback_data, context)
             case SettingsMenu.CLOSE:
@@ -959,6 +972,11 @@ class SettingsCommand(BaseCommand):
                     await self._handle_notifications_callback(query, callback_data, context)
                 else:
                     await self._show_notifications(query, context, callback_data.value)
+            case SettingsMenu.SPEECH:
+                if callback_data.action == SettingsAction.SELECT:
+                    await self._handle_speech_callback(query, callback_data, context)
+                else:
+                    await self._show_speech_menu(query, context)
 
     async def _handle_modules_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
@@ -1062,6 +1080,118 @@ class SettingsCommand(BaseCommand):
             )
             await query.answer(f"Toggled {callback_data.value}")
         await self._show_lang_picker(msg, SettingsMenu.LANG_IGNORED, callback_data.page, context)
+
+    async def _speech_target(self, query: CallbackQuery, context: SettingsContext) -> PermissionTarget | None:
+        """Resolve permission target for speech recognition settings.
+
+        Args:
+            query: Callback query carrying the user interaction.
+            context: Current settings session context.
+
+        Returns:
+            Resolved permission target, or None when unavailable.
+        """
+        if context.target_chat_id < 0:
+            if context.target is None:
+                return None
+            return PermissionTarget(
+                "group",
+                context.target.entity_id,
+                context.target.generation,
+                context.target.telegram_id,
+            )
+        try:
+            return await self._notification_preferences.own_target(query.from_user.id)
+        except ValueError:
+            return None
+
+    async def _show_speech_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
+        """Show three-state speech recognition selector with automatic disclosure.
+
+        Args:
+            query: Callback query carrying the menu request.
+            context: Current settings session context.
+        """
+        msg = query.message
+        if not isinstance(msg, Message):
+            return
+
+        target = await self._speech_target(query, context)
+        if target is None:
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
+        try:
+            current_mode = await self._speech_settings.mode(target)
+        except ValueError:
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
+
+        builder = InlineKeyboardBuilder()
+        for mode, label in (
+            (SpeechMode.OFF, "Off"),
+            (SpeechMode.MANUAL_ONLY, "Manual only (/transcribe)"),
+            (SpeechMode.MANUAL_AND_AUTOMATIC, "Manual + automatic"),
+        ):
+            marker = "🔘" if mode == current_mode else "⚪"
+            builder.row(
+                InlineKeyboardButton(
+                    text=f"{marker} {label}",
+                    callback_data=SettingsCallback(
+                        menu=SettingsMenu.SPEECH, action=SettingsAction.SELECT, value=mode.value
+                    ).pack(),
+                )
+            )
+        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
+
+        text = (
+            "🗣 <b>Speech Recognition Settings</b>\n\n"
+            "Select speech recognition mode for this chat:\n\n"
+            "• <b>Off</b>: Disabled completely.\n"
+            "• <b>Manual only</b>: Transcribe voice messages via <code>/transcribe</code> reply.\n"
+            "• <b>Manual + automatic</b>: Transcribes voice messages automatically and supports "
+            "<code>/transcribe</code>.\n\n"
+            "💡 <i>Automatic recognition runs locally and offline. No voice audio or transcripts are retained.</i>"
+        )
+        if context.target_chat_id < 0:
+            text += f"\n\nGroup: <code>{context.target_chat_id}</code>"
+        await self._render(msg, text, builder, context)
+
+    async def _handle_speech_callback(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
+        """Apply three-state speech mode change with authority checks.
+
+        Args:
+            query: Callback query carrying the selection.
+            callback_data: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
+        if not callback_data.value:
+            await self._show_speech_menu(query, context)
+            return
+        try:
+            new_mode = SpeechMode(callback_data.value)
+        except ValueError:
+            await query.answer("Invalid speech mode.", show_alert=True)
+            return
+        target = await self._speech_target(query, context)
+        if target is None:
+            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            return
+        transport_kind = "private" if context.transport_chat_id > 0 else "group"
+        try:
+            accepted_mode = await self._speech_settings.set_mode(
+                target,
+                new_mode,
+                actor=ActorContext.telegram(query.from_user.id),
+                transport_kind=transport_kind,
+            )
+        except PermissionError, ValueError:
+            await query.answer("Speech configuration unavailable.", show_alert=True)
+            return
+        mode_name = accepted_mode.value.replace("_", " ").capitalize()
+        await query.answer(f"Speech mode set to: {mode_name}")
+        await self._show_speech_menu(query, context)
 
     async def handle_close(self, query: CallbackQuery) -> None:
         """Handle close button by deleting the window and unregistering from cleanup.

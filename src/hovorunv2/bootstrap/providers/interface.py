@@ -37,6 +37,7 @@ from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.recovery import RecoveryCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from hovorunv2.interface.telegram.handlers.speech import SpeechVoiceHandler, TranscribeCommand
 from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
@@ -84,6 +85,8 @@ class InterfaceAndUtilityProvider(Provider):
     feedback_command = provide(FeedbackCommand)
     group_management = provide(GroupManagementService)
     access_command = provide(AccessCommand)
+    transcribe_command = provide(TranscribeCommand)
+    speech_voice_handler = provide(SpeechVoiceHandler)
 
     @provide(scope=Scope.APP)
     def get_utility_commands(
@@ -121,10 +124,14 @@ class InterfaceAndUtilityProvider(Provider):
         access_command: AccessCommand,
         rich_media_commands: list[RichMediaCommand],
         utility_commands: UtilityCommands,
+        transcribe_command: TranscribeCommand,
+        speech_voice_handler: SpeechVoiceHandler,
     ) -> list[BaseCommand]:
         """Provide list of all bot commands."""
         return [
             access_command,
+            transcribe_command,
+            speech_voice_handler,
             *rich_media_commands,
             *utility_commands,
         ]

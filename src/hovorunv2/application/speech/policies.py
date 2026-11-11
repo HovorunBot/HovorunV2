@@ -1,5 +1,7 @@
 """Bound speech work and derive trigger selection from a single chat mode."""
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass
 
@@ -12,6 +14,29 @@ MAX_COMPUTE_THREADS = 2
 DEFAULT_MODEL_IDLE_SECONDS = 300
 SPEECH_POLICY = "speech"
 SPEECH_BUCKET = "family:speech"
+
+
+def speech_action_key(
+    chat_id: int,
+    source_message_id: int,
+    target_entity_id: int,
+    target_generation: int,
+    config_version: int = 1,
+) -> str:
+    """Hash stable speech deduplication metadata shared across manual and automatic triggers.
+
+    Args:
+        chat_id: Telegram ID of the source chat.
+        source_message_id: Telegram message ID of the voice or audio message.
+        target_entity_id: Primary database ID of the target chat or user.
+        target_generation: Lifecycle generation of the target entity.
+        config_version: Speech recognition configuration version.
+
+    Returns:
+        Hex-encoded dedupe key.
+    """
+    identity = ["speech", chat_id, target_entity_id, target_generation, source_message_id, config_version]
+    return hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
 
 
 def speech_selected(mode: SpeechMode, feature: str) -> bool:

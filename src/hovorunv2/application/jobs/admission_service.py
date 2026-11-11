@@ -26,10 +26,17 @@ from hovorunv2.application.jobs.feature_jobs import (
     JobTarget,
     SealedPayload,
 )
+from hovorunv2.application.speech.policies import speech_action_key
 from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.application.usage.policies import ResolvedUsage
 from hovorunv2.application.usage.usage_policy_service import UsagePolicyService
-from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, SPLIT_TO_PROVIDER_COMMAND, CommandName, TargetKind
+from hovorunv2.domain.enums import (
+    PROVIDER_SPLIT_COMMANDS,
+    SPEECH_COMMANDS,
+    SPLIT_TO_PROVIDER_COMMAND,
+    CommandName,
+    TargetKind,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +126,14 @@ class AdmissionService:
 
     def _dedupe_matches(self, envelope: JobEnvelope) -> bool:
         """Bind acceptance to stable incoming metadata, never URL or processing time."""
+        if envelope.feature in SPEECH_COMMANDS:
+            expected = speech_action_key(
+                envelope.target.telegram_id,
+                envelope.message_id,
+                envelope.target.entity_id,
+                envelope.target.generation,
+            )
+            return envelope.dedupe_key == expected
         expected = incoming_action_key(
             envelope.feature, envelope.target.telegram_id, envelope.actor_id, envelope.message_id, envelope.trigger
         )

@@ -38,6 +38,7 @@ from hovorunv2.application.operations.cleanup_service import CleanupService
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceService
 from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.application.settings.settings_session_service import SettingsSessionService
+from hovorunv2.application.speech.ports import SpeechSettingsStore
 from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.application.usage.usage_view import UsageViewService
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
@@ -88,6 +89,7 @@ async def private_runtime(
             service,
             await container.get(UsageViewService),
             await container.get(NotificationPreferenceService),
+            await container.get(SpeechSettingsStore),
         )
         yield bot, command, service
 
