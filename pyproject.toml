@@ -43,7 +43,7 @@ migrate = [
     "redis",
 ]
 worker-ops = [
-    "celery[redis]>=5.7.0rc1",
+    "celery[redis]",
     "redis",
     "requests",
 ]

@@ -844,7 +844,7 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'worker-media'" },
     { name = "casbin" },
     { name = "celery", extras = ["redis"], marker = "extra == 'bot'" },
-    { name = "celery", extras = ["redis"], marker = "extra == 'worker-ops'", specifier = ">=5.7.0rc1" },
+    { name = "celery", extras = ["redis"], marker = "extra == 'worker-ops'" },
     { name = "cryptography" },
     { name = "ctranslate2", marker = "extra == 'worker-media'" },
     { name = "curl-cffi", marker = "extra == 'worker-media'" },
