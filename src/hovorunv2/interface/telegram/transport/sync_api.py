@@ -30,6 +30,7 @@ class TelegramMethod(StrEnum):
     DELETE_MESSAGE = "deleteMessage"
     GET_CHAT_MEMBER = "getChatMember"
     GET_CHAT_ADMINISTRATORS = "getChatAdministrators"
+    GET_FILE = "getFile"
 
 
 class NativeTelegramAPI:
@@ -126,6 +127,7 @@ class NativeTelegramAPI:
         reply_markup: str | None = None,
         disable_web_page_preview: bool = True,
         reply_to_message_id: int | None = None,
+        message_thread_id: int | None = None,
     ) -> int | None:
         """Send formatted text message and return message ID if delivered.
 
@@ -136,6 +138,7 @@ class NativeTelegramAPI:
             reply_markup: Optional serialized reply markup.
             disable_web_page_preview: Whether to disable link previews.
             reply_to_message_id: Optional message to reply to.
+            message_thread_id: Optional Telegram forum topic thread ID.
 
         Returns:
             Delivered message ID, or None when the API rejects or transport fails.
@@ -150,6 +153,8 @@ class NativeTelegramAPI:
             data["reply_markup"] = reply_markup
         if reply_to_message_id is not None:
             data["reply_to_message_id"] = reply_to_message_id
+        if message_thread_id is not None:
+            data["message_thread_id"] = message_thread_id
         try:
             result = self.call(TelegramMethod.SEND_MESSAGE, data=data)
         except TelegramRejectedError, TelegramDeliveryUncertainError:
@@ -195,6 +200,46 @@ class NativeTelegramAPI:
             return False
         else:
             return isinstance(result, dict)
+
+    def get_file(self, file_id: str) -> dict[str, object] | None:
+        """Fetch file metadata including file_path."""
+        try:
+            result = self.call(TelegramMethod.GET_FILE, data={"file_id": file_id})
+        except TelegramRejectedError, TelegramDeliveryUncertainError:
+            return None
+        return result if isinstance(result, dict) else None
+
+    def download_file_bytes(self, file_path: str) -> bytes:
+        """Stream and download file bytes from Telegram Bot API."""
+        file_url = self._base.replace("/bot", "/file/bot") + file_path.lstrip("/")
+        return self._http.download_bytes(file_url)
+
+    def send_document(
+        self,
+        chat_id: int,
+        filename: str,
+        content: bytes,
+        *,
+        caption: str | None = None,
+        reply_to_message_id: int | None = None,
+        message_thread_id: int | None = None,
+    ) -> int | None:
+        """Send text document attachment and return message ID if delivered."""
+        data: dict[str, str | int | float | bool] = {"chat_id": chat_id}
+        if caption:
+            data["caption"] = caption
+        if reply_to_message_id is not None:
+            data["reply_to_message_id"] = reply_to_message_id
+        if message_thread_id is not None:
+            data["message_thread_id"] = message_thread_id
+        if message_thread_id is not None:
+            data["message_thread_id"] = message_thread_id
+        files: HTTPFiles = {"document": (filename, content, "text/plain; charset=utf-8")}
+        try:
+            result = self.call(TelegramMethod.SEND_DOCUMENT, data=data, files=files)
+        except TelegramRejectedError, TelegramDeliveryUncertainError:
+            return None
+        return _require_message_id(result)
 
 
 def _api_result(response: object) -> object:

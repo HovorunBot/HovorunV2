@@ -55,6 +55,7 @@ class Settings(BrokerSettings, DatabaseSettings, ErrorLoggingSettings):
     translation_model_dir: Path = Path("/app/data/models/nllb-200-distilled-600M-int8")
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
+    speech_model_dir: Path = Path("/app/data/models/speech")
     browser_enabled: bool = False
     browser_max_tabs: int = 4
     browser_idle_timeout: int = 600  # 10 minutes

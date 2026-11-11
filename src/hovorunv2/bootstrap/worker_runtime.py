@@ -45,6 +45,7 @@ from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClien
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from hovorunv2.interface.telegram.transport.sync_prompts import SyncTelegramUnauthorizedPromptSender
 lazy from hovorunv2.bootstrap.worker_media_runner import create_feature_runner
+lazy from hovorunv2.bootstrap.worker_speech_runner import create_speech_runner
 
 if TYPE_CHECKING:
     from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from hovorunv2.application.media.deadlines import ExtractionDeadline
     from hovorunv2.application.media.errors import MediaFailure
     from hovorunv2.application.media.payloads import RichMediaPayload
+    from hovorunv2.application.speech.runner import SpeechJobRunner
 
 RUNTIME_SOCKET_SECONDS = 2
 DEFAULT_SAFETY = UsageSafetyCaps()
@@ -276,6 +278,7 @@ class WorkerChildContext:
         self._browser: SyncBrowserPort | None = None
         self._publisher: WorkerQueuePublisher | None = None
         self._operations: WorkerOperationsRunner | None = None
+        self._speech_runner: SpeechJobRunner | None = None
         self._opened = runner is not None
         self._resources = ExitStack()
 
@@ -318,10 +321,25 @@ class WorkerChildContext:
             WorkerRole.MEDIA,
             WorkerRole.BROWSER,
             WorkerRole.COMPRESSION,
-            WorkerRole.SPEECH,
             WorkerRole.ALL,
         }:
             self._runner = self._open_feature_runner(database, runtime, http, api)
+
+        # 3. Initialize speech runner if role includes speech
+        if self._role in {WorkerRole.SPEECH, WorkerRole.ALL}:
+            self._speech_runner = create_speech_runner(
+                settings=self._settings,
+                resources=self._resources,
+                admission=runtime.admission,
+                payloads=runtime.payloads,
+                budgets=runtime.budgets,
+                client=runtime.client,
+                db=database,
+                api=api,
+                clock=self._clock,
+                safety=self._safety,
+                namespace=self._namespace,
+            )
 
     def _open_operations_runner(
         self, database: WorkerDatabase, runtime: WorkerRuntime, api: NativeTelegramAPI
@@ -400,6 +418,14 @@ class WorkerChildContext:
         return self._runner
 
     @property
+    def speech_runner(self) -> SpeechJobRunner:
+        """Expose initialized speech runner to speech task execution."""
+        if self._speech_runner is None:
+            msg = f"Speech runner is not initialized for role={self._role.value}"
+            raise ValueError(msg)
+        return self._speech_runner
+
+    @property
     def operations(self) -> WorkerOperationsRunner:
         """Expose initialized operations runner to maintenance task execution."""
         if self._operations is None:
@@ -435,6 +461,7 @@ class WorkerChildContext:
             self._resources.close()
         finally:
             self._operations = None
+            self._speech_runner = None
             self._runner = None
             self._publisher = None
             self._browser = None
@@ -482,6 +509,8 @@ def init_worker_child(
 
 
 def _execute_task_in_child(envelope: dict[str, object], stage: JobStage) -> str:
+    if stage == JobStage.SPEECH:
+        return get_worker_speech_runner().run(envelope)
     return get_worker_runner().run(envelope, stage)
 
 
@@ -503,6 +532,14 @@ def get_worker_runner() -> FeatureJobRunner:
         init_worker_child()
     assert _current_worker_context is not None
     return _current_worker_context.runner
+
+
+def get_worker_speech_runner() -> SpeechJobRunner:
+    """Return the active SpeechJobRunner for the current child process."""
+    if _current_worker_context is None:
+        init_worker_child()
+    assert _current_worker_context is not None
+    return _current_worker_context.speech_runner
 
 
 def get_worker_operations_runner() -> WorkerOperationsRunner:

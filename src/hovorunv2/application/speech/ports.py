@@ -24,6 +24,45 @@ class SpeechRecognitionPort(Protocol):
         ...
 
 
+class SyncTelegramSpeechPort(Protocol):
+    """Synchronous Telegram API subset required by speech worker runner."""
+
+    def get_file(self, file_id: str) -> dict[str, object] | None:
+        """Fetch Telegram file metadata."""
+        ...
+
+    def download_file_bytes(self, file_path: str) -> bytes:
+        """Download raw file bytes from Telegram Bot API."""
+        ...
+
+    def send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        parse_mode: str = "HTML",
+        reply_markup: str | None = None,
+        disable_web_page_preview: bool = True,
+        reply_to_message_id: int | None = None,
+        message_thread_id: int | None = None,
+    ) -> int | None:
+        """Send message text to chat."""
+        ...
+
+    def send_document(
+        self,
+        chat_id: int,
+        filename: str,
+        content: bytes,
+        *,
+        caption: str | None = None,
+        reply_to_message_id: int | None = None,
+        message_thread_id: int | None = None,
+    ) -> int | None:
+        """Send file document to chat."""
+        ...
+
+
 class SpeechSettingsStore(Protocol):
     """Own exact-target mode reads and atomic current-authority changes."""
 

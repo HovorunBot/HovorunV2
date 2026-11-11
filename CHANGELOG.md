@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **speech**: execute and deliver admitted transcripts
 - **jobs**: route speech through bounded admission
 - **speech**: add on-demand local CPU inference
 - **speech**: define per-chat recognition controls
