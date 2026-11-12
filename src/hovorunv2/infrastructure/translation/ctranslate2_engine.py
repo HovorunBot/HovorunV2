@@ -16,6 +16,7 @@ MAX_DECODING_TOKENS = 256
 MAX_SOURCE_TOKENS = 512
 MAX_CAPTION_CHARACTERS = 16384
 MAX_CAPTION_LINES = 64
+END_OF_SENTENCE = "</s>"
 
 
 class CTranslate2Engine(TranslationEnginePort):
@@ -102,13 +103,18 @@ class CTranslate2Engine(TranslationEnginePort):
             msg = "Caption line exceeds translation token bounds"
             raise TranslationError(msg)
         results = translator.translate_batch(
-            [[source, *pieces, "</s>"] for pieces in tokens],
+            [[source, *pieces, END_OF_SENTENCE] for pieces in tokens],
             target_prefix=[[target] for _index in indexes],
             beam_size=BEAM_SIZE,
             max_decoding_length=MAX_DECODING_TOKENS,
+            return_end_token=True,
         )
         for index, result in zip(indexes, results, strict=True):
             pieces = result.hypotheses[0]
+            if not pieces or pieces[-1] != END_OF_SENTENCE:
+                msg = "Local translation exceeded the output limit"
+                raise TranslationError(msg)
+            pieces = pieces[:-1]
             if pieces and pieces[0] == target:
                 pieces = pieces[1:]
             translated = processor.decode(pieces).strip()

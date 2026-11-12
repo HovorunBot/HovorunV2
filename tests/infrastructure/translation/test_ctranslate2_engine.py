@@ -111,3 +111,24 @@ def test_real_nllb_translation_preserves_paragraphs() -> None:
             assert lines[2].strip()
         finally:
             engine.close()
+
+
+@pytest.mark.slow
+def test_incomplete_translation_is_rejected_and_engine_remains_usable() -> None:
+    """Reject a capped hypothesis instead of presenting a silently incomplete translation."""
+    directory = os.environ.get("HOVORUN_TRANSLATION_TEST_MODEL_DIR")
+    if directory is None:
+        pytest.skip("Set HOVORUN_TRANSLATION_TEST_MODEL_DIR to run qualified model inference")
+    caption = " ".join(
+        f"Le voyage numéro {index} commence demain et nous allons visiter la montagne." for index in range(1, 30)
+    )
+    with ModelHTTPClient() as http:
+        engine = CTranslate2Engine(ModelStore(Path(directory), http))
+        try:
+            with pytest.raises(TranslationError):
+                engine.translate(caption, "fr", "uk")
+            translated = engine.translate("Bonjour, voici une photographie de notre voyage.", "fr", "uk")
+            assert translated.strip()
+            assert "</s>" not in translated
+        finally:
+            engine.close()

@@ -96,3 +96,23 @@ async def test_unavailable_local_model_keeps_original_caption_deliverable(
         assert result == CAPTION
         assert server.requests
         assert all(request.body == b"" and CAPTION not in request.path for request in server.requests)
+
+
+async def test_incomplete_local_translation_keeps_the_entire_original_caption(
+    test_container: AsyncContainer, postgres_database_url: str
+) -> None:
+    """Keep all source content when native inference reaches its decoding limit."""
+    directory = os.environ.get("HOVORUN_TRANSLATION_TEST_MODEL_DIR")
+    if directory is None:
+        pytest.skip("Set HOVORUN_TRANSLATION_TEST_MODEL_DIR to run qualified model inference")
+    caption = " ".join(
+        f"Le voyage numéro {index} commence demain et nous allons visiter la montagne." for index in range(1, 30)
+    )
+    settings = await test_container.get(Settings)
+    with ModelHTTPClient() as http, WorkerDatabase(database_config(postgres_database_url)) as worker:
+        engine = CTranslate2Engine(ModelStore(Path(directory), http))
+        service = NativeTranslationService(Py3LangIdDetector(), engine, settings, worker.policies)
+        try:
+            assert await asyncio.to_thread(service.escape_and_translate, caption, GROUP) == caption
+        finally:
+            engine.close()
