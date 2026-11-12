@@ -225,3 +225,22 @@ async def test_unreadable_admission_raises_inside_queue_and_is_contained_at_work
             await queue.inspect(envelope.job_id)
         with pytest.raises(AdmissionUnavailableError):
             await asyncio.to_thread(runtime.admission.get, envelope.job_id)
+
+
+async def test_enqueue_routes_speech_job_to_speech_queue(test_container: AsyncContainer) -> None:
+    """Enqueuing a speech feature envelope publishes to the speech queue, not the media queue."""
+    settings = await test_container.get(Settings)
+    clock = ManualClock(time.time())
+    async with runtime_cache(test_container) as (cache, namespace):
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        try:
+            envelope = job_envelope("b" * 32, clock, feature="transcribe")
+            await admit_test_job(settings, cache, namespace, clock, envelope)
+            assert await queue.enqueue(envelope) == EnqueueState.ENQUEUED
+            media_messages = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+            assert not media_messages
+            speech_messages = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "speech")
+            assert len(speech_messages) == 1
+            assert speech_messages[0] == envelope.model_dump(mode="json")
+        finally:
+            await queue.close()

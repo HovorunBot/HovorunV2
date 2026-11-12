@@ -12,7 +12,12 @@ from celery.worker.request import Request
 from sqlalchemy.engine import make_url
 
 from hovorunv2.application.jobs.admission import JobStage
-from hovorunv2.application.jobs.feature_jobs import FEATURE_JOB_FUNCTION, JobEnvelope
+from hovorunv2.application.jobs.feature_jobs import (
+    COMPRESSION_JOB_FUNCTION,
+    FEATURE_JOB_FUNCTION,
+    SPEECH_JOB_FUNCTION,
+    JobEnvelope,
+)
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.infrastructure.config import DatabaseSettings, ErrorLoggingSettings, Settings
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
@@ -122,7 +127,13 @@ def configure_worker_logging(logger: logging.Logger, **kwargs: object) -> None:
 @task_received.connect
 def log_received_feature_task(request: Request, **kwargs: object) -> None:
     """Record parent receipt before a prefork child claims the feature task."""
-    if request.name not in {FEATURE_JOB_FUNCTION, "run_media_job", "run_browser_job"}:
+    if request.name not in {
+        FEATURE_JOB_FUNCTION,
+        SPEECH_JOB_FUNCTION,
+        COMPRESSION_JOB_FUNCTION,
+        "run_media_job",
+        "run_browser_job",
+    }:
         return
     try:
         envelope = JobEnvelope.model_validate(request.kwargs.get("envelope"))

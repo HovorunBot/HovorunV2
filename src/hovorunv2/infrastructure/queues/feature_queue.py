@@ -365,9 +365,17 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
             publication = await self._admission.register_publication(envelope, not_before)
             if not publication.should_publish or publication.ticket is None:
                 return publication.state
-            if not await asyncio.to_thread(self._publish, envelope, publication.not_before):
-                return EnqueueState.EXPIRED
             ticket = publication.ticket
+            queue = {
+                JobStage.MEDIA: self._media_queue,
+                JobStage.BROWSER: self._browser_queue,
+                JobStage.COMPRESSION: self._compression_queue,
+                JobStage.SPEECH: self._speech_queue,
+            }[ticket.stage]
+            if not await asyncio.to_thread(
+                self._publish, envelope, publication.not_before, queue_name=queue, stage=ticket.stage
+            ):
+                return EnqueueState.EXPIRED
             await self._admission.ack_publication(envelope.job_id, ticket.stage, ticket.attempt)
         except AdmissionUnavailableError, RedisError, OperationalError, OSError:
             return EnqueueState.UNAVAILABLE

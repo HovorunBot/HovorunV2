@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Fix
+
+- **queues**: route initial speech tasks to speech queue
+
 ## v0.5.1.1 (2026-11-12)
 
 ### Fix
