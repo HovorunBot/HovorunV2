@@ -58,7 +58,7 @@ worker-media = [
 ]
 worker-browser = [
     "hovorunv2[worker-media]",
-    "pydoll-python>=3.0.1,<4.0",
+    "pydoll-python",
 ]
 browser = [
     "hovorunv2[worker-browser]",
