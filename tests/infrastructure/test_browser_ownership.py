@@ -68,6 +68,27 @@ def test_owned_chromium_reaps_process_and_removes_profile() -> None:
 
 
 @pytest.mark.slow
+def test_owned_chromium_starts_with_readonly_user_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep Chromium startup independent of a container user's unwritable home or shared configuration."""
+    home = tmp_path / "home"
+    home.mkdir()
+    home.chmod(0o555)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    browser = OwnedChromium()
+    try:
+        browser.start()
+        assert browser.is_running
+    finally:
+        browser.close()
+        home.chmod(0o700)
+    assert not list(home.iterdir())
+    assert not browser.is_running
+
+
+@pytest.mark.slow
 def test_startup_timeout_reaps_process_and_removes_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A real launched process cannot outlive its failed attachment or retain a temporary profile."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))

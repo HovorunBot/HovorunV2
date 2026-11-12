@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 from contextlib import suppress
-from os import getpid
+from os import environ, getpid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import RLock
@@ -150,7 +150,12 @@ class OwnedChromium:
                 "hovorunv2.infrastructure.browser.chromium_launcher",
                 *browser_arguments,
             ]
-        self._process = subprocess.Popen(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: S603
+        self._process = subprocess.Popen(  # noqa: S603
+            arguments,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=environ | {"XDG_CONFIG_HOME": self._profile.name},
+        )
         return self._process, Path(self._profile.name)
 
     def _read_debug_address(self, active_port: Path) -> str | None:
