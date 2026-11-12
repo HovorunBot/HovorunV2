@@ -160,7 +160,7 @@ xfail_strict = true
 filterwarnings = [
     "error",
     # Accepted for pydoll 3.0.1 on Python 3.15; remove once upstream uses inspect.
-    "default:'asyncio.iscoroutinefunction' is deprecated.*:DeprecationWarning:pydoll\\..*",
+    "ignore:'asyncio.iscoroutinefunction' is deprecated.*:DeprecationWarning:pydoll\\..*",
     "ignore:Exception ignored while finalizing socket:pytest.PytestUnraisableExceptionWarning",
 ]
 markers = [
