@@ -198,12 +198,16 @@ class DockerStack:
                 "--no-deps",
                 "-T",
                 "--volume",
-                f"{volume}:/app/data/models/speech:rw",
+                # Use a separate target: Compose can retain the service's read-only flag
+                # when a run-time volume replaces a mount at the same destination.
+                f"{volume}:/speech-models:rw",
                 "worker-speech",
                 "/app/.venv/bin/python",
                 "-m",
                 "hovorunv2.bootstrap.speech_assets",
                 "prepare",
+                "--model-dir",
+                "/speech-models",
             ]
         )
 

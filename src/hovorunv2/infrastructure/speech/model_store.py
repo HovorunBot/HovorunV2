@@ -1,5 +1,6 @@
 """Provision pinned speech model assets atomically without buffering model weights."""
 
+import errno
 import fcntl
 import hashlib
 import shutil
@@ -20,6 +21,33 @@ SPEECH_MODEL_BASE_URL = f"https://huggingface.co/{SPEECH_MODEL_REPOSITORY}/resol
 MODEL_DOWNLOAD_SECONDS = 90
 MODEL_LOCK_SECONDS = 10
 MODEL_LOCK_POLL_SECONDS = 0.05
+MODEL_FILESYSTEM_HINTS = {
+    errno.EACCES: "The model volume and its assets must be writable by the container user during preparation.",
+    errno.EPERM: "The model volume and its assets must be writable by the container user during preparation.",
+    errno.EROFS: (
+        "Preparation requires a writable model volume; use make prepare-speech rather than a read-only worker mount."
+    ),
+    errno.ENOSPC: "Free disk space for the model inventory and its temporary download is required.",
+    errno.EDQUOT: "The model volume's storage quota must allow the inventory and its temporary download.",
+    errno.ENOENT: "A required model directory or packaged license notice is missing.",
+}
+
+
+class SpeechModelFilesystemError(SpeechRecognitionError):
+    """Report asset filesystem failures with safe, actionable operator diagnostics."""
+
+    def __init__(self, error: OSError) -> None:
+        """Translate a filesystem failure without retaining paths or raw exception messages.
+
+        Args:
+            error: Filesystem error whose operational errno selects a safe diagnostic.
+        """
+        super().__init__(SpeechFailure.MODEL_UNAVAILABLE)
+        code = errno.errorcode.get(error.errno or 0, "UNKNOWN")
+        hint = MODEL_FILESYSTEM_HINTS.get(
+            error.errno or 0, "Check model volume permissions, free space and disk health."
+        )
+        self.add_note(f"Speech asset filesystem error: {code}. {hint}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,11 +138,13 @@ class SpeechModelStore:
     def ensure(self) -> Path:
         """Return a complete pinned model directory, retaining attribution alongside weights.
 
+        Locking and download failures propagate SpeechRecognitionError.
+
         Returns:
             Directory containing verified model artifacts and their license notices.
 
         Raises:
-            SpeechRecognitionError: If locking, provisioning, or local filesystem operations fail.
+            SpeechModelFilesystemError: If the model volume or packaged assets cannot be accessed.
         """
         try:
             self._directory.mkdir(parents=True, exist_ok=True)
@@ -123,8 +153,8 @@ class SpeechModelStore:
                 for artifact in self._artifacts:
                     self._ensure_file(artifact)
                 self._install_notices()
-        except OSError:
-            raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE) from None
+        except OSError as error:
+            raise SpeechModelFilesystemError(error) from None
         return self._directory
 
     def require_ready(self) -> Path:

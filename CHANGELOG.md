@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Fix
+
+- **speech**: prepare models through a writable volume mount
+
 ## v0.5.0 (2026-11-12)
 
 ### Feat

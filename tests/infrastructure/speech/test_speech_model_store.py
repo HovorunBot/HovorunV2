@@ -1,6 +1,7 @@
 """Verify speech model storage, integrity checks, and cache reuse."""
 
 import hashlib
+import traceback
 from pathlib import Path
 
 import pytest
@@ -77,3 +78,20 @@ def test_preparation_writes_only_inside_its_model_volume(tmp_path: Path) -> None
         finally:
             tmp_path.chmod(0o700)
     assert sorted(path.name for path in tmp_path.iterdir()) == ["models"]
+
+
+def test_preparation_reports_filesystem_failure_without_exposing_paths(tmp_path: Path) -> None:
+    """Give operators an actionable permission diagnosis without exposing raw filesystem errors."""
+    directory = tmp_path / "private-location"
+    directory.mkdir()
+    with SpeechModelHTTPClient() as http:
+        directory.chmod(0o555)
+        try:
+            with pytest.raises(SpeechRecognitionError) as failure:
+                SpeechModelStore(directory, http).ensure()
+        finally:
+            directory.chmod(0o700)
+    diagnostic = "".join(traceback.format_exception_only(failure.value))
+    assert "EACCES" in diagnostic
+    assert "writable" in diagnostic
+    assert str(directory) not in diagnostic

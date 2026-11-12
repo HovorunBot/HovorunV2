@@ -337,7 +337,7 @@ async def test_speech_preparation_does_not_enable_or_start_worker(tmp_path: Path
     calls = scenario.calls()
     preparation = next(call for call in calls if "run" in call)
     assert "--no-deps" in preparation
-    assert "synthetic-speech-models:/app/data/models/speech:rw" in preparation
-    assert preparation[-1] == "prepare"
+    assert "synthetic-speech-models:/speech-models:rw" in preparation
+    assert preparation[-3:] == ["prepare", "--model-dir", "/speech-models"]
     assert not any("up" in call or "start" in call for call in calls)
     assert await scenario.run("run", "--rm", "worker-speech") != 0
