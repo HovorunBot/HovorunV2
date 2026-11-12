@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **compression**: bound worker and translation memory usage
 - **browser**: keep Chromium configuration in its owned profile
 - **translation**: share model assets with compression workers
 - **speech**: accept audio sent on behalf of a chat

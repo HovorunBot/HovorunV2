@@ -184,6 +184,6 @@ CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app",
 FROM worker-browser AS worker-compression
 
 ENV WORKER_ROLE=compression
-CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "work:{work}:compression", "--concurrency=2"]
+CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "work:{work}:compression", "--concurrency=1"]
 
 FROM bot AS default

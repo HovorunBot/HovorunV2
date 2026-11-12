@@ -130,7 +130,7 @@ Bot, media, browser, compression, operations, singleton Beat and migration run a
 
 Every extracted video hands off to the `compression` stage before delivery. Its dedicated Celery task is
 `run_compression_job`, routed to `work:{work}:compression`; both Compose stacks start `worker-compression` with
-prefork concurrency two and prefetch one. The existing Valkey execution reservation remains held across the handoff:
+prefork concurrency one, prefetch one, two CPUs and a default 2 GiB memory allowance. This serializes the child-owned translation model and media buffers within one container; the image entrypoint also defaults to one child. The existing Valkey execution reservation remains held across the handoff:
 the default global concurrency ceiling of two applies across worker replicas, including administrator requests.
 Cancellation, original deadlines, current access checks and duplicate-execution fences remain admission-owned.
 A deduplicated preparation notice tells the requester that oversized videos will be compressed before delivery.
@@ -278,7 +278,7 @@ Media/browser worker children construct mandatory detector/engine dependencies. 
 
 The model store streams immutable, size/SHA-256-checked assets into temporary files under a bounded exclusive file lock, then atomically publishes them. The total download deadline is checked between available body reads, including steadily arriving partial chunks; connection, TLS and header waits retain their bounded socket timeouts. Incomplete files are removed; corrupted cached artifacts are repaired. A persistent `translation_models` volume is mounted at `/app/data/models` in media, browser and compression workers. `TRANSLATION_MODEL_DIR` selects the artifact directory. Provisioning/download failures are semantic `TranslationError` failures, recovered by the application by preserving the original caption. Invalid/unsupported input is rejected before model loading.
 
-The code remains BSD-3-Clause. NLLB weights remain separately licensed CC BY-NC 4.0 with full license and attribution copied beside every provisioned model. See [third-party notices](../THIRD_PARTY_NOTICES.md). The selected model is for the current noncommercial stage; commercial use requires a model/license review. Source lines over 512 tokens and captions over the configured fixed bounds skip optional translation. Output is bounded to 256 decoding tokens per nonblank line; hypotheses without a model end-of-sequence marker are rejected so the original caption remains deliverable without an incomplete translation. Paragraph breaks are preserved.
+The code remains BSD-3-Clause. NLLB weights remain separately licensed CC BY-NC 4.0 with full license and attribution copied beside every provisioned model. See [third-party notices](../THIRD_PARTY_NOTICES.md). The selected model is for the current noncommercial stage; commercial use requires a model/license review. Source lines over 512 tokens and captions over the configured fixed bounds skip optional translation. Native inference processes one nonblank line per batch to bound working memory. Output is bounded to 256 decoding tokens per nonblank line; hypotheses without a model end-of-sequence marker are rejected so the original caption remains deliverable without an incomplete translation. Paragraph breaks are preserved.
 
 ### Optional local speech worker
 

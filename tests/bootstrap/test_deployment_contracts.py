@@ -261,3 +261,14 @@ def test_speech_worker_is_optional_bounded_and_uses_readonly_assets(filename: st
     assert speech["environment"]["WORKER_ROLE"] == "speech"
     assert "speech_models" in compose["volumes"]
     assert compose["services"]["bot"]["environment"]["SPEECH_ENABLED"] == "${SPEECH_ENABLED:-False}"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("filename", ["docker-compose.prod.yml", "docker-compose.dev.yml"])
+def test_compression_serializes_model_and_video_memory_within_its_container(filename: str) -> None:
+    """Prevent concurrent model allocations from exceeding the default compression memory allowance."""
+    root = Path(__file__).resolve().parents[2]
+    service = yaml.safe_load((root / filename).read_text())["services"]["worker-compression"]
+    assert "--concurrency=1" in service["command"]
+    assert service["mem_limit"] == "${WORKER_COMPRESSION_MEMORY_LIMIT:-2g}"
+    assert service["cpus"] == 2

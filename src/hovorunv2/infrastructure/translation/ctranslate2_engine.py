@@ -11,6 +11,7 @@ from hovorunv2.infrastructure.translation.model_store import ModelStore
 
 INFERENCE_INTER_THREADS = 1
 INFERENCE_INTRA_THREADS = 2
+INFERENCE_BATCH_SIZE = 1
 BEAM_SIZE = 2
 MAX_DECODING_TOKENS = 256
 MAX_SOURCE_TOKENS = 512
@@ -106,6 +107,7 @@ class CTranslate2Engine(TranslationEnginePort):
             [[source, *pieces, END_OF_SENTENCE] for pieces in tokens],
             target_prefix=[[target] for _index in indexes],
             beam_size=BEAM_SIZE,
+            max_batch_size=INFERENCE_BATCH_SIZE,
             max_decoding_length=MAX_DECODING_TOKENS,
             return_end_token=True,
         )

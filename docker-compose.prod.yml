@@ -188,8 +188,9 @@ services:
       - "--queues=work:{work}:browser"
 
   worker-compression:
-    mem_limit: ${WORKER_COMPRESSION_MEMORY_LIMIT:-1536m}
+    mem_limit: ${WORKER_COMPRESSION_MEMORY_LIMIT:-2g}
     pids_limit: 512
+    cpus: 2
     logging: *logging
     image: hovorunv2-worker-compression:${APP_TAG:-latest}
     build:
@@ -220,7 +221,7 @@ services:
       - hovorunv2.bootstrap.worker_app:celery_app
       - worker
       - --pool=prefork
-      - --concurrency=2
+      - --concurrency=1
       - --max-tasks-per-child=1
       - --loglevel=INFO
       - --without-gossip
