@@ -12,6 +12,8 @@ description: Use when executing an approved block from an ai-schemes initiative.
 - `BLOCKED`: Missing direct prerequisites or awaiting user clarification.
 - `DONE`: Implementation complete with passing test evidence and a written report. (Does not require or imply a Git commit).
 
+Apply the [canonical test-value policy](../../../AGENTS.md#5-testing-pythonpathsrc-uv-run-pytest) when planning, implementing or reviewing tests. Never duplicate static quality gates in pytest; require an independent observable contract and reject source/build-layout task-confirmation checks.
+
 ## Procedure
 
 1. **Select block:** Work on the selected block. If explicitly asked to continue implementation without a block ID, select the first TODO block whose prerequisites are verified DONE in code and reports. Do not infer implementation authorization from a planning request.

@@ -35,6 +35,8 @@ Keep links relative and dependencies explicit. Explicit user instructions take p
 - `BLOCKED`: Missing direct prerequisites or awaiting user clarification.
 - `DONE`: Implementation complete with passing test evidence and a written report. (Does not require or imply a Git commit).
 
+Apply the [canonical test-value policy](../../../AGENTS.md#5-testing-pythonpathsrc-uv-run-pytest) when planning, implementing or reviewing tests. Never duplicate static quality gates in pytest; require an independent observable contract and reject source/build-layout task-confirmation checks.
+
 ## Procedure
 
 1. **Inspect current state:** Inspect current code and existing plans/reports before designing changes. Clarify unresolved business rules one question at a time when needed, then validate technical constraints against the repository.

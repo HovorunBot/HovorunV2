@@ -4,6 +4,8 @@ Project conventions, privacy constraints and assistant instructions live in [AGE
 
 Contributors and LLM assistants must follow the [modern Python requirements](AGENTS.md#modern-python-requirements-for-contributors-and-llms), including selective native lazy imports, runtime annotation compatibility and the intentional Ruff `TC` exclusion.
 
+Follow the [test-value rules](AGENTS.md#5-testing-pythonpathsrc-uv-run-pytest): pytest must not duplicate Ruff, ty, import-linter or other static quality gates. Tests must protect independent behavioral or operational contracts and survive behavior-preserving refactors.
+
 ## Development
 
 Use Linux, WSL2, or a Linux container for development and worker execution. Native Windows execution is unsupported; native macOS is not a supported worker runtime.
@@ -18,7 +20,7 @@ Use Python 3.15+, uv and Docker for local PostgreSQL and Valkey. Install depende
 * `make stop-dev`: Stop the development stack without deleting volumes.
 * `make dev`: Start PostgreSQL and Valkey only, for host-side tests.
 * `make compose-config COMPOSE_ENV=dev`: Validate the standalone development configuration.
-* `uv run ty check src`: Strict type verification.
+* `uv run ty check src tests`: Strict type verification.
 * `uv run ruff check .`: Linting.
 * `uv run ruff format --check .`: Formatting verification.
 * `uv run lint-imports`: Enforce onion architecture layer contracts.
