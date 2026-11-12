@@ -43,7 +43,9 @@ async def test_republication_after_lost_ack_preserves_envelope_and_exclusive_cla
             async with redis.from_url(settings.valkey_url) as client:
                 # Real state at the crash window: broker accepted, application publish acknowledgement absent.
                 key = namespace.value + "admission:ticket:" + envelope.job_id
-                raw = json.loads(await client.get(key))
+                ticket_data = await client.get(key)
+                assert ticket_data is not None
+                raw = json.loads(ticket_data)
                 raw["published"] = 0
                 await client.set(key, json.dumps(raw))
             assert await queue.enqueue(envelope) == EnqueueState.EXISTS

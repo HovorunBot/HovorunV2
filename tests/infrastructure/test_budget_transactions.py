@@ -81,7 +81,9 @@ async def test_malformed_record_and_counter_overflow_fail_before_any_mutation(
         store = ValkeyBudgetStore(cache, namespace)
         assert (await store.reserve(request, clock.now(), (0, 0))).allowed
         key = prefix + "reservation:" + request.reservation_id
-        record = json.loads(await cache.client.get(key))
+        raw_record = await cache.client.get(key)
+        assert raw_record is not None
+        record = json.loads(raw_record)
         quota = record["quotas"][0]
         if damage == "redirect_rate":
             quota["rate"] = prefix + "unrelated"
@@ -155,7 +157,9 @@ async def test_terminal_receipt_replay_preserves_expiry_and_admin_empty_quota_re
         store = ValkeyBudgetStore(cache, namespace)
         assert (await store.reserve(request, clock.now(), (0, 0))).allowed
         key = namespace.value + "budget:reservation:" + request.reservation_id
-        raw = json.loads(await cache.client.get(key))
+        raw_entry = await cache.client.get(key)
+        assert raw_entry is not None
+        raw = json.loads(raw_entry)
         raw["quotas"] = {}
         await cache.client.set(key, json.dumps(raw))
         with WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime:

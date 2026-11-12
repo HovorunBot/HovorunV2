@@ -352,6 +352,7 @@ async def _interrupt_runtime_backend(
     current = await ValkeyAdmissionStore(cache, namespace).get(envelope.job_id)
     assert current is not None
     assert current.state == TicketState.SETTLING
+    assert saved is not None
     await cache.client.restore(quota_key, ttl, saved)
 
 

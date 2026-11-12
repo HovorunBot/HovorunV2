@@ -258,6 +258,7 @@ async def test_missing_subject_counter_blocks_owner_completion(test_container: A
         with pytest.raises(AdmissionUnavailableError):
             await store.finish(envelope.job_id, JobOutcome.COMPLETE, token=owner)
         raw = await cache.client.get(keys.ticket)
+        assert raw is not None
         assert json.loads(raw)["state"] == TicketState.RUNNING
         assert (await payloads.load(sealed.reference, sealed.job_id)).state == PayloadState.READY
 

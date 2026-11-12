@@ -79,6 +79,7 @@ async def native_recovery_worker(
                 assert process.is_alive()
                 await asyncio.sleep(0.05)
         child_pid = await cache.client.get(namespace.value + "probe:ready")
+        assert child_pid is not None
         assert int(child_pid) != process.pid
         yield
     finally:

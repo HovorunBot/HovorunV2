@@ -1,6 +1,7 @@
 """Integration tests for /transcribe command and automatic speech recognition ingress."""
 
 import json
+import secrets
 from datetime import UTC, datetime
 
 import pytest
@@ -28,6 +29,7 @@ from tests.utils.telegram import BOT_CREDENTIAL, RecordedResponse
 from tests.utils.telegram.session import RecordingBot, RecordingSession
 
 ANONYMOUS_SENDER_ID = 1087968824
+SYNTHETIC_MESSAGE_ID_BITS = 31
 
 
 def _send_message_payload(message_id: int) -> dict[str, object]:
@@ -185,6 +187,7 @@ async def test_transcribe_mode_matrix_and_admission(test_container: AsyncContain
         await handler.handle(cmd_msg.as_(bot), bot)
 
         # Verify job was admitted in admission port
+        assert target.entity_id is not None
         expected_dedupe = speech_action_key(GROUP, voice_msg.message_id, target.entity_id, target.generation)
         active_tickets = await admission_port.pending_for_feature(CommandName.TRANSCRIBE)
         assert len(active_tickets) >= 1
@@ -352,9 +355,11 @@ async def test_speech_distinguishes_chat_senders_from_actual_bots(
         target, SpeechMode.MANUAL_AND_AUTOMATIC, actor=ActorContext.cli(), transport_kind=None
     )
     (await test_container.get(Settings)).speech_enabled = True
+    admission = await test_container.get(AdmissionPort)
+    before = await _speech_job_ids(admission)
     chat_sender = source_kind in {"anonymous", "channel"}
     source = _create_voice_message(
-        message_id=600,
+        message_id=secrets.randbits(SYNTHETIC_MESSAGE_ID_BITS) or 1,
         user_id=ANONYMOUS_SENDER_ID if chat_sender else OTHER,
         is_bot=source_kind != "human",
     )
@@ -370,7 +375,9 @@ async def test_speech_distinguishes_chat_senders_from_actual_bots(
             handler = await test_container.get(SpeechVoiceHandler)
             assert await handler.is_triggered(source) == (source_kind != "bot")
             await handler.handle(source.as_(bot), bot)
-    tickets = await (await test_container.get(AdmissionPort)).pending_for_feature(feature)
+    tickets = [
+        ticket for ticket in await admission.pending_for_feature(feature) if ticket.envelope.job_id not in before
+    ]
     if source_kind == "bot":
         assert not tickets
         return

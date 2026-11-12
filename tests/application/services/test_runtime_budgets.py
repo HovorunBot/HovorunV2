@@ -331,7 +331,9 @@ async def test_rollover_does_not_hide_missing_prior_ownership(
             store = runtime.budgets if native else ValkeyBudgetStore(cache, namespace)
             assert (await _reserve_budget(store, BudgetRequest("prior", usage, ONE, 400), 179)).allowed
             reservation_key = namespace.value + "budget:reservation:prior"
-            record = json.loads(await cache.client.get(reservation_key))
+            raw_record = await cache.client.get(reservation_key)
+            assert raw_record is not None
+            record = json.loads(raw_record)
             keys = {
                 "reservation": reservation_key,
                 "quota": record["quotas"][0]["key"],
@@ -362,7 +364,9 @@ async def test_stale_reservation_reclaimed_after_grace_and_unblocks_future_windo
             request = BudgetRequest("stuck-job", usage, ONE, 200)
             assert (await _reserve_budget(store, request, 120)).allowed
             reservation_key = namespace.value + "budget:reservation:stuck-job"
-            record = json.loads(await cache.client.get(reservation_key))
+            raw_record = await cache.client.get(reservation_key)
+            assert raw_record is not None
+            record = json.loads(raw_record)
 
             assert await _expire_budget(store, 201) == 0
             assert await cache.client.zscore(namespace.value + "budget:active", "stuck-job") is not None
@@ -381,7 +385,9 @@ async def test_stale_reservation_reclaimed_after_grace_and_unblocks_future_windo
             assert isinstance(concurrency_members, (set, list))
             assert b"stuck-job" not in concurrency_members
 
-            settled_record = json.loads(await cache.client.get(reservation_key))
+            raw_settled = await cache.client.get(reservation_key)
+            assert raw_settled is not None
+            settled_record = json.loads(raw_settled)
             assert settled_record["state"] == ReservationState.EXPIRED.value
             assert settled_record["actual"] is None
 

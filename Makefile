@@ -215,9 +215,9 @@ format:
 	@uv run ruff format .
 	@uv run ruff check --fix .
 
-## Run strict ty type checking on src.
+## Run strict ty type checking on src and tests.
 type-check:
-	@uv run ty check src
+	@uv run ty check src tests
 
 ## Check application layer boundaries with import-linter.
 lint-imports:

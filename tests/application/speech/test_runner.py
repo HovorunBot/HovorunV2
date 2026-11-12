@@ -94,7 +94,9 @@ async def test_real_speech_delivery_is_accounted_once(test_container: AsyncConta
             assert (
                 await asyncio.to_thread(execution.runner.run, envelope.model_dump(mode="json")) == JobOutcome.COMPLETE
             )
-            assert execution.runtime.admission.get(envelope.job_id).state == TicketState.TERMINAL
+            ticket = execution.runtime.admission.get(envelope.job_id)
+            assert ticket is not None
+            assert ticket.state == TicketState.TERMINAL
             assert (
                 await asyncio.to_thread(execution.runner.run, envelope.model_dump(mode="json")) == JobOutcome.COMPLETE
             )
@@ -120,7 +122,9 @@ async def test_unselected_speech_never_downloads_or_recognizes(test_container: A
         with speech_execution(settings, namespace, clock, b"unread", missing_model=tmp_path) as execution:
             assert execution.runner.run(envelope.model_dump(mode="json")) == JobOutcome.CANCELLED
             assert execution.server.requests == []
-            assert execution.runtime.admission.get(envelope.job_id).state == TicketState.TERMINAL
+            ticket = execution.runtime.admission.get(envelope.job_id)
+            assert ticket is not None
+            assert ticket.state == TicketState.TERMINAL
 
 
 @pytest.mark.parametrize("uncertain", [True, False])
@@ -146,6 +150,7 @@ async def test_uncertain_send_stays_held_and_rejection_settles_zero(
             expected = TicketState.DELIVERY_UNCERTAIN if uncertain else JobOutcome.FAILED
             assert await asyncio.to_thread(execution.runner.run, envelope.model_dump(mode="json")) == expected
             ticket = execution.runtime.admission.get(envelope.job_id)
+            assert ticket is not None
             assert ticket.state == (TicketState.DELIVERY_UNCERTAIN if uncertain else TicketState.TERMINAL)
             await asyncio.to_thread(execution.runner.run, envelope.model_dump(mode="json"))
             assert len([request for request in execution.server.requests if request.path.endswith("/sendMessage")]) == 1

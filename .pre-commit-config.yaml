@@ -35,7 +35,7 @@ repos:
 
       - id: ty-check
         name: Type Checker (ty)
-        entry: uv run ty check src
+        entry: uv run ty check src tests
         language: system
         types: [python]
         pass_filenames: false

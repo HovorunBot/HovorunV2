@@ -26,7 +26,7 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Postg
 
 ## 4. Code Conventions
 
-- **Typing:** Strict hints required (`uv run ty check src`). Rely on native deferred annotation evaluation, introduced in Python 3.14 (PEPs 649/749) and available on the required Python 3.15+ runtime; NEVER use stringified forward refs, `# ty:ignore`, or `Any` casts to silence errors (`Any` allowed only on test mock factories).
+- **Typing:** Strict hints required (`uv run ty check src tests`). Rely on native deferred annotation evaluation, introduced in Python 3.14 (PEPs 649/749) and available on the required Python 3.15+ runtime; NEVER use stringified forward refs, `# ty:ignore`, or `Any` casts to silence errors (`Any` allowed only on test mock factories).
 - **Linter:** Strict Ruff (`ALL` ruleset, `uv run ruff check .`).
 - **Docstrings:** Google-style imperative summary with `Args:`/`Returns:`/`Yields:`/`Raises:` sections for public interfaces and non-trivial logic; types stay in signatures. See [docstring standard](docs/docstrings.md).
 - **Module Names:** Never name Python modules or packages after standard-library modules, including nested modules; Ruff A005 enforces this with strict checking.
@@ -102,7 +102,7 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Postg
 - **Dev Run:** `make run-dev` (complete development stack in Docker); `make dev` starts only PostgreSQL/Valkey for host-side tests
 - **Prod Run / Stop:** `make run` / `make stop`
 - **Test:** `PYTHONPATH=src uv run pytest`
-- **Type Check:** `uv run ty check src`
+- **Type Check:** `uv run ty check src tests`
 - **Lint:** `uv run ruff check .`
 - **Import Lint:** `uv run lint-imports`
 - **AI Plan Tools:** `make ai-check [SCHEME=...]` (validate plan manifests); `make ai-next SCHEME=...` (find next eligible block)

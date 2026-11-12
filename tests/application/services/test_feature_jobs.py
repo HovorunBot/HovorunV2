@@ -284,6 +284,7 @@ async def test_payload_encryption_size_deadline_and_safe_missing_states(test_con
             assert await client.pttl(namespace.value + "payload:" + sealed.reference) <= before
             assert 350_000 <= before <= 360_000
             raw = await client.get(namespace.value + "payload:" + sealed.reference)
+            assert isinstance(raw, bytes)
             assert PRIVATE_BODY not in raw
         finally:
             await client.aclose()
@@ -740,11 +741,15 @@ async def test_claimed_failure_releases_admission_without_refunding_uncertain_bu
                 )
                 request = BudgetRequest(envelope.job_id, usage, (UnitAmount(UsageUnit.REQUESTS, 1),), envelope.deadline)
                 assert runtime.budgets.reserve(request, clock.now(), (0,)).allowed
-                record = json.loads(await cache.client.get(budget_prefix + "reservation:" + envelope.job_id))
+                reservation_data = await cache.client.get(budget_prefix + "reservation:" + envelope.job_id)
+                assert reservation_data is not None
+                record = json.loads(reservation_data)
                 await _delete_quota_used(cache.client, record["quotas"][0]["key"])
             else:
                 payload_key = namespace.value + "payload:" + sealed.reference
-                metadata = json.loads(await cache.client.get(payload_key))
+                payload_data = await cache.client.get(payload_key)
+                assert payload_data is not None
+                metadata = json.loads(payload_data)
                 metadata["deadline"] = 10**400
                 await cache.client.set(payload_key, json.dumps(metadata))
             budget_before = {
