@@ -76,11 +76,17 @@ class ModelHTTPClient(NativeHTTPClient):
         digest = hashlib.sha256()
         size = 0
         with destination.open("wb") as output:
-            for chunk in response.iter_content(HTTP_CHUNK_BYTES):
+            while True:
+                if time.monotonic() - started > self._total_timeout:
+                    msg = "Translation model download exceeded bounds"
+                    raise TranslationError(msg)
+                chunk = response.raw.read1(HTTP_CHUNK_BYTES, decode_content=True)
                 size += len(chunk)
                 if size > artifact.size or time.monotonic() - started > self._total_timeout:
                     msg = "Translation model download exceeded bounds"
                     raise TranslationError(msg)
+                if not chunk:
+                    break
                 digest.update(chunk)
                 output.write(chunk)
         if size != artifact.size or digest.hexdigest() != artifact.sha256:

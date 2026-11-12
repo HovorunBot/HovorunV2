@@ -3,6 +3,7 @@
 import hashlib
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,27 @@ def test_failed_download_never_publishes_partial_model(tmp_path: Path, content: 
         assert not list(directory.glob("*.part"))
         assert store.ensure() == directory
         assert (directory / artifact.name).read_bytes() == valid
+
+
+def test_slow_model_stream_expires_and_can_be_retried(tmp_path: Path) -> None:
+    """Enforce total time while bytes keep arriving and recover without publishing partial assets."""
+    content = b"x" * 100
+    artifact = ModelFile("model.bin", len(content), hashlib.sha256(content).hexdigest())
+    directory = tmp_path / "model"
+    slow = HTTPReply(chunks=tuple(b"x" for _index in content), chunk_delay_seconds=0.02)
+    with (
+        HTTPFixture({"/model.bin": [slow, HTTPReply(body=content)]}) as server,
+        ModelHTTPClient(allowed_hosts=frozenset({"127.0.0.1"}), total_timeout=0.1, read_timeout=0.2) as http,
+    ):
+        store = ModelStore(directory, http, base_url=server.url(""), artifacts=(artifact,))
+        started = time.monotonic()
+        with pytest.raises(TranslationError):
+            store.ensure()
+        assert time.monotonic() - started < 1
+        assert not (directory / artifact.name).exists()
+        assert not list(directory.glob("*.part"))
+        assert store.ensure() == directory
+        assert (directory / artifact.name).read_bytes() == content
 
 
 @pytest.mark.subprocess
