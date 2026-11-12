@@ -71,7 +71,7 @@ See [administration](docs/administration.md) for role and trust commands, access
 
 Caption language detection runs locally with py3langid. Ignored languages, the selected target language, and captions with insufficient alphabetic text skip neural inference. Other supported captions use an on-demand CTranslate2 NLLB-200 int8 CPU model; captions are never sent to a translation API. Model errors leave original captions deliverable.
 
-The first required translation downloads about 630 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. Both media and browser workers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. A cold download can delay or skip the first translation. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's separate noncommercial license.
+The first required translation downloads about 630 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. Media, browser and compression workers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. A cold download can delay or skip the first translation. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's separate noncommercial license.
 
 ## Access and privacy
 

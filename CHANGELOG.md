@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **translation**: share model assets with compression workers
 - **speech**: accept audio sent on behalf of a chat
 - **translation**: preserve captions when decoding is incomplete
 - **translation**: enforce model download deadlines during streaming

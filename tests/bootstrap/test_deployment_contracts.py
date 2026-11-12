@@ -229,12 +229,12 @@ def test_translation_dependencies_are_unversioned_and_owned_by_media_extra() -> 
 @pytest.mark.unit
 @pytest.mark.parametrize("filename", ["docker-compose.prod.yml", "docker-compose.dev.yml"])
 def test_translation_model_volume_is_persistent_and_role_scoped(filename: str) -> None:
-    """Both inference roles share the model cache, while lean roles have no model mount."""
+    """All caption inference roles share the model cache, while lean roles have no model mount."""
     root = Path(__file__).resolve().parents[2]
     compose = yaml.safe_load((root / filename).read_text())
     assert "translation_models" in compose["volumes"]
-    for role in ("worker-media", "worker-browser"):
-        assert "translation_models:/app/data/models" in compose["services"][role]["volumes"]
+    for role in ("worker-media", "worker-browser", "worker-compression"):
+        assert "translation_models:/app/data/models" in compose["services"][role].get("volumes", [])
         assert compose["services"][role]["environment"]["TRANSLATION_MODEL_DIR"].startswith("/app/data/models/")
     for role in ("bot", "migrate", "worker-operations", "beat"):
         assert not any("translation_models" in mount for mount in compose["services"][role].get("volumes", []))
