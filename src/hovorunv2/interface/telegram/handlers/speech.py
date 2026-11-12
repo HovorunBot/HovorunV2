@@ -41,6 +41,11 @@ from hovorunv2.interface.telegram.handlers.base import BUSY_NOTICE_TEXT, BaseCom
 logger = get_logger(__name__)
 
 
+def _is_bot_source(message: Message) -> bool:
+    """Exclude actual bots while preserving Telegram's compatibility sender for chat-owned messages."""
+    return message.sender_chat is None and message.from_user is not None and message.from_user.is_bot
+
+
 class BaseSpeechHandler(BaseCommand):
     """Base class providing target resolution and job admission for speech recognition."""
 
@@ -268,7 +273,7 @@ class TranscribeCommand(BaseSpeechHandler):
             return "Cannot transcribe messages from another chat."
         if message.message_thread_id != reply.message_thread_id:
             return "Cannot transcribe messages from a different topic."
-        if reply.from_user and reply.from_user.is_bot:
+        if _is_bot_source(reply):
             return "Cannot transcribe messages sent by bots."
         return None
 
@@ -374,7 +379,7 @@ class SpeechVoiceHandler(BaseSpeechHandler):
         """Return whether the message is a valid voice or audio message."""
         if not (message.voice or message.audio):
             return False
-        return not (message.from_user and message.from_user.is_bot)
+        return not _is_bot_source(message)
 
     def _is_eligible_media(self, media: Audio | Voice | None) -> bool:
         """Return whether the media meets duration, size and metadata bounds."""
@@ -396,7 +401,7 @@ class SpeechVoiceHandler(BaseSpeechHandler):
         """
         if not self._settings.speech_enabled:
             return
-        if message.from_user and message.from_user.is_bot:
+        if _is_bot_source(message):
             return
 
         media = message.voice or message.audio

@@ -4,6 +4,8 @@ Speech is optional and disabled by default (`SPEECH_ENABLED=False`). It uses the
 
 A private chat owner or authorized group administrator selects **Off**, **Manual only**, or **Manual + automatic** in `/settings`. The default is Off. `/transcribe` must reply to a voice or audio message in the same chat and exact topic. Automatic mode processes new voice/audio messages. The normal approval, permission, emergency-stop and usage policies apply to both triggers. Duplicate triggers for one source share a claim.
 
+Group audio sent on behalf of an anonymous administrator or channel is supported. Automatic work uses group authority without recording Telegram's compatibility sender as a user; manual requests still require the human requestor's authority. Actual bot messages are rejected.
+
 Inputs require positive duration and file-size metadata and are capped at 120 seconds and 10,000,000 compressed bytes. The worker also enforces decoded duration and streamed byte limits. HTTP body reads check the original deadline and current cancellation between available reads; initial connection, TLS and response-header operations retain the bounded socket timeouts and are not hard real-time interruptible. One source produces one text reply or a UTF-8 `transcript.txt` attachment. Text is capped at 32,000 characters, with an explicit truncation notice when needed. No speech consumes zero requests. An acknowledged transcript consumes one request; failed or cancelled work consumes zero. Ambiguous Telegram acceptance retains the claim and reservation for recovery and is never automatically resent.
 
 ## Prepare and enable

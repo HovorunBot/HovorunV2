@@ -3,11 +3,13 @@
 import json
 from datetime import UTC, datetime
 
+import pytest
 from aiogram import Bot
 from aiogram.types import Chat, Message, User, Voice
 from dishka import AsyncContainer
 
 from hovorunv2.application.features.registry import TriggerKind
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import AdmissionPort
 from hovorunv2.application.jobs.feature_jobs import PayloadPort
 from hovorunv2.application.speech.policies import (
@@ -24,6 +26,8 @@ from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.speech import GROUP, OTHER, USER, group_speech_target, private_speech_target
 from tests.utils.telegram import BOT_CREDENTIAL, RecordedResponse
 from tests.utils.telegram.session import RecordingBot, RecordingSession
+
+ANONYMOUS_SENDER_ID = 1087968824
 
 
 def _send_message_payload(message_id: int) -> dict[str, object]:
@@ -335,6 +339,52 @@ async def test_manual_source_requires_exact_topic(test_container: AsyncContainer
         await handler.handle(command.as_(bot), bot)
         assert len(bot.session.calls) == 1
     assert await _speech_job_ids(admission) == before
+
+
+@pytest.mark.parametrize("manual", [False, True])
+@pytest.mark.parametrize("source_kind", ["human", "bot", "anonymous", "channel"])
+async def test_speech_distinguishes_chat_senders_from_actual_bots(
+    test_container: AsyncContainer, source_kind: str, *, manual: bool
+) -> None:
+    """Accept chat-owned voice sources without attributing them to a compatibility bot user."""
+    target = await group_speech_target(test_container)
+    await (await test_container.get(SpeechSettingsStore)).set_mode(
+        target, SpeechMode.MANUAL_AND_AUTOMATIC, actor=ActorContext.cli(), transport_kind=None
+    )
+    (await test_container.get(Settings)).speech_enabled = True
+    chat_sender = source_kind in {"anonymous", "channel"}
+    source = _create_voice_message(
+        message_id=600,
+        user_id=ANONYMOUS_SENDER_ID if chat_sender else OTHER,
+        is_bot=source_kind != "human",
+    )
+    if chat_sender:
+        sender = source.chat if source_kind == "anonymous" else Chat(id=GROUP - 1, type="channel")
+        source = source.model_copy(update={"sender_chat": sender})
+    feature = CommandName.TRANSCRIBE if manual else CommandName.TRANSCRIBE_AUTO
+    async with RecordingBot(BOT_CREDENTIAL, session=RecordingSession()) as bot:
+        if manual:
+            command = _create_command_message(reply_to=source)
+            await (await test_container.get(TranscribeCommand)).handle(command.as_(bot), bot)
+        else:
+            handler = await test_container.get(SpeechVoiceHandler)
+            assert await handler.is_triggered(source) == (source_kind != "bot")
+            await handler.handle(source.as_(bot), bot)
+    tickets = await (await test_container.get(AdmissionPort)).pending_for_feature(feature)
+    if source_kind == "bot":
+        assert not tickets
+        return
+    assert len(tickets) == 1
+    envelope = tickets[0].envelope
+    assert envelope.message_id == source.message_id
+    if manual:
+        assert envelope.actor_id == USER
+        assert envelope.charged_kind == TargetKind.USER
+    elif chat_sender:
+        assert envelope.actor_id is None
+        assert envelope.actor_generation is None
+        assert envelope.charged_kind == TargetKind.GROUP
+    assert await (await test_container.get(UserStore)).get_by_telegram_id(ANONYMOUS_SENDER_ID) is None
 
 
 async def _speech_job_ids(admission: AdmissionPort) -> set[str]:
