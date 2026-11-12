@@ -1,16 +1,20 @@
 """Compress oversized provider videos with bounded local FFmpeg operations."""
 
 import json
+import logging
 import math
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import MediaDownloadError, MediaExtractionError, MediaFailure
 from hovorunv2.application.media.limits import MAX_SOURCE_MEDIA_BYTES, TELEGRAM_VIDEO_BYTES
+
+logger = logging.getLogger(__name__)
 
 COMPRESSION_SECONDS = 45
 PROBE_SECONDS = 5
@@ -169,7 +173,11 @@ def _compress(content: bytes, max_bytes: int, deadline: ExtractionDeadline) -> b
 
 
 def prepare_video(
-    content: bytes, *, max_bytes: int = TELEGRAM_VIDEO_BYTES, deadline: ExtractionDeadline | None = None
+    content: bytes,
+    *,
+    max_bytes: int = TELEGRAM_VIDEO_BYTES,
+    deadline: ExtractionDeadline | None = None,
+    on_compression: Callable[[], None] | None = None,
 ) -> bytes:
     """Keep small videos intact or require a complete, bounded H.264/AAC replacement.
 
@@ -177,6 +185,7 @@ def prepare_video(
         content: Downloaded video bytes, never a remote URL or playlist.
         max_bytes: Maximum permitted output size, including container overhead.
         deadline: Optional shared cutoff for the owning download batch.
+        on_compression: Optional callback invoked immediately before compression starts.
 
     Returns:
         Original bytes or a compressed MP4 preserving video duration and audio.
@@ -194,6 +203,11 @@ def prepare_video(
         raise MediaDownloadError(MediaFailure.TOO_LARGE)
     if len(content) <= max_bytes:
         return content
+    if on_compression is not None:
+        try:
+            on_compression()
+        except Exception:
+            logger.exception("Failed to run compression progress callback")
     try:
         allowance = (deadline or ExtractionDeadline.after(COMPRESSION_SECONDS)).narrow(COMPRESSION_SECONDS)
         return _compress(content, max_bytes, allowance)

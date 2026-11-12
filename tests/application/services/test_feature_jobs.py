@@ -27,7 +27,6 @@ from hovorunv2.application.jobs.feature_job_runner import (
     LIMIT_FAILURE_NOTICE_TEXT,
     LIMIT_WAIT_NOTICE_TEXT,
     TIMEOUT_NOTICE_TEXT,
-    VIDEO_PREPARATION_NOTICE_TEXT,
     FeatureJobRunner,
 )
 from hovorunv2.application.jobs.feature_jobs import (
@@ -824,7 +823,7 @@ async def test_video_handoff_notifies_then_delivers_only_from_compression_task(
             )
             assert runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA) == JobOutcome.COMPLETE.value
             assert not delivery.calls
-            assert telegram.calls == [(390001, VIDEO_PREPARATION_NOTICE_TEXT)]
+            assert not telegram.calls
             ticket = runtime.admission.get(envelope.job_id)
             assert ticket is not None
             assert ticket.stage == JobStage.COMPRESSION
@@ -834,7 +833,7 @@ async def test_video_handoff_notifies_then_delivers_only_from_compression_task(
             assert messages == [envelope.model_dump(mode="json")]
             runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
             assert not delivery.calls
-            assert len(telegram.calls) == 1
+            assert not telegram.calls
             if cancel:
                 runtime.admission.cancel(envelope.job_id)
                 runner.recover()

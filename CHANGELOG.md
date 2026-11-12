@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **media**: notify compression only when oversized and update placeholder
 - **speech**: provide ephemeral storage for prefork startup
 
 ## v0.5.1 (2026-11-12)

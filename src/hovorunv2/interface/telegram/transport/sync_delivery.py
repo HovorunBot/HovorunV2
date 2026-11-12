@@ -1,5 +1,6 @@
 """Narrow synchronous Telegram media delivery and operations for native workers."""
 
+import functools
 import json
 import logging
 from contextlib import suppress
@@ -124,11 +125,30 @@ class NativeTelegramDelivery:
             raise TelegramDeliveryUncertainError(receipts)
         return receipts
 
+    def _notify_compression(self, chat_id: int, caption: str, placeholder: int) -> None:
+        """Update placeholder to notify requester that video compression is underway.
+
+        Args:
+            chat_id: Canonical Telegram chat ID.
+            caption: Formatted post caption.
+            placeholder: Message ID of the temporary placeholder.
+        """
+        with suppress(TelegramRejectedError, TelegramDeliveryUncertainError):
+            self._text(
+                chat_id,
+                caption + "\n\n⏳ <i>Preparing video; oversized files will be compressed to fit Telegram...</i>",
+                message_id=placeholder,
+            )
+
     def _fallback(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
         logger.info("Telegram could not fetch media URLs; starting download and upload fallback")
+        oversized = any(
+            item.is_video and item.data is not None and len(item.data) > TELEGRAM_VIDEO_BYTES
+            for item in payload.media_items
+        )
         progress = (
             "Preparing video; oversized files will be compressed to fit Telegram..."
-            if payload.is_video
+            if oversized
             else "Downloading media..."
         )
         placeholder = self._text(chat_id, caption + f"\n\n⏳ <i>{progress}</i>", reply_to_message_id=message_id)[0]
@@ -142,7 +162,10 @@ class NativeTelegramDelivery:
     def _upload_fallback(
         self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str, placeholder: int
     ) -> tuple[int, ...]:
-        contents = self._downloader.download_batch(payload.media_items)
+        contents = self._downloader.download_batch(
+            payload.media_items,
+            on_compression=functools.partial(self._notify_compression, chat_id, caption, placeholder),
+        )
         items = [
             MediaItem(item.url, item.is_video, data)
             for item, data in zip(payload.media_items, contents, strict=True)

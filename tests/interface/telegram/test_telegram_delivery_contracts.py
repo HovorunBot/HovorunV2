@@ -344,6 +344,32 @@ def test_oversized_provider_video_is_compressed_for_upload(tmp_path: Path, *, bu
         output = tmp_path / "compressed.mp4"
         output.write_bytes(content)
         assert media_stream_types(output) == {"video", "audio"}
+        if not buffered:
+            send_message_req = next(r for r in server.requests if r.path.endswith("sendMessage"))
+            assert "Downloading media..." in parse_qs(send_message_req.body.decode())["text"][0]
+            edit_text_req = next(r for r in server.requests if r.path.endswith("editMessageText"))
+            assert "compressed" in parse_qs(edit_text_req.body.decode())["text"][0]
+
+
+def test_normal_video_does_not_emit_compression_notice(tmp_path: Path) -> None:
+    """Normal-sized videos show downloading progress and do not notify about compression."""
+    source = synthetic_video(tmp_path)
+    routes = {
+        API_PREFIX + "sendVideo": _reject("Request Entity Too Large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
+        API_PREFIX + "sendMessage": _ack(_message(10)),
+        API_PREFIX + "editMessageMedia": _ack(_message(10)),
+        "/video.mp4": HTTPReply(source, headers={"Content-Type": "video/mp4"}),
+    }
+    with _native_delivery(routes) as (delivery, server):
+        payload = _payload(1)
+        payload.media_items[0] = MediaItem(server.url("/video.mp4"), is_video=True)
+        delivery.deliver(42, 1, payload, "Any provider", None)
+        assert _methods(server) == ["sendVideo", "sendMessage", "video.mp4", "editMessageMedia"]
+        send_message_req = next(r for r in server.requests if r.path.endswith("sendMessage"))
+        text = parse_qs(send_message_req.body.decode())["text"][0]
+        assert "Downloading media..." in text
+        assert "compressed" not in text.lower()
+        assert "editMessageText" not in _methods(server)
 
 
 def test_failed_split_audio_download_never_uploads_silent_video(tmp_path: Path) -> None:

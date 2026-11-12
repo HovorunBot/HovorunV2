@@ -4,7 +4,7 @@ import html
 import logging
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import nullcontext
 from pathlib import Path
 from threading import current_thread, main_thread
@@ -204,13 +204,21 @@ class NativeMediaDownloader:
             raise MediaDownloadError(code) from None
         return _require_content(content, MAX_SOURCE_MEDIA_BYTES)
 
-    def download(self, url: str, *, is_video: bool = False, deadline: ExtractionDeadline | None = None) -> bytes:
+    def download(
+        self,
+        url: str,
+        *,
+        is_video: bool = False,
+        deadline: ExtractionDeadline | None = None,
+        on_compression: Callable[[], None] | None = None,
+    ) -> bytes:
         """Require direct bytes or fall back to the video-only strategy.
 
         Args:
             url: Media URL to download.
             is_video: Whether the media is a video.
             deadline: Optional shared deadline bounding the download.
+            on_compression: Optional callback invoked immediately before compression starts.
 
         Returns:
             Downloaded content bytes.
@@ -221,7 +229,11 @@ class NativeMediaDownloader:
         logger.info("Worker starting media download")
         try:
             content = self._download(url, is_video=is_video, deadline=deadline)
-            content = prepare_video(content, deadline=deadline) if is_video else _require_content(content)
+            content = (
+                prepare_video(content, deadline=deadline, on_compression=on_compression)
+                if is_video
+                else _require_content(content)
+            )
         except MediaDownloadError as error:
             logger.warning("Media download failed (%s)", error.code)
             raise
@@ -242,19 +254,37 @@ class NativeMediaDownloader:
             return download_ytdlp_bytes(clean_url, destination_policy=self._destination_policy, deadline=deadline)
         return content
 
-    def _download_item(self, item: MediaItem, *, deadline: ExtractionDeadline | None = None) -> bytes | MediaFailure:
+    def _download_item(
+        self,
+        item: MediaItem,
+        *,
+        deadline: ExtractionDeadline | None = None,
+        on_compression: Callable[[], None] | None = None,
+    ) -> bytes | MediaFailure:
         try:
             if item.data is not None:
-                return prepare_video(item.data, deadline=deadline) if item.is_video else _require_content(item.data)
+                return (
+                    prepare_video(item.data, deadline=deadline, on_compression=on_compression)
+                    if item.is_video
+                    else _require_content(item.data)
+                )
             if item.requires_download:
                 content = download_ytdlp_bytes(item.url, destination_policy=self._destination_policy, deadline=deadline)
-                return prepare_video(content, deadline=deadline) if item.is_video else _require_content(content)
-            return self.download(item.url, is_video=item.is_video, deadline=deadline)
+                return (
+                    prepare_video(content, deadline=deadline, on_compression=on_compression)
+                    if item.is_video
+                    else _require_content(content)
+                )
+            return self.download(item.url, is_video=item.is_video, deadline=deadline, on_compression=on_compression)
         except MediaDownloadError as error:
             return error.code
 
     def download_batch(
-        self, items: list[MediaItem], *, deadline: ExtractionDeadline | None = None
+        self,
+        items: list[MediaItem],
+        *,
+        deadline: ExtractionDeadline | None = None,
+        on_compression: Callable[[], None] | None = None,
     ) -> list[bytes | MediaFailure]:
         """Download every item while preserving order and explicit failures.
 
@@ -263,9 +293,10 @@ class NativeMediaDownloader:
         Args:
             items: Media items to download in order.
             deadline: Optional shared deadline bounding batch downloads.
+            on_compression: Optional callback invoked immediately before compression starts.
 
         Returns:
             One bytes payload or MediaFailure per input item, in input order.
         """
         allowance = deadline or ExtractionDeadline.after(BATCH_TIMEOUT_SECONDS)
-        return [self._download_item(item, deadline=allowance) for item in items]
+        return [self._download_item(item, deadline=allowance, on_compression=on_compression) for item in items]

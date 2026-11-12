@@ -468,7 +468,6 @@ class FeatureJobRunner:
         if ready is None:
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
             return JobOutcome.CANCELLED.value
-        self._notify(envelope, NoticeKind.PREPARING_VIDEO, VIDEO_PREPARATION_NOTICE_TEXT)
         self._publisher.publish_stage(envelope, JobStage.COMPRESSION)
         return JobOutcome.COMPLETE.value
 
