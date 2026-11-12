@@ -89,3 +89,5 @@ See the [contributor guide](CONTRIBUTING.md) for setup, checks and contribution 
 ## License
 
 Application code: [BSD 3-Clause](LICENSE). Separately downloaded NLLB translation model assets: **CC BY-NC 4.0, noncommercial use only**. See [third-party notices](THIRD_PARTY_NOTICES.md) for model attribution, the full license, and commercial-use restrictions.
+
+Optional local voice/audio transcription is documented in [speech recognition](docs/speech-recognition.md). Prepare its pinned model with `make prepare-speech`; keep `SPEECH_ENABLED=False` until the target-server capacity release gate passes.

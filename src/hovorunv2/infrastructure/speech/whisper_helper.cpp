@@ -26,6 +26,21 @@
 constexpr uint32_t max_samples = WHISPER_SAMPLE_RATE * 120;
 constexpr size_t max_output_bytes = 128000;
 constexpr int compute_threads = 2;
+constexpr size_t max_text_characters = 31950;
+
+bool truncate_text(std::string & text) {
+    size_t characters = 0;
+    for (size_t offset = 0; offset < text.size(); ++offset) {
+        if ((static_cast<unsigned char>(text[offset]) & 0xc0) != 0x80) {
+            if (characters++ == max_text_characters) {
+                text.resize(offset);
+                text += "\n[Transcript truncated at the output limit.]";
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 void discard_log(enum ggml_log_level, const char *, void *) {}
 
@@ -111,7 +126,7 @@ std::string recognize(whisper_context * context, const std::vector<float> & samp
     std::string text;
     for (int index = 0; index < whisper_full_n_segments_from_state(state.get()); ++index) {
         text += whisper_full_get_segment_text_from_state(state.get(), index);
-        if (text.size() > max_output_bytes / 2) return "{\"status\":\"output_limit\"}";
+        if (truncate_text(text)) break;
     }
     if (text.find_first_not_of(" \t\r\n.,!?") == std::string::npos)
         return "{\"status\":\"no_speech\"}";
@@ -138,7 +153,7 @@ int main(int count, char ** arguments) {
     if (!context) return 5;
     const auto load_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - started).count();
-    if (!write_result("{\"status\":\"ready\",\"network_blocked\":true,\"load_ms\":" + std::to_string(load_ms) + "}")) return 6;
+    if (!write_result("{\"status\":\"ready\",\"protocol\":2,\"network_blocked\":true,\"load_ms\":" + std::to_string(load_ms) + "}")) return 6;
     while (true) {
         pollfd input{STDIN_FILENO, POLLIN, 0};
         const int available = poll(&input, 1, idle_ms);
@@ -146,6 +161,11 @@ int main(int count, char ** arguments) {
         if (available < 0 || !(input.revents & POLLIN)) return 7;
         uint32_t length = 0;
         if (!read_exact(reinterpret_cast<char *>(&length), sizeof(length))) return 8;
+        // A request is accepted before receiving private PCM. Once accepted, idle
+        // expiry cannot race its dispatch; the parent owns cancellation/deadline cleanup.
+        if (length != 0) return 13;
+        if (!write_result("{\"status\":\"accepted\"}")) return 14;
+        if (!read_exact(reinterpret_cast<char *>(&length), sizeof(length))) return 15;
         if (length == 0 || length > max_samples * sizeof(float) || length % sizeof(float) != 0) {
             write_result("{\"status\":\"invalid_frame\"}");
             return 9;

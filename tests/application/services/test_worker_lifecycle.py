@@ -340,7 +340,8 @@ async def _interrupt_runtime_backend(
     """Simulate a missing budget backend resource across a durable receipt commit, then restore it."""
     raw_budget = await cache.get(namespace.value + "budget:reservation:" + envelope.job_id)
     assert raw_budget is not None
-    budget = json.loads(raw_budget)
+    assert isinstance(raw_budget, dict)
+    budget = raw_budget
     quota_key = budget["quotas"][0]["key"]
     saved = await cache.client.dump(quota_key)
     ttl = await cache.client.pttl(quota_key)

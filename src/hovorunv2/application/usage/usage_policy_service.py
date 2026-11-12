@@ -15,7 +15,7 @@ from hovorunv2.application.usage.policies import (
     UsageSubject,
     UsageUnit,
 )
-from hovorunv2.application.usage.usage_resolution import resolve_usage
+from hovorunv2.application.usage.usage_resolution import require_automatic_subject, resolve_usage
 from hovorunv2.domain.enums import CommandName, TargetKind
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,7 @@ class UsagePolicyService:
         if trigger not in definition.triggers or unit not in definition.units:
             msg = "Feature does not support this usage trigger or unit."
             raise ValueError(msg)
+        require_automatic_subject(feature, trigger, group_id)
         subject, trusted = await self._subject(actor_id, group_id, trigger)
         bypass = (
             subject.kind == TargetKind.USER

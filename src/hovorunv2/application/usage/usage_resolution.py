@@ -1,6 +1,6 @@
 """Pure bounded usage resolution shared by bot and worker fact loaders."""
 
-from hovorunv2.application.features.registry import FeatureDefinition
+from hovorunv2.application.features.registry import FeatureDefinition, TriggerKind
 from hovorunv2.application.speech.policies import SPEECH_POLICY
 from hovorunv2.application.usage.policies import (
     MINUTE_SECONDS,
@@ -10,7 +10,7 @@ from hovorunv2.application.usage.policies import (
     UsageSubject,
     UsageUnit,
 )
-from hovorunv2.domain.enums import TargetKind
+from hovorunv2.domain.enums import SPEECH_COMMANDS, TargetKind
 
 NORMAL_REQUEST_LIMIT = 6
 NORMAL_BURST = 3
@@ -149,4 +149,20 @@ def _require_policy_coverage(policies: dict[tuple[str, int], UsagePolicy], bucke
     covered_buckets = {policy.bucket for policy in policies.values()}
     if not buckets <= covered_buckets:
         msg = "Usage policies are missing; unsupported resources cannot run with unlimited defaults."
+        raise ValueError(msg)
+
+
+def require_automatic_subject(feature: str, trigger: TriggerKind, group_id: int | None) -> None:
+    """Preserve group-only automatic usage except for the explicitly supported private speech flow.
+
+    Args:
+        feature: Capability whose usage is being resolved.
+        trigger: Accepted trigger kind.
+        group_id: Canonical group identifier, when present.
+
+    Raises:
+        ValueError: If an ordinary automatic feature has no group subject.
+    """
+    if trigger == TriggerKind.AUTOMATIC and group_id is None and feature not in SPEECH_COMMANDS:
+        msg = "Automatic usage requires an active canonical group."
         raise ValueError(msg)

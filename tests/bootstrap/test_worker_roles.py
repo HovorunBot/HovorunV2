@@ -1,9 +1,13 @@
 """Verify role-based worker runtime composition, lifecycle, and import isolation."""
 
+import asyncio
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+from dishka import AsyncContainer
 
 from hovorunv2.application.usage.budgets import RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
@@ -11,6 +15,7 @@ from hovorunv2.bootstrap.worker_runtime import WorkerChildContext
 from hovorunv2.domain.enums import WorkerRole
 from hovorunv2.infrastructure.config import Settings
 from tests.utils.runtime import ManualClock
+from tests.utils.speech_execution import qualified_model_directory
 
 
 @pytest.mark.unit
@@ -121,6 +126,7 @@ def test_bot_subprocess_import_isolation() -> None:
     """Bot entrypoint imports succeed when media, browser, and migration packages are blocked."""
     code = """
 import sys
+from pathlib import Path
 from importlib.abc import MetaPathFinder
 
 class BlockedFinder(MetaPathFinder):
@@ -147,6 +153,7 @@ def test_migrate_subprocess_import_isolation() -> None:
     """Migration entrypoint imports succeed when bot, media, and browser packages are blocked."""
     code = """
 import sys
+from pathlib import Path
 from importlib.abc import MetaPathFinder
 
 class BlockedFinder(MetaPathFinder):
@@ -173,8 +180,10 @@ cfg = Config("alembic.ini")
 def test_operations_role_subprocess_import_isolation() -> None:
     """Operations worker initializes cleanly when bot, media, browser, and migration packages are blocked."""
     code = """
+import asyncio
 import os
 import sys
+from pathlib import Path
 from importlib.abc import MetaPathFinder
 
 class BlockedFinder(MetaPathFinder):
@@ -205,8 +214,10 @@ assert context.role == runtime.WorkerRole.OPERATIONS
 def test_media_role_subprocess_import_isolation() -> None:
     """Media worker initializes cleanly when bot, DI container, migrations, and browser are blocked."""
     code = """
+import asyncio
 import os
 import sys
+from pathlib import Path
 from importlib.abc import MetaPathFinder
 
 class BlockedFinder(MetaPathFinder):
@@ -230,3 +241,27 @@ assert context.role == runtime.WorkerRole.MEDIA
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)  # noqa: S603
     assert result.returncode == 0, f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+
+
+async def test_speech_role_verifies_assets_without_starting_model(test_container: AsyncContainer) -> None:
+    """A prepared speech child owns only its runner and starts with no native model allocation."""
+    settings = (await test_container.get(Settings)).model_copy(
+        update={
+            "speech_model_dir": qualified_model_directory(),
+            "speech_helper_path": Path(
+                os.environ.get("HOVORUN_SPEECH_TEST_HELPER", "/usr/local/bin/hovorun-whisper-helper")
+            ),
+        }
+    )
+    children = Path(f"/proc/self/task/{os.getpid()}/children")
+    before = await asyncio.to_thread(children.read_text)
+    context = WorkerChildContext(settings=settings, role=WorkerRole.SPEECH)
+    try:
+        context.open()
+        assert context.speech_runner is not None
+        assert await asyncio.to_thread(children.read_text) == before
+        with pytest.raises(ValueError, match="Feature job runner is not initialized"):
+            _ = context.runner
+    finally:
+        context.close()
+    assert await asyncio.to_thread(children.read_text) == before

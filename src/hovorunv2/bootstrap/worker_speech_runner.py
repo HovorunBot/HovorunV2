@@ -12,9 +12,10 @@ from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
-from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
+from hovorunv2.infrastructure.speech.audio_http import SpeechAudioHTTPClient
 from hovorunv2.infrastructure.speech.model_store import MODEL_DOWNLOAD_SECONDS, SpeechModelHTTPClient, SpeechModelStore
 from hovorunv2.infrastructure.speech.whisper_engine import WhisperCppEngine
+from hovorunv2.interface.telegram.transport.speech import NativeSpeechTransport
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 
 
@@ -48,10 +49,21 @@ def create_speech_runner(
 
     Returns:
         Configured SpeechJobRunner ready to orchestrate speech recognition.
+
+    Raises:
+        FileNotFoundError: If the native helper has not been installed.
     """
     model_http = resources.enter_context(SpeechModelHTTPClient(total_timeout=MODEL_DOWNLOAD_SECONDS))
     model_store = SpeechModelStore(settings.speech_model_dir, model_http)
-    engine = WhisperCppEngine(model_store)
+    model_store.require_ready()
+    if not settings.speech_helper_path.is_file():
+        msg = "The speech helper must be installed before worker startup."
+        raise FileNotFoundError(msg)
+    engine = WhisperCppEngine(
+        model_store, helper_path=settings.speech_helper_path, idle_timeout_seconds=settings.speech_model_idle_timeout
+    )
+    audio_http = resources.enter_context(SpeechAudioHTTPClient(settings.bot_token))
+    speech_api = NativeTelegramAPI(audio_http, settings.bot_token)
     resources.callback(engine.close)
     return SpeechJobRunner(
         admission=admission,
@@ -59,10 +71,7 @@ def create_speech_runner(
         budgets=budgets,
         policies=db.policies,
         ledger=db.ledger,
-        telegram=api,
+        telegram=NativeSpeechTransport(speech_api, audio_http),
         engine=engine,
-        settings_store=None,
-        gate=ValkeyFeedbackGate(client, namespace),
-        feedback=db.policies,
         clock=clock,
     )

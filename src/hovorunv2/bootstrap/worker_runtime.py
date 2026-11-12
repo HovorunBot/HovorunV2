@@ -326,7 +326,7 @@ class WorkerChildContext:
             self._runner = self._open_feature_runner(database, runtime, http, api)
 
         # 3. Initialize speech runner if role includes speech
-        if self._role in {WorkerRole.SPEECH, WorkerRole.ALL}:
+        if self._role == WorkerRole.SPEECH or (self._role == WorkerRole.ALL and self._settings.speech_enabled):
             self._speech_runner = create_speech_runner(
                 settings=self._settings,
                 resources=self._resources,

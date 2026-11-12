@@ -14,6 +14,7 @@ x-app-environment: &app-environment
   APP_VERSION: ${APP_VERSION:-}
   ERROR_DM_ENABLED: ${ERROR_DM_ENABLED:-False}
   BROWSER_ENABLED: ${BROWSER_ENABLED:-False}
+  SPEECH_ENABLED: ${SPEECH_ENABLED:-False}
 
 x-worker-health: &worker-health
   test: ["CMD-SHELL", "/app/.venv/bin/celery -A hovorunv2.bootstrap.worker_app:celery_app inspect ping --destination celery@$$HOSTNAME --timeout 5"]
@@ -224,6 +225,53 @@ services:
       - --without-heartbeat
       - "--queues=work:{work}:compression"
 
+  worker-speech:
+    profiles: [speech]
+    container_name: ${COMPOSE_hovorunv2_NAME:-hovorunv2}-worker-speech
+    image: hovorunv2-worker-speech:${APP_TAG:-latest}
+    build:
+      context: .
+      target: worker-speech
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 128
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: 0
+    logging: *logging
+    stop_grace_period: 150s
+    healthcheck: *worker-health
+    restart: unless-stopped
+    volumes:
+      - speech_models:/app/data/models/speech:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    environment:
+      <<: *app-environment
+      WORKER_ROLE: speech
+      SPEECH_MODEL_DIR: /app/data/models/speech
+      SPEECH_MODEL_IDLE_TIMEOUT: ${SPEECH_MODEL_IDLE_TIMEOUT:-300}
+    command:
+      - /app/.venv/bin/celery
+      - -A
+      - hovorunv2.bootstrap.worker_app:celery_app
+      - worker
+      - --pool=prefork
+      - --concurrency=1
+      - --prefetch-multiplier=1
+      - --loglevel=INFO
+      - --without-gossip
+      - --without-mingle
+      - --without-heartbeat
+      - --pidfile=
+      - "--queues=work:{work}:speech"
+
   worker-operations:
     mem_limit: ${WORKER_OPERATIONS_MEMORY_LIMIT:-512m}
     pids_limit: 128
@@ -294,3 +342,4 @@ volumes:
   valkey_data:
   beat_state:
   translation_models:
+  speech_models:

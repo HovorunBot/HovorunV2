@@ -1,6 +1,12 @@
 """Verify local whisper.cpp speech recognition engine, decoding, and failure boundaries."""
 
+import json
+import os
+import select
+import struct
+import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -12,7 +18,6 @@ from hovorunv2.application.speech.contracts import (
     Transcript,
 )
 from hovorunv2.infrastructure.speech.model_store import (
-    ModelFile,
     SpeechModelHTTPClient,
     SpeechModelStore,
 )
@@ -22,7 +27,8 @@ from hovorunv2.infrastructure.speech.whisper_engine import (
 )
 from tests.utils.sync_http import HTTPFixture
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.subprocess
+MODEL_TEST_SECONDS = 120
 
 
 def test_decode_audio_rejects_empty_or_invalid() -> None:
@@ -54,40 +60,150 @@ def test_engine_closed_or_cross_process_rejected(tmp_path: Path) -> None:
         engine = WhisperCppEngine(store)
         engine.close()
         with pytest.raises(ValueError, match="closed or accessed"):
-            engine.recognize(b"dummy", time.monotonic() + 10)
+            engine.recognize(b"dummy", time.time() + 10)
 
 
-def test_engine_offline_ukrainian_recognition(tmp_path: Path) -> None:
-    """Run real offline recognition on public Ukrainian speech fixture when model exists."""
-    model_source = Path("ai-schemes/local-speech-recognition/experiments/ggml-small-q8_0.bin")
-    if not model_source.is_file():
-        pytest.skip("Local qualification model file not present")
+@pytest.mark.parametrize("language", ["uk", "en"])
+def test_engine_offline_multilingual_recognition(language: str) -> None:
+    """Recognize public Ukrainian and English speech offline with automatic language detection."""
+    store_path = os.environ.get("HOVORUN_SPEECH_TEST_MODEL_DIR")
+    if store_path is None:
+        pytest.skip("Set HOVORUN_SPEECH_TEST_MODEL_DIR for native integration")
+    helper = Path(os.environ.get("HOVORUN_SPEECH_TEST_HELPER", "/usr/local/bin/hovorun-whisper-helper"))
+    with HTTPFixture({}) as server, SpeechModelHTTPClient() as http:
+        engine = WhisperCppEngine(SpeechModelStore(Path(store_path), http), helper_path=helper, idle_timeout_seconds=1)
+        try:
+            audio = (Path("tests/utils") / f"speech_{language}.ogg").read_bytes()
+            result = engine.recognize(audio, time.time() + MODEL_TEST_SECONDS)
+            assert isinstance(result, Transcript)
+            assert result.language == language
+            assert result.text.strip()
+            silence = Path("tests/utils/silence.ogg").read_bytes()
+            assert isinstance(engine.recognize(silence, time.time() + MODEL_TEST_SECONDS), NoSpeech)
+            # No incoming traffic is required for native model memory to be released.
+            children = _native_children()
+            assert len(children) == 1
+            _wait_for_no_children()
+            assert isinstance(engine.recognize(silence, time.time() + MODEL_TEST_SECONDS), NoSpeech)
+            assert _native_children() != children
+            assert server.requests == []
+        finally:
+            engine.close()
+        assert _native_children() == set()
 
-    model_dir = tmp_path / "models"
-    model_dir.mkdir()
-    # Symlink model file to avoid copying 264MB
-    (model_dir / "ggml-small-q8_0.bin").symlink_to(model_source.resolve())
-    (model_dir / "NOTICE.txt").write_text("Notice")
-    (model_dir / "MIT.txt").write_text("MIT")
 
-    sha = "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f"
-    artifact = ModelFile("ggml-small-q8_0.bin", model_source.stat().st_size, sha)
+def _native_children() -> set[str]:
+    helper_name = Path(os.environ.get("HOVORUN_SPEECH_TEST_HELPER", "/usr/local/bin/hovorun-whisper-helper")).name[:15]
+    children = Path(f"/proc/self/task/{os.getpid()}/children").read_text().split()
+    return {pid for pid in children if Path(f"/proc/{pid}/comm").read_text().strip() == helper_name}
+
+
+def _wait_for_no_children() -> None:
+    cutoff = time.monotonic() + 5
+    while time.monotonic() < cutoff:
+        # Reap a naturally exited child before checking whether model memory is gone.
+        live = [pid for pid in _native_children() if "State:\tZ" not in Path(f"/proc/{pid}/status").read_text()]
+        if not live:
+            return
+        time.sleep(0.05)
+    pytest.fail("The idle helper retained live model memory")
+
+
+@dataclass
+class TimedCancellation:
+    """Revoke a real native operation after a fixed elapsed interval."""
+
+    cutoff: float
+
+    def __call__(self) -> bool:
+        """Report whether revocation has become effective."""
+        return time.monotonic() >= self.cutoff
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_native_work_stops_before_deadline_or_cancel_returns(cancel: bool) -> None:
+    """Deadline expiry and cancellation stop native inference before ownership can be released."""
+    directory = os.environ.get("HOVORUN_SPEECH_TEST_MODEL_DIR")
+    if directory is None:
+        pytest.skip("Prepared native model required")
+    helper = Path(os.environ.get("HOVORUN_SPEECH_TEST_HELPER", "/usr/local/bin/hovorun-whisper-helper"))
+    audio = Path("tests/utils/speech_uk.ogg").read_bytes()
+    with SpeechModelHTTPClient() as http:
+        engine = WhisperCppEngine(SpeechModelStore(Path(directory), http), helper_path=helper)
+        try:
+            deadline = time.time() + (30 if cancel else 0.3)
+            predicate = TimedCancellation(time.monotonic() + (0.3 if cancel else 30))
+            with pytest.raises(SpeechRecognitionError) as failure:
+                engine.recognize(audio, deadline, cancelled=predicate)
+            assert failure.value.reason == (SpeechFailure.CANCELLED if cancel else SpeechFailure.DEADLINE_EXCEEDED)
+            assert _native_children() == set()
+            # A subsequent unrelated request remains usable after confirmed cleanup.
+            assert isinstance(
+                engine.recognize(Path("tests/utils/silence.ogg").read_bytes(), time.time() + MODEL_TEST_SECONDS),
+                NoSpeech,
+            )
+        finally:
+            engine.close()
+
+
+def test_missing_baseline_model_never_downloads_during_a_user_request(tmp_path: Path) -> None:
+    """Missing prepared assets fail locally without a first-request network download."""
     with (
         HTTPFixture({}) as server,
         SpeechModelHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http,
     ):
-        store = SpeechModelStore(model_dir, http, base_url=server.url(""), artifacts=(artifact,))
-        engine = WhisperCppEngine(store, idle_timeout_seconds=3)
+        engine = WhisperCppEngine(SpeechModelStore(tmp_path / "models", http, base_url=server.url("")))
         try:
-            audio = (Path(__file__).parent.parent.parent / "utils" / "speech_uk.ogg").read_bytes()
-            result = engine.recognize(audio, time.monotonic() + 30)
-            assert isinstance(result, Transcript)
-            assert result.language == "uk"
-            assert len(result.text) > 0
-
-            # Run silence fixture -> expect NoSpeech
-            silence_audio = (Path(__file__).parent.parent.parent / "utils" / "silence.ogg").read_bytes()
-            silence_result = engine.recognize(silence_audio, time.monotonic() + 30)
-            assert isinstance(silence_result, NoSpeech)
+            audio = (Path(__file__).parents[2] / "utils" / "silence.ogg").read_bytes()
+            with pytest.raises(SpeechRecognitionError) as failure:
+                engine.recognize(audio, time.time() + 10)
+            assert failure.value.reason == SpeechFailure.MODEL_UNAVAILABLE
+            assert server.requests == []
         finally:
             engine.close()
+
+
+def _protocol_response(process: subprocess.Popen[bytes]) -> dict[str, object]:
+    stdout = process.stdout
+    assert stdout is not None
+    assert select.select([stdout], [], [], 10)[0]
+    header = stdout.read(4)
+    assert len(header) == 4
+    length = struct.unpack("<I", header)[0]
+    assert 0 < length < 128_000
+    value = json.loads(stdout.read(length))
+    assert isinstance(value, dict)
+    return value
+
+
+def test_accepted_request_cannot_expire_during_audio_dispatch() -> None:
+    """Idle teardown never interrupts an acknowledged native request waiting for its private audio."""
+    directory = os.environ.get("HOVORUN_SPEECH_TEST_MODEL_DIR")
+    if directory is None:
+        pytest.skip("Prepared native model required")
+    helper = os.environ.get("HOVORUN_SPEECH_TEST_HELPER", "/usr/local/bin/hovorun-whisper-helper")
+    with subprocess.Popen(  # noqa: S603
+        [helper, str(Path(directory) / "ggml-small-q8_0.bin"), "1000"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env={"PATH": "/usr/bin:/bin", "OMP_NUM_THREADS": "2"},
+        bufsize=0,
+    ) as process:
+        try:
+            assert _protocol_response(process)["protocol"] == 2
+            stdin = process.stdin
+            assert stdin is not None
+            stdin.write(struct.pack("<I", 0))
+            assert _protocol_response(process)["status"] == "accepted"
+            time.sleep(2)
+            assert process.poll() is None
+            pcm = bytes(16_000 * 4)
+            stdin.write(struct.pack("<I", len(pcm)))
+            stdin.write(pcm)
+            assert _protocol_response(process)["status"] == "no_speech"
+            assert process.wait(timeout=5) == 0
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)

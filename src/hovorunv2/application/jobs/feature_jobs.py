@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hovorunv2.application.features.registry import TriggerKind
 from hovorunv2.application.usage.policies import MINUTE_SECONDS
-from hovorunv2.domain.enums import TargetKind
+from hovorunv2.domain.enums import SPEECH_COMMANDS, TargetKind
 
 MAX_JOB_LIFETIME_SECONDS = 5 * MINUTE_SECONDS
 PAYLOAD_CLEANUP_SECONDS = 60
@@ -91,6 +91,8 @@ class JobEnvelope(BaseModel):
             return
 
         if self.target.kind == TargetKind.USER:
+            if self.feature not in SPEECH_COMMANDS:
+                raise ValueError(_INVALID_JOB_BINDING_MESSAGE)
             actor_id = self._require_direct_actor()
             if self.target.telegram_id != actor_id:
                 raise ValueError(_INVALID_JOB_BINDING_MESSAGE)

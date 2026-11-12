@@ -51,6 +51,7 @@ def test_worker_application_uses_namespaced_role_queues() -> None:
             namespace.value + "media",
             namespace.value + "browser",
             namespace.value + "compression",
+            namespace.value + "speech",
             namespace.value + "operations",
         }
         assert "run_compression_job" in app.tasks
@@ -190,7 +191,15 @@ def test_docker_stack_build_roles_match_compose_build_services() -> None:
     """Every role configured for building in docker-stack.py matches a distinct Compose build target."""
     script_path = Path(__file__).resolve().parents[2] / "scripts/docker-stack.py"
     content = script_path.read_text(encoding="utf-8")
-    expected_roles = {"migrate", "bot", "worker-operations", "worker-media", "worker-browser", "worker-compression"}
+    expected_roles = {
+        "migrate",
+        "bot",
+        "worker-operations",
+        "worker-media",
+        "worker-browser",
+        "worker-compression",
+        "worker-speech",
+    }
     for role in expected_roles:
         assert f'"{role}"' in content or f"'{role}'" in content
 
@@ -229,3 +238,26 @@ def test_translation_model_volume_is_persistent_and_role_scoped(filename: str) -
         assert compose["services"][role]["environment"]["TRANSLATION_MODEL_DIR"].startswith("/app/data/models/")
     for role in ("bot", "migrate", "worker-operations", "beat"):
         assert not any("translation_models" in mount for mount in compose["services"][role].get("volumes", []))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("filename", ["docker-compose.prod.yml", "docker-compose.dev.yml"])
+def test_speech_worker_is_optional_bounded_and_uses_readonly_assets(filename: str) -> None:
+    """Speech enablement adds one CPU worker without exposing private inputs to persistent storage."""
+    root = Path(__file__).resolve().parents[2]
+    compose = yaml.safe_load((root / filename).read_text())
+    speech = compose["services"]["worker-speech"]
+    assert speech["profiles"] == ["speech"]
+    assert speech["read_only"] is True
+    assert speech["init"] is True
+    assert speech["cpus"] == 2
+    assert speech["mem_limit"] == "2g"
+    assert speech["ulimits"]["core"] == 0
+    assert speech["volumes"] == ["speech_models:/app/data/models/speech:ro"]
+    assert speech["container_name"]
+    assert "--concurrency=1" in speech["command"]
+    assert "--prefetch-multiplier=1" in speech["command"]
+    assert "--queues=work:{work}:speech" in speech["command"]
+    assert speech["environment"]["WORKER_ROLE"] == "speech"
+    assert "speech_models" in compose["volumes"]
+    assert compose["services"]["bot"]["environment"]["SPEECH_ENABLED"] == "${SPEECH_ENABLED:-False}"

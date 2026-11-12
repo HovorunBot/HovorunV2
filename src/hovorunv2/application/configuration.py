@@ -13,6 +13,11 @@ class AppSettings(Protocol):
     """Protocol for application configuration properties needed by application services."""
 
     @property
+    def speech_enabled(self) -> bool:
+        """Return whether the optional local speech worker is enabled by the operator."""
+        ...
+
+    @property
     def browser_enabled(self) -> bool:
         """Return whether browser extraction and continuation are enabled."""
         ...

@@ -1,10 +1,12 @@
 # syntax=docker/dockerfile:1.7
-ARG PYTHON_IMAGE=python:3.15.2-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0
+ARG PYTHON_IMAGE=python:3.15.2-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490
 
 # -----------------------------------------------------------------------------
 # Base runtime image: creates non-root user and shared runtime directory
 # -----------------------------------------------------------------------------
+FROM ${UV_IMAGE} AS uv-binary
+
 FROM ${PYTHON_IMAGE} AS base
 
 WORKDIR /app
@@ -22,7 +24,7 @@ COPY --chown=appuser:appuser LICENSE THIRD_PARTY_NOTICES.md ./
 # -----------------------------------------------------------------------------
 FROM base AS builder-base
 
-COPY --from=ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 /uv /bin/uv
+COPY --from=uv-binary /uv /bin/uv
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -142,6 +144,39 @@ COPY --from=builder-worker-browser --chown=appuser:appuser /app/.venv /app/.venv
 
 USER appuser
 CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "browser", "--concurrency=1"]
+
+# Build the qualified CPU runtime from an immutable, digest-verified source archive.
+FROM base AS builder-whisper
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates cmake ninja-build g++ && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+ARG WHISPER_CPP_VERSION=1.9.5
+ADD --checksum=sha256:ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720 \
+    https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v${WHISPER_CPP_VERSION}.tar.gz \
+    whisper.tar.gz
+RUN mkdir source && tar -xzf whisper.tar.gz --strip-components=1 -C source
+RUN cmake -S source -B output -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DGGML_NATIVE=OFF -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+    -DGGML_CUDA=OFF -DGGML_VULKAN=OFF -DGGML_BLAS=OFF \
+    -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=OFF -DWHISPER_CURL=OFF \
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON '-DCMAKE_INSTALL_RPATH=$ORIGIN' \
+    -DBUILD_SHARED_LIBS=ON && cmake --build output --target whisper -j2
+COPY src/hovorunv2/infrastructure/speech/whisper_helper.cpp ./
+RUN g++ -std=c++17 -O2 -Wall -Wextra -Werror -Isource/include -Isource/ggml/include \
+    whisper_helper.cpp -Loutput/bin '-Wl,-rpath,$ORIGIN/../lib/hovorun-speech' \
+    -lwhisper -o hovorun-whisper-helper
+
+FROM base AS worker-speech
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg ca-certificates util-linux libgomp1 libstdc++6 && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /app/data/models/speech && chown -R appuser:appuser /app/data
+COPY --from=builder-worker-ops --chown=appuser:appuser /app/.venv /app/.venv
+COPY --from=builder-whisper /build/hovorun-whisper-helper /usr/local/bin/hovorun-whisper-helper
+COPY --from=builder-whisper /build/output/bin/lib*.so* /usr/local/lib/hovorun-speech/
+COPY --from=builder-whisper /build/source/LICENSE /usr/local/share/licenses/whisper.cpp/LICENSE
+ENV WORKER_ROLE=speech
+USER appuser
+CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=1", "--prefetch-multiplier=1", "-Q", "work:{work}:speech"]
 
 # -----------------------------------------------------------------------------
 # Default target

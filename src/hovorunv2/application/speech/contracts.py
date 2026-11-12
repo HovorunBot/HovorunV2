@@ -69,3 +69,10 @@ class SpeechRecognitionError(Exception):
             raise TypeError(msg)
         self.reason = reason
         super().__init__(f"Speech recognition failed: {reason.value}.")
+
+
+class SpeechCleanupUncertainError(Exception):
+    """Retain execution ownership when private helper termination cannot be proven."""
+
+    def __init__(self) -> None:
+        super().__init__("Speech process cleanup could not be verified.")

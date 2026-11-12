@@ -28,7 +28,7 @@ FORCE ?= 0
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
         test test-unit test-fast test-profile test-coverage lint format type-check lint-imports check install-hooks \
         clean backup logs status \
-        ai agy gemini codex claude deepseek ai-check ai-next
+        ai agy gemini codex claude deepseek ai-check ai-next prepare-speech
 
 # Each command uses one complete environment file, never an overlay.
 ## Run setup, then start the selected Docker stack.
@@ -340,3 +340,7 @@ ai-next:
 		exit 2; \
 	fi; \
 	uv run python scripts/ai_scheme.py next "$(SCHEME)"
+
+## Prepare the pinned public speech model without starting the optional worker.
+prepare-speech:
+	$(DOCKER_COMPOSE) prepare-speech

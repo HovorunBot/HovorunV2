@@ -55,6 +55,9 @@ class Settings(BrokerSettings, DatabaseSettings, ErrorLoggingSettings):
     translation_model_dir: Path = Path("/app/data/models/nllb-200-distilled-600M-int8")
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
+    speech_enabled: bool = False
+    speech_helper_path: Path = Path("/usr/local/bin/hovorun-whisper-helper")
+    speech_model_idle_timeout: int = 300
     speech_model_dir: Path = Path("/app/data/models/speech")
     browser_enabled: bool = False
     browser_max_tabs: int = 4
@@ -62,6 +65,25 @@ class Settings(BrokerSettings, DatabaseSettings, ErrorLoggingSettings):
     instagram_sessionid: str | None = None
     vxinstagram_enabled: bool = True
     cache_encryption_key: str | None = None
+
+    @field_validator("speech_model_idle_timeout")
+    @classmethod
+    def validate_speech_idle_timeout(cls, value: int) -> int:
+        """Require a positive finite helper idle lifetime.
+
+        Args:
+            value: Configured idle timeout in seconds.
+
+        Returns:
+            Validated positive timeout.
+
+        Raises:
+            ValueError: If the timeout is not positive.
+        """
+        if value <= 0:
+            msg = "Speech model idle timeout must be positive."
+            raise ValueError(msg)
+        return value
 
     # Project Metadata
     github_url: str = "https://github.com/HovorunBot/HovorunV2"

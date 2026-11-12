@@ -51,7 +51,7 @@ class StackScenario:
         return [json.loads(line) for line in (self.root / "calls.jsonl").read_text().splitlines()]
 
 
-def _scenario(root: Path, browser_enabled: str) -> StackScenario:
+def _scenario(root: Path, browser_enabled: str, speech_enabled: str = "False") -> StackScenario:
     scripts = root / "scripts"
     scripts.mkdir()
     shutil.copyfile(PROJECT_ROOT / "scripts/docker-stack.py", scripts / "docker-stack.py")
@@ -61,6 +61,7 @@ def _scenario(root: Path, browser_enabled: str) -> StackScenario:
     executable.chmod(0o700)
     configuration = {
         "name": f"test-{uuid4().hex}",
+        "volumes": {"speech_models": {"name": "synthetic-speech-models"}},
         "services": {
             "migrate": {"image": "hovorunv2-dev-migrate:test", "build": {"target": "migrate"}},
             "bot": {"image": "hovorunv2-dev-bot:test", "build": {"target": "bot"}},
@@ -70,6 +71,7 @@ def _scenario(root: Path, browser_enabled: str) -> StackScenario:
                 "build": {"target": "worker-media"},
                 "environment": {
                     "BROWSER_ENABLED": browser_enabled,
+                    "SPEECH_ENABLED": speech_enabled,
                     "BOT_TOKEN": "synthetic-private-credential",
                 },
             },
@@ -78,6 +80,7 @@ def _scenario(root: Path, browser_enabled: str) -> StackScenario:
                 "build": {"target": "worker-compression"},
             },
             "worker-browser": {"image": "hovorunv2-dev-browser:test", "build": {"target": "worker-browser"}},
+            "worker-speech": {"image": "hovorunv2-dev-speech:test", "build": {"target": "worker-speech"}},
         },
     }
     return StackScenario(
@@ -211,7 +214,7 @@ async def test_startup_selects_profile_and_removes_disabled_browser(tmp_path: Pa
     startup = next(call for call in calls if "up" in call)
     assert ("browser" in startup) == (enabled == "True")
     assert startup[-3:] == ["--wait", "--wait-timeout", "180"]
-    stops = [call for call in calls if "--stop" in call]
+    stops = [call for call in calls if "--stop" in call and "worker-browser" in call]
     assert bool(stops) == (enabled == "False")
     if stops:
         assert stops[0][-1] == "worker-browser"
@@ -311,3 +314,30 @@ async def test_invalidate_runtime_dispatches_valkey_cleanup(tmp_path: Path) -> N
     assert await scenario.run("invalidate-runtime") == 0
     calls = scenario.calls()
     assert any("flushall" in call for call in calls)
+
+
+@pytest.mark.parametrize("enabled", ["False", "True"])
+async def test_speech_build_and_start_follow_operator_switch(tmp_path: Path, enabled: str) -> None:
+    """The speech switch controls building, startup profiles and stale-worker removal."""
+    scenario = _scenario(tmp_path, "False", enabled)
+    assert await scenario.run("build") == 0
+    builds = [call for call in scenario.calls() if call[:2] == ["buildx", "build"]]
+    assert any("worker-speech" in call for call in builds) == (enabled == "True")
+    assert await scenario.run("up", "-d", "--no-build") == 0
+    startup = next(call for call in scenario.calls() if "up" in call)
+    assert ("speech" in startup) == (enabled == "True")
+    stops = [call for call in scenario.calls() if "--stop" in call and "worker-speech" in call]
+    assert bool(stops) == (enabled == "False")
+
+
+async def test_speech_preparation_does_not_enable_or_start_worker(tmp_path: Path) -> None:
+    """Preparation can populate the dedicated volume while speech remains disabled."""
+    scenario = _scenario(tmp_path, "False")
+    assert await scenario.run("prepare-speech") == 0
+    calls = scenario.calls()
+    preparation = next(call for call in calls if "run" in call)
+    assert "--no-deps" in preparation
+    assert "synthetic-speech-models:/app/data/models/speech:rw" in preparation
+    assert preparation[-1] == "prepare"
+    assert not any("up" in call or "start" in call for call in calls)
+    assert await scenario.run("run", "--rm", "worker-speech") != 0

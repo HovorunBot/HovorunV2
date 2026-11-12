@@ -245,7 +245,8 @@ async def test_encrypted_confirmation_expires_and_rechecks_lifecycle_and_authori
     assert confirmation.expires_at <= time.time() + 30
     raw_text = await cache.get(f"admin:confirmation:{token}")
     assert raw_text is not None
-    raw = json.loads(raw_text)
+    assert isinstance(raw_text, dict)
+    raw = raw_text
     settings = await test_container.get(AppSettings)
     assert settings.cache_encryption_key
     fernet = get_fernet_for_chat(settings.cache_encryption_key, raw["salt"])

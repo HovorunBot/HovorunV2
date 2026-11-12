@@ -166,7 +166,9 @@ def resolve_flores_code(lang_code: str) -> str | None:
     Returns:
         Model vocabulary tag, or None when the language or requested script is unsupported.
     """
-    code = normalize_language_code(lang_code)
+    if not lang_code.strip():
+        return None
+    code = normalize_language_code(lang_code).casefold()
     if code in FLORES_200_CODES:
         return FLORES_200_CODES[code]
     language, *subtags = code.split("-")
@@ -186,6 +188,8 @@ _SCRIPT_SUBTAG_LENGTH: Final = 4
 
 
 def _language_identity(lang_code: str) -> str:
+    if not lang_code.strip():
+        return "und"
     code = normalize_language_code(lang_code)
     return resolve_flores_code(code) or code.split("-")[0]
 

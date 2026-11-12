@@ -28,7 +28,7 @@ from hovorunv2.application.usage.usage_ledger import (
     usage_batch_id,
     validate_usage_batch,
 )
-from hovorunv2.application.usage.usage_resolution import resolve_usage
+from hovorunv2.application.usage.usage_resolution import require_automatic_subject, resolve_usage
 from hovorunv2.domain.audit import ActorContext, AuditEventDB, sanitize_audit_changes
 from hovorunv2.domain.audit_schema import validate_audit_changes, validate_audit_reason
 from hovorunv2.domain.ban import BanDB
@@ -178,6 +178,29 @@ class WorkerPolicyStore:
         with self._sessions() as session:
             return session.scalar(statement) is not None
 
+    def active_actor(self, actor_id: int, generation: int) -> bool:
+        """Require the accepted active actor generation before private speech execution.
+
+        Args:
+            actor_id: Accepted Telegram actor identifier.
+            generation: Accepted lifecycle generation.
+
+        Returns:
+            Whether the actor is active in the original generation.
+        """
+        self._require_owner()
+        with self._sessions() as session:
+            return (
+                session.scalar(
+                    select(UserDB.id).where(
+                        UserDB.telegram_id == actor_id,
+                        UserDB.generation == generation,
+                        UserDB.deleted_at.is_(None),
+                    )
+                )
+                is not None
+            )
+
     def feedback_allowed(self, target: PermissionTarget) -> bool:
         """Allow progress feedback only for the exact active, unbanned destination."""
         self._require_owner()
@@ -259,6 +282,7 @@ class WorkerPolicyStore:
         if trigger not in definition.triggers or unit not in definition.units:
             msg = "Feature does not support this usage trigger or unit."
             raise ValueError(msg)
+        require_automatic_subject(feature, trigger, group_id)
         with self._sessions() as session:
             reader = PolicyFactReader(session, self._policy)
             subject, trusted, bypass = reader.usage_subject(actor_id, group_id, trigger)

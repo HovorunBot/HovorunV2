@@ -41,3 +41,6 @@ ai-schemes/
 .agents/
 .codex/
 .aws/
+
+# Build the native helper in its pinned image stage, never copy host qualification binaries.
+src/hovorunv2/infrastructure/speech/whisper_helper

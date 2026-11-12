@@ -18,10 +18,12 @@ from hovorunv2.application.speech.policies import (
 from hovorunv2.application.speech.ports import SpeechSettingsStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName, SpeechMode, TargetKind
+from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.handlers.speech import SpeechVoiceHandler, TranscribeCommand
 from tests.utils.recorded_responses import RecordedResponses
 from tests.utils.speech import GROUP, OTHER, USER, group_speech_target, private_speech_target
-from tests.utils.telegram import RecordedResponse
+from tests.utils.telegram import BOT_CREDENTIAL, RecordedResponse
+from tests.utils.telegram.session import RecordingBot, RecordingSession
 
 
 def _send_message_payload(message_id: int) -> dict[str, object]:
@@ -75,6 +77,7 @@ def _create_command_message(
 async def test_transcribe_validation_rejections(test_container: AsyncContainer) -> None:
     """Manual /transcribe cleanly rejects invalid reply contexts and media bounds."""
     await group_speech_target(test_container)
+    (await test_container.get(Settings)).speech_enabled = True
     handler = await test_container.get(TranscribeCommand)
     bot = Bot("777:synthetic-token")
 
@@ -150,6 +153,7 @@ async def test_transcribe_mode_matrix_and_admission(test_container: AsyncContain
     """Manual /transcribe checks mode, admits valid jobs, and detects duplicates."""
     target = await group_speech_target(test_container)
     settings_store = await test_container.get(SpeechSettingsStore)
+    (await test_container.get(Settings)).speech_enabled = True
     handler = await test_container.get(TranscribeCommand)
     admission_port = await test_container.get(AdmissionPort)
     payload_port = await test_container.get(PayloadPort)
@@ -210,6 +214,7 @@ async def test_automatic_capture_matrix_and_shared_dedupe(test_container: AsyncC
     """Automatic capture admits only in MANUAL_AND_AUTOMATIC mode and shares dedupe with /transcribe."""
     target = await group_speech_target(test_container)
     settings_store = await test_container.get(SpeechSettingsStore)
+    (await test_container.get(Settings)).speech_enabled = True
     voice_handler = await test_container.get(SpeechVoiceHandler)
     transcribe_cmd = await test_container.get(TranscribeCommand)
     admission_port = await test_container.get(AdmissionPort)
@@ -271,6 +276,7 @@ async def test_private_automatic_capture_and_invariants(test_container: AsyncCon
     """Private automatic capture admits job bound to the private actor and charges them."""
     target = await private_speech_target(test_container)
     settings_store = await test_container.get(SpeechSettingsStore)
+    (await test_container.get(Settings)).speech_enabled = True
     voice_handler = await test_container.get(SpeechVoiceHandler)
     admission_port = await test_container.get(AdmissionPort)
     bot = Bot("777:synthetic-token")
@@ -296,3 +302,42 @@ async def test_private_automatic_capture_and_invariants(test_container: AsyncCon
         assert ticket.envelope.actor_id == USER
     finally:
         await bot.session.close()
+
+
+async def test_disabled_worker_never_admits_manual_or_automatic_audio(test_container: AsyncContainer) -> None:
+    """An operator-disabled worker yields manual feedback and queues no private input."""
+    target = await group_speech_target(test_container)
+    settings_store = await test_container.get(SpeechSettingsStore)
+    await settings_store.set_mode(
+        target, SpeechMode.MANUAL_AND_AUTOMATIC, actor=ActorContext.cli(), transport_kind=None
+    )
+    (await test_container.get(Settings)).speech_enabled = False
+    admission = await test_container.get(AdmissionPort)
+    before = await _speech_job_ids(admission)
+    voice = _create_voice_message(message_id=550)
+    async with RecordingBot(BOT_CREDENTIAL, session=RecordingSession()) as bot:
+        await (await test_container.get(SpeechVoiceHandler)).handle(voice.as_(bot), bot)
+        command = _create_command_message(reply_to=voice)
+        await (await test_container.get(TranscribeCommand)).handle(command.as_(bot), bot)
+        assert len(bot.session.calls) == 1
+    assert await _speech_job_ids(admission) == before
+
+
+async def test_manual_source_requires_exact_topic(test_container: AsyncContainer) -> None:
+    """A topic reply cannot move a source from the general chat into another topic."""
+    await group_speech_target(test_container)
+    (await test_container.get(Settings)).speech_enabled = True
+    handler = await test_container.get(TranscribeCommand)
+    admission = await test_container.get(AdmissionPort)
+    before = await _speech_job_ids(admission)
+    async with RecordingBot(BOT_CREDENTIAL, session=RecordingSession()) as bot:
+        command = _create_command_message(reply_to=_create_voice_message(), thread_id=5)
+        await handler.handle(command.as_(bot), bot)
+        assert len(bot.session.calls) == 1
+    assert await _speech_job_ids(admission) == before
+
+
+async def _speech_job_ids(admission: AdmissionPort) -> set[str]:
+    tickets = await admission.pending_for_feature(CommandName.TRANSCRIBE)
+    tickets += await admission.pending_for_feature(CommandName.TRANSCRIBE_AUTO)
+    return {ticket.envelope.job_id for ticket in tickets}

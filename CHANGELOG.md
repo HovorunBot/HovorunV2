@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **speech**: finalize local recognition worker
 - **speech**: add transcription commands and chat controls
 - **speech**: execute and deliver admitted transcripts
 - **jobs**: route speech through bounded admission

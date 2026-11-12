@@ -76,7 +76,12 @@ class SpeechModelHTTPClient(NativeHTTPClient):
         digest = hashlib.sha256()
         size = 0
         with destination.open("wb") as output:
-            for chunk in response.iter_content(HTTP_CHUNK_BYTES):
+            while True:
+                if time.monotonic() - started > self._total_timeout:
+                    raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE)
+                chunk = response.raw.read1(HTTP_CHUNK_BYTES, decode_content=True)
+                if not chunk:
+                    break
                 size += len(chunk)
                 if size > artifact.size or time.monotonic() - started > self._total_timeout:
                     raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE)
@@ -113,7 +118,7 @@ class SpeechModelStore:
         """
         try:
             self._directory.mkdir(parents=True, exist_ok=True)
-            with (self._directory.parent / (self._directory.name + ".lock")).open("a") as lock:
+            with (self._directory / ".prepare.lock").open("a") as lock:
                 self._acquire_lock(lock.fileno())
                 for artifact in self._artifacts:
                     self._ensure_file(artifact)
@@ -121,6 +126,31 @@ class SpeechModelStore:
         except OSError:
             raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE) from None
         return self._directory
+
+    def require_ready(self) -> Path:
+        """Require the prepared default model without creating files or using the network.
+
+        Returns:
+            Verified model directory ready for local inference.
+
+        Raises:
+            SpeechRecognitionError: If baseline preparation is missing or corrupt.
+        """
+        try:
+            for artifact in self._artifacts:
+                self._require_artifact(artifact)
+        except OSError:
+            raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE) from None
+        return self._directory
+
+    def _require_artifact(self, artifact: ModelFile) -> None:
+        path = self._directory / artifact.name
+        if not path.is_file() or path.stat().st_size != artifact.size:
+            raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE)
+        with path.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if digest != artifact.sha256:
+            raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE)
 
     def _acquire_lock(self, descriptor: int) -> None:
         deadline = time.monotonic() + MODEL_LOCK_SECONDS

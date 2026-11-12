@@ -3,10 +3,10 @@
 import json
 import os
 import select
-import signal
 import struct
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from hovorunv2.application.speech.contracts import (
@@ -17,14 +17,26 @@ from hovorunv2.application.speech.contracts import (
     SpeechResult,
     Transcript,
 )
+from hovorunv2.application.speech.policies import SpeechLimits
 from hovorunv2.application.speech.ports import SpeechRecognitionPort
 from hovorunv2.infrastructure.speech.model_store import SpeechModelStore
+from hovorunv2.infrastructure.speech.process_io import (
+    IO_POLL_SECONDS,
+    PIPE_CHUNK_BYTES,
+    exchange_decoder,
+    never_cancelled,
+    require_time,
+    stop_process,
+)
 
 SAMPLE_RATE = 16_000
 MAX_AUDIO_SECONDS = 120
 MAX_PCM_BYTES = SAMPLE_RATE * MAX_AUDIO_SECONDS * 4
 MAX_COMPRESSED_AUDIO_BYTES = 10_000_000
 MAX_OUTPUT_BYTES = 128_000
+HELPER_PROTOCOL_VERSION = 2
+ACCEPTANCE_ATTEMPTS = 2
+TRUNCATION_NOTICE = "\n[Transcript truncated at the output limit.]"
 MEMORY_LIMIT_BYTES = 2 * 1024**3
 FFMPEG_TIMEOUT_SECONDS = 15
 
@@ -39,24 +51,31 @@ def _decoder_environment() -> dict[str, str]:
     }
 
 
-def decode_audio_to_pcm(audio_data: bytes) -> bytes:
-    """Decode untrusted audio bytes to 16kHz mono 32-bit float PCM via bounded FFmpeg.
+def decode_audio_to_pcm(
+    audio_data: bytes, deadline: float | None = None, *, cancelled: Callable[[], bool] = never_cancelled
+) -> bytes:
+    """Decode private audio in an isolated, byte/time-bounded FFmpeg child.
 
     Args:
-        audio_data: Compressed input audio bytes.
+        audio_data: Bounded compressed audio.
+        deadline: Optional Unix request deadline; standalone decoding retains its fixed decoder timeout.
+        cancelled: Current cancellation predicate.
 
     Returns:
-        Raw 32-bit float PCM bytes.
+        Bounded mono 16 kHz float32 PCM.
 
     Raises:
-        SpeechRecognitionError: If input is invalid, oversized, or decoding fails.
+        SpeechRecognitionError: If decoding, authorization, input or time bounds fail.
     """
-    if not audio_data:
+    if not audio_data or len(audio_data) > MAX_COMPRESSED_AUDIO_BYTES:
         raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT)
-    if len(audio_data) > MAX_COMPRESSED_AUDIO_BYTES:
-        raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT)
-
+    remaining = FFMPEG_TIMEOUT_SECONDS if deadline is None else min(FFMPEG_TIMEOUT_SECONDS, deadline - time.time())
+    cutoff = time.monotonic() + remaining
+    require_time(cutoff, cancelled)
     command = [
+        "/usr/bin/setpriv",
+        "--pdeathsig",
+        "KILL",
         "/usr/bin/prlimit",
         f"--as={MEMORY_LIMIT_BYTES}",
         "--core=0",
@@ -87,25 +106,22 @@ def decode_audio_to_pcm(audio_data: bytes) -> bytes:
         "pipe:1",
     ]
     try:
-        result = subprocess.run(  # noqa: S603
+        process = subprocess.Popen(  # noqa: S603
             command,
-            input=audio_data,
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             env=_decoder_environment(),
-            timeout=FFMPEG_TIMEOUT_SECONDS,
-            check=False,
+            start_new_session=True,
+            bufsize=0,
         )
-    except subprocess.TimeoutExpired:
+        try:
+            pcm = exchange_decoder(process, audio_data, MAX_PCM_BYTES, cutoff, cancelled)
+        finally:
+            stop_process(process)
+    except OSError, subprocess.TimeoutExpired:
         raise SpeechRecognitionError(SpeechFailure.DECODE_FAILED) from None
-    except OSError:
-        raise SpeechRecognitionError(SpeechFailure.DECODE_FAILED) from None
-
-    if result.returncode != 0:
-        raise SpeechRecognitionError(SpeechFailure.DECODE_FAILED)
-    pcm = result.stdout
-    if len(pcm) > MAX_PCM_BYTES:
-        raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT)
-    if not pcm or len(pcm) % 4 != 0:
+    if len(pcm) % 4:
         raise SpeechRecognitionError(SpeechFailure.DECODE_FAILED)
     return pcm
 
@@ -120,6 +136,7 @@ class WhisperCppEngine(SpeechRecognitionPort):
         helper_path: Path | None = None,
         idle_timeout_seconds: int = 300,
     ) -> None:
+        SpeechLimits(model_idle_seconds=idle_timeout_seconds)
         self._store = store
         self._helper_path = helper_path or (Path(__file__).parent / "whisper_helper")
         self._idle_timeout_seconds = idle_timeout_seconds
@@ -127,12 +144,15 @@ class WhisperCppEngine(SpeechRecognitionPort):
         self._process: subprocess.Popen[bytes] | None = None
         self._closed = False
 
-    def recognize(self, audio: bytes, deadline: float) -> SpeechResult:
+    def recognize(
+        self, audio: bytes, deadline: float, *, cancelled: Callable[[], bool] = never_cancelled
+    ) -> SpeechResult:
         """Decode and recognize audio using the supervised whisper helper within deadline.
 
         Args:
             audio: Encoded audio bytes.
-            deadline: Absolute monotonic deadline timestamp.
+            deadline: Original Unix execution deadline.
+            cancelled: Live request cancellation predicate.
 
         Returns:
             Transcript or NoSpeech result.
@@ -141,23 +161,33 @@ class WhisperCppEngine(SpeechRecognitionPort):
             SpeechRecognitionError: If cancelled, timed out, or operational failure occurs.
         """
         self._verify_active_ownership()
-        if time.monotonic() >= deadline:
-            raise SpeechRecognitionError(SpeechFailure.DEADLINE_EXCEEDED)
-
-        pcm = decode_audio_to_pcm(audio)
-        return self._recognize_pcm(pcm, deadline)
+        cutoff = time.monotonic() + deadline - time.time()
+        require_time(cutoff, cancelled)
+        try:
+            pcm = decode_audio_to_pcm(audio, deadline, cancelled=cancelled)
+            return self._recognize_pcm(pcm, cutoff, cancelled)
+        except SpeechRecognitionError:
+            self._cleanup_helper()
+            raise
+        except OSError:
+            self._cleanup_helper()
+            raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED) from None
+        except Exception:
+            self._cleanup_helper()
+            raise
 
     def _verify_active_ownership(self) -> None:
         if self._closed or os.getpid() != self._owner:
             msg = "Engine is closed or accessed from another process"
             raise ValueError(msg)
 
-    def _ensure_helper(self) -> subprocess.Popen[bytes]:
+    def _ensure_helper(self, deadline: float, cancelled: Callable[[], bool]) -> subprocess.Popen[bytes]:
         if self._process is not None and self._process.poll() is None:
             return self._process
 
         self._cleanup_helper()
-        model_dir = self._store.ensure()
+        require_time(deadline, cancelled)
+        model_dir = self._store.require_ready()
         model_path = model_dir / "ggml-small-q8_0.bin"
         if not model_path.is_file():
             raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE)
@@ -188,14 +218,46 @@ class WhisperCppEngine(SpeechRecognitionPort):
             raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE) from None
 
         self._process = process
-        ready_payload = self._read_result_payload(time.monotonic() + 30)
-        if ready_payload.get("status") != "ready":
+        ready_payload = self._read_result_payload(deadline, cancelled)
+        if (
+            ready_payload.get("status") != "ready"
+            or ready_payload.get("network_blocked") is not True
+            or ready_payload.get("protocol") != HELPER_PROTOCOL_VERSION
+        ):
             self._cleanup_helper()
             raise SpeechRecognitionError(SpeechFailure.MODEL_UNAVAILABLE)
         return process
 
-    def _recognize_pcm(self, pcm: bytes, deadline: float) -> SpeechResult:
-        helper = self._ensure_helper()
+    def _accept_request(self, deadline: float, cancelled: Callable[[], bool]) -> subprocess.Popen[bytes]:
+        """Replace an idle-exited helper only before any private audio has been dispatched."""
+        for attempt in range(ACCEPTANCE_ATTEMPTS):
+            try:
+                helper = self._request_acceptance(deadline, cancelled)
+            except OSError:
+                self._cleanup_helper()
+                if attempt + 1 == ACCEPTANCE_ATTEMPTS:
+                    raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED) from None
+            except SpeechRecognitionError as error:
+                self._cleanup_helper()
+                if error.reason != SpeechFailure.INFERENCE_FAILED or attempt + 1 == ACCEPTANCE_ATTEMPTS:
+                    raise
+            else:
+                return helper
+        raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
+
+    def _request_acceptance(self, deadline: float, cancelled: Callable[[], bool]) -> subprocess.Popen[bytes]:
+        helper = self._ensure_helper(deadline, cancelled)
+        if helper.stdin is None:
+            raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
+        require_time(deadline, cancelled)
+        os.write(helper.stdin.fileno(), struct.pack("<I", 0))
+        response = self._read_result_payload(deadline, cancelled)
+        if response.get("status") != "accepted":
+            raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
+        return helper
+
+    def _recognize_pcm(self, pcm: bytes, deadline: float, cancelled: Callable[[], bool]) -> SpeechResult:
+        helper = self._accept_request(deadline, cancelled)
         if helper.stdin is None:
             self._cleanup_helper()
             raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
@@ -203,24 +265,20 @@ class WhisperCppEngine(SpeechRecognitionPort):
         payload = struct.pack("<I", len(pcm)) + pcm
         offset = 0
         while offset < len(payload):
-            if time.monotonic() >= deadline:
-                self._cleanup_helper()
-                raise SpeechRecognitionError(SpeechFailure.DEADLINE_EXCEEDED)
-            if select.select([], [helper.stdin], [], 0.05)[1]:
-                offset += os.write(helper.stdin.fileno(), payload[offset : offset + 4096])
+            require_time(deadline, cancelled)
+            if select.select([], [helper.stdin], [], IO_POLL_SECONDS)[1]:
+                offset += os.write(helper.stdin.fileno(), payload[offset : offset + PIPE_CHUNK_BYTES])
 
-        result_dict = self._read_result_payload(deadline)
+        result_dict = self._read_result_payload(deadline, cancelled)
         return self._translate_result(result_dict)
 
-    def _read_exact(self, length: int, deadline: float) -> bytes:
+    def _read_exact(self, length: int, deadline: float, cancelled: Callable[[], bool]) -> bytes:
         if self._process is None or self._process.stdout is None:
             raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
         output = bytearray()
         while len(output) < length:
-            if time.monotonic() >= deadline:
-                self._cleanup_helper()
-                raise SpeechRecognitionError(SpeechFailure.DEADLINE_EXCEEDED)
-            if not select.select([self._process.stdout], [], [], 0.05)[0]:
+            require_time(deadline, cancelled)
+            if not select.select([self._process.stdout], [], [], IO_POLL_SECONDS)[0]:
                 if self._process.poll() is not None:
                     self._cleanup_helper()
                     raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
@@ -232,31 +290,38 @@ class WhisperCppEngine(SpeechRecognitionPort):
             output.extend(chunk)
         return bytes(output)
 
-    def _read_result_payload(self, deadline: float) -> dict[str, object]:
-        raw_len = self._read_exact(4, deadline)
+    def _read_result_payload(self, deadline: float, cancelled: Callable[[], bool]) -> dict[str, object]:
+        raw_len = self._read_exact(4, deadline, cancelled)
         length = struct.unpack("<I", raw_len)[0]
         if length > MAX_OUTPUT_BYTES:
             self._cleanup_helper()
             raise SpeechRecognitionError(SpeechFailure.OUTPUT_LIMIT)
-        body = self._read_exact(length, deadline)
+        body = self._read_exact(length, deadline, cancelled)
         try:
-            return json.loads(body.decode("utf-8"))
+            payload = json.loads(body.decode("utf-8"))
         except json.JSONDecodeError, UnicodeDecodeError:
             self._cleanup_helper()
             raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED) from None
+        if not isinstance(payload, dict):
+            self._cleanup_helper()
+            raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
+        return payload
 
     def _translate_result(self, payload: dict[str, object]) -> SpeechResult:
         status = payload.get("status")
         if status == "no_speech":
             return NoSpeech()
         if status == "transcript":
-            text = str(payload.get("text", "")).strip()
-            if not text:
-                return NoSpeech()
+            text = payload.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
+            text = text.strip()
             if len(text) > MAX_TRANSCRIPT_CHARS:
-                raise SpeechRecognitionError(SpeechFailure.OUTPUT_LIMIT)
+                text = text[: MAX_TRANSCRIPT_CHARS - len(TRUNCATION_NOTICE)] + TRUNCATION_NOTICE
             raw_lang = payload.get("language")
-            language = str(raw_lang) if raw_lang is not None else None
+            if raw_lang is not None and not isinstance(raw_lang, str):
+                raise SpeechRecognitionError(SpeechFailure.INFERENCE_FAILED)
+            language = raw_lang
             return Transcript(text=text, language=language)
         if status == "invalid_audio":
             raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT)
@@ -267,25 +332,17 @@ class WhisperCppEngine(SpeechRecognitionPort):
     def _cleanup_helper(self) -> None:
         process = self._process
         self._process = None
-        if process is None:
-            return
-        if process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-                process.wait(timeout=2)
-            except OSError, subprocess.TimeoutExpired:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait(timeout=2)
-                except OSError:
-                    pass
-        if process.stdin is not None:
-            process.stdin.close()
-        if process.stdout is not None:
-            process.stdout.close()
+        if process is not None:
+            stop_process(process)
 
     def close(self) -> None:
-        """Shut down the helper process and mark engine closed."""
-        if os.getpid() == self._owner:
-            self._closed = True
-            self._cleanup_helper()
+        """Stop and reap the helper in its owning process; reject inherited access.
+
+        Raises:
+            ValueError: If called from another process.
+        """
+        if os.getpid() != self._owner:
+            msg = "Engine cannot be shared across processes"
+            raise ValueError(msg)
+        self._cleanup_helper()
+        self._closed = True

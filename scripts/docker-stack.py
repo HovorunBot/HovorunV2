@@ -26,6 +26,7 @@ BUILD_ROLES = (
     "worker-media",
     "worker-compression",
     "worker-browser",
+    "worker-speech",
 )
 TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
 FALSE_VALUES = frozenset({"false", "0", "no", "off"})
@@ -67,12 +68,24 @@ class DockerStack:
         ]
         configuration = self._capture([*self._compose, "--profile", "*", "config", "--format", "json"])
         self._configuration = json.loads(configuration)
-        raw = str(self._configuration["services"]["worker-media"]["environment"]["BROWSER_ENABLED"]).lower()
-        if raw not in TRUE_VALUES | FALSE_VALUES:
-            msg = "BROWSER_ENABLED must be a boolean (True or False)."
-            raise ValueError(msg)
-        self._browser_enabled = raw in TRUE_VALUES
+        self._browser_enabled = self._enabled("BROWSER_ENABLED")
+        self._speech_enabled = self._enabled("SPEECH_ENABLED")
         self._project = self._configuration["name"]
+
+    def _enabled(self, name: str) -> bool:
+        """Require an explicit boolean value for an optional deployment capability."""
+        raw = str(self._configuration["services"]["worker-media"]["environment"].get(name, "False")).lower()
+        if raw not in TRUE_VALUES | FALSE_VALUES:
+            msg = f"{name} must be a boolean (True or False)."
+            raise ValueError(msg)
+        return raw in TRUE_VALUES
+
+    def _optional_workers(self) -> tuple[tuple[str, bool, str], ...]:
+        """Describe optional services and their operator enablement contracts."""
+        return (
+            ("browser", self._browser_enabled, "BROWSER_ENABLED"),
+            ("speech", self._speech_enabled, "SPEECH_ENABLED"),
+        )
 
     def _run(self, command: list[str]) -> None:
         with subprocess.Popen(command, cwd=PROJECT_ROOT, env=self._environment) as process:  # noqa: S603
@@ -122,7 +135,8 @@ class DockerStack:
         Returns:
             List of service role names that must be built.
         """
-        required_roles = [role for role in BUILD_ROLES if not (role == "worker-browser" and not self._browser_enabled)]
+        disabled = {f"worker-{name}" for name, enabled, _variable in self._optional_workers() if not enabled}
+        required_roles = [role for role in BUILD_ROLES if role not in disabled]
         if force:
             return list(required_roles)
         return [
@@ -139,6 +153,10 @@ class DockerStack:
         if not roles:
             sys.stdout.write("All required images are already built. Use FORCE=1 to rebuild.\n")
             return
+        self._build_roles(roles, force=force)
+
+    def _build_roles(self, roles: list[str], *, force: bool) -> None:
+        """Build the selected role images using the normal immutable image labels."""
         for role in roles:
             service = self._configuration["services"][role]
             command = [
@@ -164,6 +182,31 @@ class DockerStack:
             )
             self._run(command)
 
+    def prepare_speech(self) -> None:
+        """Prepare the public speech inventory without starting the worker or application stack."""
+        service = self._configuration["services"]["worker-speech"]
+        if not self._image_exists(service["image"]):
+            self._build_roles(["worker-speech"], force=False)
+        volume = self._configuration["volumes"]["speech_models"]["name"]
+        self._run(
+            [
+                *self._compose,
+                "--profile",
+                "speech",
+                "run",
+                "--rm",
+                "--no-deps",
+                "-T",
+                "--volume",
+                f"{volume}:/app/data/models/speech:rw",
+                "worker-speech",
+                "/app/.venv/bin/python",
+                "-m",
+                "hovorunv2.bootstrap.speech_assets",
+                "prepare",
+            ]
+        )
+
     def compose(self, arguments: list[str]) -> None:
         """Run Compose with browser selection and clean obsolete images after startup.
 
@@ -173,19 +216,23 @@ class DockerStack:
         Raises:
             ValueError: If an explicit service command would start a disabled browser worker.
         """
-        if (
-            not self._browser_enabled
-            and arguments[0] in {"build", "create", "run", "up", "start", "restart"}
-            and "worker-browser" in arguments
-        ):
-            msg = "Set BROWSER_ENABLED=True before building or starting worker-browser."
-            raise ValueError(msg)
-        profiles = ["--profile", "browser"] if self._browser_enabled else []
+        profiles: list[str] = []
+        starting = arguments[0] == "up" and "--no-build" in arguments
+        for name, enabled, variable in self._optional_workers():
+            service = f"worker-{name}"
+            if (
+                not enabled
+                and arguments[0] in {"build", "create", "run", "up", "start", "restart"}
+                and service in arguments
+            ):
+                msg = f"Set {variable}=True before building or starting {service}."
+                raise ValueError(msg)
+            if enabled:
+                profiles.extend(["--profile", name])
+            elif starting:
+                self._run([*self._compose, "--profile", name, "rm", "--stop", "--force", service])
         if arguments[0] in {"down", "stop", "rm"}:
             profiles = ["--profile", "*"]
-        starting = arguments[0] == "up" and "--no-build" in arguments
-        if starting and not self._browser_enabled:
-            self._run([*self._compose, "--profile", "browser", "rm", "--stop", "--force", "worker-browser"])
         if starting:
             arguments = [*arguments, "--wait", "--wait-timeout", "180"]
         self._run([*self._compose, *profiles, *arguments])
@@ -200,6 +247,7 @@ class DockerStack:
         """
         if command[0] not in {
             "build",
+            "prepare-speech",
             "clean",
             "invalidate-runtime",
             "up",
@@ -225,6 +273,9 @@ class DockerStack:
             )
             self.build(force=force)
             return
+        if command == ["prepare-speech"]:
+            self.prepare_speech()
+            return
         if command == ["clean"]:
             self.clean()
             return
@@ -235,7 +286,11 @@ class DockerStack:
 
     def clean_images(self) -> None:
         """Remove unused application images while preserving all container references."""
-        repositories = {self._configuration["services"][role]["image"].rsplit(":", 1)[0] for role in BUILD_ROLES}
+        repositories = {
+            self._configuration["services"][role]["image"].rsplit(":", 1)[0]
+            for role in BUILD_ROLES
+            if role in self._configuration["services"]
+        }
         images = self._capture(["docker", "image", "ls", "--no-trunc", "--format", "json"])
         references: dict[str, list[str]] = {}
         foreign_images: set[str] = set()

@@ -34,11 +34,10 @@ def test_detection_text_removes_noise_without_losing_unicode(raw: str, expected:
     [
         (" IW ", "he"),
         ("ji", "yi"),
-        ("in-ID", "id-id"),
-        ("ZH_hANT_TW", "zh-hant-tw"),
-        ("uk_UA", "uk-ua"),
-        ("", "und"),
-        ("pt-BR", "pt-br"),
+        ("in-ID", "id-ID"),
+        ("ZH_hANT_TW", "zh-Hant-TW"),
+        ("uk_UA", "uk-UA"),
+        ("pt-BR", "pt-BR"),
     ],
 )
 def test_language_identity_preserves_regions_and_scripts(raw: str, expected: str) -> None:

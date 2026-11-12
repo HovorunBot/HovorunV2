@@ -12,6 +12,7 @@ from aiogram.utils.magic_filter import MagicFilter
 
 from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.features.registry import TriggerKind
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
@@ -24,6 +25,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     JobTarget,
     PayloadPort,
 )
+from hovorunv2.application.speech.input_data import SpeechInput
 from hovorunv2.application.speech.policies import (
     MAX_AUDIO_BYTES,
     MAX_AUDIO_SECONDS,
@@ -52,6 +54,7 @@ class BaseSpeechHandler(BaseCommand):
         users: UserStore,
         speech_settings: SpeechSettingsStore,
         clock: Clock,
+        settings: AppSettings,
     ) -> None:
         """Initialize handler dependencies."""
         self._admission = admission
@@ -59,20 +62,21 @@ class BaseSpeechHandler(BaseCommand):
         self._chats = chats
         self._users = users
         self._speech_settings = speech_settings
+        self._settings = settings
         self._clock = clock
         self._busy_gate = self._BUSY_GATE
 
-    async def _resolve_sender(self, message: Message) -> tuple[int | None, int | None, str] | None:
-        """Resolve numeric actor, generation, and transient label from Telegram message.
+    async def _resolve_sender(self, message: Message) -> tuple[int | None, int | None] | None:
+        """Resolve numeric actor, generation,  from Telegram message.
 
         Args:
             message: Telegram message carrying the sender.
 
         Returns:
-            Actor ID, generation and display label, or None when sender is absent or bot.
+            Actor ID and generation, or None when sender is absent or bot.
         """
         if message.sender_chat:
-            return None, None, message.sender_chat.title or ""
+            return None, None
         if message.from_user is None or message.from_user.is_bot:
             return None
         user = await self._users.get_by_telegram_id(message.from_user.id)
@@ -83,7 +87,7 @@ class BaseSpeechHandler(BaseCommand):
             )
         if user is None:
             return None
-        return user.telegram_id, user.generation, message.from_user.full_name or ""
+        return user.telegram_id, user.generation
 
     async def _resolve_group_target(
         self, message: Message, actor_id: int | None, *, direct: bool
@@ -173,7 +177,6 @@ class BaseSpeechHandler(BaseCommand):
         epoch: int,
         actor_id: int | None,
         actor_generation: int | None,
-        sender_label: str,
         trigger: TriggerKind,
         charged_kind: TargetKind,
         charged_id: int,
@@ -183,8 +186,20 @@ class BaseSpeechHandler(BaseCommand):
         now = self._clock.now()
         deadline = now + MAX_JOB_LIFETIME_SECONDS
         job_id = uuid.uuid4().hex
-        payload_bytes = json.dumps({"file_id": file_id, "message_thread_id": thread_id}).encode("utf-8")
-        sealed = await self._payloads.seal(job_id, payload_bytes, deadline, sender_label=sender_label)
+        media = source_message.voice or source_message.audio
+        if media is None or media.file_size is None:
+            msg = "Validated speech source requires audio metadata."
+            raise ValueError(msg)
+        private_input = SpeechInput(
+            file_id=file_id,
+            message_thread_id=thread_id,
+            source_chat_id=source_message.chat.id,
+            source_message_id=source_message.message_id,
+            claimed_bytes=media.file_size,
+            claimed_seconds=media.duration,
+        )
+        payload_bytes = json.dumps(private_input.model_dump(mode="json")).encode("utf-8")
+        sealed = await self._payloads.seal(job_id, payload_bytes, deadline)
         dedupe_key = speech_action_key(
             target.telegram_id, source_message.message_id, target.entity_id, target.generation
         )
@@ -251,11 +266,7 @@ class TranscribeCommand(BaseSpeechHandler):
             return "Reply to a voice or audio message with /transcribe to transcribe it."
         if reply.chat.id != message.chat.id:
             return "Cannot transcribe messages from another chat."
-        if (
-            message.message_thread_id is not None
-            and reply.message_thread_id is not None
-            and message.message_thread_id != reply.message_thread_id
-        ):
+        if message.message_thread_id != reply.message_thread_id:
             return "Cannot transcribe messages from a different topic."
         if reply.from_user and reply.from_user.is_bot:
             return "Cannot transcribe messages sent by bots."
@@ -290,6 +301,9 @@ class TranscribeCommand(BaseSpeechHandler):
             bot: Bot instance bound to the handler.
             **kwargs: Unused extra context.
         """
+        if not self._settings.speech_enabled:
+            await message.reply("Speech recognition is unavailable on this bot.")
+            return
         reply = message.reply_to_message
         reply_error = self._validate_reply(message, reply)
         if reply_error:
@@ -306,7 +320,7 @@ class TranscribeCommand(BaseSpeechHandler):
         sender = await self._resolve_sender(message)
         if sender is None:
             return
-        actor_id, actor_generation, sender_label = sender
+        actor_id, actor_generation = sender
 
         target_info = await self._resolve_target_and_charging(message, actor_id, actor_generation, direct=True)
         if target_info is None:
@@ -329,7 +343,6 @@ class TranscribeCommand(BaseSpeechHandler):
             epoch=epoch,
             actor_id=actor_id,
             actor_generation=actor_generation,
-            sender_label=sender_label,
             trigger=trigger,
             charged_kind=charged_kind,
             charged_id=charged_id,
@@ -381,6 +394,8 @@ class SpeechVoiceHandler(BaseSpeechHandler):
             bot: Bot instance bound to the handler.
             **kwargs: Unused extra context.
         """
+        if not self._settings.speech_enabled:
+            return
         if message.from_user and message.from_user.is_bot:
             return
 
@@ -391,7 +406,7 @@ class SpeechVoiceHandler(BaseSpeechHandler):
         sender = await self._resolve_sender(message)
         if sender is None:
             return
-        actor_id, actor_generation, sender_label = sender
+        actor_id, actor_generation = sender
 
         target_info = await self._resolve_target_and_charging(message, actor_id, actor_generation, direct=False)
         if target_info is None:
@@ -411,7 +426,6 @@ class SpeechVoiceHandler(BaseSpeechHandler):
             epoch=epoch,
             actor_id=actor_id,
             actor_generation=actor_generation,
-            sender_label=sender_label,
             trigger=trigger,
             charged_kind=charged_kind,
             charged_id=charged_id,
