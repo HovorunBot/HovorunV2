@@ -28,7 +28,7 @@ FORCE ?= 0
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
         test test-unit test-fast test-profile test-coverage lint format type-check lint-imports check install-hooks \
         clean backup logs status \
-        ai agy gemini codex claude deepseek ai-check ai-next prepare-speech
+        ai-check ai-next prepare-speech
 
 # Each command uses one complete environment file, never an overlay.
 ## Run setup, then start the selected Docker stack.
@@ -290,33 +290,6 @@ install-hooks:
 		echo "Installing Git quality, commit-message, and post-commit changelog hooks..."; \
 		uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg --hook-type post-commit; \
 	fi
-
-## Launch an assistant with project workspace settings (TOOL=<codex|agy|gemini|claude|deepseek|custom> [MODEL=...]).
-ai:
-	@if [ -z "$(TOOL)" ]; then \
-		echo "Usage: make ai TOOL=<codex|agy|gemini|claude|deepseek|custom> [MODEL=...] [ARGS=...]"; \
-		exit 2; \
-	fi; \
-	AI_MODEL="$(MODEL)" ./scripts/ai-workflow $(TOOL) $(ARGS)
-
-## Launch Antigravity (Gemini) CLI assistant with project sandbox (optional MODEL=...).
-agy:
-	@$(MAKE) ai TOOL=agy MODEL="$(MODEL)" ARGS="$(ARGS)"
-
-## Alias for agy: launch Antigravity (Gemini) CLI assistant.
-gemini: agy
-
-## Launch OpenAI Codex assistant with project sandbox and approvals (optional MODEL=...).
-codex:
-	@$(MAKE) ai TOOL=codex MODEL="$(MODEL)" ARGS="$(ARGS)"
-
-## Launch Claude Code assistant with project settings (optional MODEL=...).
-claude:
-	@$(MAKE) ai TOOL=claude MODEL="$(MODEL)" ARGS="$(ARGS)"
-
-## Launch the DeepSeek Harness web UI through npx (optional ARGS="--port 3081 --no-open").
-deepseek:
-	@$(MAKE) ai TOOL=deepseek MODEL="$(MODEL)" ARGS="$(ARGS)"
 
 ## Validate local ai-schemes initiatives (optional SCHEME=path/to/initiative).
 ai-check:

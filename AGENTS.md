@@ -105,7 +105,6 @@ Telegram helper bot. Stack: Python 3.15+, aiogram, SQLAlchemy 2.0 (Async), Postg
 - **Type Check:** `uv run ty check src`
 - **Lint:** `uv run ruff check .`
 - **Import Lint:** `uv run lint-imports`
-- **AI Assistants:** `make ai TOOL=<name> [ARGS=...]` (supported tools: `agy`, `gemini`, `codex`, `claude`, `deepseek`; shortcut `make deepseek` launches the DeepSeek Harness web UI; see `Makefile`)
 - **AI Plan Tools:** `make ai-check [SCHEME=...]` (validate plan manifests); `make ai-next SCHEME=...` (find next eligible block)
 
 ## 8. AI Workflow

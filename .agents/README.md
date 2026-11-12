@@ -22,10 +22,4 @@ Tracked workspace customization directory providing tool-neutral skills, role gu
 | **Claude Code** | `CLAUDE.md` (`@AGENTS.md` import) | `.claude/skills/<name>` (relative symlinks to `.agents/skills/<name>`) |
 | **Custom Runner / Harness** | `AGENTS.md` (root instructions) | Loads `.agents/skills/<name>/SKILL.md`; orchestrates plans via `scripts/ai_scheme.py` |
 
-## DeepSeek Harness
-
-Run `make deepseek` or `make ai TOOL=deepseek` to launch the official `npx @deepseek-ai/dsh web` command from the repository root. Node.js and npm/npx must be installed; npx may prompt to download the package on first use. The launcher does not change Harness permissions or approval settings.
-
-Pass web arguments with `make deepseek ARGS="--port 3081 --no-open"`. Configure provider credentials and models privately through the Harness settings; the shared Makefile `MODEL` override is unsupported for this launcher. Do not place credentials in Make arguments. The repository's `AGENTS.md` rules and `.agents/skills/` procedures still apply to work performed through the Harness.
-
-See the [official CLI instructions](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/README.md) for installation and profile configuration.
+Launch assistant tools directly through their own interfaces. The repository retains skills, prompts, templates and the initiative CLI without wrapping assistant executables.
