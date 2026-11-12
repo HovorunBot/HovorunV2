@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **speech**: provide ephemeral storage for prefork startup
+
 ## v0.5.1 (2026-11-12)
 
 ### Fix

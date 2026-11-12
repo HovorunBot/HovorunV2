@@ -241,6 +241,8 @@ services:
     pids_limit: 128
     init: true
     read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     ulimits:
