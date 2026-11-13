@@ -2,12 +2,13 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform
 from hovorunv2.domain.group_route import GroupRouteDB
+from hovorunv2.domain.setup_operation import SetupOperationDB
 from hovorunv2.infrastructure.persistence.repositories.policy_queries import active_chat
 
 
@@ -159,6 +160,7 @@ class SQLAlchemyChatRepository:
         chat.deleted_by_actor_id = actor_id
         chat.deleted_reason = reason
         chat.generation += 1
+        await self.session.execute(delete(SetupOperationDB).where(SetupOperationDB.chat_id == chat.id))
         return True
 
     async def set_ui_locale(
@@ -180,5 +182,7 @@ class SQLAlchemyChatRepository:
         chat = await self.get_by_id(chat_id, platform)
         if not chat:
             return False
-        chat.ui_locale = ui_locale
+        if chat.ui_locale != ui_locale:
+            chat.ui_locale = ui_locale
+            chat.settings_version += 1
         return True

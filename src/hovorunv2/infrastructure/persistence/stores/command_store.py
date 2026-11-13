@@ -105,6 +105,7 @@ class SQLAlchemyCommandStore(CommandStore):
             raise ValueError(msg)
         chat.commands.extend(definitions)
         chat.features_configured = True
+        chat.settings_version += 1
         return True
 
     async def initialize_defaults(self, chat_id: int, commands: tuple[str, ...], platform: str = "telegram") -> None:
@@ -267,6 +268,7 @@ class SQLAlchemyCommandStore(CommandStore):
         first_selection = not chat.features_configured
         chat.legacy_empty_capture = False
         chat.features_configured = True
+        chat.settings_version += 1
         return legacy, first_selection
 
     def _require_toggle_command(self, command_name: str) -> None:

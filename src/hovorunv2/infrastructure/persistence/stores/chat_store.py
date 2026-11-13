@@ -193,6 +193,7 @@ class SQLAlchemyChatStore(ChatStore):
 
         chat.target_lang = target_lang
         chat.ignored_langs = ignored_langs
+        chat.settings_version += 1
 
     async def _execute_create_chat(
         self,

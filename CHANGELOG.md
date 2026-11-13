@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **settings**: apply reviewed chat configuration atomically
 - **settings**: add target-bound setup drafts
 - **translation**: add source-bound translate buttons
 - **translation**: add reply-based translate command

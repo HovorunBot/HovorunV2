@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from functools import partial
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.access.permissions import PermissionFacts, PermissionTarget
@@ -13,6 +13,7 @@ from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.ban import BanDB
 from hovorunv2.domain.enums import ActorOrigin, Role, TargetKind
+from hovorunv2.domain.setup_operation import SetupOperationDB
 from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
@@ -100,13 +101,16 @@ class SQLAlchemyUserStore(UserStore):
         if actor.origin != ActorOrigin.CLI and target is not None and target.role >= Role.ADMIN:
             msg = "Protected administrators can only be deleted through CLI."
             raise PermissionError(msg)
-        return await repo.soft_delete(
+        deleted = await repo.soft_delete(
             telegram_id,
             actor.actor_id,
             reason,
             platform,
             deleted_at,
         )
+        if deleted:
+            await session.execute(delete(SetupOperationDB).where(SetupOperationDB.actor_id == telegram_id))
+        return deleted
 
     async def _execute_set_trust(
         self,

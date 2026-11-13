@@ -63,6 +63,8 @@ class SpeechSettingsRepository:
         self._require_available(mode)
         changed = chat.speech_mode != mode
         chat.speech_mode = mode
+        if changed:
+            chat.settings_version += 1
         self._session.flush()
         return mode, changed
 

@@ -25,6 +25,7 @@ from hovorunv2.application.operations.notification_preferences import Notificati
 from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.application.settings.admin_session_service import AdminSessionService
 from hovorunv2.application.settings.settings_session_service import SettingsSessionService
+from hovorunv2.application.settings.setup_apply import SetupApplyService
 from hovorunv2.application.settings.setup_drafts import SetupDraftService
 from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
@@ -74,6 +75,7 @@ class InterfaceAndUtilityProvider(Provider):
 
     settings_sessions = provide(SettingsSessionService)
     setup_draft_service = provide(SetupDraftService)
+    setup_apply_service = provide(SetupApplyService)
     settings_command = provide(SettingsCommand)
 
     bot_join_handler = provide(BotJoinHandler)

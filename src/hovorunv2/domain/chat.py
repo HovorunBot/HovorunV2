@@ -77,6 +77,7 @@ class ChatDB(Base):
     target_lang: Mapped[str | None] = mapped_column(String, nullable=True)
     ignored_langs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     ui_locale: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
+    settings_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     encryption_salt: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

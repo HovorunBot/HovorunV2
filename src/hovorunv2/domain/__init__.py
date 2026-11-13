@@ -27,6 +27,7 @@ from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.notification import NotificationPreferenceDB
 from hovorunv2.domain.notification_event import NotificationEventDB, NotificationReceiptDB
 from hovorunv2.domain.role import UserRoleDB
+from hovorunv2.domain.setup_operation import SetupOperationDB
 from hovorunv2.domain.system import SystemStateDB
 from hovorunv2.domain.usage import UsageOverrideDB
 from hovorunv2.domain.usage_accounting import UsageAccountingEventDB, UsageAggregateDB
@@ -57,6 +58,7 @@ __all__ = [
     "NotificationReceiptDB",
     "PublicHandleDB",
     "RequestStatus",
+    "SetupOperationDB",
     "SystemStateDB",
     "UnknownHandleError",
     "UsageAccountingEventDB",

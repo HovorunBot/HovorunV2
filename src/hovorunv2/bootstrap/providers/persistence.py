@@ -16,6 +16,7 @@ from hovorunv2.application.operations.feature_status import FeatureAudienceStore
 from hovorunv2.application.operations.notification_ledger import NotificationEventStore
 from hovorunv2.application.operations.notification_preferences import NotificationPreferenceStore
 from hovorunv2.application.operations.ports import SystemStore
+from hovorunv2.application.settings.setup_apply import SetupApplyStorePort
 from hovorunv2.application.speech.ports import SpeechSettingsStore
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.persistence import (
@@ -37,6 +38,7 @@ from hovorunv2.infrastructure.persistence.stores.notification_preference_store i
     SQLAlchemyNotificationPreferenceStore,
 )
 from hovorunv2.infrastructure.persistence.stores.recovery_store import SQLAlchemyRecoveryStore
+from hovorunv2.infrastructure.persistence.stores.setup_apply_store import SQLAlchemySetupApplyStore
 from hovorunv2.infrastructure.persistence.stores.speech_settings_store import SQLAlchemySpeechSettingsStore
 
 
@@ -102,3 +104,6 @@ class AuditAndPersistenceProvider(Provider):
 
     audited_transaction_impl = provide(SQLAlchemyAuditedTransaction)
     audited_transaction = alias(source=SQLAlchemyAuditedTransaction, provides=AuditedUnitOfWork)
+
+    setup_apply_store_impl = provide(SQLAlchemySetupApplyStore)
+    setup_apply_store = alias(source=SQLAlchemySetupApplyStore, provides=SetupApplyStorePort)
