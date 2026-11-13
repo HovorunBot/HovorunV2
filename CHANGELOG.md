@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **settings**: add target-bound setup drafts
 - **translation**: add source-bound translate buttons
 - **translation**: add reply-based translate command
 - **translation**: prefer free online translation with local fallback

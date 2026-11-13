@@ -6,6 +6,7 @@ from hovorunv2.application.features.emergency_service import FeatureEmergencySer
 from hovorunv2.application.jobs.admission import AdmissionPort
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_jobs import PayloadPort
+from hovorunv2.application.settings.setup_drafts import SetupDraftStorePort
 from hovorunv2.application.translation.snapshots import TranslationSnapshotPort
 from hovorunv2.application.usage.budget_service import BudgetService
 from hovorunv2.application.usage.budgets import BudgetPort, Clock, RuntimeNamespace, WallClock
@@ -19,6 +20,7 @@ from hovorunv2.infrastructure.persistence.stores.usage_policy_store import SQLAl
 from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.runtime.budgets import ValkeyBudgetStore
 from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
+from hovorunv2.infrastructure.runtime.setup_draft_store import ValkeySetupDraftStore
 from hovorunv2.infrastructure.runtime.translation_snapshots import ValkeyTranslationSnapshotStore
 
 
@@ -45,6 +47,9 @@ class RuntimeUsageProvider(Provider):
 
     translation_snapshots_impl = provide(ValkeyTranslationSnapshotStore)
     translation_snapshots = alias(source=ValkeyTranslationSnapshotStore, provides=TranslationSnapshotPort)
+
+    setup_drafts_impl = provide(ValkeySetupDraftStore)
+    setup_drafts = alias(source=ValkeySetupDraftStore, provides=SetupDraftStorePort)
 
     budget_store_impl = provide(ValkeyBudgetStore)
     budget_store = alias(source=ValkeyBudgetStore, provides=BudgetPort)
