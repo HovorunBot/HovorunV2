@@ -67,11 +67,13 @@ Use Make to apply the `.env` browser switch. Raw `docker compose` commands requi
 
 See [administration](docs/administration.md) for role and trust commands, access rules and troubleshooting.
 
-## Local caption translation
+## Hybrid translation
 
-Caption language detection runs locally with py3langid. Ignored languages, the selected target language, and captions with insufficient alphabetic text skip neural inference. Other supported captions use an on-demand CTranslate2 NLLB-200 int8 CPU model; captions are never sent to a translation API. Model errors leave original captions deliverable.
+Caption and explicit reply language detection runs locally with py3langid. Automatic media/post captions skip ignored languages, the selected target language, and text with insufficient alphabetic content; explicit `/translate [target]` replies and `Translate` button clicks override ignored languages and use either the per-request target or the chat/default target without mutating saved chat preferences.
 
-The first required translation downloads about 630 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. Media, browser and compression workers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. A cold download can delay or skip the first translation. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's separate noncommercial license.
+Translation uses a Google-first online engine (`deep-translator` + `tenacity` with bounded 15s budget and `TRANSLATION_ONLINE_ENABLED` offline switch) with automatic atomic fallback to an on-demand CTranslate2 NLLB-200 int8 CPU model when online translation is disabled or unavailable. Account-based and paid providers (including Microsoft Translator F0) are deferred. When an automatic translated response exceeds Telegram's caption or message budget, the original post/media is preserved with a source-bound `Translate` button (encrypted 24-hour non-renewing Valkey snapshot) and multi-part results use `Continue translation` chains rather than `.txt` fallback.
+
+The first required local fallback translation downloads about 630 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. Media, browser and compression workers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's separate noncommercial license.
 
 ## Access and privacy
 

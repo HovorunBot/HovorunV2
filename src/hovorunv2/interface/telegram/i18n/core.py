@@ -2,22 +2,31 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 from aiogram_i18n.context import I18nContext
 from aiogram_i18n.cores import FluentRuntimeCore
 from aiogram_i18n.exceptions import KeyNotFoundError
 
-from hovorunv2.application.translation.ports import TranslationCatalogPort
+from hovorunv2.interface.telegram.i18n.catalog import (
+    DEFAULT_LOCALE,
+    LOCALE_NAMES,
+    LOCALES_DIR,
+    SECONDARY_FALLBACK_LOCALE,
+    SUPPORTED_LOCALES,
+)
 
-LOCALES_DIR: Final[Path] = Path(__file__).resolve().parent.parent / "locales"
-DEFAULT_LOCALE: Final[str] = "uk"
-SECONDARY_FALLBACK_LOCALE: Final[str] = "en"
-SUPPORTED_LOCALES: Final[tuple[str, ...]] = ("uk", "en")
-LOCALE_NAMES: Final[dict[str, str]] = {
-    "uk": "Українська",
-    "en": "English",
-}
+__all__ = [
+    "DEFAULT_LOCALE",
+    "LOCALES_DIR",
+    "LOCALE_NAMES",
+    "SECONDARY_FALLBACK_LOCALE",
+    "SUPPORTED_LOCALES",
+    "FallbackFluentRuntimeCore",
+    "create_i18n_core",
+    "get_i18n_core",
+    "get_message",
+]
 
 
 class FallbackFluentRuntimeCore(FluentRuntimeCore):
@@ -102,11 +111,3 @@ def get_message(key: str, locale: str | None = None, /, **kwargs: object) -> str
             resolved_locale = i18n.locale
     resolved_locale = resolved_locale or DEFAULT_LOCALE
     return get_i18n_core().get(key, resolved_locale, **kwargs)
-
-
-class FluentTranslationCatalog(TranslationCatalogPort):
-    """Render translation UI strings from the shared Fluent catalog without aiogram context."""
-
-    def render(self, key: str, locale: str | None = None, **kwargs: object) -> str:
-        """Format a localized message key for the requested or default Ukrainian locale."""
-        return get_message(key, locale or DEFAULT_LOCALE, **kwargs)

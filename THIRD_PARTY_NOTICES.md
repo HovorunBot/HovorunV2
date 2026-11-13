@@ -20,7 +20,7 @@ The application BSD license does **not** relicense these weights or grant commer
 
 The original model card identifies research intended use and excludes production deployment from its intended scope. This statement is distinct from the model license; local quality, reliability, latency, and memory require verification for the intended workload.
 
-The local runtime uses CTranslate2 (MIT), SentencePiece (Apache-2.0), and py3langid (BSD-3-Clause, derived from BSD-2-Clause langid.py). Their upstream package notices remain applicable. None changes the license of the NLLB model assets.
+The online translation adapter uses `deep-translator` (MIT) and `tenacity` (Apache-2.0) to query the account-free public Google Translate web endpoint with bounded retries and an operator offline switch (`TRANSLATION_ONLINE_ENABLED`). The local fallback runtime uses CTranslate2 (MIT), SentencePiece (Apache-2.0), and py3langid (BSD-3-Clause, derived from BSD-2-Clause langid.py). Their upstream package notices remain applicable. None changes the license of the NLLB model assets.
 
 ## Local speech recognition
 

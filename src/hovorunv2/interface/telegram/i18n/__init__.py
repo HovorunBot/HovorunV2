@@ -1,18 +1,20 @@
 """Telegram user interaction internationalization utilities."""
 
-from hovorunv2.interface.telegram.i18n.core import (
+from hovorunv2.interface.telegram.i18n.catalog import (
     DEFAULT_LOCALE,
     LOCALE_NAMES,
     LOCALES_DIR,
     SECONDARY_FALLBACK_LOCALE,
     SUPPORTED_LOCALES,
-    FallbackFluentRuntimeCore,
     FluentTranslationCatalog,
+)
+lazy from hovorunv2.interface.telegram.i18n.core import (
+    FallbackFluentRuntimeCore,
     create_i18n_core,
     get_i18n_core,
     get_message,
 )
-from hovorunv2.interface.telegram.i18n.manager import AudienceI18nManager
+lazy from hovorunv2.interface.telegram.i18n.manager import AudienceI18nManager
 
 __all__ = [
     "DEFAULT_LOCALE",
