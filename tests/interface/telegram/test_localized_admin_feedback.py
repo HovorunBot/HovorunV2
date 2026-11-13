@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from aiogram import Dispatcher
-from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage
+from aiogram.methods import AnswerCallbackQuery, EditMessageReplyMarkup, EditMessageText, SendMessage
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 from aiogram_i18n import I18nMiddleware
 from dishka import AsyncContainer
@@ -122,6 +122,68 @@ async def _set_user_locale(container: AsyncContainer, user_id: int, locale: str)
         assert user_db is not None
         user_db.ui_locale = locale
         await session.commit()
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_admin_can_preview_and_confirm_trust_for_unseen_numeric_user(
+    test_container: AsyncContainer, recording_bot: RecordingBot, *, cancel: bool
+) -> None:
+    """Keep unseen users untrusted until their numeric-ID preview is confirmed."""
+    actor_id, target_id = 720050, 720051
+    await provision_role(test_container, actor_id, Role.OWNER)
+    command = await test_container.get(AdministrationCommand)
+    administration = await test_container.get(AdministrationService)
+    recording_bot.session.responses.append({"message_id": 80, "date": 1, "chat": {"id": actor_id, "type": "private"}})
+    message = _make_message(
+        recording_bot,
+        chat_id=actor_id,
+        chat_type="private",
+        user_id=actor_id,
+        text=f"/admin trust user {target_id}",
+    )
+
+    await command.handle(message, recording_bot)
+
+    keyboards = [call for call in recording_bot.session.calls if isinstance(call, EditMessageReplyMarkup)]
+    assert len(keyboards) == 1
+    keyboard = keyboards[0].reply_markup
+    assert keyboard is not None
+    callback_data = keyboard.inline_keyboard[0][int(cancel)].callback_data
+    assert callback_data is not None
+    target = await administration.resolve(parse_access(["trust", "user", str(target_id)]).kind, str(target_id))
+    actor = ActorContext.telegram(actor_id)
+    assert (await administration.inspect(target, actor, "private"))["trusted"] is False
+    query = CallbackQuery(
+        id="unseen-trust",
+        from_user=User(id=actor_id, is_bot=False, first_name="Admin"),
+        chat_instance="synth",
+        message=_make_message(
+            recording_bot, chat_id=actor_id, chat_type="private", user_id=actor_id, text="Confirm", message_id=80
+        ),
+    ).as_(recording_bot)
+
+    await command.handle_callback(query, AdminCallback.unpack(callback_data))
+
+    assert (await administration.inspect(target, actor, "private"))["trusted"] is not cancel
+
+
+async def test_admin_unknown_handle_explains_numeric_id_alternative(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
+    """Distinguish unknown usernames from a private administrator's permission failure."""
+    actor_id = 720052
+    await provision_role(test_container, actor_id, Role.OWNER)
+    command = await test_container.get(AdministrationCommand)
+    message = _make_message(
+        recording_bot, chat_id=actor_id, chat_type="private", user_id=actor_id, text="/admin trust user @unseen_user"
+    )
+
+    await command.handle(message, recording_bot)
+
+    replies = [call.text for call in recording_bot.session.calls if isinstance(call, SendMessage)]
+    assert len(replies) == 2
+    assert "Telegram ID" in replies[0]
+    assert not any(isinstance(call, EditMessageReplyMarkup) for call in recording_bot.session.calls)
 
 
 async def test_admin_emergency_recovery_localized_in_uk_and_en(

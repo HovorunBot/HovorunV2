@@ -125,6 +125,19 @@ Private access administration is available to current bot administrators through
 Use `/admin inspect user 900001` or `/admin inspect group -900001` to inspect an existing identity.
 Known public handles may replace numeric IDs. Unknown handles never create records.
 
+Private `/admin trust user <numeric Telegram ID>` also accepts a user who has not contacted the bot.
+Send `/admin trust user` without a target to open Telegram's **Choose user** picker instead of looking up
+an ID. Selecting one person opens the same private confirmation flow. Only their numeric ID is requested;
+names, usernames, photos and contact lists are not requested. Selection requests expire after 30 seconds,
+are bound to the administrator's identity, and can be used once. The picker lists people Telegram lets
+you select; it is not a directory for resolving arbitrary usernames. Unknown usernames in trust commands
+also offer the picker. Optional trust reasons survive that selection and remain encrypted in temporary storage.
+After checking the administrator's authority, the preview creates a minimal untrusted identity containing
+the numeric ID. Trust is granted only after confirmation; cancellation leaves that identity untrusted.
+Unknown usernames cannot identify unseen users: use their numeric Telegram ID, or ask them to send
+`/start` to the bot before retrying the username. Deleted identities require explicit recovery and are
+never restored by a trust command. The standalone `trust grant` CLI still requires an existing active user.
+
 Mutations first display the exact numeric target and generation, then require a single-use
 confirmation within 30 seconds. The confirmation belongs to that private actor and message;
 current authority and target identity are checked again. Pending confirmation data is encrypted.

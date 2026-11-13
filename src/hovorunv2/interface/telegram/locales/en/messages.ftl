@@ -111,11 +111,18 @@ access-btn-reject = ❌ Reject
 # Administration
 admin-help =
     Use /admin ACTION user|group ID|@known_username [options].
+    To select a person without looking up their ID: /admin trust user.
     Actions: inspect, trust, untrust, ban, unban, requests, approve, accept, reject, beta-grant, beta-revoke, limits, limit-set, limit-reset.
     Options: --reason "internal reason", --public "safe explanation", --ban-kind personal|full, --feature KEY|*, --request-id ID.
     Limit options: --bucket feature:KEY|family:NAME, --unit requests|resource_units|tokens, --window-seconds N, --limit N, --burst N, --concurrency N, --pending N.
     Internal reasons stay private. Only --public is suitable for disclosure. Role changes require CLI.
 admin-unavailable = Administration unavailable. Repeat /admin privately.
+admin-unknown-handle = This username is not known to the bot. Use the numeric Telegram ID to trust a new user, or ask them to send /start to the bot and retry their username.
+admin-choose-user = Choose user
+admin-user-selection-prompt = Choose one person in Telegram, then confirm the trust change. The selection expires in 30 seconds. Only the selected person's numeric ID is requested.
+admin-user-selected = User selected. Review the target below before confirming trust.
+admin-selection-unavailable = Selection expired, was already used, or the user is unavailable. Repeat /admin trust user. Deleted users require explicit recovery.
+admin-invalid-request = Invalid administration request or inactive target. Check /admin for syntax. Deleted users require explicit recovery before trust can be granted.
 admin-btn-confirm = Confirm
 admin-btn-cancel = Cancel
 admin-saved = Changes saved.

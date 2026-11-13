@@ -113,11 +113,18 @@ access-btn-reject = ❌ Відхилити
 # Administration
 admin-help =
     Використання: /admin ACTION user|group ID|@known_username [options].
+    Щоб вибрати людину без пошуку її ID: /admin trust user.
     Дії: inspect, trust, untrust, ban, unban, requests, approve, accept, reject, beta-grant, beta-revoke, limits, limit-set, limit-reset.
     Опції: --reason "внутрішня причина", --public "публічне пояснення", --ban-kind personal|full, --feature KEY|*, --request-id ID.
     Опції лімітів: --bucket feature:KEY|family:NAME, --unit requests|resource_units|tokens, --window-seconds N, --limit N, --burst N, --concurrency N, --pending N.
     Внутрішні причини залишаються приватними. Лише --public придатний для розголошення. Зміна ролей потребує CLI.
 admin-unavailable = Адміністрування недоступне. Повторіть /admin у приватному чаті.
+admin-unknown-handle = Цей username невідомий боту. Щоб надати довіру новому користувачу, вкажіть числовий Telegram ID або попросіть користувача надіслати /start боту й повторіть команду з username.
+admin-choose-user = Вибрати користувача
+admin-user-selection-prompt = Виберіть одну людину в Telegram, а потім підтвердьте надання довіри. Вибір дійсний 30 секунд. Запитується лише числовий ID вибраної людини.
+admin-user-selected = Користувача вибрано. Перевірте ціль нижче перед підтвердженням довіри.
+admin-selection-unavailable = Термін вибору минув, його вже використано або користувач недоступний. Повторіть /admin trust user. Видалених користувачів спочатку потрібно явно відновити.
+admin-invalid-request = Некоректний запит адміністрування або неактивна ціль. Перевірте синтаксис у /admin. Для надання довіри видаленому користувачу спочатку потрібне явне відновлення.
 admin-btn-confirm = Підтвердити
 admin-btn-cancel = Скасувати
 admin-saved = Зміни збережено.

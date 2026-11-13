@@ -8,6 +8,10 @@ from hovorunv2.application.usage.policies import UsageUnit
 from hovorunv2.domain.enums import TargetKind
 
 
+class UnknownAdminHandleError(ValueError):
+    """Indicate that a public handle has no active identity in the local registry."""
+
+
 class AdminAction(StrEnum):
     """Access operations shared by private Telegram and offline CLI."""
 

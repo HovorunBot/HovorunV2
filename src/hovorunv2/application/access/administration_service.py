@@ -2,7 +2,12 @@
 
 import logging
 
-from hovorunv2.application.access.administration import AdminAction, AdminRequest, AdminTarget
+from hovorunv2.application.access.administration import (
+    AdminAction,
+    AdminRequest,
+    AdminTarget,
+    UnknownAdminHandleError,
+)
 from hovorunv2.application.access.ban_service import BanService
 from hovorunv2.application.access.permission_service import PermissionService
 from hovorunv2.application.access.permissions import PermissionTarget
@@ -80,6 +85,35 @@ class AdministrationService:
             msg = "Administrative access is restricted."
             raise PermissionError(msg)
 
+    async def prepare_target(self, request: AdminRequest, actor: ActorContext, transport: str | None) -> AdminTarget:
+        """Prepare an authorized preview, provisioning unseen numeric trust targets.
+
+        Identity provisioning stores only an untrusted numeric user identity. Trust
+        changes still require the existing generation-bound confirmation workflow.
+
+        Args:
+            request: Administrative operation to preview.
+            actor: Administrator requesting the preview.
+            transport: Trusted interface transport.
+
+        Returns:
+            Active target bound to its current identity generation.
+
+        Raises:
+            ValueError: If the target is invalid, unknown by handle, or deleted.
+        """
+        await self.authorize(actor, transport)
+        if request.action == AdminAction.TRUST and not request.target.startswith("@"):
+            telegram_id = int(request.target)
+            if not 0 < telegram_id <= MAX_TELEGRAM_ID:
+                msg = "Telegram user ID must be a positive signed 64-bit integer."
+                raise ValueError(msg)
+            user = await self._users.ingest_user(telegram_id, actor=actor)
+            if user is None:
+                msg = "Deleted users require explicit recovery before trust can be granted."
+                raise ValueError(msg)
+        return await self.resolve(request.kind, request.target)
+
     async def resolve(self, kind: TargetKind, reference: str) -> AdminTarget:
         """Resolve a known identity to a canonical target without provisioning.
 
@@ -125,14 +159,14 @@ class AdministrationService:
             Numeric Telegram ID of the resolved target.
 
         Raises:
-            ValueError: If no active target has that known handle.
+            UnknownAdminHandleError: If no active target has that known handle.
         """
         if not reference.startswith("@"):
             return int(reference)
         handle = await self._handles.resolve_handle(reference)
         if handle is None or handle.target_kind != kind:
             msg = "No active target has that known handle."
-            raise ValueError(msg)
+            raise UnknownAdminHandleError(msg)
         return handle.target_id
 
     async def inspect(self, target: AdminTarget, actor: ActorContext, transport: str | None) -> dict[str, object]:

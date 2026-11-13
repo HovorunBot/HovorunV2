@@ -2,6 +2,7 @@
 
 import json
 import time
+from asyncio import gather
 from typing import Any
 
 import pytest
@@ -179,6 +180,100 @@ async def test_unknown_handles_and_protected_admins_fail_closed(test_container: 
     async with session_maker() as session:
         assert await session.scalar(select(func.count()).select_from(UserDB)) == before
         assert await session.scalar(select(func.count()).select_from(BanDB)) == 0
+
+
+@pytest.mark.parametrize(
+    ("actor_id", "transport"),
+    [(USER, "private"), (ADMIN, "group")],
+)
+async def test_unseen_trust_preview_requires_private_administrator_before_provisioning(
+    test_container: AsyncContainer, actor_id: int, transport: str
+) -> None:
+    """Denied callers cannot create numeric identities through trust previews."""
+    service = await setup_admin(test_container)
+    unseen_id = 340090
+    request = AdminRequest(action=AdminAction.TRUST, kind=TargetKind.USER, target=str(unseen_id))
+
+    with pytest.raises(PermissionError):
+        await service.prepare_target(request, ActorContext.telegram(actor_id), transport)
+
+    assert not await (await test_container.get(UserStore)).get_historical_by_telegram_id(unseen_id)
+
+
+@pytest.mark.parametrize("reference", ["0", "-340090", str(1 << 63), "invalid"])
+async def test_unseen_trust_preview_rejects_invalid_numeric_ids(test_container: AsyncContainer, reference: str) -> None:
+    """Reject malformed and out-of-range IDs before storing an identity."""
+    service = await setup_admin(test_container)
+    session_maker = await test_container.get(async_sessionmaker)
+    async with session_maker() as session:
+        before = await session.scalar(select(func.count()).select_from(UserDB))
+    request = AdminRequest(action=AdminAction.TRUST, kind=TargetKind.USER, target=reference)
+
+    with pytest.raises(ValueError, match=r"positive signed 64-bit|invalid literal"):
+        await service.prepare_target(request, ActorContext.telegram(ADMIN), "private")
+
+    async with session_maker() as session:
+        assert await session.scalar(select(func.count()).select_from(UserDB)) == before
+
+
+async def test_trust_preview_does_not_restore_deleted_users(test_container: AsyncContainer) -> None:
+    """Preserve deleted identity generations and trust until explicit recovery."""
+    service = await setup_admin(test_container)
+    users = await test_container.get(UserStore)
+    await users.soft_delete_user(USER, ActorContext.cli(), "synthetic deletion")
+    request = AdminRequest(action=AdminAction.TRUST, kind=TargetKind.USER, target=str(USER))
+
+    with pytest.raises(ValueError, match="explicit recovery"):
+        await service.prepare_target(request, ActorContext.telegram(ADMIN), "private")
+
+    assert await users.get_by_telegram_id(USER) is None
+    history = await users.get_historical_by_telegram_id(USER)
+    assert len(history) == 1
+    assert not history[0].is_trusted
+
+
+async def test_unseen_untrust_does_not_provision_user(test_container: AsyncContainer) -> None:
+    """Only an explicit trust grant can provision a numeric preview target."""
+    service = await setup_admin(test_container)
+    unseen_id = 340091
+    request = AdminRequest(action=AdminAction.UNTRUST, kind=TargetKind.USER, target=str(unseen_id))
+
+    with pytest.raises(ValueError, match="active known"):
+        await service.prepare_target(request, ActorContext.telegram(ADMIN), "private")
+
+    assert not await (await test_container.get(UserStore)).get_historical_by_telegram_id(unseen_id)
+
+
+async def test_concurrent_unseen_trust_previews_create_one_untrusted_identity(test_container: AsyncContainer) -> None:
+    """Audit numeric provisioning once while keeping trust and authority unchanged."""
+    service = await setup_admin(test_container)
+    unseen_id = 340092
+    request = AdminRequest(action=AdminAction.TRUST, kind=TargetKind.USER, target=str(unseen_id))
+    actor = ActorContext.telegram(ADMIN)
+
+    first, second = await gather(
+        service.prepare_target(request, actor, "private"), service.prepare_target(request, actor, "private")
+    )
+
+    assert first == second
+    user = await (await test_container.get(UserStore)).get_by_telegram_id(unseen_id)
+    assert user is not None
+    assert user.role == Role.USER
+    assert not user.is_trusted
+    session_maker = await test_container.get(async_sessionmaker)
+    async with session_maker() as session:
+        events = list(
+            (
+                await session.scalars(
+                    select(AuditEventDB).where(
+                        AuditEventDB.target_type == "user", AuditEventDB.target_id == str(unseen_id)
+                    )
+                )
+            ).all()
+        )
+        assert len(events) == 1
+        assert events[0].action == "create"
+        assert events[0].actor_id == ADMIN
 
 
 async def test_private_preview_requires_confirmation_and_rejects_replay(test_container: AsyncContainer) -> None:

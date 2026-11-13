@@ -19,6 +19,17 @@ from hovorunv2.domain.user import UserDB
 from hovorunv2.utils.crypto import decrypt_payload, encrypt_payload
 
 logger = logging.getLogger(__name__)
+USER_SELECTION_ID_BITS = 31
+
+
+class AdminUserSelection(BaseModel):
+    """Bind a short-lived user picker to the administrator's identity generation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    actor_generation: int
+    expires_at: float
+    request: AdminRequest | None = None
 
 
 class AdminConfirmation(BaseModel):
@@ -41,6 +52,71 @@ class AdminSessionService:
         self._cache = cache
         self._users = users
         self._settings = settings
+
+    async def issue_user_selection(self, actor_id: int, request: AdminRequest | None = None) -> int:
+        """Issue a single-use Telegram user selection request for an active actor.
+
+        Args:
+            actor_id: Numeric Telegram identity of the administrator.
+            request: Original trust request, when selection follows an unknown handle.
+
+        Returns:
+            Signed 32-bit-compatible identifier for Telegram's user picker.
+
+        Raises:
+            ValueError: If the actor identity is unavailable.
+        """
+        user = await self._users.get_by_telegram_id(actor_id)
+        master = self._settings.cache_encryption_key
+        if user is None or not master:
+            msg = "User selection requires an active administrator identity."
+            raise ValueError(msg)
+        request_id = secrets.randbits(USER_SELECTION_ID_BITS)
+        selection = AdminUserSelection(
+            actor_generation=user.generation, expires_at=time.time() + SETTINGS_SESSION_TTL, request=request
+        )
+        salt = secrets.token_hex(16)
+        fernet = await asyncio.to_thread(get_fernet_for_chat, master, salt)
+        payload = encrypt_payload(json.dumps(selection.model_dump(mode="json")), fernet)
+        await self._cache.set(
+            f"admin:user-selection:{actor_id}:{request_id}",
+            {"salt": salt, "payload": payload},
+            expire=SETTINGS_SESSION_TTL,
+        )
+        return request_id
+
+    async def consume_user_selection(self, actor_id: int, request_id: int) -> AdminUserSelection:
+        """Consume a picker request and reject expired, replayed or stale actors.
+
+        Args:
+            actor_id: Administrator submitting the selected user.
+            request_id: Telegram selection request identifier.
+
+        Returns:
+            Validated selection context, including any original trust request.
+
+        Raises:
+            ValueError: If the selection is missing, expired or bound to a stale identity.
+        """
+        raw = await self._cache.pop(f"admin:user-selection:{actor_id}:{request_id}")
+        master = self._settings.cache_encryption_key
+        if not isinstance(raw, dict) or not master:
+            msg = "User selection expired or was already used."
+            raise ValueError(msg)
+        try:
+            fernet = await asyncio.to_thread(get_fernet_for_chat, master, raw["salt"])
+            selection = AdminUserSelection.model_validate_json(decrypt_payload(raw["payload"], fernet))
+        except (KeyError, TypeError, InvalidToken) as error:
+            msg = "User selection context is invalid."
+            raise ValueError(msg) from error
+        user = await self._users.get_by_telegram_id(actor_id)
+        if user is None or user.generation != selection.actor_generation:
+            msg = "User selection actor identity changed."
+            raise ValueError(msg)
+        if selection.expires_at <= time.time():
+            msg = "User selection expired."
+            raise ValueError(msg)
+        return selection
 
     async def issue(self, request: AdminRequest, target: AdminTarget, actor_id: int, message_id: int) -> str:
         """Create a short-lived opaque confirmation without caching message contents.

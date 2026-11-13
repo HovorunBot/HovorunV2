@@ -20,6 +20,7 @@
 
 ### Fix
 
+- **admin**: trust unseen users through Telegram selection
 - **translation**: harden job cancellation, bounded HTTP responses, and snapshots
 - **settings**: initialize settings_version on chat creation
 - **admin**: show readable confirmation feedback
