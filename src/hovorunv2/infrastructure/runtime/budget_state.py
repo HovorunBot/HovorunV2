@@ -457,6 +457,8 @@ def calculate_finish(
         msg = "Reservation ID or settlement conflicts with its original operation."
         raise ValueError(msg)
     if record.state != ReservationState.RESERVED:
+        if record.state == ReservationState.EXPIRED and not any(actual.values()):
+            return BudgetMutation(ReservationDecision(ReservationState.EXPIRED))
         if record.actual != actual:
             msg = "Reservation ID or settlement conflicts with its original operation."
             raise ValueError(msg)

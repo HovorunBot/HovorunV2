@@ -117,6 +117,7 @@ async def test_group_settings_menus_authorization_and_persistence(
     assert "Youtube video links" not in usage_edit.text
     assert "Instagram video links" not in usage_edit.text
     assert "Safety caps" in usage_edit.text
+    await _assert_group_main_menu_localized(command, message, recording_bot)
 
     # 4. Group notification menu binds every category, then return to main and close
     notif_edit = await _send_group_callback(
@@ -225,3 +226,20 @@ async def test_private_settings_menus_and_persistence(
     assert "Your usage" in usage_edit.text
     assert "personal quota unlimited" in usage_edit.text
     assert "Safety caps" in usage_edit.text
+
+
+async def _assert_group_main_menu_localized(
+    command: SettingsCommand, message: Message, recording_bot: RecordingBot
+) -> None:
+    """Verify the Ukrainian group main menu renders without mixed English or raw enum text."""
+    await command.handle(message, recording_bot)
+    main_edit = _last_edit(recording_bot)
+    assert main_edit.text is not None
+    assert "Налаштування Hovorun" in main_edit.text
+    assert "Select a category" not in main_edit.text
+    assert "manual_and_automatic" not in main_edit.text
+    assert main_edit.reply_markup is not None
+    button_texts = [btn.text for row in main_edit.reply_markup.inline_keyboard for btn in row]
+    assert "🌐 Мови" in button_texts
+    assert "⚙️ Налаштувати чат" in button_texts
+    assert "❌ Close" not in button_texts

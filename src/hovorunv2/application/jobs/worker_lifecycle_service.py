@@ -76,7 +76,10 @@ class WorkerLifecycleService:
             self._ledger.apply_batch((intent.event,), actor=actor)
         if intent.actual:
             decision = self._budgets.finish(ticket.envelope.job_id, intent.actual, self._clock.now())
-            if decision.state not in {ReservationState.COMMITTED, ReservationState.RELEASED}:
+            zero_actual = not any(item.amount for item in intent.actual)
+            if decision.state not in {ReservationState.COMMITTED, ReservationState.RELEASED} and not (
+                zero_actual and decision.state == ReservationState.EXPIRED
+            ):
                 msg = "Runtime settlement cannot yet be verified."
                 raise AdmissionUnavailableError(msg)
         terminal = self._admission.finish(ticket.envelope.job_id, intent.outcome, token=ticket.token)

@@ -294,7 +294,8 @@ class SettingsCommand(BaseCommand):
             return
         if not await self._authorized(message.from_user.id, context, bot):
             return
-        msg = await message.answer("⚙️ <b>Hovorun Settings</b>", parse_mode="HTML")
+        locale = await self._resolve_locale(context)
+        msg = await message.answer(get_message("settings-title", locale), parse_mode="HTML")
         context = context.model_copy(update={"message_id": msg.message_id})
         await self._cleanup_service.replace_singleton_window(
             bot, msg.chat.id, msg.message_id, ttl=CONFIG_WINDOW_TTL, cleanup_type=CommandName.SETTINGS
@@ -468,6 +469,12 @@ class SettingsCommand(BaseCommand):
             return
         await self._show_main_menu(query.message, selected)
 
+    async def _resolve_locale(self, context: SettingsContext) -> str:
+        """Resolve the active UI locale for the current settings target or private actor."""
+        if context.target_chat_id < 0:
+            return await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
+        return await self._i18n_manager.get_user_locale(context.transport_chat_id)
+
     async def _show_main_menu(self, message: Message, context: SettingsContext) -> None:
         """Show the top-level settings menu.
 
@@ -475,60 +482,73 @@ class SettingsCommand(BaseCommand):
             message: Telegram message being edited.
             context: Current settings session context.
         """
+        locale = await self._resolve_locale(context)
         builder = InlineKeyboardBuilder()
         builder.row(
-            InlineKeyboardButton(text="🌐 Languages", callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()),
-            InlineKeyboardButton(text="⚙️ Modules", callback_data=SettingsCallback(menu=SettingsMenu.MODULES).pack()),
+            InlineKeyboardButton(
+                text=get_message("settings-btn-languages", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack(),
+            ),
+            InlineKeyboardButton(
+                text=get_message("settings-btn-modules", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.MODULES).pack(),
+            ),
         )
         builder.row(
             InlineKeyboardButton(
-                text="🗣 Speech recognition", callback_data=SettingsCallback(menu=SettingsMenu.SPEECH).pack()
+                text=get_message("settings-btn-speech", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.SPEECH).pack(),
             )
         )
         if context.target_chat_id < 0:
             builder.row(
                 InlineKeyboardButton(
-                    text="🔎 Access & permissions", callback_data=SettingsCallback(menu=SettingsMenu.ACCESS).pack()
+                    text=get_message("settings-btn-access", locale),
+                    callback_data=SettingsCallback(menu=SettingsMenu.ACCESS).pack(),
                 )
             )
         if context.transport_chat_id > 0:
             builder.row(
                 InlineKeyboardButton(
-                    text="📊 My usage", callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="own").pack()
+                    text=get_message("settings-btn-my-usage", locale),
+                    callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="own").pack(),
                 )
             )
         if context.target_chat_id < 0:
             builder.row(
                 InlineKeyboardButton(
-                    text="📊 Group usage", callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="group").pack()
+                    text=get_message("settings-btn-group-usage", locale),
+                    callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="group").pack(),
                 )
             )
             builder.row(
                 InlineKeyboardButton(
-                    text="🔔 Notifications",
+                    text=get_message("settings-btn-notifications", locale),
                     callback_data=SettingsCallback(menu=SettingsMenu.NOTIFICATIONS, value="group").pack(),
                 )
             )
         builder.row(
-            InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
+            InlineKeyboardButton(
+                text=get_message("settings-btn-close", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack(),
+            )
         )
         if context.target_chat_id < 0 and context.transport_chat_id < 0:
-            chat_locale = await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
             builder.row(
                 InlineKeyboardButton(
-                    text=get_message("setup-btn-configure", chat_locale),
+                    text=get_message("setup-btn-configure", locale),
                     callback_data=SetupCallback(action=SetupAction.START).pack(),
                 )
             )
         if context.transport_chat_id > 0:
             builder.row(
                 InlineKeyboardButton(
-                    text="👥 Other groups", callback_data=SettingsCallback(menu=SettingsMenu.GROUPS).pack()
+                    text=get_message("settings-btn-other-groups", locale),
+                    callback_data=SettingsCallback(menu=SettingsMenu.GROUPS).pack(),
                 )
             )
-        text = "⚙️ <b>Hovorun Settings</b>\n\nSelect a category to configure:"
+        text = get_message("settings-main-menu-text", locale)
         if context.target_chat_id < 0 and context.target is not None:
-            ui_loc = await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
             target_lang, ignored = await self._language_service.get_chat_settings(context.target_chat_id)
             perm_target = PermissionTarget(
                 "group",
@@ -537,11 +557,16 @@ class SettingsCommand(BaseCommand):
                 context.target.telegram_id,
             )
             speech = await self._speech_settings.mode(perm_target)
-            ignored_text = ", ".join(ignored) if ignored else "none"
-            text += (
-                f"\nGroup: <code>{context.target_chat_id}</code>"
-                f"\nUI: <code>{ui_loc}</code> | Target: <code>{target_lang}</code>"
-                f" | Ignored: <code>{ignored_text}</code> | Speech: <code>{speech.value}</code>"
+            ignored_text = ", ".join(ignored) if ignored else get_message("settings-none", locale)
+            speech_label = get_message(f"settings-speech-mode-{speech.value}", locale)
+            text += "\n" + get_message(
+                "settings-main-group-summary",
+                locale,
+                group_id=str(context.target_chat_id),
+                ui_locale=locale,
+                target_lang=target_lang,
+                ignored=ignored_text,
+                speech=speech_label,
             )
         await self._render(message, text, builder, context)
 
@@ -798,11 +823,12 @@ class SettingsCommand(BaseCommand):
         )
         builder.row(
             InlineKeyboardButton(
-                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()
+                text=get_message("settings-back-btn", current_ui_locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack(),
             )
         )
 
-        text = get_message("settings-lang-menu-title")
+        text = get_message("settings-lang-menu-title", current_ui_locale)
         await self._render(msg, text, builder, context)
 
     async def _show_ui_lang_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
@@ -818,11 +844,11 @@ class SettingsCommand(BaseCommand):
 
         if context.target is None:
             current_locale = await self._i18n_manager.get_user_locale(query.from_user.id)
-            title_text = get_message("settings-ui-lang-title")
+            title_text = get_message("settings-ui-lang-title", current_locale)
             back_menu = SettingsMenu.GROUPS
         else:
             current_locale = await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
-            title_text = get_message("settings-ui-group-lang-title")
+            title_text = get_message("settings-ui-group-lang-title", current_locale)
             back_menu = SettingsMenu.LANG
 
         builder = InlineKeyboardBuilder()
@@ -839,7 +865,8 @@ class SettingsCommand(BaseCommand):
             )
         builder.row(
             InlineKeyboardButton(
-                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=back_menu).pack()
+                text=get_message("settings-back-btn", current_locale),
+                callback_data=SettingsCallback(menu=back_menu).pack(),
             )
         )
         await self._render(msg, title_text, builder, context)

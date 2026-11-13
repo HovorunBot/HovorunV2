@@ -254,7 +254,7 @@ async def test_auto_overflow_creates_encrypted_snapshot_and_fits_inline_stays_bu
                 author_handle="author",
                 author_url="https://example.com/a",
                 original_url="https://example.com/p/1",
-                content="This is a short English sentence for inline translation.",
+                content="This is a medium English tweet about racing teams voting on budget rules. " * 7,
                 media_items=[MediaItem(url="https://example.com/1.jpg", is_video=False)],
             )
             now_ts = clock.now()
@@ -281,7 +281,7 @@ async def test_auto_overflow_creates_encrypted_snapshot_and_fits_inline_stays_bu
             markup_short = runner.prepare_auto_translation_markup(
                 short_payload, env_short, "Twitter", "Sender", clock.now(), strip_hashtags=False
             )
-            long_text = "This is a long English caption about our engineering systems. " * 15
+            long_text = "This is a long English caption about our engineering systems. " * 45
             long_payload = RichMediaPayload(
                 author_name="Author",
                 author_handle="author",

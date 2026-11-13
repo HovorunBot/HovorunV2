@@ -36,6 +36,26 @@ settings-language-btn-uk = 🇺🇦 Українська
 settings-language-btn-en = 🇬🇧 English
 settings-language-changed = Мову успішно змінено на українську.
 settings-group-language-changed = Мову групи успішно змінено на українську.
+settings-main-menu-text =
+    ⚙️ <b>Налаштування Hovorun</b>
+
+    Оберіть категорію для налаштування:
+settings-main-group-summary =
+    Група: <code>{ $group_id }</code>
+    Інтерфейс: <code>{ $ui_locale }</code> | Цільова: <code>{ $target_lang }</code> | Ігноровані: <code>{ $ignored }</code> | Мовлення: <code>{ $speech }</code>
+settings-none = немає
+settings-speech-mode-off = Вимкнено
+settings-speech-mode-manual_only = Лише вручну
+settings-speech-mode-manual_and_automatic = Вручну + автоматично
+settings-btn-languages = 🌐 Мови
+settings-btn-modules = ⚙️ Модулі
+settings-btn-speech = 🗣 Розпізнавання мовлення
+settings-btn-access = 🔎 Доступ і дозволи
+settings-btn-my-usage = 📊 Моє використання
+settings-btn-group-usage = 📊 Використання групи
+settings-btn-notifications = 🔔 Сповіщення
+settings-btn-close = ❌ Закрити
+settings-btn-other-groups = 👥 Інші групи
 
 # Commands
 start-description = Почати роботу з ботом

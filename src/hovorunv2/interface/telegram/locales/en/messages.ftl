@@ -34,6 +34,26 @@ settings-language-btn-uk = 🇺🇦 Українська
 settings-language-btn-en = 🇬🇧 English
 settings-language-changed = Language successfully changed to English.
 settings-group-language-changed = Group language successfully changed to English.
+settings-main-menu-text =
+    ⚙️ <b>Hovorun Settings</b>
+
+    Select a category to configure:
+settings-main-group-summary =
+    Group: <code>{ $group_id }</code>
+    UI: <code>{ $ui_locale }</code> | Target: <code>{ $target_lang }</code> | Ignored: <code>{ $ignored }</code> | Speech: <code>{ $speech }</code>
+settings-none = none
+settings-speech-mode-off = Off
+settings-speech-mode-manual_only = Manual only
+settings-speech-mode-manual_and_automatic = Manual + automatic
+settings-btn-languages = 🌐 Languages
+settings-btn-modules = ⚙️ Modules
+settings-btn-speech = 🗣 Speech recognition
+settings-btn-access = 🔎 Access & permissions
+settings-btn-my-usage = 📊 My usage
+settings-btn-group-usage = 📊 Group usage
+settings-btn-notifications = 🔔 Notifications
+settings-btn-close = ❌ Close
+settings-btn-other-groups = 👥 Other groups
 
 # Commands
 start-description = Start interacting with the bot

@@ -26,6 +26,7 @@ from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.jobs.feature_jobs import JobOutcome
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
+from hovorunv2.application.media.rendering import extract_rendered_post_content
 from hovorunv2.application.translation.hybrid_engine import HybridTranslationEngine
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.translation.ports import (
@@ -381,3 +382,47 @@ async def test_translate_validates_quote_utf16_position(
     namespace = await test_container.get(RuntimeNamespace)
     envelopes = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
     assert len(envelopes) == expected_jobs
+
+
+async def test_translate_extracts_content_only_from_rendered_bot_post(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
+    """Replying /translate to a bot-rendered media post translates only the post content."""
+    user_id = 780402
+    await (await test_container.get(ChatStore)).get_or_create_chat(user_id)
+    users = await test_container.get(UserStore)
+    await users.ingest_user(user_id)
+    await users.set_trust(user_id, is_trusted=True, actor=ActorContext.cli())
+    rendered = (
+        "🗣 User shared a post by Nachez (@Nachez98)\n\n"
+        "Haas y Racing Bulls votan EN CONTRA de cambiar el límite presupuestario.\n\n"
+        "🔁 47 ❤️ 1194 💬 69\n"
+        "🔗 Open on X"
+    )
+    bot_user = User(id=999999, is_bot=True, first_name="Hovorun", username="hovorun_bot")
+    source = Message(
+        message_id=51,
+        date=datetime.now(UTC),
+        chat=Chat(id=user_id, type="private"),
+        from_user=bot_user,
+        caption=rendered,
+    ).as_(recording_bot)
+    command = _make_command_message(
+        recording_bot,
+        chat_id=user_id,
+        chat_type="private",
+        user_id=user_id,
+        message_id=52,
+        text="/translate uk",
+        reply_to_message=source,
+    )
+    await (await test_container.get(TranslateCommand)).handle(command, recording_bot)
+    settings = await test_container.get(Settings)
+    namespace = await test_container.get(RuntimeNamespace)
+    envelopes = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+    assert len(envelopes) == 1
+    envelope = JobEnvelope.model_validate(envelopes[0])
+    assert extract_rendered_post_content(rendered) == (
+        "Haas y Racing Bulls votan EN CONTRA de cambiar el límite presupuestario."
+    )
+    assert envelope.feature == CommandName.TRANSLATE

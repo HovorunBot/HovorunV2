@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Fix
+
+- **bot**: fix media auto-translation, content scoping, settings UI, and budget reconciliation
+
 ## v0.6.0.2 (2026-11-14)
 
 ### Fix

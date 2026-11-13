@@ -17,6 +17,7 @@ from hovorunv2.infrastructure.runtime.budget_state import (
     MAX_EXACT_INTEGER,
     BudgetStateUnavailableError,
     build_record,
+    calculate_finish,
     parse_record,
 )
 
@@ -113,3 +114,19 @@ def test_terminal_record_requires_matching_actual_consumption(state: Reservation
     actual = {"requests": 1 if state == ReservationState.COMMITTED else 0}
     settled = original.model_copy(update={"state": state, "actual": actual})
     assert parse_record(settled.serialized(), PREFIX, REQUEST.reservation_id) == settled
+
+
+def test_finish_accepts_zero_actual_on_expired_reservation() -> None:
+    """Zero-usage recovery reconciliation is idempotent on an already-expired reservation."""
+    original = build_record(PREFIX, REQUEST, 120, (0, 0))
+    expired = original.model_copy(update={"state": ReservationState.EXPIRED, "actual": None})
+    mutation = calculate_finish(expired, {"requests": 0}, 200, {}, {})
+    assert mutation.decision.state == ReservationState.EXPIRED
+
+
+def test_finish_rejects_nonzero_actual_on_expired_reservation() -> None:
+    """Non-zero consumption cannot commit onto an already-expired reservation."""
+    original = build_record(PREFIX, REQUEST, 120, (0, 0))
+    expired = original.model_copy(update={"state": ReservationState.EXPIRED, "actual": None})
+    with pytest.raises(ValueError, match="conflicts with its original operation"):
+        calculate_finish(expired, {"requests": 1}, 200, {}, {})

@@ -62,7 +62,6 @@ from hovorunv2.application.media.providers.tiktok import TikTokService
 from hovorunv2.application.media.providers.twitter import TwitterService
 from hovorunv2.application.media.providers.youtube import YoutubeService
 from hovorunv2.application.media.rendering import (
-    CAPTION_LIMIT,
     TELEGRAM_MESSAGE_LIMIT,
     build_caption,
     split_html_message,
@@ -719,8 +718,7 @@ class FeatureJobRunner:
         if not (content_translated or quote_translated) or self._snapshots is None:
             return None
         rendered = build_caption(payload, sender_label, platform_label)
-        budget = CAPTION_LIMIT if payload.media_items else TELEGRAM_MESSAGE_LIMIT
-        if len(rendered) <= budget:
+        if len(rendered) <= TELEGRAM_MESSAGE_LIMIT:
             return None
         if prepared_content is not None:
             payload.content = prepared_content

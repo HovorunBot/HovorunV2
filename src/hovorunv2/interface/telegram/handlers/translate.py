@@ -23,6 +23,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     JobTarget,
     PayloadPort,
 )
+from hovorunv2.application.media.rendering import extract_rendered_post_content
 from hovorunv2.application.translation.explicit_input import (
     ExplicitTranslationInput,
     parse_translate_command_target,
@@ -154,6 +155,8 @@ class TranslateCommand(BaseCommand):
             quoted_bytes = message.quote.text.encode("utf-16-le")
             if encoded_source[offset : offset + len(quoted_bytes)] != quoted_bytes:
                 return None
+        elif reply.from_user is not None and reply.from_user.is_bot:
+            full_source = extract_rendered_post_content(full_source)
         try:
             return resolve_translation_source(full_source, selected_quote)
         except ValueError:

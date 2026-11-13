@@ -17,6 +17,9 @@ MEDIA_UNAVAILABLE_TEXT = "⚠️ Media could not be extracted. View the original
 
 _TAG_TOKEN_RE = re.compile(r"^</?([a-zA-Z0-9]+)(?:\s+[^>]*)?>$")
 _TOKEN_RE = re.compile(r"<[^>]+>|&[a-zA-Z0-9#]+;|\n\n|\n|\s+|[^\s<&]+")
+_RENDERED_HEADER_RE = re.compile(r"^🗣 [^\n]+ shared a post by [^\n]+\n\n")
+_RENDERED_FOOTER_RE = re.compile(r"\n🔗 [^\n]+$")
+_RENDERED_METRICS_RE = re.compile(r"\n(?:[^\w\s]+(?:\s+[\d,.KMkmBb]+)+\s*)+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,3 +255,25 @@ def plan_caption(
     if len(fallback) > CAPTION_LIMIT:
         fallback = fallback[:CAPTION_LIMIT]
     return CaptionPlan(fallback, text)
+
+
+def extract_rendered_post_content(text: str) -> str:
+    """Extract only post content from a bot-rendered media message when present.
+
+    Args:
+        text: Plain message or caption text from a replied Telegram message.
+
+    Returns:
+        Post content without the bot header, metrics, unavailable notice, or footer link,
+        or the original text when it does not match the rendered post envelope.
+    """
+    header_match = _RENDERED_HEADER_RE.match(text)
+    footer_match = _RENDERED_FOOTER_RE.search(text)
+    if header_match is None or footer_match is None:
+        return text
+    body = text[header_match.end() : footer_match.start()]
+    body = _RENDERED_METRICS_RE.sub("", body)
+    stripped = body.strip()
+    if stripped.endswith(MEDIA_UNAVAILABLE_TEXT):
+        stripped = stripped.removesuffix(MEDIA_UNAVAILABLE_TEXT).strip()
+    return stripped or text
