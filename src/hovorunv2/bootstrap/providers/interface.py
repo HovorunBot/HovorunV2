@@ -41,6 +41,7 @@ from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.recovery import RecoveryCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from hovorunv2.interface.telegram.handlers.setup import SetupWizardHandler
 from hovorunv2.interface.telegram.handlers.speech import SpeechVoiceHandler, TranscribeCommand
 from hovorunv2.interface.telegram.handlers.translate import TranslateCommand
 from hovorunv2.interface.telegram.handlers.translate_callbacks import TranslateCallbackHandler
@@ -77,6 +78,7 @@ class InterfaceAndUtilityProvider(Provider):
     setup_draft_service = provide(SetupDraftService)
     setup_apply_service = provide(SetupApplyService)
     settings_command = provide(SettingsCommand)
+    setup_wizard_handler = provide(SetupWizardHandler)
 
     bot_join_handler = provide(BotJoinHandler)
     beta_prompts = provide(BetaPromptService)

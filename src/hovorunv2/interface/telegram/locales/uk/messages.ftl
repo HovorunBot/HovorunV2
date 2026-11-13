@@ -177,3 +177,44 @@ translation-remaining-parts = { $count ->
     [many] Доступно ще { $count } частин
    *[other] Доступно ще { $count } частини
 }
+
+# Guided Chat Setup
+setup-btn-configure = ⚙️ Налаштувати чат
+setup-btn-next = Далі ➡️
+setup-btn-back = ⬅️ Назад
+setup-btn-cancel = ✖️ Скасувати
+setup-btn-apply = ✅ Застосувати
+setup-btn-clear-ignored = Очистити виключені (усі мови)
+setup-step-ui-title = 🛠 Налаштування чату (1/5): Мова інтерфейсу бота для цього чату
+setup-step-ui-body = Поточний вибір: { $ui_locale }. Вибір змінює лише мову інтерфейсу і не змінює мову перекладу.
+setup-step-target-title = 🛠 Налаштування чату (2/5): Мова перекладу
+setup-step-target-body = Поточна мова перекладу: { $target_lang }.
+setup-step-ignored-title = 🛠 Налаштування чату (3/5): Виключені з автоперекладу мови
+setup-step-ignored-body = Поточні виключені мови: { $ignored }.
+setup-step-features-title = 🛠 Налаштування чату (4/5): Увімкнені функції
+setup-step-features-body = Оберіть активні функції для цього чату.
+setup-step-speech-title = 🛠 Налаштування чату (5/5): Режим розпізнавання мовлення
+setup-step-speech-body = Поточний режим: { $speech_mode }.
+setup-step-review-title = 🛠 Перегляд перед застосуванням
+setup-step-review-body =
+    Мова інтерфейсу: { $ui_locale }
+    Мова перекладу: { $target_lang }
+    Виключені мови: { $ignored }
+    Увімкнені функції: { $features }
+    Режим мовлення: { $speech_mode }
+setup-applied-summary =
+    ✅ Налаштування чату застосовано:
+    Мова інтерфейсу: { $ui_locale }
+    Мова перекладу: { $target_lang }
+    Виключені мови: { $ignored }
+    Увімкнені функції: { $features }
+    Режим мовлення: { $speech_mode }
+setup-cancelled = ✖️ Налаштування чату скасовано. Збережені параметри не змінено.
+setup-expired = ⏱ Термін дії сесії налаштування минув. Запустіть /setup знову.
+setup-denied = ⛔ Лише адміністратор, який розпочав налаштування, може керувати цією сесією.
+setup-in-progress = ⏳ Інший адміністратор уже налаштовує цей чат.
+setup-conflict = ⚠️ Налаштування чату було змінено паралельно. Перевірте оновлені параметри та підтвердіть ще раз.
+setup-unavailable = ⚠️ Обрану функцію або конфігурацію наразі вимкнено.
+setup-group-only = ℹ️ Кероване налаштування запускається безпосередньо в цільовому груповому чаті.
+setup-duplicate = Цю дію вже оброблено.
+setup-none = Немає

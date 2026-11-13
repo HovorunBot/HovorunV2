@@ -370,6 +370,45 @@ class SetupDraftService:
             return SetupDraftResult(outcome=SetupSessionOutcome.EXPIRED)
         return SetupDraftResult(outcome=SetupSessionOutcome.UPDATED, draft=updated)
 
+    async def load_owned(
+        self,
+        *,
+        session_id: str,
+        transport_chat_id: int,
+        actor_id: int,
+        message_id: int,
+        thread_id: int | None,
+        callback_id: str | None = None,
+    ) -> SetupDraftResult:
+        """Load an active draft after verifying ownership, transport binding, and live authority."""
+        return await self._load_owned_draft(
+            session_id=session_id,
+            transport_chat_id=transport_chat_id,
+            actor_id=actor_id,
+            message_id=message_id,
+            thread_id=thread_id,
+            callback_id=callback_id,
+        )
+
+    async def bind_message(
+        self,
+        *,
+        session_id: str,
+        actor_id: int,
+        message_id: int,
+        thread_id: int | None,
+    ) -> SetupDraftResult:
+        """Bind a newly created or resumed draft to its delivered wizard message_id."""
+        draft = await self._store.get_by_session(session_id)
+        if draft is None:
+            return SetupDraftResult(outcome=SetupSessionOutcome.NOT_FOUND)
+        if draft.owner_id != actor_id:
+            return SetupDraftResult(outcome=SetupSessionOutcome.DENIED)
+        updated = draft.model_copy(update={"message_id": message_id, "thread_id": thread_id})
+        if not await self._store.save(updated):
+            return SetupDraftResult(outcome=SetupSessionOutcome.EXPIRED)
+        return SetupDraftResult(outcome=SetupSessionOutcome.UPDATED, draft=updated)
+
     async def cancel(
         self,
         *,

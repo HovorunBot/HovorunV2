@@ -80,3 +80,28 @@ class AdminCallback(CallbackData, prefix="admin"):
 
     token: str
     cancel: bool = False
+
+
+class SetupAction(StrEnum):
+    """Actions for target-bound guided chat configuration."""
+
+    START = "st"
+    SELECT_UI = "ui"
+    SELECT_TARGET = "tg"
+    TOGGLE_IGNORED = "ig"
+    CLEAR_IGNORED = "i0"
+    TOGGLE_FEATURE = "ft"
+    SELECT_SPEECH = "sp"
+    NEXT = "nx"
+    BACK = "bk"
+    CANCEL = "cn"
+    APPLY = "ap"
+    PAGE = "pg"
+
+
+class SetupCallback(CallbackData, prefix="stp"):
+    """Compact callback data for sequential guided chat setup (<64 bytes)."""
+
+    action: SetupAction
+    session_id: str = ""
+    value: str = ""

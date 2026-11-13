@@ -171,3 +171,44 @@ translation-remaining-parts = { $count ->
     [one] { $count } more part available
    *[other] { $count } more parts available
 }
+
+# Guided Chat Setup
+setup-btn-configure = ⚙️ Configure chat
+setup-btn-next = Next ➡️
+setup-btn-back = ⬅️ Back
+setup-btn-cancel = ✖️ Cancel
+setup-btn-apply = ✅ Apply
+setup-btn-clear-ignored = Clear excluded (translate all)
+setup-step-ui-title = 🛠 Chat setup (1/5): Bot interface language for this chat
+setup-step-ui-body = Selected: { $ui_locale }. Changing UI locale does not alter translation target language.
+setup-step-target-title = 🛠 Chat setup (2/5): Translation target language
+setup-step-target-body = Selected target language: { $target_lang }.
+setup-step-ignored-title = 🛠 Chat setup (3/5): Languages excluded from auto-translation
+setup-step-ignored-body = Excluded languages: { $ignored }.
+setup-step-features-title = 🛠 Chat setup (4/5): Enabled features
+setup-step-features-body = Choose active features for this chat.
+setup-step-speech-title = 🛠 Chat setup (5/5): Speech recognition behavior
+setup-step-speech-body = Selected mode: { $speech_mode }.
+setup-step-review-title = 🛠 Review before applying
+setup-step-review-body =
+    Interface language: { $ui_locale }
+    Target language: { $target_lang }
+    Excluded languages: { $ignored }
+    Enabled features: { $features }
+    Speech mode: { $speech_mode }
+setup-applied-summary =
+    ✅ Chat configuration applied:
+    Interface language: { $ui_locale }
+    Target language: { $target_lang }
+    Excluded languages: { $ignored }
+    Enabled features: { $features }
+    Speech mode: { $speech_mode }
+setup-cancelled = ✖️ Chat setup cancelled. Saved configuration was not changed.
+setup-expired = ⏱ Setup session expired. Run /setup again.
+setup-denied = ⛔ Only the administrator who started this setup session can control it.
+setup-in-progress = ⏳ Another administrator already has an active setup session in this chat.
+setup-conflict = ⚠️ Chat settings changed concurrently. Review the refreshed state and confirm again.
+setup-unavailable = ⚠️ One or more selected features are currently unavailable.
+setup-group-only = ℹ️ Guided setup runs directly inside the target group chat.
+setup-duplicate = This action was already processed.
+setup-none = None

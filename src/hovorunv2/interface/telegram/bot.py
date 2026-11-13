@@ -10,6 +10,7 @@ from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.application.operations.reminder_service import ChatReminderService
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
+from hovorunv2.interface.telegram.handlers.setup import SetupWizardHandler
 from hovorunv2.interface.telegram.handlers.translate_callbacks import TranslateCallbackHandler
 from hovorunv2.interface.telegram.middlewares import (
     AccessMiddleware,
@@ -90,6 +91,7 @@ def build_router(
     reconciliation: MembershipReconciliationService,
     bot_join_handler: BotJoinHandler | None = None,
     translate_callback_handler: TranslateCallbackHandler | None = None,
+    setup_wizard_handler: SetupWizardHandler | None = None,
 ) -> Router:
     """Build and configure the main Telegram router with middlewares and handlers.
 
@@ -104,6 +106,7 @@ def build_router(
         reconciliation: Service refreshing stale membership before protected actions.
         bot_join_handler: Optional handler for bot membership changes.
         translate_callback_handler: Optional handler for translation button callbacks.
+        setup_wizard_handler: Optional handler for guided setup callbacks.
 
     Returns:
         Configured Telegram router.
@@ -123,5 +126,7 @@ def build_router(
         bot_join_handler.register(router)
     if translate_callback_handler:
         translate_callback_handler.register(router)
+    if setup_wizard_handler:
+        setup_wizard_handler.register(router)
     _register_commands(router, commands)
     return router
