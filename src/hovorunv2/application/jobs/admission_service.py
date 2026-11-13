@@ -134,6 +134,8 @@ class AdmissionService:
                 envelope.target.generation,
             )
             return envelope.dedupe_key == expected
+        if envelope.feature == CommandName.TRANSLATE:
+            return envelope.message_id is not None
         expected = incoming_action_key(
             envelope.feature, envelope.target.telegram_id, envelope.actor_id, envelope.message_id, envelope.trigger
         )

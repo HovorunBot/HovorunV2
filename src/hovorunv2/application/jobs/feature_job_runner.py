@@ -1,5 +1,6 @@
 """Native synchronous Celery worker use case orchestrating ticket stage execution."""
 
+import html
 import logging
 import secrets
 from collections.abc import Mapping, Sequence
@@ -60,7 +61,14 @@ from hovorunv2.application.media.providers.threads import ThreadsService
 from hovorunv2.application.media.providers.tiktok import TikTokService
 from hovorunv2.application.media.providers.twitter import TwitterService
 from hovorunv2.application.media.providers.youtube import YoutubeService
+from hovorunv2.application.translation.explicit_input import ExplicitTranslationInput
 from hovorunv2.application.translation.native_translation import NativeTranslationService
+from hovorunv2.application.translation.ports import (
+    TranslationCatalogPort,
+    TranslationDocument,
+    TranslationError,
+    TranslationIntent,
+)
 from hovorunv2.application.usage.budgets import (
     BudgetRequest,
     Clock,
@@ -143,6 +151,7 @@ class FeatureJobRunner:
         registry: FeatureRegistry = FEATURE_REGISTRY,
         browser: SyncBrowserPort | None = None,
         clients: Sequence[BaseMediaClient] | Mapping[CommandName, BaseMediaClient] | None = None,
+        catalog: TranslationCatalogPort | None = None,
     ) -> None:
         self._admission = admission
         self._payloads = payloads
@@ -164,6 +173,7 @@ class FeatureJobRunner:
         self._feedback = feedback
         self._gate = gate
         self._clients = self._init_clients(clients, settings, embed)
+        self._catalog = catalog
         self._lifecycle = WorkerLifecycleService(admission, budgets, ledger, clock)
 
     def _init_clients(
@@ -419,6 +429,8 @@ class FeatureJobRunner:
         now: float,
     ) -> str:
         assert loaded.data is not None
+        if envelope.feature == CommandName.TRANSLATE:
+            return self._execute_explicit_translation(envelope, loaded.data, token, now)
         try:
             raw_payload, client = self._extract_stage(envelope, loaded.data, stage, token)
         except BrowserContinuationRequired:
@@ -665,6 +677,84 @@ class FeatureJobRunner:
             charges=charges,
         )
         return SettlementIntent(outcome=JobOutcome.COMPLETE, actual=(UnitAmount(UsageUnit.REQUESTS, 1),), event=event)
+
+    def _render_catalog_text(self, key: str, locale: str, fallback: str, **kwargs: object) -> str:
+        if self._catalog is None:
+            return fallback
+        return self._catalog.render(key, locale=locale, **kwargs)
+
+    def _execute_explicit_translation(
+        self,
+        envelope: JobEnvelope,
+        raw_data: bytes,
+        token: str,
+        now: float,
+    ) -> str:
+        req = ExplicitTranslationInput.model_validate_json(raw_data)
+        target = PermissionTarget(
+            envelope.target.kind.value,
+            envelope.target.entity_id,
+            envelope.target.generation,
+            envelope.target.telegram_id,
+        )
+        decision = self._policies.evaluate(
+            CommandName.TRANSLATE,
+            envelope.target.telegram_id,
+            envelope.actor_id,
+            trigger=envelope.trigger,
+        )
+        if not self._policies.active_target(target) or not decision.allowed:
+            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
+            return JobOutcome.COMPLETE.value
+
+        document = TranslationDocument(
+            text=req.text,
+            chat_id=envelope.target.telegram_id,
+            intent=TranslationIntent.EXPLICIT,
+            scope=req.scope,
+            source_message_id=req.source_message_id,
+            target_lang=req.requested_target_lang,
+        )
+        try:
+            result = self._translation.translate_document(document)
+        except TranslationError, ValueError:
+            notice = self._render_catalog_text(
+                "translation-unavailable",
+                req.ui_locale,
+                "Translation is temporarily unavailable. Please try again later.",
+            )
+            self._telegram.send_message(
+                envelope.target.telegram_id,
+                html.escape(notice),
+                reply_to_message_id=req.reply_to_message_id,
+            )
+            self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
+            return JobOutcome.FAILED.value
+
+        if result is None:
+            notice = self._render_catalog_text(
+                "translation-already-complete",
+                req.ui_locale,
+                "Translation is already complete.",
+            )
+            self._telegram.send_message(
+                envelope.target.telegram_id,
+                html.escape(notice),
+                reply_to_message_id=req.reply_to_message_id,
+            )
+            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
+            return JobOutcome.COMPLETE.value
+
+        label = self._render_catalog_text("translation-label", req.ui_locale, "Translated:")
+        rendered = f"{result.flag} <b>{html.escape(label)}</b>\n{html.escape(result.text)}"
+        self._telegram.send_message(
+            envelope.target.telegram_id,
+            rendered,
+            reply_to_message_id=req.reply_to_message_id,
+        )
+        split_def = self._registry.require(CommandName.TRANSLATE)
+        self._lifecycle.complete(envelope.job_id, token, self._settlement_intent(envelope, split_def, now))
+        return JobOutcome.COMPLETE.value
 
     def _complete_zero(self, job_id: str, token: str, outcome: JobOutcome) -> None:
         self._lifecycle.complete(

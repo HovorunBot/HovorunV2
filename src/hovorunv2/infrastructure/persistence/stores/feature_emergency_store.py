@@ -43,8 +43,12 @@ class SQLAlchemyFeatureEmergencyStore(FeatureEmergencyStore):
         except ValueError:
             msg = "Unknown feature for emergency state."
             raise ValueError(msg) from None
-        if command not in PROVIDER_SPLIT_COMMANDS and command not in SPEECH_COMMANDS:
-            msg = "Emergency state applies to media providers or speech features."
+        if (
+            command not in PROVIDER_SPLIT_COMMANDS
+            and command not in SPEECH_COMMANDS
+            and command != CommandName.TRANSLATE
+        ):
+            msg = "Emergency state applies to media providers, speech, or translation features."
             raise ValueError(msg)
         return key
 

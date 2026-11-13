@@ -191,6 +191,12 @@ FEATURE_REGISTRY = FeatureRegistry(
             usage_policy=SPEECH_POLICY,
             queue_policy=SPEECH_POLICY,
         ),
+        FeatureDefinition(
+            key=CommandName.TRANSLATE,
+            display_name="Explicit translation",
+            default_enabled=True,
+            triggers=frozenset({TriggerKind.DIRECT}),
+        ),
     )
 )
 

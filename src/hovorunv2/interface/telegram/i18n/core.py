@@ -8,6 +8,8 @@ from aiogram_i18n.context import I18nContext
 from aiogram_i18n.cores import FluentRuntimeCore
 from aiogram_i18n.exceptions import KeyNotFoundError
 
+from hovorunv2.application.translation.ports import TranslationCatalogPort
+
 LOCALES_DIR: Final[Path] = Path(__file__).resolve().parent.parent / "locales"
 DEFAULT_LOCALE: Final[str] = "uk"
 SECONDARY_FALLBACK_LOCALE: Final[str] = "en"
@@ -100,3 +102,11 @@ def get_message(key: str, locale: str | None = None, /, **kwargs: object) -> str
             resolved_locale = i18n.locale
     resolved_locale = resolved_locale or DEFAULT_LOCALE
     return get_i18n_core().get(key, resolved_locale, **kwargs)
+
+
+class FluentTranslationCatalog(TranslationCatalogPort):
+    """Render translation UI strings from the shared Fluent catalog without aiogram context."""
+
+    def render(self, key: str, locale: str | None = None, **kwargs: object) -> str:
+        """Format a localized message key for the requested or default Ukrainian locale."""
+        return get_message(key, locale or DEFAULT_LOCALE, **kwargs)

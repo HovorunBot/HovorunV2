@@ -30,6 +30,7 @@ from hovorunv2.infrastructure.translation.ctranslate2_engine import CTranslate2E
 from hovorunv2.infrastructure.translation.google_engine import GoogleTranslationEngine
 from hovorunv2.infrastructure.translation.language_detector import Py3LangIdDetector
 from hovorunv2.infrastructure.translation.model_store import MODEL_DOWNLOAD_SECONDS, ModelHTTPClient, ModelStore
+from hovorunv2.interface.telegram.i18n import FluentTranslationCatalog
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from hovorunv2.interface.telegram.transport.sync_delivery import NativeTelegramDelivery
 
@@ -108,4 +109,5 @@ def create_feature_runner(
         gate=ValkeyFeedbackGate(client, namespace),
         embed=embed,
         safety=safety,
+        catalog=FluentTranslationCatalog(),
     )

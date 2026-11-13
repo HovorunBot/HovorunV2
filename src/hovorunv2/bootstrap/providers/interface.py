@@ -40,6 +40,7 @@ from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.recovery import RecoveryCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.handlers.speech import SpeechVoiceHandler, TranscribeCommand
+from hovorunv2.interface.telegram.handlers.translate import TranslateCommand
 from hovorunv2.interface.telegram.i18n import AudienceI18nManager, create_i18n_core
 from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
 
@@ -90,6 +91,7 @@ class InterfaceAndUtilityProvider(Provider):
     access_command = provide(AccessCommand)
     transcribe_command = provide(TranscribeCommand)
     speech_voice_handler = provide(SpeechVoiceHandler)
+    translate_command = provide(TranslateCommand)
 
     @provide(scope=Scope.APP)
     def get_i18n_manager(self, session_maker: async_sessionmaker) -> AudienceI18nManager:
@@ -154,12 +156,14 @@ class InterfaceAndUtilityProvider(Provider):
         utility_commands: UtilityCommands,
         transcribe_command: TranscribeCommand,
         speech_voice_handler: SpeechVoiceHandler,
+        translate_command: TranslateCommand,
     ) -> list[BaseCommand]:
         """Provide list of all bot commands."""
         return [
             access_command,
             transcribe_command,
             speech_voice_handler,
+            translate_command,
             *rich_media_commands,
             *utility_commands,
         ]

@@ -62,6 +62,7 @@ class CommandName(StrEnum):
     START = "start"
     TRANSCRIBE = "transcribe"
     TRANSCRIBE_AUTO = "transcribe_auto"
+    TRANSLATE = "translate"
     TWITTER = "twitter"
     TWITTER_VIDEO = "twitter_video"
     TWITTER_POST = "twitter_post"
