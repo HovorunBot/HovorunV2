@@ -79,7 +79,7 @@ ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}
 
 COPY --from=builder-bot --chown=appuser:appuser /app/.venv /app/.venv
-COPY --chown=appuser:appuser README.md CHANGES.md* CHANGELOG.md* ./
+COPY --chown=appuser:appuser README.md CHANGES.md* ./
 
 USER appuser
 CMD ["/app/.venv/bin/hovorunv2"]
@@ -94,7 +94,7 @@ ENV APP_VERSION=${APP_VERSION} \
     WORKER_ROLE=operations
 
 COPY --from=builder-worker-ops --chown=appuser:appuser /app/.venv /app/.venv
-COPY --chown=appuser:appuser README.md CHANGES.md* CHANGELOG.md* ./
+COPY --chown=appuser:appuser README.md CHANGES.md* ./
 RUN install -d -m 0755 -o appuser -g appuser /var/lib/celery/beat
 
 USER appuser

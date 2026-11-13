@@ -23,13 +23,24 @@ x-worker-health: &worker-health
   start_period: 30s
   retries: 3
 
+x-app-hardening: &app-hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  ulimits:
+    core: 0
+
 services:
   postgres:
     mem_limit: ${POSTGRES_MEMORY_LIMIT:-1g}
     pids_limit: 128
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: 0
     logging: *logging
     image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
     restart: unless-stopped
+    networks: [backend]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?Generate the server .env with make env-init}
       POSTGRES_USER: ${POSTGRES_USER:?Generate the server .env with make env-init}
@@ -45,9 +56,13 @@ services:
   valkey:
     mem_limit: ${VALKEY_MEMORY_LIMIT:-1g}
     pids_limit: 128
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: 0
     logging: *logging
     image: valkey/valkey:8.0@sha256:04b9002ae24bbe66687fb025052ed9bcebb54f8da3937338eb718d98d362887f
     restart: unless-stopped
+    networks: [backend]
     command: ["valkey-server", "--appendonly", "yes", "--maxmemory", "${VALKEY_MAXMEMORY:-512mb}", "--maxmemory-policy", "noeviction"]
     volumes:
       - valkey_data:/data
@@ -58,6 +73,9 @@ services:
       retries: 10
 
   migrate:
+    <<: *app-hardening
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
     mem_limit: ${MIGRATE_MEMORY_LIMIT:-512m}
     pids_limit: 128
     logging: *logging
@@ -67,6 +85,7 @@ services:
       target: migrate
       args:
         APP_VERSION: ${APP_VERSION:-}
+    networks: [backend]
     environment:
       DATABASE_URL: ${DATABASE_URL:?Generate the server .env with make env-init}
     depends_on:
@@ -76,6 +95,9 @@ services:
     restart: "no"
 
   bot:
+    <<: *app-hardening
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
     healthcheck:
       test: ["CMD", "/app/.venv/bin/python", "-c", "from pathlib import Path; raise SystemExit(not Path('/tmp/hovorun-bot-ready').is_file())"]
       interval: 10s
@@ -92,6 +114,7 @@ services:
       args:
         APP_VERSION: ${APP_VERSION:-}
     restart: unless-stopped
+    networks: [backend, egress]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -105,6 +128,9 @@ services:
     command: ["/app/.venv/bin/hovorunv2"]
 
   worker-media:
+    <<: *app-hardening
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m,mode=1777
     mem_limit: ${WORKER_MEDIA_MEMORY_LIMIT:-1536m}
     pids_limit: 256
     logging: *logging
@@ -119,6 +145,7 @@ services:
     volumes:
       - translation_models:/app/data/models
     restart: unless-stopped
+    networks: [backend, egress]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -146,6 +173,9 @@ services:
       - "--queues=work:{work}:media"
 
   worker-browser:
+    <<: *app-hardening
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=512m,mode=1777
     mem_limit: ${WORKER_BROWSER_MEMORY_LIMIT:-1536m}
     pids_limit: 512
     logging: *logging
@@ -161,6 +191,7 @@ services:
     volumes:
       - translation_models:/app/data/models
     restart: unless-stopped
+    networks: [backend, egress]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -188,6 +219,9 @@ services:
       - "--queues=work:{work}:browser"
 
   worker-compression:
+    <<: *app-hardening
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=512m,mode=1777
     mem_limit: ${WORKER_COMPRESSION_MEMORY_LIMIT:-2g}
     pids_limit: 512
     cpus: 2
@@ -203,6 +237,7 @@ services:
     volumes:
       - translation_models:/app/data/models
     restart: unless-stopped
+    networks: [backend, egress]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -231,7 +266,7 @@ services:
 
   worker-speech:
     profiles: [speech]
-    container_name: ${COMPOSE_hovorunv2_NAME:-hovorunv2}-worker-speech
+    container_name: ${COMPOSE_PROJECT_NAME:-hovorunv2}-worker-speech
     image: hovorunv2-worker-speech:${APP_TAG:-latest}
     build:
       context: .
@@ -251,6 +286,7 @@ services:
     stop_grace_period: 150s
     healthcheck: *worker-health
     restart: unless-stopped
+    networks: [backend, egress]
     volumes:
       - speech_models:/app/data/models/speech:ro
     depends_on:
@@ -279,6 +315,9 @@ services:
       - "--queues=work:{work}:speech"
 
   worker-operations:
+    <<: *app-hardening
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
     mem_limit: ${WORKER_OPERATIONS_MEMORY_LIMIT:-512m}
     pids_limit: 128
     logging: *logging
@@ -291,6 +330,7 @@ services:
     stop_grace_period: 150s
     healthcheck: *worker-health
     restart: unless-stopped
+    networks: [backend, egress]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -313,6 +353,9 @@ services:
       - "--queues=work:{work}:operations"
 
   beat:
+    <<: *app-hardening
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
     mem_limit: ${BEAT_MEMORY_LIMIT:-256m}
     pids_limit: 64
     logging: *logging
@@ -323,6 +366,7 @@ services:
       args:
         APP_VERSION: ${APP_VERSION:-}
     restart: unless-stopped
+    networks: [backend]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -342,6 +386,11 @@ services:
       - --pidfile=/var/lib/celery/beat/celerybeat.pid
     volumes:
       - beat_state:/var/lib/celery/beat
+
+networks:
+  backend:
+    internal: true
+  egress:
 
 volumes:
   postgres_data:
