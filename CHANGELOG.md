@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **settings**: offer guided setup after chat approval
 - **settings**: guide chat configuration through sequential steps
 - **settings**: apply reviewed chat configuration atomically
 - **settings**: add target-bound setup drafts

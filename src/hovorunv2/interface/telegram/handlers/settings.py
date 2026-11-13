@@ -43,7 +43,13 @@ from hovorunv2.domain.enums import (
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.i18n import AudienceI18nManager, get_message
 from hovorunv2.interface.telegram.i18n.core import DEFAULT_LOCALE, SUPPORTED_LOCALES
-from hovorunv2.interface.telegram.settings.callbacks import SettingsAction, SettingsCallback, SettingsMenu
+from hovorunv2.interface.telegram.settings.callbacks import (
+    SettingsAction,
+    SettingsCallback,
+    SettingsMenu,
+    SetupAction,
+    SetupCallback,
+)
 
 from .base import BaseCommand
 
@@ -506,6 +512,14 @@ class SettingsCommand(BaseCommand):
         builder.row(
             InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
         )
+        if context.target_chat_id < 0 and context.transport_chat_id < 0:
+            chat_locale = await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
+            builder.row(
+                InlineKeyboardButton(
+                    text=get_message("setup-btn-configure", chat_locale),
+                    callback_data=SetupCallback(action=SetupAction.START).pack(),
+                )
+            )
         if context.transport_chat_id > 0:
             builder.row(
                 InlineKeyboardButton(
@@ -513,8 +527,22 @@ class SettingsCommand(BaseCommand):
                 )
             )
         text = "⚙️ <b>Hovorun Settings</b>\n\nSelect a category to configure:"
-        if context.target_chat_id < 0:
-            text += f"\nGroup: <code>{context.target_chat_id}</code>"
+        if context.target_chat_id < 0 and context.target is not None:
+            ui_loc = await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
+            target_lang, ignored = await self._language_service.get_chat_settings(context.target_chat_id)
+            perm_target = PermissionTarget(
+                "group",
+                context.target.entity_id,
+                context.target.generation,
+                context.target.telegram_id,
+            )
+            speech = await self._speech_settings.mode(perm_target)
+            ignored_text = ", ".join(ignored) if ignored else "none"
+            text += (
+                f"\nGroup: <code>{context.target_chat_id}</code>"
+                f"\nUI: <code>{ui_loc}</code> | Target: <code>{target_lang}</code>"
+                f" | Ignored: <code>{ignored_text}</code> | Speech: <code>{speech.value}</code>"
+            )
         await self._render(message, text, builder, context)
 
     async def _show_access_menu(self, query: CallbackQuery, context: SettingsContext) -> None:

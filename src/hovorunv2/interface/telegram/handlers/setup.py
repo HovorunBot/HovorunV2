@@ -1,12 +1,15 @@
 """Telegram callback and rendering handler for sequential guided chat configuration."""
 
-from typing import Final
+from typing import ClassVar, Final
 
 from aiogram import Bot, Router
+from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
 from hovorunv2.application.features.registry import COMMAND_PRESENTATION, FEATURE_REGISTRY
 from hovorunv2.application.settings.setup_apply import SetupApplyOutcome, SetupApplyService
@@ -18,6 +21,7 @@ from hovorunv2.application.settings.setup_drafts import (
     SetupStep,
 )
 from hovorunv2.domain.enums import CommandName, SpeechMode
+from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.i18n.core import DEFAULT_LOCALE, SUPPORTED_LOCALES, get_message
 from hovorunv2.interface.telegram.i18n.manager import AudienceI18nManager
 from hovorunv2.interface.telegram.settings.callbacks import SetupAction, SetupCallback
@@ -576,3 +580,51 @@ class SetupWizardHandler:
             await msg.edit_text(text=text, reply_markup=reply_markup)
         except TelegramBadRequest:
             return
+
+
+class SetupCommand(BaseCommand):
+    """Launch or resume guided sequential configuration inside an approved group chat."""
+
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(
+        requires_admin=False,
+        requires_group_admin=True,
+        requires_approval=True,
+        is_toggleable=False,
+    )
+
+    def __init__(self, wizard: SetupWizardHandler, i18n_manager: AudienceI18nManager) -> None:
+        self._wizard = wizard
+        self._i18n_manager = i18n_manager
+
+    @property
+    def name(self) -> str:
+        """Command name."""
+        return CommandName.SETUP
+
+    @property
+    def trigger(self) -> Command:
+        """Trigger filter for /setup."""
+        return Command(CommandName.SETUP)
+
+    async def is_triggered(self, message: Message) -> bool:
+        """Return whether the message invokes /setup."""
+        return self._is_slash_command_triggered(message, CommandName.SETUP)
+
+    async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
+        """Start or resume guided setup in the target group chat."""
+        if message.from_user is None or message.from_user.is_bot or message.sender_chat is not None:
+            return
+        actor_locale = await self._i18n_manager.get_user_locale(message.from_user.id) or DEFAULT_LOCALE
+        if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
+            await message.answer(get_message("setup-group-only", actor_locale))
+            return
+        outcome = await self._wizard.start_in_group(
+            bot=bot,
+            chat_id=message.chat.id,
+            actor_id=message.from_user.id,
+            thread_id=message.message_thread_id,
+        )
+        if outcome == SetupSessionOutcome.IN_PROGRESS:
+            await message.answer(get_message("setup-in-progress", actor_locale))
+        elif outcome == SetupSessionOutcome.DENIED:
+            await message.answer(get_message("setup-denied", actor_locale))

@@ -57,6 +57,7 @@ class CommandName(StrEnum):
     AUDIT = "audit"
     ALLOW_CHAT = "allow_chat"
     SETTINGS = "settings"
+    SETUP = "setup"
     HELP = "help"
     FEEDBACK = "feedback"
     START = "start"
@@ -133,6 +134,7 @@ DEFAULT_COMMANDS: Final[tuple[CommandName, ...]] = (
     CommandName.DEBUG,
     CommandName.ALLOW_CHAT,
     CommandName.SETTINGS,
+    CommandName.SETUP,
     CommandName.HELP,
     CommandName.START,
 )

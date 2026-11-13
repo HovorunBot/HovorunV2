@@ -9,7 +9,7 @@ from aiogram import Bot, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardButton, Message, User
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, User
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.access.access_service import CommandPolicy
@@ -19,7 +19,7 @@ from hovorunv2.application.groups.activation_service import GroupActivationServi
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.telegram.i18n import AudienceI18nManager, get_message
-from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
+from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback, SetupAction, SetupCallback
 
 from .base import BaseCommand
 
@@ -43,6 +43,15 @@ SUCCESS_OUTCOMES = {
     ActivationOutcome.ALREADY_PENDING,
     ActivationOutcome.REJECTED,
 }
+
+
+def _build_configure_chat_markup(locale: str | None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=get_message("setup-btn-configure", locale),
+        callback_data=SetupCallback(action=SetupAction.START).pack(),
+    )
+    return builder.as_markup()
 
 
 class AccessCommand(BaseCommand):
@@ -95,7 +104,9 @@ class AccessCommand(BaseCommand):
             return
         result = await self._enable(message, message.from_user, bot, target)
         logger.info("Allow chat result in chat %d: outcome=%s", message.chat.id, result.outcome.value)
-        await message.answer(get_message(RESULT_KEYS[result.outcome]))
+        group_locale = await self._i18n_manager.get_chat_locale(message.chat.id)
+        markup = _build_configure_chat_markup(group_locale) if result.outcome == ActivationOutcome.APPROVED else None
+        await message.answer(get_message(RESULT_KEYS[result.outcome], group_locale), reply_markup=markup)
 
     async def _enable(self, message: Message, actor: User, bot: Bot, target: PermissionTarget) -> ActivationResult:
         result = await self._activation.enable(actor.id, target, message.chat.type)
@@ -190,7 +201,9 @@ class AccessCommand(BaseCommand):
                 group_locale = await self._i18n_manager.get_chat_locale(callback_data.chat_id)
                 try:
                     await bot.send_message(
-                        callback_data.chat_id, get_message(RESULT_KEYS[result.outcome], group_locale)
+                        callback_data.chat_id,
+                        get_message(RESULT_KEYS[result.outcome], group_locale),
+                        reply_markup=_build_configure_chat_markup(group_locale),
                     )
                 except TelegramAPIError:
                     logger.warning("Failed to deliver approval confirmation to chat %d", callback_data.chat_id)

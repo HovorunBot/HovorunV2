@@ -41,7 +41,7 @@ from hovorunv2.interface.telegram.handlers.feedback import FeedbackCommand
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.recovery import RecoveryCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
-from hovorunv2.interface.telegram.handlers.setup import SetupWizardHandler
+from hovorunv2.interface.telegram.handlers.setup import SetupCommand, SetupWizardHandler
 from hovorunv2.interface.telegram.handlers.speech import SpeechVoiceHandler, TranscribeCommand
 from hovorunv2.interface.telegram.handlers.translate import TranslateCommand
 from hovorunv2.interface.telegram.handlers.translate_callbacks import TranslateCallbackHandler
@@ -79,6 +79,7 @@ class InterfaceAndUtilityProvider(Provider):
     setup_apply_service = provide(SetupApplyService)
     settings_command = provide(SettingsCommand)
     setup_wizard_handler = provide(SetupWizardHandler)
+    setup_command = provide(SetupCommand)
 
     bot_join_handler = provide(BotJoinHandler)
     beta_prompts = provide(BetaPromptService)
@@ -132,6 +133,7 @@ class InterfaceAndUtilityProvider(Provider):
         help_command: HelpCommand,
         feedback_command: FeedbackCommand,
         settings_command: SettingsCommand,
+        setup_command: SetupCommand,
         debug_command: DebugCommand,
         beta_prompt_command: BetaPromptCommand,
         announce_command: AnnounceCommand,
@@ -146,6 +148,7 @@ class InterfaceAndUtilityProvider(Provider):
                 help_command,
                 feedback_command,
                 settings_command,
+                setup_command,
                 debug_command,
                 administration_command,
                 emergency_command,
