@@ -12,7 +12,7 @@ from tests.utils.activation import sent_fields
 from tests.utils.runtimes.beta import FIRST, GROUP
 from tests.utils.telegram.transport import API, RecordedResponse
 
-DENIED = "Settings unavailable. Reopen /settings."
+DENIED = "Налаштування недоступні. Відкрийте /settings знову."
 
 
 def settings_message(chat_id: int = GROUP, actor_id: int = FIRST, message_id: int = 31) -> Message:

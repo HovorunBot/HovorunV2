@@ -182,7 +182,10 @@ async def test_help_and_modules_hide_future_beta_and_guessed_toggle_writes_nothi
                 query,
                 SettingsCallback(menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value="guessed_unknown"),
             )
-            assert sent_fields(http, "answerCallbackQuery")[-1]["text"] == "Settings unavailable. Reopen /settings."
+            assert (
+                sent_fields(http, "answerCallbackQuery")[-1]["text"]
+                == "Налаштування недоступні. Відкрийте /settings знову."
+            )
         async with sessions() as session:
             assert len((await session.scalars(select(AuditEventDB))).all()) == before
         await service.set_group_beta(BETA.key, GROUP, FIRST, enabled=True)

@@ -80,5 +80,5 @@ async def test_missing_internal_reason_fails_before_state_change(test_container:
             settings_http(http, message)
             await command.handle(message.as_(bot), bot)
             text = sent_fields(http, "sendMessage")[-1]["text"]
-    assert "unavailable" in text.lower()
+    assert "недоступне" in text.lower()
     assert not (await service.state(PROVIDER)).disabled

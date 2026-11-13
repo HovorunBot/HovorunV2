@@ -10,6 +10,7 @@ from hovorunv2.interface.telegram.i18n import (
     LOCALE_NAMES,
     SECONDARY_FALLBACK_LOCALE,
     SUPPORTED_LOCALES,
+    FluentTranslationCatalog,
     create_i18n_core,
 )
 
@@ -151,3 +152,20 @@ def test_translation_catalog_keys_and_pluralization(count: int, expected_en: str
     assert "xx" in core.get("translation-invalid-target", "uk", language="xx")
     assert core.get("translation-remaining-parts", "en", count=count) == expected_en
     assert core.get("translation-remaining-parts", "uk", count=count) == expected_uk
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("locale", ["en", "pl"])
+def test_bot_and_worker_catalogs_share_ukrainian_first_fallback(tmp_path: Path, locale: str) -> None:
+    """Keep bot and native-worker output consistent when the requested locale lacks a message."""
+    for code, content in {
+        "uk": "only-uk = Український резерв\n",
+        "en": "only-en = English fallback\n",
+        "pl": "other = Inna wiadomość\n",
+    }.items():
+        directory = tmp_path / code
+        directory.mkdir()
+        (directory / "messages.ftl").write_text(content, encoding="utf-8")
+    core = create_i18n_core(locales_dir=tmp_path, load_now=True)
+    catalog = FluentTranslationCatalog(locales_dir=tmp_path)
+    assert core.get("only-uk", locale) == catalog.render("only-uk", locale) == "Український резерв"

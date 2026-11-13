@@ -3,7 +3,6 @@
 import json
 import math
 import secrets
-from typing import Final
 
 import redis
 from cryptography.fernet import InvalidToken
@@ -20,8 +19,6 @@ from hovorunv2.application.translation.snapshots import (
 )
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace
 from hovorunv2.infrastructure.runtime.cache import CacheService
-
-_LOCK_TTL_SECONDS: Final = 30
 
 
 def _validate_token(token: str) -> None:
@@ -129,9 +126,10 @@ class ValkeyTranslationSnapshotStore(TranslationSnapshotPort):
         if TOKEN_PATTERN.fullmatch(token) is None:
             return False
         try:
-            acquired = await self._cache.client.set(
-                self._lock_key(token, part_index), "1", nx=True, ex=_LOCK_TTL_SECONDS
-            )
+            remaining = await self._cache.client.ttl(self._chain_key(token))
+            if remaining <= 0:
+                return False
+            acquired = await self._cache.client.set(self._lock_key(token, part_index), "1", nx=True, ex=remaining)
             return bool(acquired)
         except RedisError:
             return False

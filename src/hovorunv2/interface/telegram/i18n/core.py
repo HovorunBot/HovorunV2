@@ -1,5 +1,6 @@
 """Configure and initialize Fluent translation core for aiogram-i18n."""
 
+from contextlib import suppress
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -43,13 +44,14 @@ class FallbackFluentRuntimeCore(FluentRuntimeCore):
 
     def get(self, message_id: str, locale: str | None = None, /, **kwargs: Any) -> str:
         """Resolve a localized message, falling back to the secondary locale if missing."""
-        try:
-            return super().get(message_id, locale, **kwargs)
-        except KeyNotFoundError:
-            fallback = self._secondary_fallback_locale
-            if fallback is not None and fallback in self.locales and locale != fallback:
-                return super().get(message_id, fallback, **kwargs)
-            raise
+        candidates = dict.fromkeys(
+            (locale or self.default_locale, self.default_locale, self._secondary_fallback_locale)
+        )
+        for candidate in candidates:
+            if candidate is not None and candidate in self.locales:
+                with suppress(KeyNotFoundError):
+                    return super().get(message_id, candidate, **kwargs)
+        raise KeyNotFoundError(message_id)
 
 
 def create_i18n_core(

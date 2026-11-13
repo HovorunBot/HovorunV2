@@ -6,7 +6,7 @@ import uuid
 from contextlib import suppress
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from hovorunv2.application.configuration import AppSettings
@@ -82,14 +82,12 @@ class TranslateCallbackHandler:
         self._clock = clock
         self._settings = settings
 
-    async def _resolve_ui_locale(self, chat_id: int, user_id: int) -> str:
-        if chat_id < 0:
-            return await self._i18n_manager.get_chat_locale(chat_id) or DEFAULT_LOCALE
+    async def _resolve_alert_locale(self, user_id: int) -> str:
         return await self._i18n_manager.get_user_locale(user_id)
 
     async def _is_authorized(self, chat_id: int, owner_id: int | None, actor_id: int) -> bool:
-        if chat_id > 0:
-            return owner_id == actor_id
+        if chat_id > 0 and owner_id != actor_id:
+            return False
         decision = await self._features.evaluate(
             CommandName.TRANSLATE,
             chat_id,
@@ -115,14 +113,18 @@ class TranslateCallbackHandler:
 
     async def _handle_source_click(self, query: CallbackQuery, msg: Message, token: str) -> None:
         actor_id = query.from_user.id
-        locale = await self._resolve_ui_locale(msg.chat.id, actor_id)
+        locale = await self._resolve_alert_locale(actor_id)
         snapshot = await self._snapshots.get_source(token)
         if snapshot is None:
             await query.answer(get_message("translation-expired", locale), show_alert=True)
             return
-        if snapshot.chat_id != msg.chat.id or not await self._is_authorized(
-            snapshot.chat_id, snapshot.owner_id, actor_id
-        ):
+        if snapshot.chat_id != msg.chat.id:
+            await query.answer(get_message("translation-denied", locale), show_alert=True)
+            return
+        if snapshot.thread_id is not None and snapshot.thread_id != msg.message_thread_id:
+            await query.answer(get_message("translation-denied", locale), show_alert=True)
+            return
+        if not await self._is_authorized(snapshot.chat_id, snapshot.owner_id, actor_id):
             await query.answer(get_message("translation-denied", locale), show_alert=True)
             return
         await self._admit_snapshot(query, msg, snapshot, locale)
@@ -141,7 +143,9 @@ class TranslateCallbackHandler:
         if target is None:
             await query.answer(get_message("translation-unavailable", locale), show_alert=True)
             return
-        effective_target = resolve_target_language(None, chat_target, self._settings.translation_target_lang)
+        effective_target = resolve_target_language(
+            snapshot.target_lang, chat_target, self._settings.translation_target_lang
+        )
         now = self._clock.now()
         deadline = now + MAX_JOB_LIFETIME_SECONDS
         job_id = uuid.uuid4().hex
@@ -152,8 +156,10 @@ class TranslateCallbackHandler:
             source_message_id=snapshot.source_message_id,
             reply_to_message_id=msg.message_id,
             message_thread_id=snapshot.thread_id if snapshot.thread_id is not None else msg.message_thread_id,
-            requested_target_lang=None,
-            ui_locale=locale,
+            requested_target_lang=effective_target,
+            ui_locale=(await self._i18n_manager.get_chat_locale(snapshot.chat_id) or DEFAULT_LOCALE)
+            if snapshot.chat_id < 0
+            else locale,
             snapshot_expires_at=snapshot.expires_at,
         )
         payload_bytes = json.dumps(private_input.model_dump(mode="json")).encode("utf-8")
@@ -226,35 +232,55 @@ class TranslateCallbackHandler:
             return
         await query.answer(get_message("translation-unavailable", locale), show_alert=True)
 
+    async def _load_authorized_chain(
+        self, query: CallbackQuery, msg: Message, token: str, locale: str
+    ) -> TranslationChainState | None:
+        chain = await self._snapshots.get_chain(token)
+        if chain is None:
+            await query.answer(get_message("translation-expired", locale), show_alert=True)
+            return None
+        if (
+            chain.chat_id != msg.chat.id
+            or chain.thread_id != msg.message_thread_id
+            or chain.last_message_id != msg.message_id
+            or not await self._is_authorized(chain.chat_id, chain.owner_id, query.from_user.id)
+        ):
+            await query.answer(get_message("translation-denied", locale), show_alert=True)
+            return None
+        return chain
+
     async def _handle_chain_click(
         self, query: CallbackQuery, msg: Message, bot: Bot, token: str, part_idx: int
     ) -> None:
-        actor_id = query.from_user.id
-        locale = await self._resolve_ui_locale(msg.chat.id, actor_id)
+        locale = await self._resolve_alert_locale(query.from_user.id)
+        chain = await self._load_authorized_chain(query, msg, token, locale)
+        if chain is None:
+            return
+        if part_idx != chain.next_part:
+            notice = get_message("translation-already-complete", locale) if chain.next_part >= len(chain.parts) else ""
+            await query.answer(notice or None)
+            return
         if not await self._snapshots.claim_chain_step(token, part_idx):
             await query.answer()
             return
-        try:
-            chain = await self._snapshots.get_chain(token)
-            if chain is None:
-                await query.answer(get_message("translation-expired", locale), show_alert=True)
-                return
-            if (
-                chain.chat_id != msg.chat.id
-                or chain.last_message_id != msg.message_id
-                or not await self._is_authorized(chain.chat_id, chain.owner_id, actor_id)
-            ):
-                await query.answer(get_message("translation-denied", locale), show_alert=True)
-                return
-            if part_idx != chain.next_part:
-                notice = (
-                    get_message("translation-already-complete", locale) if chain.next_part >= len(chain.parts) else ""
-                )
-                await query.answer(notice or None)
-                return
-            await self._deliver_next_part(query, bot, token, chain, part_idx, locale)
-        finally:
+        await self._send_claimed_part(query, bot, token, part_idx, locale)
+
+    async def _send_claimed_part(self, query: CallbackQuery, bot: Bot, token: str, part_idx: int, locale: str) -> None:
+        """Deliver a claimed part, retaining the claim whenever delivery becomes uncertain."""
+        # Reload after the claim: another click may have completed while access was checked.
+        current = await self._snapshots.get_chain(token)
+        if current is None or current.next_part != part_idx:
             await self._snapshots.release_chain_step(token, part_idx)
+            await query.answer()
+            return
+        try:
+            await self._deliver_next_part(query, bot, token, current, part_idx, locale)
+        except TelegramNetworkError:
+            # Telegram may have accepted the part. Keep the claim until the chain expires.
+            await query.answer(get_message("translation-unavailable", locale), show_alert=True)
+            return
+        # Other failures and cancellation also retain the claim, preventing uncertain replay.
+        await self._snapshots.release_chain_step(token, part_idx)
 
     async def _deliver_next_part(
         self,
@@ -290,14 +316,14 @@ class TranslateCallbackHandler:
             reply_markup=markup,
             disable_web_page_preview=True,
         )
+        updated = chain.model_copy(update={"next_part": next_idx, "last_message_id": sent.message_id})
+        await self._snapshots.save_chain(token, updated)
         with suppress(TelegramAPIError):
             await bot.edit_message_reply_markup(
                 chat_id=chain.chat_id,
                 message_id=chain.last_message_id,
                 reply_markup=None,
             )
-        updated = chain.model_copy(update={"next_part": next_idx, "last_message_id": sent.message_id})
-        await self._snapshots.save_chain(token, updated)
         await query.answer(None if has_more else get_message("translation-already-complete", locale))
 
     def register(self, router: Router) -> None:

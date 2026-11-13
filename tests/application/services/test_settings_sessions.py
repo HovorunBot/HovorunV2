@@ -33,7 +33,7 @@ from tests.utils.runtimes.beta import FIRST, GROUP, SECOND, group_beta_runtime
 from tests.utils.settings import bind_settings_callback
 from tests.utils.telegram import API, BOT_CREDENTIAL, RecordedResponse
 
-DENIED = "Settings unavailable. Reopen /settings."
+DENIED = "Налаштування недоступні. Відкрийте /settings знову."
 
 
 def settings_message(chat_id: int = GROUP, actor_id: int = FIRST, message_id: int = 31) -> Message:

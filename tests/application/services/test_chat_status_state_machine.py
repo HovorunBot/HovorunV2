@@ -73,7 +73,7 @@ async def test_state_machine_flow(test_container: AsyncContainer) -> None:
                 count = len(sent_fields(http, "sendMessage"))
                 await runtime.command.handle(message, runtime.bot)
                 assert len(sent_fields(http, "sendMessage")) == count + 1
-                assert sent_fields(http, "sendMessage")[-1]["text"] == "⏳ Approval is already pending."
+                assert sent_fields(http, "sendMessage")[-1]["text"] == "⏳ Запит на схвалення вже очікує на розгляд."
                 await join.handle_my_chat_member_update(
                     bot_event(chat_id, present=False, date=now - timedelta(minutes=1)), runtime.bot
                 )

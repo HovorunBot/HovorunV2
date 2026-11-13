@@ -65,7 +65,12 @@ async def test_user_summary_reports_consumed_and_remaining(test_container: Async
     assert summary.subject_kind == TargetKind.USER
     assert summary.subject_telegram_id == USER
     assert summary.unlimited_personal_quota is False
-    assert {entry.feature for entry in summary.features} == {MEDIA_BUCKET, SPEECH_BUCKET, "feature:transcribe"}
+    assert {entry.feature for entry in summary.features} == {
+        MEDIA_BUCKET,
+        SPEECH_BUCKET,
+        "feature:transcribe",
+        "feature:translate",
+    }
     feature = _feature_entry(summary, FEATURE)
     assert "shared across all providers" in feature.display_name
     assert feature.unit == UsageUnit.REQUESTS
@@ -151,4 +156,5 @@ async def test_shared_quota_keeps_distinct_windows(test_container: AsyncContaine
         (MEDIA_BUCKET, hourly_seconds, hourly_limit),
         (SPEECH_BUCKET, WINDOW_SECONDS, 6),
         ("feature:transcribe", WINDOW_SECONDS, 6),
+        ("feature:translate", WINDOW_SECONDS, 6),
     }

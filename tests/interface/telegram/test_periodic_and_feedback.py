@@ -77,7 +77,7 @@ async def test_feedback_cooldown_blocks_repeat_sender(
     await command.handle(repeat, recording_bot)
     last_call = recording_bot.session.calls[-1]
     assert isinstance(last_call, SendMessage)
-    assert "wait" in last_call.text.lower()
+    assert "зачекайте" in last_call.text.lower()
     assert len(recording_bot.session.calls) == first_calls + 1
 
 
@@ -103,7 +103,7 @@ async def test_feedback_command_validation_and_delegation(
     assert len(recording_bot.session.calls) == 1
     call0 = recording_bot.session.calls[0]
     assert isinstance(call0, SendMessage)
-    assert "How to send feedback" in call0.text
+    assert "Як надіслати відгук" in call0.text
     recording_bot.session.calls.clear()
     valid_msg = empty_msg.model_copy(update={"text": "/feedback Hello world"}).as_(recording_bot)
     await command.handle(valid_msg, recording_bot)
@@ -117,7 +117,7 @@ async def test_feedback_command_validation_and_delegation(
         assert "Hello world" in call.text
     final_call = recording_bot.session.calls[-1]
     assert isinstance(final_call, SendMessage)
-    assert "Thank you!" in final_call.text
+    assert "Дякуємо!" in final_call.text
 
 
 async def test_reminder_service_send_prompt_cooldown(

@@ -618,8 +618,10 @@ async def test_characterize_legacy_default_activation(test_container: AsyncConta
     persisted_status, persisted_commands = await get_persisted_chat_and_commands(session_maker, chat_id)
     assert persisted_status == ChatStatus.APPROVED
 
-    expected_commands = {str(sub_cmd) for sub_pair in PROVIDER_SPLIT_COMMANDS.values() for sub_cmd in sub_pair}
-    assert len(expected_commands) == 16  # 8 providers * 2
+    expected_commands = {str(sub_cmd) for sub_pair in PROVIDER_SPLIT_COMMANDS.values() for sub_cmd in sub_pair} | {
+        str(CommandName.TRANSLATE)
+    }
+    assert len(expected_commands) == 17  # 8 providers * 2 + translate
     assert persisted_commands == expected_commands
 
     # 2. Verify all parent providers and sub-commands are allowed

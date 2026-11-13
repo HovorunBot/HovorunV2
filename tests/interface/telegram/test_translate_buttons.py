@@ -8,6 +8,7 @@ from http import HTTPStatus
 from urllib.parse import parse_qs
 
 import redis
+from aiogram.exceptions import TelegramNetworkError
 from aiogram.methods import AnswerCallbackQuery, SendMessage
 from aiogram.types import CallbackQuery, Chat, InlineKeyboardMarkup, Message, User
 from dishka import AsyncContainer
@@ -24,15 +25,18 @@ from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import JobEnvelope, JobStage
 from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
-from hovorunv2.application.jobs.feature_jobs import JobOutcome
+from hovorunv2.application.jobs.feature_jobs import JobOutcome, PayloadPort
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
+from hovorunv2.application.translation.explicit_input import ExplicitTranslationInput
 from hovorunv2.application.translation.hybrid_engine import HybridTranslationEngine
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.translation.ports import TranslationEnginePort, TranslationError
 from hovorunv2.application.translation.snapshots import (
     SNAPSHOT_TTL_SECONDS,
+    TranslationChainState,
+    TranslationSnapshotPort,
     TranslationSourceSnapshot,
 )
 from hovorunv2.application.usage.budgets import RuntimeNamespace, WallClock
@@ -51,7 +55,7 @@ from hovorunv2.infrastructure.runtime.translation_snapshots import (
 from hovorunv2.infrastructure.translation.google_engine import GoogleTranslationEngine
 from hovorunv2.infrastructure.translation.language_detector import Py3LangIdDetector
 from hovorunv2.interface.telegram.handlers.translate_callbacks import TranslateCallbackHandler
-from hovorunv2.interface.telegram.i18n import FluentTranslationCatalog
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager, FluentTranslationCatalog, get_message
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from tests.conftest import provision_role
 from tests.utils.jobs.envelopes import broker_envelopes
@@ -461,3 +465,169 @@ async def test_group_translate_button_and_multipart_continuation_chain(
         member_one,
         base_now,
     )
+
+
+def _store_source_snapshot(settings: Settings, namespace: RuntimeNamespace, snapshot: TranslationSourceSnapshot) -> str:
+    with redis.from_url(settings.valkey_url) as client:
+        return WorkerTranslationSnapshotClient(client, settings, WallClock(), namespace).save_source(snapshot)
+
+
+async def test_source_button_preserves_target_and_rejects_other_topics(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
+    """Keep a source button's fixed language and topic despite subsequent chat settings edits."""
+    group_id, owner, member, outsider = -100790304, 790301, 790302, 790303
+    await _seed_group_for_buttons(test_container, group_id, owner, member, outsider)
+    settings = await test_container.get(Settings)
+    namespace = await test_container.get(RuntimeNamespace)
+    now = WallClock().now()
+    snapshot = TranslationSourceSnapshot(
+        chat_id=group_id,
+        source_message_id=50,
+        thread_id=7,
+        target_lang="de",
+        text="This source must retain its original target language.",
+        created_at=now,
+        expires_at=now + SNAPSHOT_TTL_SECONDS,
+    )
+    token = await asyncio.to_thread(_store_source_snapshot, settings, namespace, snapshot)
+    await (await test_container.get(ChatStore)).update_translation_settings(
+        group_id, "en", [], actor=ActorContext.cli()
+    )
+    await (await test_container.get(AudienceI18nManager)).set_user_locale(owner, "en")
+    handler = await test_container.get(TranslateCallbackHandler)
+    wrong_topic = _make_callback_query(
+        recording_bot,
+        query_id="wrong-topic",
+        user_id=owner,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=50,
+        data=f"tr:s:{token}",
+        thread_id=8,
+    )
+    await handler.handle_callback(wrong_topic, recording_bot)
+    assert await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media") == []
+    valid = _make_callback_query(
+        recording_bot,
+        query_id="fixed-target",
+        user_id=owner,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=50,
+        data=f"tr:s:{token}",
+        thread_id=7,
+    )
+    await handler.handle_callback(valid, recording_bot)
+    envelopes = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+    assert len(envelopes) == 1
+    envelope = JobEnvelope.model_validate(envelopes[0])
+    payloads = await test_container.get(PayloadPort)
+    loaded = await payloads.load(envelope.payload_ref, envelope.job_id)
+    assert loaded.data is not None
+    request = ExplicitTranslationInput.model_validate_json(loaded.data)
+    assert request.requested_target_lang == "de"
+    assert request.message_thread_id == 7
+    assert request.ui_locale == "uk"
+
+
+async def test_translation_callback_alert_uses_clickers_personal_locale(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
+    """Render personal callback alerts in the clicker's language, independently of group UI."""
+    user_id, group_id = 790401, -100790404
+    await (await test_container.get(UserStore)).ingest_user(user_id)
+    i18n = await test_container.get(AudienceI18nManager)
+    await i18n.set_user_locale(user_id, "en")
+    query = _make_callback_query(
+        recording_bot,
+        query_id="expired-en",
+        user_id=user_id,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=50,
+        data=f"tr:s:{'e' * 32}",
+    )
+    await (await test_container.get(TranslateCallbackHandler)).handle_callback(query, recording_bot)
+    answers = [call for call in recording_bot.session.calls if isinstance(call, AnswerCallbackQuery)]
+    assert answers[-1].text == get_message("translation-expired", "en")
+
+
+async def test_uncertain_continuation_is_not_replayed(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
+    """Preserve a potentially accepted part after a lost Telegram response, even past old lock expiry."""
+    group_id, owner, member, outsider = -100790504, 790501, 790502, 790503
+    await _seed_group_for_buttons(test_container, group_id, owner, member, outsider)
+    namespace = await test_container.get(RuntimeNamespace)
+    token = "f" * 32
+    now = WallClock().now()
+    chain = TranslationChainState(
+        chat_id=group_id,
+        source_message_id=50,
+        thread_id=7,
+        parts=("First part", "Next part"),
+        last_message_id=701,
+        created_at=now,
+        expires_at=now + SNAPSHOT_TTL_SECONDS,
+    )
+    store = await test_container.get(TranslationSnapshotPort)
+    await store.save_chain(token, chain)
+    handler = await test_container.get(TranslateCallbackHandler)
+    query = _make_callback_query(
+        recording_bot,
+        query_id="uncertain",
+        user_id=owner,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=701,
+        data=f"tr:c:{token}:1",
+        thread_id=7,
+    )
+    recording_bot.session.responses.append(
+        TelegramNetworkError(method=SendMessage(chat_id=group_id, text="Next part"), message="Synthetic timeout")
+    )
+    await handler.handle_callback(query, recording_bot)
+    await handler.handle_callback(query, recording_bot)
+    sends = [call for call in recording_bot.session.calls if isinstance(call, SendMessage)]
+    assert len(sends) == 1
+    async with runtime_cache(test_container) as (cache, _):
+        ttl = await cache.client.ttl(f"{namespace.value}tr:lock:{token}:1")
+        assert ttl > 60
+    saved = await store.get_chain(token)
+    assert saved is not None
+    assert saved.next_part == 1
+
+
+async def test_private_continuation_rechecks_current_access(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
+    """Do not deliver retained private translations after the owner's trust is revoked."""
+    user_id = 790601
+    users = await test_container.get(UserStore)
+    await users.ingest_user(user_id)
+    await users.set_trust(user_id, is_trusted=True, actor=ActorContext.cli())
+    now = WallClock().now()
+    token = "d" * 32
+    chain = TranslationChainState(
+        chat_id=user_id,
+        owner_id=user_id,
+        source_message_id=50,
+        parts=("First part", "Restricted next part"),
+        last_message_id=701,
+        created_at=now,
+        expires_at=now + SNAPSHOT_TTL_SECONDS,
+    )
+    await (await test_container.get(TranslationSnapshotPort)).save_chain(token, chain)
+    await users.set_trust(user_id, is_trusted=False, actor=ActorContext.cli())
+    query = _make_callback_query(
+        recording_bot,
+        query_id="revoked-private",
+        user_id=user_id,
+        chat_id=user_id,
+        chat_type="private",
+        message_id=701,
+        data=f"tr:c:{token}:1",
+    )
+    await (await test_container.get(TranslateCallbackHandler)).handle_callback(query, recording_bot)
+    assert not any(isinstance(call, SendMessage) for call in recording_bot.session.calls)

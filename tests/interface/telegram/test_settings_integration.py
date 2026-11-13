@@ -104,8 +104,8 @@ async def test_group_settings_menus_authorization_and_persistence(
         test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.LANG)
     )
     assert lang_edit.text is not None
-    assert "Language Settings" in lang_edit.text
-    assert "Configure interface language, translation target" in lang_edit.text
+    assert "Налаштування мови" in lang_edit.text
+    assert "Налаштуйте мову інтерфейсу, мову перекладу" in lang_edit.text
 
     usage_edit = await _send_group_callback(
         test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.USAGE, value="group")
@@ -215,8 +215,8 @@ async def test_private_settings_menus_and_persistence(
     await command.handle_callback(query_for(message, recording_bot, USER), ui_lang_open)
     ui_lang_edit = _last_edit(recording_bot)
     assert ui_lang_edit.text is not None
-    assert "Personal Interface Language" in ui_lang_edit.text
-    assert "Choose the interface language" in ui_lang_edit.text
+    assert "Мова інтерфейсу" in ui_lang_edit.text
+    assert "Оберіть мову інтерфейсу" in ui_lang_edit.text
 
     usage_open = await _issue(SettingsCallback(menu=SettingsMenu.USAGE, value="own"))
     await command.handle_callback(query_for(message, recording_bot, USER), usage_open)
