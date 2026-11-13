@@ -6,6 +6,8 @@ from hovorunv2.interface.telegram.i18n.core import (
     LOCALES_DIR,
     SUPPORTED_LOCALES,
     create_i18n_core,
+    get_i18n_core,
+    get_message,
 )
 from hovorunv2.interface.telegram.i18n.manager import AudienceI18nManager
 
@@ -16,4 +18,6 @@ __all__ = [
     "SUPPORTED_LOCALES",
     "AudienceI18nManager",
     "create_i18n_core",
+    "get_i18n_core",
+    "get_message",
 ]

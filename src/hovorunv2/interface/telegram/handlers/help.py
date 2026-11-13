@@ -1,5 +1,6 @@
 """Handler for the /help command and landing page for non-admins."""
 
+from html import escape
 from typing import ClassVar
 
 from aiogram import Bot
@@ -11,6 +12,7 @@ from hovorunv2.application.configuration import AppSettings
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
+from hovorunv2.interface.telegram.i18n import get_message
 
 logger = get_logger(__name__)
 
@@ -63,32 +65,24 @@ class HelpCommand(BaseCommand):
                     break
         text = self.get_help_text()
         if visible:
-            text += "\n\n<b>Available Features</b>\n" + "\n".join(visible)
+            features_header = get_message("help-available-features")
+            text += f"\n\n<b>{features_header}</b>\n" + "\n".join(visible)
         await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
 
-    def get_help_text(self) -> str:
-        """Generate formatted help text.
+    def get_help_text(self, locale: str | None = None) -> str:
+        """Generate formatted help text in the requested or active locale.
+
+        Args:
+            locale: Optional explicit locale code ('uk' or 'en').
 
         Returns:
             HTML help text with project and contact information.
         """
-        return (
-            f"<b>🦉 HovorunV2 — Your Telegram Media Companion</b>\n\n"
-            f"{self._settings.project_description}\n\n"
-            "I level up your group conversations with smart utilities, dynamic "
-            "translations, and seamless media integrations.\n\n"
-            "<b>🛡 Access Approval</b>\n"
-            "Bot only works in approved chats. Group admins can request access:\n"
-            "• /allow_chat — Request bot approval from owners.\n\n"
-            "<b>💬 Support & Feedback</b>\n"
-            "• /feedback &lt;text&gt; — Send feedback directly to bot developers.\n\n"
-            "<b>⚙️ Configuration (Group Admins only)</b>\n"
-            "• /settings — Interactive menu for Modules and Languages.\n"
-            "• <i>Configuration windows self-destruct after 30s of inactivity.</i>\n\n"
-            "<b>Project Links:</b>\n"
-            f"• <a href='{self._settings.github_url}'>GitHub Repository</a>\n"
-            f"• <a href='{self._settings.issue_tracker_url}'>Issue Tracker</a>\n\n"
-            "<b>Contact:</b>\n"
-            f"• Email: {self._settings.contact_email}\n\n"
-            "<i>I am currently in <b>Alpha</b> stage.</i>"
+        return get_message(
+            "help-full-text",
+            locale,
+            description=escape(self._settings.project_description, quote=True),
+            github_url=escape(str(self._settings.github_url), quote=True),
+            issue_tracker_url=escape(str(self._settings.issue_tracker_url), quote=True),
+            contact_email=escape(self._settings.contact_email, quote=True),
         )

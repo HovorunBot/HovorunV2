@@ -12,6 +12,7 @@ from hovorunv2.application.messaging.ports import CachePort
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
+from hovorunv2.interface.telegram.i18n import get_message
 
 logger = get_logger(__name__)
 FEEDBACK_COOLDOWN_SECONDS = 60
@@ -64,9 +65,7 @@ class FeedbackCommand(BaseCommand):
             message: Telegram message to reply to.
         """
         await message.reply(
-            "💬 <b>How to send feedback:</b>\n\n"
-            "Please provide your message after <code>/feedback</code>:\n"
-            "<code>/feedback Your suggestion, bug report, or question here</code>",
+            get_message("feedback-instruction"),
             parse_mode="HTML",
         )
 
@@ -79,12 +78,12 @@ class FeedbackCommand(BaseCommand):
         """
         if delivered:
             await message.reply(
-                "✅ <b>Thank you!</b> Your feedback has been sent directly to the development team.",
+                get_message("feedback-delivered"),
                 parse_mode="HTML",
             )
             return
         await message.reply(
-            "⚠️ <b>Notice:</b> Developers are currently unreachable. Please try again later or reach out via GitHub.",
+            get_message("feedback-unreachable"),
             parse_mode="HTML",
         )
 
@@ -103,12 +102,12 @@ class FeedbackCommand(BaseCommand):
 
         user = message.from_user
         if user is None or user.id <= 0:
-            await message.answer("Feedback is unavailable for this sender.")
+            await message.answer(get_message("feedback-unavailable"))
             return
         cooldown_key = f"feedback:cooldown:{user.id}"
         if await self._cache.get(cooldown_key):
             logger.debug("Feedback cooldown active: user=%d", user.id)
-            await message.answer("Please wait a moment before sending more feedback.")
+            await message.answer(get_message("feedback-cooldown"))
             return
         await self._cache.set(cooldown_key, 1, expire=FEEDBACK_COOLDOWN_SECONDS)
         user_name = user.full_name

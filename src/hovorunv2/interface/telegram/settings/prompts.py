@@ -7,6 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.interface.telegram.i18n import get_message
 from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
 from hovorunv2.interface.telegram.transport.sync_prompts import (
     ACCESS_REQUEST_BUTTON_TEXT,
@@ -25,27 +26,35 @@ __all__ = [
 logger = get_logger(__name__)
 
 
-def build_unauthorized_prompt(chat_id: int, group_id: int, generation: int) -> tuple[str, InlineKeyboardBuilder]:
+def build_unauthorized_prompt(
+    chat_id: int,
+    group_id: int,
+    generation: int,
+    locale: str | None = None,
+) -> tuple[str, InlineKeyboardBuilder]:
     """Generate guidance text and approval button for unauthorized chats.
 
     Args:
         chat_id: Telegram chat ID receiving the prompt.
         group_id: Group entity ID bound into the approval callback.
         generation: Group identity generation bound into the approval callback.
+        locale: Optional explicit locale code ('uk' or 'en').
 
     Returns:
         Guidance text and keyboard builder carrying the approval request.
     """
     builder = InlineKeyboardBuilder()
+    button_text = get_message("unauthorized-btn-text", locale)
     builder.add(
         InlineKeyboardButton(
-            text=ACCESS_REQUEST_BUTTON_TEXT,
+            text=button_text,
             callback_data=AccessCallback(
                 chat_id=chat_id, group_id=group_id, generation=generation, action=AccessAction.REQUEST
             ).pack(),
         )
     )
-    return UNAUTHORIZED_PROMPT_TEXT, builder
+    prompt_text = get_message("unauthorized-prompt-text", locale)
+    return prompt_text, builder
 
 
 class TelegramUnauthorizedPromptSender:
@@ -104,5 +113,5 @@ class TelegramUnauthorizedPromptSender:
         chat = await self._chats.get_chat(chat_id)
         if chat is None or not self._is_eligible_group(chat.chat_type):
             return False
-        text, builder = build_unauthorized_prompt(chat_id, chat.id, chat.generation)
+        text, builder = build_unauthorized_prompt(chat_id, chat.id, chat.generation, locale=chat.ui_locale)
         return await self._dispatch_prompt(bot, chat_id, text, builder)

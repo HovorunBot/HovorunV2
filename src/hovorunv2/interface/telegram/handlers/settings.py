@@ -41,7 +41,7 @@ from hovorunv2.domain.enums import (
     SpeechMode,
 )
 from hovorunv2.infrastructure.logger import get_logger
-from hovorunv2.interface.telegram.i18n import AudienceI18nManager
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager, get_message
 from hovorunv2.interface.telegram.i18n.core import DEFAULT_LOCALE, SUPPORTED_LOCALES
 from hovorunv2.interface.telegram.settings.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 
@@ -555,7 +555,11 @@ class SettingsCommand(BaseCommand):
             "Beta activation is explicit in Modules."
         )
         builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
+        builder.row(
+            InlineKeyboardButton(
+                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()
+            )
+        )
         await self._render(message, text, builder, context)
 
     async def _show_usage(self, query: CallbackQuery, context: SettingsContext, scope: str | None) -> None:
@@ -583,7 +587,11 @@ class SettingsCommand(BaseCommand):
             title = "📊 Your usage"
         builder = InlineKeyboardBuilder()
         back = SettingsMenu.GROUPS if context.target is None else SettingsMenu.MAIN
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=back).pack()))
+        builder.row(
+            InlineKeyboardButton(
+                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=back).pack()
+            )
+        )
         await self._render(message, self._render_usage(title, summary), builder, context)
 
     def _render_usage(self, title: str, summary: UsageSummary) -> str:
@@ -639,7 +647,11 @@ class SettingsCommand(BaseCommand):
                 )
             )
         back = SettingsMenu.GROUPS if scope == "own" else SettingsMenu.MAIN
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=back).pack()))
+        builder.row(
+            InlineKeyboardButton(
+                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=back).pack()
+            )
+        )
         text = (
             "🔔 <b>Notification preferences</b>\n\n"
             "Toggle routine release, beta, feature-status and announcement categories. "
@@ -756,9 +768,13 @@ class SettingsCommand(BaseCommand):
                 callback_data=SettingsCallback(menu=SettingsMenu.LANG_IGNORED, page=0).pack(),
             )
         )
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
+        builder.row(
+            InlineKeyboardButton(
+                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()
+            )
+        )
 
-        text = "🌐 <b>Language Settings</b>\n\nConfigure interface language, translation target, and ignored languages:"
+        text = get_message("settings-lang-menu-title")
         await self._render(msg, text, builder, context)
 
     async def _show_ui_lang_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
@@ -774,11 +790,11 @@ class SettingsCommand(BaseCommand):
 
         if context.target is None:
             current_locale = await self._i18n_manager.get_user_locale(query.from_user.id)
-            title_text = "🌐 <b>Personal Interface Language</b>\n\nChoose the interface language for your interactions:"
+            title_text = get_message("settings-ui-lang-title")
             back_menu = SettingsMenu.GROUPS
         else:
             current_locale = await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
-            title_text = "🌐 <b>Group Interface Language</b>\n\nChoose the interface language for this group:"
+            title_text = get_message("settings-ui-group-lang-title")
             back_menu = SettingsMenu.LANG
 
         builder = InlineKeyboardBuilder()
@@ -793,7 +809,11 @@ class SettingsCommand(BaseCommand):
                     ).pack(),
                 )
             )
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=back_menu).pack()))
+        builder.row(
+            InlineKeyboardButton(
+                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=back_menu).pack()
+            )
+        )
         await self._render(msg, title_text, builder, context)
 
     async def _handle_ui_lang_callback(
@@ -871,7 +891,11 @@ class SettingsCommand(BaseCommand):
             builder.row(self._build_language_button(code, menu_type, page, target, ignored))
         self._add_language_navigation(builder, menu_type, page, total_pages)
 
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()))
+        builder.row(
+            InlineKeyboardButton(
+                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()
+            )
+        )
 
         title = (
             "🎯 <b>Select Target Language</b>"
@@ -963,7 +987,11 @@ class SettingsCommand(BaseCommand):
             )
 
         builder.adjust(2)
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
+        builder.row(
+            InlineKeyboardButton(
+                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()
+            )
+        )
 
         text = "⚙️ <b>Modules Settings</b>\n\nToggle Video (🎬) and Image/Text (🖼️) capture per platform:"
         text += "\nEligible beta features start disabled. Select a feature to explicitly enable or disable it."
@@ -1271,7 +1299,11 @@ class SettingsCommand(BaseCommand):
                     ).pack(),
                 )
             )
-        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
+        builder.row(
+            InlineKeyboardButton(
+                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()
+            )
+        )
 
         text = (
             "🗣 <b>Speech Recognition Settings</b>\n\n"

@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **i18n**: localize primary bot interactive journeys
 - **settings**: add personal and group language selection
 - **i18n**: wire audience-aware aiogram-i18n middleware
 - **i18n**: persist user and chat ui locale preferences
