@@ -1,24 +1,16 @@
-NLLB-200-distilled-600M translation model
-Original model: Meta / Facebook AI Research (NLLB Team).
-Original source: https://huggingface.co/facebook/nllb-200-distilled-600M
-Paper: No Language Left Behind: Scaling Human-Centered Machine Translation (2022).
+M2M100-418M translation model
+Original model: Meta / Facebook AI Research.
+Original source: https://huggingface.co/facebook/m2m100_418M
 
-CTranslate2 int8 conversion by JustFrederik:
-https://huggingface.co/JustFrederik/nllb-200-distilled-600M-ct2-int8
-Pinned revision: 302d78f00e6fdb50a1064059df7c392b735e9d05
-Changes: upstream weights converted to CTranslate2 and quantized to int8 by
-JustFrederik. HovorunV2 downloads these artifacts without changing their contents.
+CTranslate2 int8 conversion downloaded from:
+https://huggingface.co/auralmira/m2m100-418M-ct2-int8
+Pinned revision: e205afefce2fd6933a1dca3b92b5063894f2f2bb
 
-Model assets are licensed under Creative Commons Attribution-NonCommercial 4.0
-International (CC BY-NC 4.0):
-https://creativecommons.org/licenses/by-nc/4.0/
-See the accompanying CC-BY-NC-4.0.txt for the full license.
-Noncommercial use only under this license; retain attribution and license when
-redistributing model assets, including cached copies and container volumes.
-No endorsement by Meta, Facebook AI Research, or JustFrederik is implied.
+License:
+Model assets are licensed under the MIT License:
+https://opensource.org/licenses/MIT
+See the accompanying MIT.txt for the full license.
 
-HovorunV2 application source remains BSD-3-Clause. Its BSD license does not
-relicense these model assets or grant commercial rights to them. Replacing the
-model or obtaining appropriate permission is required before commercial use.
-The original model card identifies research intended use and excludes production
-deployment from its intended scope. Translation quality requires local validation.
+HovorunV2 application source and M2M100-418M model weights are both permissively
+licensed (BSD-3-Clause and MIT, respectively) and compatible for commercial and
+non-commercial distribution.

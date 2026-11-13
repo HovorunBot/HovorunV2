@@ -132,7 +132,7 @@ services:
       <<: *app-environment
       WORKER_ROLE: media
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
-      TRANSLATION_MODEL_DIR: /app/data/models/nllb-200-distilled-600M-int8
+      TRANSLATION_MODEL_DIR: /app/data/models/m2m100-418M-int8
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
     command:
@@ -174,7 +174,7 @@ services:
       <<: *app-environment
       WORKER_ROLE: browser
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
-      TRANSLATION_MODEL_DIR: /app/data/models/nllb-200-distilled-600M-int8
+      TRANSLATION_MODEL_DIR: /app/data/models/m2m100-418M-int8
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
     command:
@@ -215,7 +215,7 @@ services:
     environment:
       <<: *app-environment
       WORKER_ROLE: compression
-      TRANSLATION_MODEL_DIR: /app/data/models/nllb-200-distilled-600M-int8
+      TRANSLATION_MODEL_DIR: /app/data/models/m2m100-418M-int8
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'

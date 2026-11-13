@@ -92,7 +92,7 @@ def test_unavailable_model_raises_safe_failure_and_cleans_partial_files(tmp_path
 
 
 @pytest.mark.slow
-def test_real_nllb_translation_preserves_paragraphs() -> None:
+def test_real_m2m100_translation_preserves_paragraphs() -> None:
     """Run actual CPU inference when the explicitly provisioned test model is available."""
     directory = os.environ.get("HOVORUN_TRANSLATION_TEST_MODEL_DIR")
     if directory is None:

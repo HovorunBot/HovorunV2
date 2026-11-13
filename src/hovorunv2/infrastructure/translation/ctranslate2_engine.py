@@ -1,4 +1,4 @@
-"""Run on-demand NLLB caption inference inside the owning synchronous worker child."""
+"""Run on-demand M2M100 caption inference inside the owning synchronous worker child."""
 
 from os import getpid
 
@@ -6,7 +6,7 @@ lazy import ctranslate2
 lazy import sentencepiece
 
 from hovorunv2.application.translation.ports import TranslationEnginePort, TranslationError
-from hovorunv2.application.translation.translation_rules import resolve_flores_code
+from hovorunv2.application.translation.translation_rules import resolve_model_language
 from hovorunv2.infrastructure.translation.model_store import ModelStore
 
 INFERENCE_INTER_THREADS = 1
@@ -67,7 +67,7 @@ class CTranslate2Engine(TranslationEnginePort):
         if not text.strip() or len(text) > MAX_CAPTION_CHARACTERS or len(text.split("\n")) > MAX_CAPTION_LINES:
             msg = "Caption is empty or exceeds translation bounds"
             raise ValueError(msg)
-        source, target = resolve_flores_code(source_lang), resolve_flores_code(target_lang)
+        source, target = resolve_model_language(source_lang), resolve_model_language(target_lang)
         if source is None or target is None:
             msg = "Unsupported translation language pair"
             raise ValueError(msg)

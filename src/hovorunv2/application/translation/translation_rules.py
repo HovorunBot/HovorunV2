@@ -6,8 +6,6 @@ import unicodedata
 from collections.abc import Iterable
 from typing import Final, NamedTuple
 
-import pycountry
-
 from hovorunv2.application.data.languages import ISO_CODE_LEN, LANGUAGES, REGIONAL_INDICATOR_OFFSET
 from hovorunv2.domain.languages import normalize_language_code
 
@@ -44,14 +42,14 @@ def translation_flag(lang_code: str) -> str:
 
 MIN_DETECTABLE_CHARS: Final = 3
 _DETECTION_NOISE: Final = re.compile(r"https?://\S+|www\.\S+|[@#]\w+", re.IGNORECASE)
-# Keep NLLB support and script choices explicit; derive standard ISO identifiers from pycountry.
-_FLORES_SCRIPT_LANGUAGES: Final[dict[str, str]] = {
-    "Arab": "ar fa ks ps sd ug ur",
+# Keep M2M100-418M vocabulary support and default script choices explicit.
+_M2M100_SCRIPT_LANGUAGES: Final[dict[str, str]] = {
+    "Arab": "ar fa ps sd ur",
     "Armn": "hy",
-    "Beng": "as bn",
-    "Cyrl": "ba be bg kk ky mk mn ru sr tg tt uk",
-    "Deva": "hi mr ne sa",
-    "Ethi": "am ti",
+    "Beng": "bn",
+    "Cyrl": "ba be bg kk mk mn ru sr uk",
+    "Deva": "hi mr ne",
+    "Ethi": "am",
     "Geor": "ka",
     "Grek": "el",
     "Gujr": "gu",
@@ -64,9 +62,9 @@ _FLORES_SCRIPT_LANGUAGES: Final[dict[str, str]] = {
     "Knda": "kn",
     "Laoo": "lo",
     "Latn": (
-        "af ay az bm bs ca cs cy da de en eo es et eu fi fj fo fr ga gd gl gn ha hr ht hu id ig "
-        "is it jv kg ki ku lb lg li ln lt lv mg mi ms mt nb nl nn no ny oc om pl pt qu ro rn rw "
-        "sg sk sl sm sn so sq ss st su sv sw tk tl tn tr ts tw uz vi wo xh yo zu"
+        "af ast az br bs ca ceb cs cy da de en es et ff fi fr fy ga gd gl ha hr ht hu id ig ilo "
+        "is it jv lb lg ln lt lv mg ms nl no ns oc om pl pt ro sk sl so sq ss su sv sw tl tn tr "
+        "uz vi wo xh yo zu"
     ),
     "Mlym": "ml",
     "Mymr": "my",
@@ -75,68 +73,37 @@ _FLORES_SCRIPT_LANGUAGES: Final[dict[str, str]] = {
     "Taml": "ta",
     "Telu": "te",
     "Thai": "th",
-    "Tibt": "bo dz",
 }
-# NLLB selects a specific variety for these ISO macrolanguages.
-_FLORES_LANGUAGE_VARIANTS: Final[dict[str, str]] = {
-    "ar": "arb",
-    "ay": "ayr",
-    "az": "azj",
-    "fa": "pes",
-    "ku": "kmr",
-    "lv": "lvs",
-    "mg": "plt",
-    "mn": "khk",
-    "ms": "zsm",
-    "ne": "npi",
-    "no": "nob",
-    "om": "gaz",
-    "or": "ory",
-    "ps": "pbt",
-    "qu": "quy",
-    "sq": "als",
-    "sw": "swh",
-    "uz": "uzn",
-    "yi": "ydd",
+_M2M100_ALLOWED_SCRIPTS: Final[dict[str, frozenset[str]]] = {
+    "zh": frozenset({"hans", "hant"}),
 }
-_FLORES_SCRIPT_VARIANTS: Final[dict[str, str]] = {
-    "zh-hans": "Hans",
-    "zh-hant": "Hant",
-    "zh-cn": "Hans",
-    "zh-sg": "Hans",
-    "zh-tw": "Hant",
-    "zh-hk": "Hant",
-    "zh-mo": "Hant",
-    "ks-deva": "Deva",
+_ZH_SCRIPT_REGIONS: Final[dict[str, str]] = {
+    "cn": "hans",
+    "sg": "hans",
+    "tw": "hant",
+    "hk": "hant",
+    "mo": "hant",
 }
 
 
-def _build_flores_codes() -> dict[str, str]:
-    """Derive ISO identifiers while preserving explicit NLLB support and script selections.
+def _build_m2m100_codes() -> tuple[dict[str, str], dict[str, str]]:
+    """Build M2M100 vocabulary tokens and their expected script tags.
 
     Returns:
-        Supported language identifiers mapped to model vocabulary tags.
-
-    Raises:
-        ValueError: If a configured model language has no ISO entry.
+        Tuple of (iso_code -> model_token, iso_code -> lowercase_default_script).
     """
-    codes: dict[str, str] = {}
-    for script, identifiers in _FLORES_SCRIPT_LANGUAGES.items():
+    tokens: dict[str, str] = {}
+    scripts: dict[str, str] = {}
+    for script, identifiers in _M2M100_SCRIPT_LANGUAGES.items():
         for identifier in identifiers.split():
-            language = pycountry.languages.get(alpha_2=identifier)
-            if language is None:
-                msg = "NLLB language has no ISO entry"
-                raise ValueError(msg)
-            model_language = _FLORES_LANGUAGE_VARIANTS.get(identifier, language.alpha_3)
-            codes[identifier] = f"{model_language}_{script}"
-    for identifier, script in _FLORES_SCRIPT_VARIANTS.items():
-        base = identifier.partition("-")[0]
-        model_language = codes[base].partition("_")[0]
-        codes[identifier] = f"{model_language}_{script}"
-    return codes
+            tokens[identifier] = f"__{identifier}__"
+            scripts[identifier] = script.lower()
+    return tokens, scripts
 
 
-FLORES_200_CODES: Final[dict[str, str]] = _build_flores_codes()
+M2M100_CODES: Final[dict[str, str]]
+_M2M100_DEFAULT_SCRIPTS: Final[dict[str, str]]
+M2M100_CODES, _M2M100_DEFAULT_SCRIPTS = _build_m2m100_codes()
 
 
 def sanitize_for_detection(text: str) -> str:
@@ -157,31 +124,30 @@ def sanitize_for_detection(text: str) -> str:
     return " ".join(letters.split())
 
 
-def resolve_flores_code(lang_code: str) -> str | None:
+def resolve_model_language(lang_code: str) -> str | None:
     """Resolve a supported language variety without replacing an explicit unsupported script.
 
     Args:
         lang_code: ISO language identifier with optional region and script subtags.
 
     Returns:
-        Model vocabulary tag, or None when the language or requested script is unsupported.
+        M2M100 model vocabulary tag, or None when the language or requested script is unsupported.
     """
     if not lang_code.strip():
         return None
     code = normalize_language_code(lang_code).casefold()
-    if code in FLORES_200_CODES:
-        return FLORES_200_CODES[code]
     language, *subtags = code.split("-")
+    token = M2M100_CODES.get(language)
+    if token is None:
+        return None
     script = next((tag for tag in subtags if len(tag) == _SCRIPT_SUBTAG_LENGTH), None)
     if script is not None:
-        specific = FLORES_200_CODES.get(f"{language}-{script}")
-        if specific is not None:
-            return specific
-        default = FLORES_200_CODES.get(language)
-        if default is None or default.split("_")[1].lower() != script:
+        allowed = _M2M100_ALLOWED_SCRIPTS.get(language)
+        if allowed is not None:
+            return token if script in allowed else None
+        if _M2M100_DEFAULT_SCRIPTS.get(language) != script:
             return None
-        return default
-    return FLORES_200_CODES.get(language)
+    return token
 
 
 _SCRIPT_SUBTAG_LENGTH: Final = 4
@@ -190,8 +156,15 @@ _SCRIPT_SUBTAG_LENGTH: Final = 4
 def _language_identity(lang_code: str) -> str:
     if not lang_code.strip():
         return "und"
-    code = normalize_language_code(lang_code)
-    return resolve_flores_code(code) or code.split("-")[0]
+    code = normalize_language_code(lang_code).casefold()
+    language, *subtags = code.split("-")
+    if language == "zh":
+        script = next((tag for tag in subtags if len(tag) == _SCRIPT_SUBTAG_LENGTH), None)
+        if script in {"hans", "hant"}:
+            return f"zh-{script}"
+        region = next((tag for tag in subtags if tag in _ZH_SCRIPT_REGIONS), None)
+        return f"zh-{_ZH_SCRIPT_REGIONS[region]}" if region is not None else "zh-hans"
+    return resolve_model_language(code) or language
 
 
 def should_translate_language(source_lang: str, target_lang: str, ignored_langs: Iterable[str]) -> bool:

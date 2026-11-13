@@ -241,7 +241,24 @@ class DockerStack:
             arguments = [*arguments, "--wait", "--wait-timeout", "180"]
         self._run([*self._compose, *profiles, *arguments])
         if starting:
+            self._cleanup_legacy_translation_models()
             self.clean_images()
+
+    def _cleanup_legacy_translation_models(self) -> None:
+        if "worker-media" not in self._configuration.get("services", {}):
+            return
+        self._run(
+            [
+                *self._compose,
+                "exec",
+                "-T",
+                "worker-media",
+                "rm",
+                "-rf",
+                "/app/data/models/nllb-200-distilled-600M-int8",
+                "/app/data/models/nllb-200-distilled-600M-int8.lock",
+            ]
+        )
 
     def execute(self, command: list[str]) -> None:
         """Serialize mutations so cleanup and builds cannot conflict.

@@ -14,9 +14,10 @@ from hovorunv2.application.jobs.http_ports import HTTPTransportError
 from hovorunv2.application.translation.ports import TranslationError
 from hovorunv2.infrastructure.http_transport.native_http import HTTP_CHUNK_BYTES, NativeHTTPClient
 
-MODEL_REPOSITORY = "JustFrederik/nllb-200-distilled-600M-ct2-int8"
-MODEL_REVISION = "302d78f00e6fdb50a1064059df7c392b735e9d05"
+MODEL_REPOSITORY = "auralmira/m2m100-418M-ct2-int8"
+MODEL_REVISION = "e205afefce2fd6933a1dca3b92b5063894f2f2bb"
 MODEL_BASE_URL = f"https://huggingface.co/{MODEL_REPOSITORY}/resolve/{MODEL_REVISION}"
+LEGACY_MODEL_DIR_NAME = "nllb-200-distilled-600M-int8"
 MODEL_DOWNLOAD_SECONDS = 45
 MODEL_LOCK_SECONDS = 5
 MODEL_LOCK_POLL_SECONDS = 0.05
@@ -32,10 +33,10 @@ class ModelFile:
 
 
 MODEL_FILES = (
-    ModelFile("config.json", 159, "0c2f6fa2057c7264d052fb4a62ba3476eeae70487acddfa8e779a53a00cbf44c"),
-    ModelFile("model.bin", 622595991, "ed1beaf75134de7505315a5223162f56acff397eff6b50638a500d3936fe707b"),
-    ModelFile("sentencepiece.bpe.model", 4852054, "14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a"),
-    ModelFile("shared_vocabulary.txt", 2568098, "a132a83330f45514c2476eb81d1d69b3c41762264d16ce0a7ea982e5d6c728e5"),
+    ModelFile("config.json", 223, "8f6496adfc930cbfecbe8281112197705c488fab47d34b4829b06d7f478909af"),
+    ModelFile("model.bin", 490667752, "137949450f9cf691f3c92084f14123e82d05ecb23ac3cd688308ce1a95214572"),
+    ModelFile("sentencepiece.bpe.model", 2423393, "d8f7c76ed2a5e0822be39f0a4f95a55eb19c78f4593ce609e2edbc2aea4d380a"),
+    ModelFile("shared_vocabulary.json", 2796509, "7eb5d0ff184c6095c7c10f9911c0aea492250abd12854f9c3d787c64b1c6397e"),
 )
 
 
@@ -126,6 +127,7 @@ class ModelStore:
                 for artifact in self._artifacts:
                     self._ensure_file(artifact)
                 self._install_notices()
+                self._cleanup_legacy_model()
         except OSError:
             msg = "Translation model storage unavailable"
             raise TranslationError(msg) from None
@@ -159,10 +161,18 @@ class ModelStore:
 
     def _install_notices(self) -> None:
         source = Path(__file__).parent / "licenses"
-        for name in ("CC-BY-NC-4.0.txt", "NOTICE.txt"):
+        for name in ("MIT.txt", "NOTICE.txt"):
             temporary = self._directory / (name + ".part")
             try:
                 shutil.copyfile(source / name, temporary)
                 temporary.replace(self._directory / name)
             finally:
                 temporary.unlink(missing_ok=True)
+
+    def _cleanup_legacy_model(self) -> None:
+        if self._directory.name == LEGACY_MODEL_DIR_NAME:
+            return
+        legacy_dir = self._directory.parent / LEGACY_MODEL_DIR_NAME
+        if legacy_dir.is_dir():
+            shutil.rmtree(legacy_dir, ignore_errors=True)
+        (self._directory.parent / f"{LEGACY_MODEL_DIR_NAME}.lock").unlink(missing_ok=True)

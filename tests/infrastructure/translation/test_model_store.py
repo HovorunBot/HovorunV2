@@ -29,8 +29,8 @@ def test_model_provisioning_reuses_verified_files_and_retains_license(tmp_path: 
         store = ModelStore(directory, http, base_url=server.url(""), artifacts=(artifact,))
         assert store.ensure() == directory
         assert (directory / artifact.name).read_bytes() == content
-        assert "Noncommercial" in (directory / "NOTICE.txt").read_text()
-        assert (directory / "CC-BY-NC-4.0.txt").is_file()
+        assert "MIT License" in (directory / "NOTICE.txt").read_text()
+        assert (directory / "MIT.txt").is_file()
         assert store.ensure() == directory
         assert len(server.requests) == 1
         assert not list(directory.glob("*.part"))
