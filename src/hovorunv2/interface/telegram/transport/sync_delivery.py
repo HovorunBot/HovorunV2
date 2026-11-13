@@ -44,7 +44,9 @@ def _media_group(items: list[MediaItem], start: int, caption: str) -> tuple[list
     return media, files
 
 
-def _group_request(chat_id: int, message_id: int, media: list[dict[str, str]]) -> tuple[TelegramMethod, HTTPForm]:
+def _group_request(
+    chat_id: int, message_id: int, media: list[dict[str, str]], *, reply_markup: str | None = None
+) -> tuple[TelegramMethod, HTTPForm]:
     fields: dict[str, str | int | float | bool] = {
         "chat_id": chat_id,
         "reply_parameters": json.dumps({"message_id": message_id}),
@@ -56,6 +58,8 @@ def _group_request(chat_id: int, message_id: int, media: list[dict[str, str]]) -
     fields[entry["type"]] = entry["media"]
     if "caption" in entry:
         fields.update({"caption": entry["caption"], "parse_mode": "HTML"})
+    if reply_markup is not None:
+        fields["reply_markup"] = reply_markup
     method = TelegramMethod.SEND_VIDEO if entry["type"] == "video" else TelegramMethod.SEND_PHOTO
     return method, fields
 
@@ -74,6 +78,7 @@ class NativeTelegramDelivery:
         *,
         message_id: int | None = None,
         reply_to_message_id: int | None = None,
+        reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         fields: dict[str, str | int | float | bool] = {
             "chat_id": chat_id,
@@ -81,6 +86,8 @@ class NativeTelegramDelivery:
             "parse_mode": "HTML",
             "link_preview_options": json.dumps({"is_disabled": True}),
         }
+        if reply_markup is not None:
+            fields["reply_markup"] = reply_markup
         method = TelegramMethod.SEND_MESSAGE
         if message_id is not None:
             fields["message_id"] = message_id
@@ -99,12 +106,21 @@ class NativeTelegramDelivery:
         }
         return extract_message_ids(self._api.call(TelegramMethod.EDIT_MESSAGE_MEDIA, fields, files or None))
 
-    def _send_items(self, chat_id: int, message_id: int, items: list[MediaItem], caption: str) -> tuple[int, ...]:
+    def _send_items(
+        self,
+        chat_id: int,
+        message_id: int,
+        items: list[MediaItem],
+        caption: str,
+        *,
+        reply_markup: str | None = None,
+    ) -> tuple[int, ...]:
         receipts = []
         for start in range(0, len(items), MAX_MEDIA_GROUP):
             group = items[start : start + MAX_MEDIA_GROUP]
             try:
-                receipts.extend(self._send_group(chat_id, message_id, group, start, caption))
+                markup = reply_markup if start == 0 and len(items) == 1 else None
+                receipts.extend(self._send_group(chat_id, message_id, group, start, caption, reply_markup=markup))
             except TelegramRejectedError:
                 if receipts:
                     raise TelegramDeliveryUncertainError(tuple(receipts)) from None
@@ -114,11 +130,18 @@ class NativeTelegramDelivery:
         return tuple(receipts)
 
     def _send_group(
-        self, chat_id: int, message_id: int, items: list[MediaItem], start: int, caption: str
+        self,
+        chat_id: int,
+        message_id: int,
+        items: list[MediaItem],
+        start: int,
+        caption: str,
+        *,
+        reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         logger.info("Worker sending %s Telegram media items", len(items))
         media, files = _media_group(items, start, caption)
-        method, fields = _group_request(chat_id, message_id, media)
+        method, fields = _group_request(chat_id, message_id, media, reply_markup=reply_markup)
         receipts = extract_message_ids(self._api.call(method, fields, files or None))
         logger.info("Telegram acknowledged %s media messages", len(receipts))
         if len(receipts) != len(items):
@@ -196,7 +219,14 @@ class NativeTelegramDelivery:
         return receipts
 
     def deliver(
-        self, chat_id: int, message_id: int, payload: RichMediaPayload, platform_name: str, sender_label: str | None
+        self,
+        chat_id: int,
+        message_id: int,
+        payload: RichMediaPayload,
+        platform_name: str,
+        sender_label: str | None,
+        *,
+        reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         """Return minimal message receipts; uncertain acceptance always stops the delivery sequence.
 
@@ -206,6 +236,7 @@ class NativeTelegramDelivery:
             payload: Rich media payload to deliver.
             platform_name: Human-readable provider platform label.
             sender_label: Transient decrypted sender display label.
+            reply_markup: Optional serialized inline keyboard markup JSON.
 
         Returns:
             Message IDs of every delivered or placeholder message.
@@ -225,19 +256,28 @@ class NativeTelegramDelivery:
             raise ValueError(msg)
         total_text = build_caption(payload, sender_label, platform_name)
         if not payload.media_items:
+            chunks = split_html_message(total_text)
             receipts: list[int] = []
-            for chunk in split_html_message(total_text):
-                receipts.extend(self._text(chat_id, chunk))
+            for idx, chunk in enumerate(chunks):
+                markup = reply_markup if idx == len(chunks) - 1 else None
+                receipts.extend(self._text(chat_id, chunk, reply_markup=markup))
             return tuple(receipts)
         plan = plan_caption(payload, sender_label, platform_name, total_text)
         preceding = ()
         if plan.separate_text is not None:
+            chunks = split_html_message(plan.separate_text)
             preceding_receipts: list[int] = []
-            for chunk in split_html_message(plan.separate_text):
-                preceding_receipts.extend(self._text(chat_id, chunk))
+            for idx, chunk in enumerate(chunks):
+                markup = reply_markup if idx == len(chunks) - 1 else None
+                preceding_receipts.extend(self._text(chat_id, chunk, reply_markup=markup))
             preceding = tuple(preceding_receipts)
+            reply_markup = None
         try:
-            return preceding + self._deliver_media(chat_id, message_id, payload, plan.caption)
+            media_receipts = self._deliver_media(chat_id, message_id, payload, plan.caption, reply_markup=reply_markup)
+            if reply_markup is not None and len(payload.media_items) > 1 and media_receipts:
+                extra = self._text(chat_id, "🌐", reply_to_message_id=media_receipts[0], reply_markup=reply_markup)
+                return preceding + media_receipts + extra
+            return preceding + media_receipts
         except TelegramDeliveryUncertainError as error:
             raise TelegramDeliveryUncertainError((*preceding, *error.receipts)) from None
         except TelegramRejectedError:
@@ -245,7 +285,15 @@ class NativeTelegramDelivery:
                 raise TelegramDeliveryUncertainError(preceding) from None
             raise
 
-    def _deliver_media(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
+    def _deliver_media(
+        self,
+        chat_id: int,
+        message_id: int,
+        payload: RichMediaPayload,
+        caption: str,
+        *,
+        reply_markup: str | None = None,
+    ) -> tuple[int, ...]:
         if any(item.requires_download and item.data is None for item in payload.media_items):
             return self._fallback(chat_id, message_id, payload, caption)
         if any(
@@ -254,7 +302,7 @@ class NativeTelegramDelivery:
         ):
             return self._fallback(chat_id, message_id, payload, caption)
         try:
-            return self._send_items(chat_id, message_id, payload.media_items, caption)
+            return self._send_items(chat_id, message_id, payload.media_items, caption, reply_markup=reply_markup)
         except TelegramRejectedError as exc:
             if exc.reason == TelegramRejection.FETCH:
                 return self._fallback(chat_id, message_id, payload, caption)

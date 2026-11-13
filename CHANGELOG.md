@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **translation**: add source-bound translate buttons
 - **translation**: add reply-based translate command
 - **translation**: prefer free online translation with local fallback
 - **translation**: add bounded Google translation and long-document segmentation

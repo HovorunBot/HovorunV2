@@ -26,6 +26,7 @@ class ExplicitTranslationInput(BaseModel):
     message_thread_id: int | None = None
     requested_target_lang: str | None = None
     ui_locale: str = "uk"
+    snapshot_expires_at: float | None = None
 
 
 def translate_action_key(

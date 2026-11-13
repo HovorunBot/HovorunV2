@@ -208,8 +208,17 @@ class RecordingTelegram:
     def __init__(self) -> None:
         self.calls: list[tuple[int, str]] = []
 
-    def send_message(self, chat_id: int, text: str, *, reply_to_message_id: int | None = None) -> int:
+    def send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        reply_to_message_id: int | None = None,
+        reply_markup: str | None = None,
+        message_thread_id: int | None = None,
+    ) -> int:
         """Capture one feedback message."""
+        _ = reply_to_message_id, reply_markup, message_thread_id
         self.calls.append((chat_id, text))
         return 1
 
@@ -249,8 +258,11 @@ class RecordingDelivery:
         payload: RichMediaPayload,
         platform_name: str,
         sender_label: str | None = None,
+        *,
+        reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         """Capture delivery payload without real Telegram network calls."""
+        _ = reply_markup
         self.calls.append({"chat_id": chat_id, "payload": payload})
         return (1000 + len(self.calls),)
 

@@ -35,11 +35,15 @@ class RecordingSession(BaseSession):
             if isinstance(result, Exception):
                 raise result
         else:
-            result = {
-                "message_id": 1,
-                "date": 1,
-                "chat": {"id": getattr(method, "chat_id", 1), "type": "private"},
-            }
+            result = (
+                True
+                if method.__returning__ is bool
+                else {
+                    "message_id": 1,
+                    "date": 1,
+                    "chat": {"id": getattr(method, "chat_id", 1), "type": "private"},
+                }
+            )
         response = self.check_response(bot, method, HTTPStatus.OK, json.dumps({"ok": True, "result": result}))
         if response.result is None:
             msg = "Telegram response did not return a result"

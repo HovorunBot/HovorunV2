@@ -41,6 +41,7 @@ from hovorunv2.interface.telegram.handlers.recovery import RecoveryCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.handlers.speech import SpeechVoiceHandler, TranscribeCommand
 from hovorunv2.interface.telegram.handlers.translate import TranslateCommand
+from hovorunv2.interface.telegram.handlers.translate_callbacks import TranslateCallbackHandler
 from hovorunv2.interface.telegram.i18n import AudienceI18nManager, create_i18n_core
 from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
 
@@ -92,6 +93,7 @@ class InterfaceAndUtilityProvider(Provider):
     transcribe_command = provide(TranscribeCommand)
     speech_voice_handler = provide(SpeechVoiceHandler)
     translate_command = provide(TranslateCommand)
+    translate_callback_handler = provide(TranslateCallbackHandler)
 
     @provide(scope=Scope.APP)
     def get_i18n_manager(self, session_maker: async_sessionmaker) -> AudienceI18nManager:

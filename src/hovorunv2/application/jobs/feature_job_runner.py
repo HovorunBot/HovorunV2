@@ -61,6 +61,12 @@ from hovorunv2.application.media.providers.threads import ThreadsService
 from hovorunv2.application.media.providers.tiktok import TikTokService
 from hovorunv2.application.media.providers.twitter import TwitterService
 from hovorunv2.application.media.providers.youtube import YoutubeService
+from hovorunv2.application.media.rendering import (
+    CAPTION_LIMIT,
+    TELEGRAM_MESSAGE_LIMIT,
+    build_caption,
+    split_html_message,
+)
 from hovorunv2.application.translation.explicit_input import ExplicitTranslationInput
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.translation.ports import (
@@ -68,6 +74,15 @@ from hovorunv2.application.translation.ports import (
     TranslationDocument,
     TranslationError,
     TranslationIntent,
+    TranslationScope,
+)
+from hovorunv2.application.translation.snapshots import (
+    SNAPSHOT_TTL_SECONDS,
+    SyncTranslationSnapshotPort,
+    TranslationChainState,
+    TranslationSourceSnapshot,
+    build_continue_button_markup,
+    build_translate_button_markup,
 )
 from hovorunv2.application.usage.budgets import (
     BudgetRequest,
@@ -152,6 +167,7 @@ class FeatureJobRunner:
         browser: SyncBrowserPort | None = None,
         clients: Sequence[BaseMediaClient] | Mapping[CommandName, BaseMediaClient] | None = None,
         catalog: TranslationCatalogPort | None = None,
+        snapshots: SyncTranslationSnapshotPort | None = None,
     ) -> None:
         self._admission = admission
         self._payloads = payloads
@@ -174,6 +190,7 @@ class FeatureJobRunner:
         self._gate = gate
         self._clients = self._init_clients(clients, settings, embed)
         self._catalog = catalog
+        self._snapshots = snapshots
         self._lifecycle = WorkerLifecycleService(admission, budgets, ledger, clock)
 
     def _init_clients(
@@ -493,8 +510,14 @@ class FeatureJobRunner:
         token: str,
         now: float,
     ) -> str:
-        _ = now
-        self._translate_payload(raw_payload, envelope.target.telegram_id, strip_hashtags=client.config.strip_hashtags)
+        reply_markup = self.prepare_auto_translation_markup(
+            raw_payload,
+            envelope,
+            client.platform_label,
+            sender_label,
+            now,
+            strip_hashtags=client.config.strip_hashtags,
+        )
         if self._admission.begin_delivery(envelope.job_id, token, self._clock.now()) is None:
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
             return JobOutcome.CANCELLED.value
@@ -506,6 +529,7 @@ class FeatureJobRunner:
                 raw_payload,
                 client.platform_label,
                 sender_label,
+                reply_markup=reply_markup,
             )
         except TelegramDeliveryUncertainError:
             logger.exception("Telegram media delivery acceptance is uncertain; automatic resend stopped")
@@ -654,6 +678,58 @@ class FeatureJobRunner:
             return None
         return split_def
 
+    def prepare_auto_translation_markup(
+        self,
+        payload: RichMediaPayload,
+        envelope: JobEnvelope,
+        platform_label: str,
+        sender_label: str | None,
+        now: float,
+        *,
+        strip_hashtags: bool,
+    ) -> str | None:
+        """Translate automatic payload inline when within budget, else preserve original with Translate button."""
+        prepared_content = (
+            prepare_caption_text(payload.content, strip_hashtags=strip_hashtags) if payload.content else None
+        )
+        prepared_quote = (
+            prepare_caption_text(payload.quoted_payload.content, strip_hashtags=strip_hashtags)
+            if payload.quoted_payload and payload.quoted_payload.content
+            else None
+        )
+        self._translate_payload(payload, envelope.target.telegram_id, strip_hashtags=strip_hashtags)
+        content_translated = prepared_content is not None and payload.content != prepared_content
+        quote_translated = (
+            prepared_quote is not None
+            and payload.quoted_payload is not None
+            and payload.quoted_payload.content != prepared_quote
+        )
+        if not (content_translated or quote_translated) or self._snapshots is None:
+            return None
+        rendered = build_caption(payload, sender_label, platform_label)
+        budget = CAPTION_LIMIT if payload.media_items else TELEGRAM_MESSAGE_LIMIT
+        if len(rendered) <= budget:
+            return None
+        if prepared_content is not None:
+            payload.content = prepared_content
+        if payload.quoted_payload is not None and prepared_quote is not None:
+            payload.quoted_payload.content = prepared_quote
+        source_text = "\n\n".join(part for part in (prepared_content, prepared_quote) if part)
+        snapshot = TranslationSourceSnapshot(
+            chat_id=envelope.target.telegram_id,
+            owner_id=envelope.actor_id if envelope.target.kind == TargetKind.USER else None,
+            source_message_id=envelope.message_id,
+            target_lang=self._settings.translation_target_lang,
+            ui_locale="uk",
+            text=source_text,
+            scope=TranslationScope.FULL_SOURCE,
+            created_at=now,
+            expires_at=now + SNAPSHOT_TTL_SECONDS,
+        )
+        snap_token = self._snapshots.save_source(snapshot)
+        button_label = self._render_catalog_text("translation-btn-translate", "uk", "Перекласти")
+        return build_translate_button_markup(button_label, snap_token)
+
     def _translate_payload(self, payload: RichMediaPayload, chat_id: int, *, strip_hashtags: bool = False) -> None:
         if payload.content:
             payload.content = prepare_caption_text(payload.content, strip_hashtags=strip_hashtags)
@@ -747,14 +823,74 @@ class FeatureJobRunner:
 
         label = self._render_catalog_text("translation-label", req.ui_locale, "Translated:")
         rendered = f"{result.flag} <b>{html.escape(label)}</b>\n{html.escape(result.text)}"
-        self._telegram.send_message(
-            envelope.target.telegram_id,
-            rendered,
-            reply_to_message_id=req.reply_to_message_id,
-        )
+        if not self._deliver_explicit_parts(envelope, req, rendered, now):
+            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
+            return JobOutcome.COMPLETE.value
         split_def = self._registry.require(CommandName.TRANSLATE)
         self._lifecycle.complete(envelope.job_id, token, self._settlement_intent(envelope, split_def, now))
         return JobOutcome.COMPLETE.value
+
+    def _deliver_explicit_parts(
+        self,
+        envelope: JobEnvelope,
+        req: ExplicitTranslationInput,
+        rendered: str,
+        now: float,
+    ) -> bool:
+        parts = split_html_message(rendered, limit=TELEGRAM_MESSAGE_LIMIT)
+        if len(parts) == 1 or self._snapshots is None:
+            self._telegram.send_message(
+                envelope.target.telegram_id,
+                parts[0],
+                reply_to_message_id=req.reply_to_message_id,
+                message_thread_id=req.message_thread_id,
+            )
+            return True
+        expires_at = req.snapshot_expires_at if req.snapshot_expires_at is not None else now + SNAPSHOT_TTL_SECONDS
+        if expires_at <= now:
+            expired_notice = self._render_catalog_text(
+                "translation-expired",
+                req.ui_locale,
+                "This translation button has expired.",
+            )
+            self._telegram.send_message(
+                envelope.target.telegram_id,
+                html.escape(expired_notice),
+                reply_to_message_id=req.reply_to_message_id,
+                message_thread_id=req.message_thread_id,
+            )
+            return False
+        chain_token = self._snapshots.new_chain_token()
+        continue_label = self._render_catalog_text("translation-btn-continue", req.ui_locale, "Continue translation")
+        remaining_label = self._render_catalog_text(
+            "translation-remaining-parts",
+            req.ui_locale,
+            f"({len(parts) - 1} more)",
+            count=len(parts) - 1,
+        )
+        markup = build_continue_button_markup(f"{continue_label} {remaining_label}".strip(), chain_token, 1)
+        sent_id = self._telegram.send_message(
+            envelope.target.telegram_id,
+            parts[0],
+            reply_to_message_id=req.reply_to_message_id,
+            reply_markup=markup,
+            message_thread_id=req.message_thread_id,
+        )
+        if sent_id is not None:
+            state = TranslationChainState(
+                chat_id=envelope.target.telegram_id,
+                owner_id=envelope.actor_id if envelope.target.kind == TargetKind.USER else None,
+                source_message_id=req.source_message_id,
+                thread_id=req.message_thread_id,
+                ui_locale=req.ui_locale,
+                parts=parts,
+                next_part=1,
+                last_message_id=sent_id,
+                created_at=now,
+                expires_at=expires_at,
+            )
+            self._snapshots.save_chain_with_token(chain_token, state)
+        return True
 
     def _complete_zero(self, job_id: str, token: str, outcome: JobOutcome) -> None:
         self._lifecycle.complete(

@@ -26,6 +26,7 @@ from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
 from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
+from hovorunv2.infrastructure.runtime.translation_snapshots import WorkerTranslationSnapshotClient
 from hovorunv2.infrastructure.translation.ctranslate2_engine import CTranslate2Engine
 from hovorunv2.infrastructure.translation.google_engine import GoogleTranslationEngine
 from hovorunv2.infrastructure.translation.language_detector import Py3LangIdDetector
@@ -110,4 +111,5 @@ def create_feature_runner(
         embed=embed,
         safety=safety,
         catalog=FluentTranslationCatalog(),
+        snapshots=WorkerTranslationSnapshotClient(client, settings, clock, namespace),
     )

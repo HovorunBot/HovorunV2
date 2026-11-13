@@ -134,7 +134,14 @@ class SyncTelegramDeliveryPort(Protocol):
     """Synchronous Telegram delivery adapter contract for workers."""
 
     def deliver(
-        self, chat_id: int, message_id: int, payload: RichMediaPayload, platform_name: str, sender_label: str | None
+        self,
+        chat_id: int,
+        message_id: int,
+        payload: RichMediaPayload,
+        platform_name: str,
+        sender_label: str | None,
+        *,
+        reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         """Deliver using canonical route facts and the transient decrypted sender label."""
         ...
@@ -151,7 +158,15 @@ class SyncFeedbackPort(Protocol):
 class SyncFeedbackTelegramPort(Protocol):
     """Minimal synchronous Telegram text contract for request feedback."""
 
-    def send_message(self, chat_id: int, text: str, *, reply_to_message_id: int | None = None) -> int | None:
+    def send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        reply_to_message_id: int | None = None,
+        reply_markup: str | None = None,
+        message_thread_id: int | None = None,
+    ) -> int | None:
         """Send one short operational text and return its message ID when accepted."""
         ...
 
