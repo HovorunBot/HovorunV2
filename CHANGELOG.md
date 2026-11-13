@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **i18n**: persist user and chat ui locale preferences
 - **i18n**: add aiogram-i18n and fluent catalog foundation
 
 ### Fix

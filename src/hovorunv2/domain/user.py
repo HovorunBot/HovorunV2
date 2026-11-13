@@ -45,6 +45,7 @@ class UserDB(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
     deleted_by_actor_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     deleted_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    ui_locale: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
 
     __table_args__ = (
         Index(

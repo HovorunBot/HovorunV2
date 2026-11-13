@@ -160,3 +160,25 @@ class SQLAlchemyChatRepository:
         chat.deleted_reason = reason
         chat.generation += 1
         return True
+
+    async def set_ui_locale(
+        self,
+        chat_id: int,
+        ui_locale: str | None,
+        platform: str = "telegram",
+    ) -> bool:
+        """Update UI locale preference for the active chat identity.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+            ui_locale: Canonical locale code (e.g. 'uk', 'en') or None to reset.
+            platform: Platform of the chat identity.
+
+        Returns:
+            True if the chat was found and updated, False otherwise.
+        """
+        chat = await self.get_by_id(chat_id, platform)
+        if not chat:
+            return False
+        chat.ui_locale = ui_locale
+        return True

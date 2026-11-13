@@ -178,3 +178,25 @@ class SQLAlchemyUserRepository:
             return True, True, revision
         user = await self.get_by_telegram_id(telegram_id, platform)
         return user is not None, False, None
+
+    async def set_ui_locale(
+        self,
+        telegram_id: int,
+        ui_locale: str | None,
+        platform: str = "telegram",
+    ) -> bool:
+        """Update UI locale preference for the active user identity.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            ui_locale: Canonical locale code (e.g. 'uk', 'en') or None to reset.
+            platform: Platform of the user identity.
+
+        Returns:
+            True if the user was found and updated, False otherwise.
+        """
+        user = await self.get_by_telegram_id(telegram_id, platform)
+        if not user:
+            return False
+        user.ui_locale = ui_locale
+        return True
