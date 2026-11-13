@@ -186,6 +186,7 @@ class SQLAlchemyChatStore(ChatStore):
             await self._check_historical_route(session, chat_id)
             chat = ChatDB(
                 chat_id=chat_id,
+                settings_version=0,
                 platform=Platform(platform),
                 chat_type="private" if chat_id > 0 else "group",
             )
