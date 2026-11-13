@@ -2,7 +2,9 @@
 
 from typing import NewType
 
+from aiogram_i18n import I18nMiddleware
 from dishka import Provider, Scope, alias, provide
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.application.access.ports import UnauthorizedPromptSender
@@ -38,6 +40,7 @@ from hovorunv2.interface.telegram.handlers.help import HelpCommand
 from hovorunv2.interface.telegram.handlers.recovery import RecoveryCommand
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.handlers.speech import SpeechVoiceHandler, TranscribeCommand
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager, create_i18n_core
 from hovorunv2.interface.telegram.settings.prompts import TelegramUnauthorizedPromptSender
 
 UtilityCommands = NewType("UtilityCommands", list[BaseCommand])
@@ -87,6 +90,20 @@ class InterfaceAndUtilityProvider(Provider):
     access_command = provide(AccessCommand)
     transcribe_command = provide(TranscribeCommand)
     speech_voice_handler = provide(SpeechVoiceHandler)
+
+    @provide(scope=Scope.APP)
+    def get_i18n_middleware(self, session_maker: async_sessionmaker) -> I18nMiddleware:
+        """Create and configure audience-aware i18n middleware for Telegram dispatcher.
+
+        Args:
+            session_maker: Database session factory for querying audience locales.
+
+        Returns:
+            Configured I18nMiddleware instance.
+        """
+        core = create_i18n_core(load_now=True)
+        manager = AudienceI18nManager(session_maker=session_maker)
+        return I18nMiddleware(core=core, manager=manager)
 
     @provide(scope=Scope.APP)
     def get_utility_commands(

@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import gettempdir
 
 from aiogram import Bot, Dispatcher, Router
+from aiogram_i18n import I18nMiddleware
 from dishka import AsyncContainer, make_async_container
 from dishka.integrations.aiogram import setup_dishka
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -66,10 +67,16 @@ async def build_bot_router(container: AsyncContainer, settings: Settings) -> Rou
     )
 
 
-def configure_dispatcher(container: AsyncContainer, router: Router) -> Dispatcher:
+def configure_dispatcher(
+    container: AsyncContainer,
+    router: Router,
+    i18n_middleware: I18nMiddleware | None = None,
+) -> Dispatcher:
     """Configure aiogram dispatcher with outer middleware and DI wireup."""
     dp = Dispatcher()
     dp.update.outer_middleware(LogContextMiddleware())
+    if i18n_middleware is not None:
+        i18n_middleware.setup(dispatcher=dp)
     dp.include_router(router)
     setup_dishka(container=container, router=dp)
     return dp
@@ -109,7 +116,8 @@ async def run_bot() -> None:
 
         logger.info("Building Telegram router and dispatcher...")
         router = await build_bot_router(container, settings)
-        dp = configure_dispatcher(container, router)
+        i18n_middleware = await container.get(I18nMiddleware)
+        dp = configure_dispatcher(container, router, i18n_middleware)
 
         if settings.error_dm_enabled:
             telegram_log_handler = setup_telegram_logging(bot, await container.get(RoleService))
