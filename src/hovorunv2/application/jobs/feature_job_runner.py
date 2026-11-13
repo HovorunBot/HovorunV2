@@ -84,6 +84,7 @@ from hovorunv2.application.translation.snapshots import (
     build_continue_button_markup,
     build_translate_button_markup,
 )
+from hovorunv2.application.translation.translation_rules import MIN_DETECTABLE_CHARS, sanitize_for_detection
 from hovorunv2.application.usage.budgets import (
     BudgetRequest,
     Clock,
@@ -697,7 +698,7 @@ class FeatureJobRunner:
             if payload.quoted_payload and payload.quoted_payload.content
             else None
         )
-        self._translate_payload(payload, envelope.target.telegram_id, strip_hashtags=strip_hashtags)
+        translated_target = self._translate_payload(payload, envelope.target.telegram_id, strip_hashtags=strip_hashtags)
         content_translated = prepared_content is not None and payload.content != prepared_content
         quote_translated = (
             prepared_quote is not None
@@ -719,7 +720,7 @@ class FeatureJobRunner:
             chat_id=envelope.target.telegram_id,
             owner_id=envelope.actor_id if envelope.target.kind == TargetKind.USER else None,
             source_message_id=envelope.message_id,
-            target_lang=self._settings.translation_target_lang,
+            target_lang=translated_target or self._settings.translation_target_lang,
             ui_locale="uk",
             text=source_text,
             scope=TranslationScope.FULL_SOURCE,
@@ -730,17 +731,25 @@ class FeatureJobRunner:
         button_label = self._render_catalog_text("translation-btn-translate", "uk", "Перекласти")
         return build_translate_button_markup(button_label, snap_token)
 
-    def _translate_payload(self, payload: RichMediaPayload, chat_id: int, *, strip_hashtags: bool = False) -> None:
+    def _translate_payload(
+        self, payload: RichMediaPayload, chat_id: int, *, strip_hashtags: bool = False
+    ) -> str | None:
+        target_lang: str | None = None
         if payload.content:
             payload.content = prepare_caption_text(payload.content, strip_hashtags=strip_hashtags)
             translated = self._translation.translate_if_needed(payload.content, chat_id)
+            if translated is not None:
+                target_lang = translated.target_lang
             payload.content = append_translation(payload.content, translated)
         if payload.quoted_payload and payload.quoted_payload.content:
             payload.quoted_payload.content = prepare_caption_text(
                 payload.quoted_payload.content, strip_hashtags=strip_hashtags
             )
             quote_translated = self._translation.translate_if_needed(payload.quoted_payload.content, chat_id)
+            if quote_translated is not None and target_lang is None:
+                target_lang = quote_translated.target_lang
             payload.quoted_payload.content = append_translation(payload.quoted_payload.content, quote_translated)
+        return target_lang
 
     def _settlement_intent(self, envelope: JobEnvelope, split_def: FeatureDefinition, now: float) -> SettlementIntent:
         group_id = envelope.target.telegram_id if envelope.target.kind == TargetKind.GROUP else None
@@ -803,20 +812,32 @@ class FeatureJobRunner:
                 envelope.target.telegram_id,
                 html.escape(notice),
                 reply_to_message_id=req.reply_to_message_id,
+                message_thread_id=req.message_thread_id,
             )
             self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
             return JobOutcome.FAILED.value
 
         if result is None:
-            notice = self._render_catalog_text(
-                "translation-already-complete",
-                req.ui_locale,
-                "Translation is already complete.",
-            )
+            clean_alpha = sum(ch.isalpha() for ch in sanitize_for_detection(html.unescape(req.text)))
+            if clean_alpha < MIN_DETECTABLE_CHARS:
+                notice = self._render_catalog_text(
+                    "translation-empty-source",
+                    req.ui_locale,
+                    "No translatable text found in the message.",
+                )
+            else:
+                target_lang = req.requested_target_lang or self._settings.translation_target_lang
+                notice = self._render_catalog_text(
+                    "translation-same-language",
+                    req.ui_locale,
+                    f"Source text is already in {target_lang}.",
+                    language=target_lang,
+                )
             self._telegram.send_message(
                 envelope.target.telegram_id,
                 html.escape(notice),
                 reply_to_message_id=req.reply_to_message_id,
+                message_thread_id=req.message_thread_id,
             )
             self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
             return JobOutcome.COMPLETE.value

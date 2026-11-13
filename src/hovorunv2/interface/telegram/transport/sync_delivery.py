@@ -96,7 +96,15 @@ class NativeTelegramDelivery:
             fields["reply_parameters"] = json.dumps({"message_id": reply_to_message_id})
         return extract_message_ids(self._api.call(method, fields))
 
-    def _edit_media(self, chat_id: int, placeholder: int, item: MediaItem, caption: str) -> tuple[int, ...]:
+    def _edit_media(
+        self,
+        chat_id: int,
+        placeholder: int,
+        item: MediaItem,
+        caption: str,
+        *,
+        reply_markup: str | None = None,
+    ) -> tuple[int, ...]:
         logger.info("Worker updating placeholder with uploaded Telegram media item")
         media, files = _media_group([item], 0, caption)
         fields: dict[str, str | int | float | bool] = {
@@ -104,6 +112,8 @@ class NativeTelegramDelivery:
             "message_id": placeholder,
             "media": json.dumps(media[0]),
         }
+        if reply_markup is not None:
+            fields["reply_markup"] = reply_markup
         return extract_message_ids(self._api.call(TelegramMethod.EDIT_MESSAGE_MEDIA, fields, files or None))
 
     def _send_items(
@@ -163,7 +173,15 @@ class NativeTelegramDelivery:
                 message_id=placeholder,
             )
 
-    def _fallback(self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str) -> tuple[int, ...]:
+    def _fallback(
+        self,
+        chat_id: int,
+        message_id: int,
+        payload: RichMediaPayload,
+        caption: str,
+        *,
+        reply_markup: str | None = None,
+    ) -> tuple[int, ...]:
         logger.info("Telegram could not fetch media URLs; starting download and upload fallback")
         oversized = any(
             item.is_video and item.data is not None and len(item.data) > TELEGRAM_VIDEO_BYTES
@@ -176,14 +194,21 @@ class NativeTelegramDelivery:
         )
         placeholder = self._text(chat_id, caption + f"\n\n⏳ <i>{progress}</i>", reply_to_message_id=message_id)[0]
         try:
-            return self._upload_fallback(chat_id, message_id, payload, caption, placeholder)
+            return self._upload_fallback(chat_id, message_id, payload, caption, placeholder, reply_markup=reply_markup)
         except TelegramDeliveryUncertainError as error:
             raise TelegramDeliveryUncertainError((placeholder, *error.receipts)) from None
         except TelegramRejectedError:
             raise TelegramDeliveryUncertainError((placeholder,)) from None
 
     def _upload_fallback(
-        self, chat_id: int, message_id: int, payload: RichMediaPayload, caption: str, placeholder: int
+        self,
+        chat_id: int,
+        message_id: int,
+        payload: RichMediaPayload,
+        caption: str,
+        placeholder: int,
+        *,
+        reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         contents = self._downloader.download_batch(
             payload.media_items,
@@ -201,10 +226,15 @@ class NativeTelegramDelivery:
                 if MediaFailure.TOO_LARGE in contents
                 else "Failed to download media."
             )
-            return self._text(chat_id, caption + f"\n\n⚠️ <i>{reason}</i>", message_id=placeholder)
+            return self._text(
+                chat_id,
+                caption + f"\n\n⚠️ <i>{reason}</i>",
+                message_id=placeholder,
+                reply_markup=reply_markup,
+            )
         try:
             if len(items) == 1:
-                return self._edit_media(chat_id, placeholder, items[0], caption)
+                return self._edit_media(chat_id, placeholder, items[0], caption, reply_markup=reply_markup)
             receipts = self._send_items(chat_id, message_id, items, caption)
         except TelegramRejectedError as exc:
             logger.exception("Telegram rejected worker media upload (%s)", exc.reason)
@@ -213,7 +243,12 @@ class NativeTelegramDelivery:
                 if exc.reason == TelegramRejection.TOO_LARGE
                 else ("Failed to upload media.")
             )
-            return self._text(chat_id, caption + f"\n\n⚠️ <i>{text}</i>", message_id=placeholder)
+            return self._text(
+                chat_id,
+                caption + f"\n\n⚠️ <i>{text}</i>",
+                message_id=placeholder,
+                reply_markup=reply_markup,
+            )
         with suppress(TelegramRejectedError, TelegramDeliveryUncertainError):
             self._api.call(TelegramMethod.DELETE_MESSAGE, {"chat_id": chat_id, "message_id": placeholder})
         return receipts
@@ -295,20 +330,24 @@ class NativeTelegramDelivery:
         reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         if any(item.requires_download and item.data is None for item in payload.media_items):
-            return self._fallback(chat_id, message_id, payload, caption)
+            return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
         if any(
             item.is_video and item.data is not None and len(item.data) > TELEGRAM_VIDEO_BYTES
             for item in payload.media_items
         ):
-            return self._fallback(chat_id, message_id, payload, caption)
+            return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
         try:
             return self._send_items(chat_id, message_id, payload.media_items, caption, reply_markup=reply_markup)
         except TelegramRejectedError as exc:
             if exc.reason == TelegramRejection.FETCH:
-                return self._fallback(chat_id, message_id, payload, caption)
+                return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
             if exc.reason == TelegramRejection.TOO_LARGE:
                 if any(item.is_video and item.data is None for item in payload.media_items):
-                    return self._fallback(chat_id, message_id, payload, caption)
+                    return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
                 logger.exception("Telegram rejected oversized worker media")
-                return self._text(chat_id, caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>")
+                return self._text(
+                    chat_id,
+                    caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>",
+                    reply_markup=reply_markup,
+                )
             raise

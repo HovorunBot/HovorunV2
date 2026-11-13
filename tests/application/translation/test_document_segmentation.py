@@ -47,3 +47,11 @@ def test_assemble_rejects_empty_segments_mismatches_and_unbounded_expansion() ->
 
     with pytest.raises(ValueError, match="character limit"):
         plan_document_segments("A" * (MAX_DOCUMENT_CHARACTERS + 1), 100)
+
+
+def test_consecutive_oversized_sentences_preserve_token_join_separators() -> None:
+    """Keep mid-token empty separators aligned when consecutive oversized sentences are split."""
+    text = "abcdefghij. klmnopqrst."
+    planned = plan_document_segments(text, 5)
+    flat_segments = [segment for line in planned for segment in line.segments]
+    assert assemble_translated_document(planned, flat_segments) == text

@@ -16,6 +16,7 @@
 
 ### Fix
 
+- **translation**: preserve segment separators, fallback markup, and explicit no-op feedback
 - **speech**: repair private voice processing
 
 ## v0.5.1.2 (2026-11-12)

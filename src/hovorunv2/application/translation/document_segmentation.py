@@ -123,8 +123,6 @@ def split_line_into_segments(
         segments.extend(sub_parts[:-1])
         separators.extend(sub_seps)
         current = sub_parts[-1]
-        if sentence != sentences[-1]:
-            separators.append(" ")
     if current:
         segments.append(current)
     return tuple(segments), tuple(separators[: max(0, len(segments) - 1)])
