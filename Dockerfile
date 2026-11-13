@@ -95,6 +95,7 @@ ENV APP_VERSION=${APP_VERSION} \
 
 COPY --from=builder-worker-ops --chown=appuser:appuser /app/.venv /app/.venv
 COPY --chown=appuser:appuser README.md CHANGES.md* CHANGELOG.md* ./
+RUN install -d -m 0755 -o appuser -g appuser /var/lib/celery/beat
 
 USER appuser
 CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "operations"]

@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **docker**: grant appuser ownership of beat state directory
+
 ## v0.6.0.1 (2026-11-13)
 
 ### Fix
