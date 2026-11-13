@@ -29,6 +29,7 @@ class SettingsMenu(StrEnum):
     LANG_TARGET = "lang_target"
     LANG_IGNORED = "lang_ignored"
     SPEECH = "speech"
+    UI_LANG = "ui_lang"
 
 
 class SettingsAction(StrEnum):

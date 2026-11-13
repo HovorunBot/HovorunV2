@@ -48,6 +48,7 @@ from hovorunv2.domain.enums import CommandName, TargetKind
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager
 from hovorunv2.interface.telegram.settings.callbacks import SettingsMenu
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 from hovorunv2.interface.telegram.transport.membership import TelegramMembershipAdapter
@@ -90,6 +91,7 @@ async def private_runtime(
             await container.get(UsageViewService),
             await container.get(NotificationPreferenceService),
             await container.get(SpeechSettingsStore),
+            await container.get(AudienceI18nManager),
         )
         yield bot, command, service
 

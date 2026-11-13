@@ -11,6 +11,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram_i18n.context import I18nContext
 
 from hovorunv2.application.access.access_service import AccessService, CommandPolicy
 from hovorunv2.application.access.permissions import DecisionReason, PermissionTarget
@@ -40,6 +41,8 @@ from hovorunv2.domain.enums import (
     SpeechMode,
 )
 from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager
+from hovorunv2.interface.telegram.i18n.core import DEFAULT_LOCALE, SUPPORTED_LOCALES
 from hovorunv2.interface.telegram.settings.callbacks import SettingsAction, SettingsCallback, SettingsMenu
 
 from .base import BaseCommand
@@ -49,6 +52,10 @@ logger = get_logger(__name__)
 CONFIG_WINDOW_TTL: Final = SETTINGS_SESSION_TTL
 LANGS_PER_PAGE: Final = 10
 UNPOPULAR_LANGUAGE_RANK: Final = 999
+UI_LANGUAGE_LABELS: Final[dict[str, str]] = {
+    "uk": "🇺🇦 Українська",
+    "en": "🇬🇧 English",
+}
 NOTIFICATION_LABELS: Final[dict[NotificationCategory, str]] = {
     NotificationCategory.RELEASE: "🚀 Releases",
     NotificationCategory.BETA: "🧪 Beta invites",
@@ -230,6 +237,7 @@ class SettingsCommand(BaseCommand):
         usage_views: UsageViewService,
         notification_preferences: NotificationPreferenceService,
         speech_settings: SpeechSettingsStore,
+        i18n_manager: AudienceI18nManager,
     ) -> None:
         """Initialize command."""
         self._language_service = language_service
@@ -241,6 +249,7 @@ class SettingsCommand(BaseCommand):
         self._usage_views = usage_views
         self._notification_preferences = notification_preferences
         self._speech_settings = speech_settings
+        self._i18n_manager = i18n_manager
 
     @property
     def name(self) -> str:
@@ -411,6 +420,12 @@ class SettingsCommand(BaseCommand):
             InlineKeyboardButton(
                 text="🔔 My notifications",
                 callback_data=SettingsCallback(menu=SettingsMenu.NOTIFICATIONS, value="own").pack(),
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="🌐 Interface language",
+                callback_data=SettingsCallback(menu=SettingsMenu.UI_LANG).pack(),
             )
         )
         builder.row(
@@ -709,13 +724,26 @@ class SettingsCommand(BaseCommand):
         if not msg or not isinstance(msg, Message):
             return
 
+        if context.target is None:
+            await self._show_ui_lang_menu(query, context)
+            return
+
         chat_id = context.target_chat_id
         target, ignored = await self._language_service.get_chat_settings(chat_id)
 
         target_lang = LANGUAGES.get(target)
         target_label = target_lang.display_name if target_lang else target
 
+        current_ui_locale = await self._i18n_manager.get_chat_locale(chat_id) or DEFAULT_LOCALE
+        ui_label = UI_LANGUAGE_LABELS.get(current_ui_locale, current_ui_locale)
+
         builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🗣 Interface: {ui_label}",
+                callback_data=SettingsCallback(menu=SettingsMenu.UI_LANG).pack(),
+            )
+        )
         builder.row(
             InlineKeyboardButton(
                 text=f"🎯 Target: {target_label}",
@@ -730,8 +758,89 @@ class SettingsCommand(BaseCommand):
         )
         builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()))
 
-        text = "🌐 <b>Language Settings</b>\n\nConfigure translation target and ignored languages:"
+        text = "🌐 <b>Language Settings</b>\n\nConfigure interface language, translation target, and ignored languages:"
         await self._render(msg, text, builder, context)
+
+    async def _show_ui_lang_menu(self, query: CallbackQuery, context: SettingsContext) -> None:
+        """Show interactive interface language picker.
+
+        Args:
+            query: Callback query carrying the menu request.
+            context: Current settings session context.
+        """
+        msg = query.message
+        if not msg or not isinstance(msg, Message):
+            return
+
+        if context.target is None:
+            current_locale = await self._i18n_manager.get_user_locale(query.from_user.id)
+            title_text = "🌐 <b>Personal Interface Language</b>\n\nChoose the interface language for your interactions:"
+            back_menu = SettingsMenu.GROUPS
+        else:
+            current_locale = await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
+            title_text = "🌐 <b>Group Interface Language</b>\n\nChoose the interface language for this group:"
+            back_menu = SettingsMenu.LANG
+
+        builder = InlineKeyboardBuilder()
+        for code in SUPPORTED_LOCALES:
+            label = UI_LANGUAGE_LABELS.get(code, code)
+            prefix = "✅ " if code == current_locale else ""
+            builder.row(
+                InlineKeyboardButton(
+                    text=f"{prefix}{label}",
+                    callback_data=SettingsCallback(
+                        menu=SettingsMenu.UI_LANG, action=SettingsAction.SELECT, value=code
+                    ).pack(),
+                )
+            )
+        builder.row(InlineKeyboardButton(text="🔙 Back", callback_data=SettingsCallback(menu=back_menu).pack()))
+        await self._render(msg, title_text, builder, context)
+
+    async def _handle_ui_lang_callback(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
+        """Handle UI language selection.
+
+        Args:
+            query: Callback query carrying the language selection.
+            callback_data: Unpacked settings callback payload.
+            context: Current settings session context.
+        """
+        msg = query.message
+        if not msg or not isinstance(msg, Message):
+            return
+
+        if callback_data.action != SettingsAction.SELECT or not callback_data.value:
+            await self._show_ui_lang_menu(query, context)
+            return
+
+        selected_locale = callback_data.value
+        if selected_locale not in SUPPORTED_LOCALES:
+            await query.answer("Language not supported.", show_alert=True)
+            return
+
+        i18n = I18nContext.get_current(no_error=True)
+        if context.target is None:
+            await self._i18n_manager.set_user_locale(query.from_user.id, selected_locale)
+            if i18n is not None:
+                await i18n.set_locale(selected_locale)
+            alert = (
+                "Мову успішно змінено на українську."
+                if selected_locale == "uk"
+                else "Language successfully changed to English."
+            )
+        else:
+            await self._i18n_manager.set_chat_locale(context.target_chat_id, selected_locale)
+            if i18n is not None and context.transport_chat_id == context.target_chat_id:
+                await i18n.set_locale(selected_locale)
+            alert = (
+                "Мову групи успішно змінено на українську."
+                if selected_locale == "uk"
+                else "Group language successfully changed to English."
+            )
+
+        await query.answer(alert)
+        await self._show_ui_lang_menu(query, context)
 
     async def _show_lang_picker(
         self, message: Message, menu_type: SettingsMenu, page: int, context: SettingsContext
@@ -943,6 +1052,7 @@ class SettingsCommand(BaseCommand):
                 | SettingsMenu.LANG_IGNORED
                 | SettingsMenu.NOTIFICATIONS
                 | SettingsMenu.SPEECH
+                | SettingsMenu.UI_LANG
             ):
                 await self._dispatch_action(query, callback_data, context)
             case SettingsMenu.CLOSE:
@@ -968,15 +1078,35 @@ class SettingsCommand(BaseCommand):
             case SettingsMenu.LANG_IGNORED:
                 await self._handle_lang_ignored_callback(query, callback_data, context)
             case SettingsMenu.NOTIFICATIONS:
-                if callback_data.action == SettingsAction.TOGGLE:
-                    await self._handle_notifications_callback(query, callback_data, context)
-                else:
-                    await self._show_notifications(query, context, callback_data.value)
+                await self._dispatch_notifications_action(query, callback_data, context)
             case SettingsMenu.SPEECH:
-                if callback_data.action == SettingsAction.SELECT:
-                    await self._handle_speech_callback(query, callback_data, context)
-                else:
-                    await self._show_speech_menu(query, context)
+                await self._dispatch_speech_action(query, callback_data, context)
+            case SettingsMenu.UI_LANG:
+                await self._dispatch_ui_lang_action(query, callback_data, context)
+
+    async def _dispatch_notifications_action(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
+        if callback_data.action == SettingsAction.TOGGLE:
+            await self._handle_notifications_callback(query, callback_data, context)
+        else:
+            await self._show_notifications(query, context, callback_data.value)
+
+    async def _dispatch_speech_action(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
+        if callback_data.action == SettingsAction.SELECT:
+            await self._handle_speech_callback(query, callback_data, context)
+        else:
+            await self._show_speech_menu(query, context)
+
+    async def _dispatch_ui_lang_action(
+        self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext
+    ) -> None:
+        if callback_data.action == SettingsAction.SELECT:
+            await self._handle_ui_lang_callback(query, callback_data, context)
+        else:
+            await self._show_ui_lang_menu(query, context)
 
     async def _handle_modules_callback(
         self, query: CallbackQuery, callback_data: SettingsCallback, context: SettingsContext

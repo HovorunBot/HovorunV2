@@ -42,7 +42,7 @@ class AudienceI18nManager(BaseManager):
             Resolved locale code ('uk' or 'en', falling back to default).
         """
         if event_chat is not None and event_chat.type in ("group", "supergroup"):
-            chat_locale = await self._get_chat_locale(event_chat.id)
+            chat_locale = await self.get_chat_locale(event_chat.id)
             if chat_locale:
                 return chat_locale
         elif event_from_user is not None:
@@ -66,9 +66,9 @@ class AudienceI18nManager(BaseManager):
             event_from_user: User associated with the event, if updating personal locale.
         """
         if event_chat is not None and event_chat.type in ("group", "supergroup"):
-            await self._set_chat_locale(event_chat.id, locale)
+            await self.set_chat_locale(event_chat.id, locale)
         elif event_from_user is not None:
-            await self._set_user_locale(event_from_user.id, locale)
+            await self.set_user_locale(event_from_user.id, locale)
 
     get_locale = _resolve_locale
     set_locale = _persist_locale
@@ -85,7 +85,15 @@ class AudienceI18nManager(BaseManager):
         user_locale = await self._get_user_locale(telegram_id)
         return user_locale or (self.default_locale or DEFAULT_LOCALE)
 
-    async def _get_chat_locale(self, chat_id: int) -> str | None:
+    async def get_chat_locale(self, chat_id: int) -> str | None:
+        """Get the configured UI locale for a chat, if any.
+
+        Args:
+            chat_id: Numeric Telegram chat ID.
+
+        Returns:
+            The configured locale code or None.
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
             chat = await repo.get_by_id(chat_id, platform=Platform.TELEGRAM.value)
@@ -97,13 +105,25 @@ class AudienceI18nManager(BaseManager):
             user = await repo.get_by_telegram_id(telegram_id, platform=Platform.TELEGRAM.value)
             return user.ui_locale if user is not None else None
 
-    async def _set_chat_locale(self, chat_id: int, locale: str) -> None:
+    async def set_chat_locale(self, chat_id: int, locale: str) -> None:
+        """Persist UI locale for a chat.
+
+        Args:
+            chat_id: Numeric Telegram chat ID.
+            locale: Normalized locale code ('uk' or 'en').
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyChatRepository(session)
             await repo.set_ui_locale(chat_id, locale, platform=Platform.TELEGRAM.value)
             await session.commit()
 
-    async def _set_user_locale(self, telegram_id: int, locale: str) -> None:
+    async def set_user_locale(self, telegram_id: int, locale: str) -> None:
+        """Persist UI locale for a user.
+
+        Args:
+            telegram_id: Numeric Telegram user ID.
+            locale: Normalized locale code ('uk' or 'en').
+        """
         async with self._session_maker() as session:
             repo = SQLAlchemyUserRepository(session)
             await repo.set_ui_locale(telegram_id, locale, platform=Platform.TELEGRAM.value)

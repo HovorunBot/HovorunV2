@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **settings**: add personal and group language selection
 - **i18n**: wire audience-aware aiogram-i18n middleware
 - **i18n**: persist user and chat ui locale preferences
 - **i18n**: add aiogram-i18n and fluent catalog foundation

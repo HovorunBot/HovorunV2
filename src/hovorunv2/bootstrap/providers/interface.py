@@ -92,17 +92,28 @@ class InterfaceAndUtilityProvider(Provider):
     speech_voice_handler = provide(SpeechVoiceHandler)
 
     @provide(scope=Scope.APP)
-    def get_i18n_middleware(self, session_maker: async_sessionmaker) -> I18nMiddleware:
-        """Create and configure audience-aware i18n middleware for Telegram dispatcher.
+    def get_i18n_manager(self, session_maker: async_sessionmaker) -> AudienceI18nManager:
+        """Provide audience-aware i18n manager for Telegram interactions.
 
         Args:
             session_maker: Database session factory for querying audience locales.
 
         Returns:
+            Configured AudienceI18nManager instance.
+        """
+        return AudienceI18nManager(session_maker=session_maker)
+
+    @provide(scope=Scope.APP)
+    def get_i18n_middleware(self, manager: AudienceI18nManager) -> I18nMiddleware:
+        """Create and configure audience-aware i18n middleware for Telegram dispatcher.
+
+        Args:
+            manager: Audience-aware locale manager for resolving interaction context.
+
+        Returns:
             Configured I18nMiddleware instance.
         """
         core = create_i18n_core(load_now=True)
-        manager = AudienceI18nManager(session_maker=session_maker)
         return I18nMiddleware(core=core, manager=manager)
 
     @provide(scope=Scope.APP)
