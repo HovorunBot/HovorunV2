@@ -7,13 +7,13 @@ The project is in alpha.
 
 - **Media previews:** Twitter (X), Instagram, TikTok, Reddit, YouTube, Threads, Bluesky and Facebook. Supported formats include videos, images, carousels and quoted posts, depending on the provider.
 - **Translation:** Translate foreign-language content into the chat's target language, Ukrainian by default. Configure languages to leave unchanged.
-- **Chat settings:** Use `/settings` to choose languages and toggle video or post/image capture independently for each provider.
-- **Self-cleaning menus:** Configuration windows expire after 30 seconds of inactivity.
+- **Chat settings:** Use `/setup` for guided step-by-step chat configuration (immediately offered via `Configure chat` after group approval) or `/settings` to inspect current configuration and adjust languages or provider toggles directly.
+- **Self-cleaning menus:** Settings menus expire after 30 seconds of inactivity; guided `/setup` drafts remain group-bound, expire after 15 minutes of inactivity (1 hour total), and leave existing defaults intact until confirmed.
 - **Release notifications:** Approved groups receive updates when new user-facing changes are deployed.
 
 ## Using the bot
 
-Add the public instance to your group and use `/allow_chat` or the access button. Trusted users can activate it directly.
+Add the public instance to your group and use `/allow_chat` or the access button. Trusted users can activate it directly, then launch guided `/setup` from the `Configure chat` button or anytime via `/setup`.
 Other group administrators can request approval, which bot administrators review privately.
 You can also host your own instance with Docker.
 
@@ -71,9 +71,9 @@ See [administration](docs/administration.md) for role and trust commands, access
 
 Caption and explicit reply language detection runs locally with py3langid. Automatic media/post captions skip ignored languages, the selected target language, and text with insufficient alphabetic content; explicit `/translate [target]` replies and `Translate` button clicks override ignored languages and use either the per-request target or the chat/default target without mutating saved chat preferences.
 
-Translation uses a Google-first online engine (`deep-translator` + `tenacity` with bounded 15s budget and `TRANSLATION_ONLINE_ENABLED` offline switch) with automatic atomic fallback to an on-demand CTranslate2 NLLB-200 int8 CPU model when online translation is disabled or unavailable. Account-based and paid providers (including Microsoft Translator F0) are deferred. When an automatic translated response exceeds Telegram's caption or message budget, the original post/media is preserved with a source-bound `Translate` button (encrypted 24-hour non-renewing Valkey snapshot) and multi-part results use `Continue translation` chains rather than `.txt` fallback.
+Translation uses a Google-first online engine (`deep-translator` + `tenacity` with bounded 15s budget and `TRANSLATION_ONLINE_ENABLED` offline switch) with automatic atomic fallback to an on-demand CTranslate2 M2M100-418M int8 CPU model when online translation is disabled or unavailable. Account-based and paid providers (including Microsoft Translator F0) are deferred. When an automatic translated response exceeds Telegram's caption or message budget, the original post/media is preserved with a source-bound `Translate` button (encrypted 24-hour non-renewing Valkey snapshot) and multi-part results use `Continue translation` chains rather than `.txt` fallback.
 
-The first required local fallback translation downloads about 630 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. Media, browser and compression workers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's separate noncommercial license.
+The first required local fallback translation downloads about 496 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. Media, browser and compression workers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's MIT license and attribution.
 
 ## Access and privacy
 
@@ -90,6 +90,6 @@ See the [contributor guide](CONTRIBUTING.md) for setup, checks and contribution 
 
 ## License
 
-Application code: [BSD 3-Clause](LICENSE). Separately downloaded NLLB translation model assets: **CC BY-NC 4.0, noncommercial use only**. See [third-party notices](THIRD_PARTY_NOTICES.md) for model attribution, the full license, and commercial-use restrictions.
+Application code: [BSD 3-Clause](LICENSE). Separately downloaded M2M100-418M translation model assets: **MIT**. See [third-party notices](THIRD_PARTY_NOTICES.md) for model attribution and license terms.
 
 Optional local voice/audio transcription is documented in [speech recognition](docs/speech-recognition.md). Prepare its pinned model with `make prepare-speech`; keep `SPEECH_ENABLED=False` until the target-server capacity release gate passes.
