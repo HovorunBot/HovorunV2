@@ -654,6 +654,19 @@ wheels = [
 ]
 
 [[package]]
+name = "deep-translator"
+version = "1.11.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7d/03/8fa7635c729a01de71151894cdf002ad6d245bfd6d1a731da864cf534dcf/deep_translator-1.11.4.tar.gz", hash = "sha256:801260c69231138707ea88a0955e484db7d40e210c9e0ae0f77372ffda5f4bf5", size = 36043, upload-time = "2023-06-28T19:55:23.499Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/38/3f/61a8ef73236dbea83a1a063a8af2f8e1e41a0df64f122233938391d0f175/deep_translator-1.11.4-py3-none-any.whl", hash = "sha256:d635df037e23fa35d12fd42dab72a0b55c9dd19e6292009ee7207e3f30b9e60a", size = 42285, upload-time = "2023-06-28T19:55:20.928Z" },
+]
+
+[[package]]
 name = "deno"
 version = "2.9.8"
 source = { registry = "https://pypi.org/simple" }
@@ -832,11 +845,13 @@ browser = [
     { name = "celery", extra = ["redis"] },
     { name = "ctranslate2" },
     { name = "curl-cffi" },
+    { name = "deep-translator" },
     { name = "py3langid" },
     { name = "pydoll-python" },
     { name = "redis" },
     { name = "requests" },
     { name = "sentencepiece" },
+    { name = "tenacity" },
     { name = "yt-dlp", extra = ["curl-cffi", "default", "deno"] },
 ]
 migrate = [
@@ -850,11 +865,13 @@ worker-browser = [
     { name = "celery", extra = ["redis"] },
     { name = "ctranslate2" },
     { name = "curl-cffi" },
+    { name = "deep-translator" },
     { name = "py3langid" },
     { name = "pydoll-python" },
     { name = "redis" },
     { name = "requests" },
     { name = "sentencepiece" },
+    { name = "tenacity" },
     { name = "yt-dlp", extra = ["curl-cffi", "default", "deno"] },
 ]
 worker-media = [
@@ -862,10 +879,12 @@ worker-media = [
     { name = "celery", extra = ["redis"] },
     { name = "ctranslate2" },
     { name = "curl-cffi" },
+    { name = "deep-translator" },
     { name = "py3langid" },
     { name = "redis" },
     { name = "requests" },
     { name = "sentencepiece" },
+    { name = "tenacity" },
     { name = "yt-dlp", extra = ["curl-cffi", "default", "deno"] },
 ]
 worker-ops = [
@@ -905,6 +924,7 @@ requires-dist = [
     { name = "cryptography" },
     { name = "ctranslate2", marker = "extra == 'worker-media'" },
     { name = "curl-cffi", marker = "extra == 'worker-media'" },
+    { name = "deep-translator", marker = "extra == 'worker-media'" },
     { name = "dishka", marker = "extra == 'bot'" },
     { name = "dishka", marker = "extra == 'migrate'" },
     { name = "greenlet", marker = "extra == 'bot'" },
@@ -924,6 +944,7 @@ requires-dist = [
     { name = "requests", marker = "extra == 'worker-ops'" },
     { name = "sentencepiece", marker = "extra == 'worker-media'" },
     { name = "sqlalchemy", extras = ["asyncio"] },
+    { name = "tenacity", marker = "extra == 'worker-media'" },
     { name = "yt-dlp", extras = ["default", "curl-cffi", "deno"], marker = "extra == 'worker-media'" },
 ]
 provides-extras = ["bot", "migrate", "worker-ops", "worker-media", "worker-browser", "browser"]
@@ -1732,6 +1753,15 @@ wheels = [
 [package.optional-dependencies]
 asyncio = [
     { name = "greenlet" },
+]
+
+[[package]]
+name = "tenacity"
+version = "9.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/9e/497c1c8ebe5a5b5d1d4a7511aea22c0bb1a97e3170d98abdef0e1b34265a/tenacity-9.2.1.tar.gz", hash = "sha256:a606b5c808d0cded4a359d5b9932d867ff2a6a6b64d37350260fd01bbdf83839", size = 58261, upload-time = "2026-10-07T12:13:01.633Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/26/1ff2b0721ac66a3ec5b1402b333110b352ab0a8724052ac279a7b82d40c4/tenacity-9.2.1-py3-none-any.whl", hash = "sha256:9e56f17539296baab7beabb08b92f6ee3d7be92d8be72d763360677c2ad6580e", size = 32310, upload-time = "2026-10-07T12:13:00.102Z" },
 ]
 
 [[package]]

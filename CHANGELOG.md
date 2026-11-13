@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **translation**: add bounded Google translation and long-document segmentation
 - **translation**: switch local model to MIT-licensed M2M100-418M
 - **i18n**: localize administrative and error feedback
 - **i18n**: localize primary bot interactive journeys

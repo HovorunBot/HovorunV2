@@ -52,9 +52,11 @@ worker-media = [
     "beautifulsoup4",
     "ctranslate2",
     "curl-cffi",
+    "deep-translator",
     "hovorunv2[worker-ops]",
     "py3langid",
     "sentencepiece",
+    "tenacity",
     "yt-dlp[default,curl-cffi,deno]",
 ]
 worker-browser = [

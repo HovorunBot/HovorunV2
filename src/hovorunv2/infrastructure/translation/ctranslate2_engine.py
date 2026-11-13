@@ -1,10 +1,17 @@
 """Run on-demand M2M100 caption inference inside the owning synchronous worker child."""
 
+from functools import partial
 from os import getpid
 
 lazy import ctranslate2
 lazy import sentencepiece
 
+from hovorunv2.application.translation.document_segmentation import (
+    DEFAULT_LOCAL_SEGMENT_TOKENS,
+    MAX_DOCUMENT_CHARACTERS,
+    assemble_translated_document,
+    plan_document_segments,
+)
 from hovorunv2.application.translation.ports import TranslationEnginePort, TranslationError
 from hovorunv2.application.translation.translation_rules import resolve_model_language
 from hovorunv2.infrastructure.translation.model_store import ModelStore
@@ -15,8 +22,7 @@ INFERENCE_BATCH_SIZE = 1
 BEAM_SIZE = 2
 MAX_DECODING_TOKENS = 256
 MAX_SOURCE_TOKENS = 512
-MAX_CAPTION_CHARACTERS = 16384
-MAX_CAPTION_LINES = 64
+LOCAL_SEGMENT_TOKEN_LIMIT = DEFAULT_LOCAL_SEGMENT_TOKENS
 END_OF_SENTENCE = "</s>"
 
 
@@ -64,7 +70,7 @@ class CTranslate2Engine(TranslationEnginePort):
         if self._closed:
             msg = "Translation engine is closed"
             raise ValueError(msg)
-        if not text.strip() or len(text) > MAX_CAPTION_CHARACTERS or len(text.split("\n")) > MAX_CAPTION_LINES:
+        if not text.strip() or len(text) > MAX_DOCUMENT_CHARACTERS:
             msg = "Caption is empty or exceeds translation bounds"
             raise ValueError(msg)
         source, target = resolve_model_language(source_lang), resolve_model_language(target_lang)
@@ -89,6 +95,9 @@ class CTranslate2Engine(TranslationEnginePort):
         self._translator = translator
         return translator, processor
 
+    def _count_tokens(self, processor: sentencepiece.SentencePieceProcessor, segment: str) -> int:
+        return len(processor.encode(segment, out_type=str))
+
     def _translate_lines(
         self,
         text: str,
@@ -97,21 +106,26 @@ class CTranslate2Engine(TranslationEnginePort):
         translator: ctranslate2.Translator,
         processor: sentencepiece.SentencePieceProcessor,
     ) -> str:
-        lines = text.split("\n")
-        indexes = [index for index, line in enumerate(lines) if line.strip()]
-        tokens = [processor.encode(lines[index], out_type=str) for index in indexes]
+        planned = plan_document_segments(
+            text,
+            LOCAL_SEGMENT_TOKEN_LIMIT,
+            measure_fn=partial(self._count_tokens, processor),
+        )
+        segments = [segment for line in planned for segment in line.segments]
+        tokens = [processor.encode(segment, out_type=str) for segment in segments]
         if any(len(pieces) > MAX_SOURCE_TOKENS for pieces in tokens):
-            msg = "Caption line exceeds translation token bounds"
+            msg = "Caption segment exceeds translation token bounds"
             raise TranslationError(msg)
         results = translator.translate_batch(
             [[source, *pieces, END_OF_SENTENCE] for pieces in tokens],
-            target_prefix=[[target] for _index in indexes],
+            target_prefix=[[target] for _segment in segments],
             beam_size=BEAM_SIZE,
             max_batch_size=INFERENCE_BATCH_SIZE,
             max_decoding_length=MAX_DECODING_TOKENS,
             return_end_token=True,
         )
-        for index, result in zip(indexes, results, strict=True):
+        translated_segments: list[str] = []
+        for result in results:
             pieces = result.hypotheses[0]
             if not pieces or pieces[-1] != END_OF_SENTENCE:
                 msg = "Local translation exceeded the output limit"
@@ -121,10 +135,10 @@ class CTranslate2Engine(TranslationEnginePort):
                 pieces = pieces[1:]
             translated = processor.decode(pieces).strip()
             if not translated:
-                msg = "Local translation produced an empty line"
+                msg = "Local translation produced an empty segment"
                 raise TranslationError(msg)
-            lines[index] = translated
-        return "\n".join(lines)
+            translated_segments.append(translated)
+        return assemble_translated_document(planned, translated_segments)
 
     def close(self) -> None:
         """Release native resources, requiring the owning process and raising ValueError otherwise."""
