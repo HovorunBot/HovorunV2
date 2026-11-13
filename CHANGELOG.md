@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **deps**: include fluent-runtime in worker-media dependencies
+
 ## v0.6.0 (2026-11-13)
 
 ### Feat
