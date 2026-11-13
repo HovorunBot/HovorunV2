@@ -30,6 +30,7 @@ dependencies = [
 [project.optional-dependencies]
 bot = [
     "aiogram",
+    "aiogram-i18n[runtime]",
     "aiohttp",
     "celery[redis]",
     "dishka",

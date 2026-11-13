@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Feat
+
+- **i18n**: add aiogram-i18n and fluent catalog foundation
+
 ### Fix
 
 - **speech**: repair private voice processing
