@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from aiogram import Dispatcher
 from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
@@ -9,6 +10,7 @@ from aiogram_i18n import I18nMiddleware
 from dishka import AsyncContainer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import (
@@ -17,10 +19,12 @@ from hovorunv2.application.identity.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.identity.membership_store import MembershipStore
+from hovorunv2.application.settings.admin_session_service import AdminSessionService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
 from hovorunv2.domain.enums import ChatStatus, Platform, Role
 from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
+from hovorunv2.interface.access_arguments import parse_access
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
 from hovorunv2.interface.telegram.handlers.administration import AdministrationCommand
 from hovorunv2.interface.telegram.handlers.beta import BetaPromptCommand
@@ -31,6 +35,7 @@ from hovorunv2.interface.telegram.i18n import AudienceI18nManager, create_i18n_c
 from hovorunv2.interface.telegram.settings.callbacks import (
     AccessAction,
     AccessCallback,
+    AdminCallback,
     BetaAction,
     BetaCallback,
     SettingsAction,
@@ -40,6 +45,55 @@ from hovorunv2.interface.telegram.settings.callbacks import (
 from tests.conftest import provision_role
 from tests.utils.settings.sessions import bind_settings_callback
 from tests.utils.telegram.session import RecordingBot
+
+
+@pytest.mark.parametrize(
+    ("cancel", "repeat", "expected"),
+    [
+        (False, False, "Зміни збережено."),
+        (False, True, "Зміни збережено."),
+        (True, False, "Дію скасовано."),
+    ],
+)
+async def test_admin_confirmation_has_readable_feedback(
+    test_container: AsyncContainer,
+    recording_bot: RecordingBot,
+    *,
+    cancel: bool,
+    repeat: bool,
+    expected: str,
+) -> None:
+    """Confirm trust changes and cancellation through readable private Telegram replies."""
+    actor_id = 720040
+    target_id = 720041
+    await provision_role(test_container, actor_id, Role.OWNER)
+    await _set_user_locale(test_container, target_id, "en")
+    administration = await test_container.get(AdministrationService)
+    sessions = await test_container.get(AdminSessionService)
+    request = parse_access(["trust", "user", str(target_id)])
+    target = await administration.resolve(request.kind, request.target)
+    actor = ActorContext.telegram(actor_id)
+    if repeat:
+        await administration.execute(request, target, actor, "private")
+    token = await sessions.issue(request, target, actor_id, 80)
+    command = await test_container.get(AdministrationCommand)
+    query = CallbackQuery(
+        id="admin-confirmation",
+        from_user=User(id=actor_id, first_name="Admin", is_bot=False),
+        chat_instance="synth",
+        message=_make_message(
+            recording_bot, chat_id=actor_id, chat_type="private", user_id=actor_id, text="Confirm", message_id=80
+        ),
+    ).as_(recording_bot)
+
+    await command.handle_callback(query, AdminCallback(token=token, cancel=cancel))
+
+    edits = [call for call in recording_bot.session.calls if isinstance(call, EditMessageText)]
+    assert len(edits) == 1
+    assert edits[0].text == expected
+    assert edits[0].reply_markup is None
+    state = await administration.inspect(target, actor, "private")
+    assert state["trusted"] is not cancel
 
 
 def _make_message(

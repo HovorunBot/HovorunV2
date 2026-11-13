@@ -20,6 +20,7 @@
 
 ### Fix
 
+- **admin**: show readable confirmation feedback
 - **translation**: validate UTF-16 quote offsets and snapshot bounds
 - **translation**: preserve segment separators, fallback markup, and explicit no-op feedback
 - **speech**: repair private voice processing

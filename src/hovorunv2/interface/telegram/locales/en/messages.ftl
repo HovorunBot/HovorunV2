@@ -118,6 +118,9 @@ admin-help =
 admin-unavailable = Administration unavailable. Repeat /admin privately.
 admin-btn-confirm = Confirm
 admin-btn-cancel = Cancel
+admin-saved = Changes saved.
+admin-unchanged = No changes needed.
+admin-cancelled = Action cancelled.
 
 # Beta Prompts
 beta-unavailable = Beta activation unavailable.

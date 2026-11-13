@@ -1,6 +1,5 @@
 """Private access administration with target previews and single-use confirmation."""
 
-import html
 import json
 import logging
 import shlex
@@ -76,7 +75,7 @@ class AdministrationCommand(BaseCommand):
             target = await self._administration.resolve(request.kind, request.target)
             state = await self._administration.inspect(target, actor, message.chat.type)
             if request.action in {AdminAction.INSPECT, AdminAction.REQUESTS}:
-                await message.answer(html.escape(json.dumps(state, ensure_ascii=False)))
+                await message.answer(json.dumps(state, ensure_ascii=False), parse_mode=None)
                 return
             preview = (
                 f"Action: {request.action}\nTarget: {target.kind} {target.telegram_id}\nGeneration: {target.generation}"
@@ -90,7 +89,7 @@ class AdministrationCommand(BaseCommand):
                     f"limit={request.limit} burst={request.burst} concurrency={request.concurrency} "
                     f"pending={request.pending}"
                 )
-            window = await message.answer(html.escape(preview))
+            window = await message.answer(preview, parse_mode=None)
             token = await self._sessions.issue(request, target, actor.actor_id or 0, window.message_id)
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
@@ -148,7 +147,13 @@ class AdministrationCommand(BaseCommand):
                     confirmation.request.action.value,
                     result.get("outcome", "success"),
                 )
-            await message.edit_text(html.escape(json.dumps(result, ensure_ascii=False)), reply_markup=None)
+            if result.get("cancelled") is True:
+                feedback = get_message("admin-cancelled")
+            elif isinstance(result.get("changed"), bool):
+                feedback = get_message("admin-saved" if result["changed"] else "admin-unchanged")
+            else:
+                feedback = json.dumps(result, ensure_ascii=False)
+            await message.edit_text(feedback, parse_mode=None, reply_markup=None)
             await query.answer()
         except PermissionError, ValueError:
             await query.answer(get_message("admin-unavailable"), show_alert=True)

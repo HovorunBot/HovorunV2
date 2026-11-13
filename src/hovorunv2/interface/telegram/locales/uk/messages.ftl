@@ -120,6 +120,9 @@ admin-help =
 admin-unavailable = Адміністрування недоступне. Повторіть /admin у приватному чаті.
 admin-btn-confirm = Підтвердити
 admin-btn-cancel = Скасувати
+admin-saved = Зміни збережено.
+admin-unchanged = Зміни не потрібні.
+admin-cancelled = Дію скасовано.
 
 # Beta Prompts
 beta-unavailable = Бета-активація недоступна.
