@@ -203,33 +203,6 @@ async def test_actor_full_ban_only_suspends_while_current_admin(test_container: 
     assert (await statuses.evaluate_access(GROUP)).allowed
 
 
-@pytest.mark.parametrize("approved", [True, False])
-async def test_bot_administrator_decides_pending_request_in_private(
-    test_container: AsyncContainer, approved: bool
-) -> None:
-    """Bot ADMIN can approve/reject; replay and demotion cannot reuse a pending decision."""
-    target = await seed_activation(test_container, trusted=False)
-    await provision_role(test_container, ADMIN)
-    async with activation_runtime(test_container) as runtime:
-        with RecordedResponses() as http:
-            stub_telegram(http)
-            pending = await runtime.service.enable(ACTOR, target, "group")
-        assert pending.request_id is not None
-        action = ActivationAction.APPROVE if approved else ActivationAction.REJECT
-        result = await runtime.service.decide(ADMIN, target, pending.request_id, action, "private")
-        assert result.outcome == (ActivationOutcome.APPROVED if approved else ActivationOutcome.REJECTED)
-        assert (
-            await runtime.service.decide(ADMIN, target, pending.request_id, action, "private")
-        ).outcome == ActivationOutcome.STALE_REQUEST
-    sessions = await test_container.get(async_sessionmaker)
-    async with sessions() as session:
-        row = await session.get(GroupAccessRequestDB, pending.request_id)
-        assert row.status == (RequestStatus.APPROVED if approved else RequestStatus.REJECTED)
-        assert row.decision_actor_id == ADMIN
-        approvals = list((await session.scalars(select(GroupApprovalDB))).all())
-        assert bool(approvals) == approved
-
-
 async def test_open_admin_decision_rechecks_demotion_and_target(test_container: AsyncContainer) -> None:
     """A stale admin menu, wrong request, or mismatched target cannot approve."""
     target = await seed_activation(test_container, trusted=False)

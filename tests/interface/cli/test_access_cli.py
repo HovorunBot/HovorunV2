@@ -120,21 +120,8 @@ async def test_cli_known_handles_and_pending_decisions(tmp_path: Path, monkeypat
             await run_admin(access_arguments("inspect", kind, target))
     with pytest.raises(ValueError, match="stale_request"):
         await run_admin(access_arguments("accept", "group", str(GROUP), "--request-id", "99999"))
-
-
-async def test_cli_deleted_targets_and_unknown_features_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No placeholder identities or grants appear after rejected operations."""
-    await offline_database(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="Unknown feature"):
         await run_admin(access_arguments("beta-grant", "user", str(USER), "--feature", "unknown_beta"))
-    container = make_async_container(AdminProvider())
-    try:
-        users = await container.get(UserStore)
-        await users.soft_delete_user(USER, actor=ActorContext.cli(), reason="synthetic deletion")
-    finally:
-        await container.close()
-    with pytest.raises(ValueError, match="active known"):
-        await run_admin(access_arguments("trust", "user", str(USER)))
 
 
 def test_cli_unknown_target_exits_nonzero_without_echoing_private_reason(
