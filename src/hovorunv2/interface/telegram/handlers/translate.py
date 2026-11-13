@@ -143,10 +143,13 @@ class TranslateCommand(BaseCommand):
     def _extract_scoped_source(self, message: Message, reply: Message) -> tuple[str, TranslationScope] | None:
         full_source = reply.text or reply.caption or ""
         selected_quote = message.quote.text if message.quote is not None else None
-        if selected_quote is not None:
-            if not selected_quote.strip():
+        if message.quote is not None:
+            if not full_source or not message.quote.text.strip():
                 return None
-            if full_source and selected_quote not in full_source:
+            encoded_source = full_source.encode("utf-16-le")
+            offset = message.quote.position * 2
+            quoted_bytes = message.quote.text.encode("utf-16-le")
+            if encoded_source[offset : offset + len(quoted_bytes)] != quoted_bytes:
                 return None
         try:
             return resolve_translation_source(full_source, selected_quote)
@@ -225,7 +228,7 @@ class TranslateCommand(BaseCommand):
             source_message_id=reply.message_id,
             reply_to_message_id=reply.message_id,
             message_thread_id=message.message_thread_id,
-            requested_target_lang=requested_target,
+            requested_target_lang=effective_target,
             ui_locale=locale,
         )
         payload_bytes = json.dumps(private_input.model_dump(mode="json")).encode("utf-8")

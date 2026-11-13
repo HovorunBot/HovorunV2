@@ -64,11 +64,11 @@ class TranslationSnapshotPort(Protocol):
         ...
 
     async def claim_chain_step(self, token: str, part_index: int) -> bool:
-        """Atomically claim a continuation step to prevent concurrent duplicate delivery."""
+        """Claim a step until chain expiry unless acknowledged delivery explicitly releases it."""
         ...
 
     async def release_chain_step(self, token: str, part_index: int) -> None:
-        """Release a claimed continuation step after processing completes or fails."""
+        """Release a claimed step only after safe completion or before any delivery attempt."""
         ...
 
 

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
+import pytest
 from aiogram.methods import SendMessage
 from aiogram.types import Chat, Message, TextQuote, User
 from dishka import AsyncContainer
@@ -92,7 +93,10 @@ def _make_command_message(
     reply_to_message: Message | None = None,
     quote_text: str | None = None,
 ) -> Message:
-    quote = TextQuote(text=quote_text, position=0) if quote_text is not None else None
+    full_source = (reply_to_message.text or reply_to_message.caption or "") if reply_to_message is not None else ""
+    quote_offset = full_source.find(quote_text) if quote_text is not None else -1
+    position = len(full_source[:quote_offset].encode("utf-16-le")) // 2 if quote_offset >= 0 else 0
+    quote = TextQuote(text=quote_text, position=position) if quote_text is not None else None
     return Message(
         message_id=message_id,
         date=datetime.now(UTC),
@@ -329,3 +333,37 @@ async def test_translate_command_deduplicates_concurrent_group_members_and_enfor
     envelopes = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
     translate_envelopes = [env for env in envelopes if JobEnvelope.model_validate(env).feature == CommandName.TRANSLATE]
     assert len(translate_envelopes) == 1
+
+
+@pytest.mark.parametrize(("position", "expected_jobs"), [(1, 0), (3, 1)])
+async def test_translate_validates_quote_utf16_position(
+    test_container: AsyncContainer, recording_bot: RecordingBot, position: int, expected_jobs: int
+) -> None:
+    """Admit only selected text that matches its Telegram UTF-16 offset, including astral characters."""
+    user_id = 780401
+    await (await test_container.get(ChatStore)).get_or_create_chat(user_id)
+    users = await test_container.get(UserStore)
+    await users.ingest_user(user_id)
+    await users.set_trust(user_id, is_trusted=True, actor=ActorContext.cli())
+    source = _make_reply_source(
+        recording_bot,
+        chat_id=user_id,
+        chat_type="private",
+        user_id=user_id,
+        message_id=41,
+        text="😀 Bonjour tout le monde.",
+    )
+    command = _make_command_message(
+        recording_bot,
+        chat_id=user_id,
+        chat_type="private",
+        user_id=user_id,
+        message_id=42,
+        text="/translate uk",
+        reply_to_message=source,
+    ).model_copy(update={"quote": TextQuote(text="Bonjour tout le monde.", position=position)})
+    await (await test_container.get(TranslateCommand)).handle(command, recording_bot)
+    settings = await test_container.get(Settings)
+    namespace = await test_container.get(RuntimeNamespace)
+    envelopes = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+    assert len(envelopes) == expected_jobs
