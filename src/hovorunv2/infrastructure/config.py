@@ -55,6 +55,7 @@ class Settings(BrokerSettings, DatabaseSettings, ErrorLoggingSettings):
     translation_model_dir: Path = Path("/app/data/models/m2m100-418M-int8")
     translation_target_lang: str = "uk"
     translation_ignored_langs: list[str] = ["en", "ru", "uk", "und"]
+    translation_online_enabled: bool = True
     speech_enabled: bool = False
     speech_helper_path: Path = Path("/usr/local/bin/hovorun-whisper-helper")
     speech_model_idle_timeout: int = 300

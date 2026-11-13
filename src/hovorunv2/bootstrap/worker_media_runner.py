@@ -15,6 +15,7 @@ from hovorunv2.application.jobs.http_ports import (
 from hovorunv2.application.media.downloader import NativeMediaDownloader
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
+from hovorunv2.application.translation.hybrid_engine import HybridTranslationEngine
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.usage.budgets import Clock, RuntimeNamespace
 from hovorunv2.application.usage.policies import UsageSafetyCaps
@@ -26,6 +27,7 @@ from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
 from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
 from hovorunv2.infrastructure.translation.ctranslate2_engine import CTranslate2Engine
+from hovorunv2.infrastructure.translation.google_engine import GoogleTranslationEngine
 from hovorunv2.infrastructure.translation.language_detector import Py3LangIdDetector
 from hovorunv2.infrastructure.translation.model_store import MODEL_DOWNLOAD_SECONDS, ModelHTTPClient, ModelStore
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
@@ -74,8 +76,15 @@ def create_feature_runner(
     downloader = NativeMediaDownloader(http, destination_policy=http)
     delivery = custom_delivery or NativeTelegramDelivery(api, downloader)
     model_http = resources.enter_context(ModelHTTPClient(total_timeout=MODEL_DOWNLOAD_SECONDS))
-    engine = CTranslate2Engine(ModelStore(settings.translation_model_dir, model_http))
-    resources.callback(engine.close)
+    google_engine = GoogleTranslationEngine()
+    resources.callback(google_engine.close)
+    local_engine = CTranslate2Engine(ModelStore(settings.translation_model_dir, model_http))
+    resources.callback(local_engine.close)
+    engine = HybridTranslationEngine(
+        online_engine=google_engine,
+        local_engine=local_engine,
+        online_enabled=settings.translation_online_enabled,
+    )
     translation = NativeTranslationService(Py3LangIdDetector(), engine, settings, db.policies)
     extractor = NativeMediaExtractor()
     embed = VxInstagramEmbedAdapter() if settings.vxinstagram_enabled else DisabledEmbedAdapter()

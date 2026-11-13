@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **translation**: prefer free online translation with local fallback
 - **translation**: add bounded Google translation and long-document segmentation
 - **translation**: switch local model to MIT-licensed M2M100-418M
 - **i18n**: localize administrative and error feedback

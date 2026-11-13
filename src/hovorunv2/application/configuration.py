@@ -48,6 +48,11 @@ class AppSettings(Protocol):
         ...
 
     @property
+    def translation_online_enabled(self) -> bool:
+        """Return whether online-first translation is enabled before local fallback."""
+        ...
+
+    @property
     def instagram_sessionid(self) -> str | None:
         """Return the optional Instagram session cookie."""
         ...
