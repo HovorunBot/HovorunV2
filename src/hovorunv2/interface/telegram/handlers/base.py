@@ -11,6 +11,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Filter
 from aiogram.types import Message
 from aiogram.utils.magic_filter import MagicFilter
+from aiogram_i18n.context import I18nContext
 
 from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
@@ -370,6 +371,8 @@ class RichMediaCommand(BaseCommand):
         job_id = uuid.uuid4().hex
         sealed = await self._payloads.seal(job_id, url.encode(), deadline, sender_label=sender_label)
         dedupe_key = incoming_action_key(self.name, target.telegram_id, actor_id, message.message_id, trigger)
+        i18n = I18nContext.get_current(no_error=True)
+        locale = "en" if i18n is not None and i18n.locale == "en" else "uk"
         envelope = JobEnvelope(
             job_id=job_id,
             payload_ref=sealed.reference,
@@ -385,6 +388,8 @@ class RichMediaCommand(BaseCommand):
             dedupe_key=dedupe_key,
             feature_epoch=epoch,
             message_id=message.message_id,
+            message_thread_id=message.message_thread_id,
+            ui_locale=locale,
         )
         result = await self._admission.admit(envelope, sealed)
         if result.state == AdmissionState.ACCEPTED:

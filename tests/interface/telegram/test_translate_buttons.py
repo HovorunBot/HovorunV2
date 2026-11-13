@@ -12,6 +12,8 @@ from aiogram.exceptions import TelegramNetworkError
 from aiogram.methods import AnswerCallbackQuery, SendMessage
 from aiogram.types import CallbackQuery, Chat, InlineKeyboardMarkup, Message, User
 from dishka import AsyncContainer
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.groups.group_grants import GroupGrantStore
@@ -25,14 +27,19 @@ from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import JobEnvelope, JobStage
 from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
-from hovorunv2.application.jobs.feature_jobs import JobOutcome, PayloadPort
+from hovorunv2.application.jobs.feature_jobs import JobOutcome, JobTarget, PayloadPort
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.media.payloads import MediaItem, RichMediaPayload
 from hovorunv2.application.translation.explicit_input import ExplicitTranslationInput
 from hovorunv2.application.translation.hybrid_engine import HybridTranslationEngine
 from hovorunv2.application.translation.native_translation import NativeTranslationService
-from hovorunv2.application.translation.ports import TranslationEnginePort, TranslationError
+from hovorunv2.application.translation.ports import (
+    CancellationToken,
+    TranslationBudget,
+    TranslationEnginePort,
+    TranslationError,
+)
 from hovorunv2.application.translation.snapshots import (
     SNAPSHOT_TTL_SECONDS,
     TranslationChainState,
@@ -44,7 +51,8 @@ from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.bootstrap.worker_runtime import WorkerQueuePublisher, WorkerRuntime
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.domain.enums import ChatStatus, CommandName
+from hovorunv2.domain.enums import ChatStatus, CommandName, TargetKind
+from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.http_transport.native_http import NativeHTTPClient
 from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
@@ -67,9 +75,28 @@ from tests.utils.telegram.session import RecordingBot
 
 
 class _NeverCalledLocalEngine(TranslationEnginePort):
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        *,
+        budget: TranslationBudget | None = None,
+        cancel_token: CancellationToken | None = None,
+    ) -> str:
+        del budget, cancel_token
         msg = f"Unexpected local translation for {source_lang}->{target_lang}: {len(text)}"
         raise TranslationError(msg)
+
+
+async def _translation_target(container: AsyncContainer, chat_id: int) -> JobTarget:
+    if chat_id < 0:
+        chat = await (await container.get(ChatStore)).get_chat(chat_id)
+        assert chat is not None
+        return JobTarget(kind=TargetKind.GROUP, entity_id=chat.id, generation=chat.generation, telegram_id=chat_id)
+    user = await (await container.get(UserStore)).get_by_telegram_id(chat_id)
+    assert user is not None
+    return JobTarget(kind=TargetKind.USER, entity_id=user.id, generation=user.generation, telegram_id=chat_id)
 
 
 def _google_html(translated: str) -> HTTPReply:
@@ -179,6 +206,7 @@ async def test_auto_overflow_creates_encrypted_snapshot_and_fits_inline_stays_bu
     chats = await test_container.get(ChatStore)
     await chats.get_or_create_chat(chat_id)
     await chats.update_translation_settings(chat_id, "uk", [], actor=ActorContext.cli())
+    source_target = await _translation_target(test_container, chat_id)
 
     def _run_sync() -> tuple[str | None, str | None, bytes | str | None]:
         with (
@@ -235,7 +263,7 @@ async def test_auto_overflow_creates_encrypted_snapshot_and_fits_inline_stays_bu
                     "job_id": "jobshort1",
                     "payload_ref": "a" * 32,
                     "feature": CommandName.TWITTER_POST,
-                    "target": {"kind": "user", "entity_id": 1, "generation": 1, "telegram_id": chat_id},
+                    "target": source_target.model_dump(mode="json"),
                     "actor_id": chat_id,
                     "actor_generation": 1,
                     "trigger": "direct",
@@ -246,6 +274,8 @@ async def test_auto_overflow_creates_encrypted_snapshot_and_fits_inline_stays_bu
                     "dedupe_key": "b" * 64,
                     "feature_epoch": 0,
                     "message_id": 11,
+                    "message_thread_id": 7,
+                    "ui_locale": "en",
                 }
             )
             markup_short = runner.prepare_auto_translation_markup(
@@ -276,11 +306,29 @@ async def test_auto_overflow_creates_encrypted_snapshot_and_fits_inline_stays_bu
     markup_short, markup_long, raw_stored = await asyncio.to_thread(_run_sync)
     assert markup_short is None
     assert markup_long is not None
-    parsed = json.loads(markup_long)
-    assert parsed["inline_keyboard"][0][0]["callback_data"].startswith("tr:s:")
+    await _verify_overflow_snapshot(test_container, markup_long, source_target)
     assert raw_stored is not None
     raw_bytes = raw_stored if isinstance(raw_stored, bytes) else raw_stored.encode("utf-8")
     assert b"engineering systems" not in raw_bytes
+
+
+async def _verify_overflow_snapshot(
+    test_container: AsyncContainer,
+    markup_long: str,
+    source_target: JobTarget,
+) -> None:
+    """Verify automatic snapshots retain the admitted locale, identity and topic."""
+    parsed = json.loads(markup_long)
+    source_button = parsed["inline_keyboard"][0][0]
+    assert source_button["callback_data"].startswith("tr:s:")
+    assert source_button["text"] == "Translate"
+    snapshot = await (await test_container.get(TranslationSnapshotPort)).get_source(
+        source_button["callback_data"].removeprefix("tr:s:")
+    )
+    assert snapshot is not None
+    assert snapshot.target == source_target
+    assert snapshot.thread_id == 7
+    assert snapshot.ui_locale == "en"
 
 
 async def _seed_group_for_buttons(
@@ -336,6 +384,35 @@ async def _verify_cross_chat_and_expiry(
         assert await expired_store.get_chain(chain_token) is None
 
 
+async def _verify_completed_button_reuse(
+    test_container: AsyncContainer,
+    recording_bot: RecordingBot,
+    handler: TranslateCallbackHandler,
+    settings: Settings,
+    namespace: RuntimeNamespace,
+    group_id: int,
+    actor: int,
+    src_token: str,
+    envelope: dict[str, object],
+) -> None:
+    """Verify completed-result reuse beyond the admission deduplication lifetime."""
+    async with runtime_cache(test_container) as (cache, _):
+        await cache.client.delete(f"{namespace.value}admission:dedupe:{envelope['dedupe_key']}")
+    repeat = _make_callback_query(
+        recording_bot,
+        query_id="completed-reuse",
+        user_id=actor,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=50,
+        data=f"tr:s:{src_token}",
+        thread_id=7,
+    )
+    await handler.handle_callback(repeat, recording_bot)
+    after_repeat = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+    assert after_repeat == []
+
+
 async def test_group_translate_button_and_multipart_continuation_chain(
     test_container: AsyncContainer,
     recording_bot: RecordingBot,
@@ -349,30 +426,22 @@ async def test_group_translate_button_and_multipart_continuation_chain(
     namespace = await test_container.get(RuntimeNamespace)
     base_now = WallClock().now()
 
-    def _seed_snapshot() -> str:
-        sync_redis = redis.from_url(settings.valkey_url)
-        try:
-            client = WorkerTranslationSnapshotClient(sync_redis, settings, WallClock(), namespace)
-            snap = TranslationSourceSnapshot(
-                chat_id=group_id,
-                owner_id=None,
-                source_message_id=50,
-                thread_id=7,
-                target_lang="uk",
-                ui_locale="uk",
-                text=(
-                    "Today our engineering team published a detailed report about distributed translation "
-                    "pipelines and automated verification across production environments. "
-                )
-                * 8,
-                created_at=base_now,
-                expires_at=base_now + SNAPSHOT_TTL_SECONDS,
-            )
-            return client.save_source(snap)
-        finally:
-            sync_redis.close()
-
-    src_token = await asyncio.to_thread(_seed_snapshot)
+    snapshot = TranslationSourceSnapshot(
+        target=await _translation_target(test_container, group_id),
+        chat_id=group_id,
+        source_message_id=50,
+        thread_id=7,
+        target_lang="uk",
+        ui_locale="uk",
+        text=(
+            "Today our engineering team published a detailed report about distributed translation "
+            "pipelines and automated verification across production environments. "
+        )
+        * 8,
+        created_at=base_now,
+        expires_at=base_now + SNAPSHOT_TTL_SECONDS,
+    )
+    src_token = await asyncio.to_thread(_store_source_snapshot, settings, namespace, snapshot)
     handler = await test_container.get(TranslateCallbackHandler)
 
     # Member 1 clicks Translate button
@@ -402,6 +471,18 @@ async def test_group_translate_button_and_multipart_continuation_chain(
     markup = json.loads(sent_msgs[0]["reply_markup"])
     cb_data: str = markup["inline_keyboard"][0][0]["callback_data"]
     assert cb_data.startswith("tr:c:")
+
+    await _verify_completed_button_reuse(
+        test_container,
+        recording_bot,
+        handler,
+        settings,
+        namespace,
+        group_id,
+        member_one,
+        src_token,
+        translate_envelopes[0],
+    )
 
     # Member 2 clicks Continue translation -> receives Part 2 as reply to Part 1 (701), no button on final part
     q2 = _make_callback_query(
@@ -482,6 +563,7 @@ async def test_source_button_preserves_target_and_rejects_other_topics(
     namespace = await test_container.get(RuntimeNamespace)
     now = WallClock().now()
     snapshot = TranslationSourceSnapshot(
+        target=await _translation_target(test_container, group_id),
         chat_id=group_id,
         source_message_id=50,
         thread_id=7,
@@ -563,6 +645,7 @@ async def test_uncertain_continuation_is_not_replayed(
     token = "f" * 32
     now = WallClock().now()
     chain = TranslationChainState(
+        target=await _translation_target(test_container, group_id),
         chat_id=group_id,
         source_message_id=50,
         thread_id=7,
@@ -610,6 +693,7 @@ async def test_private_continuation_rechecks_current_access(
     now = WallClock().now()
     token = "d" * 32
     chain = TranslationChainState(
+        target=await _translation_target(test_container, user_id),
         chat_id=user_id,
         owner_id=user_id,
         source_message_id=50,
@@ -628,6 +712,46 @@ async def test_private_continuation_rechecks_current_access(
         chat_type="private",
         message_id=701,
         data=f"tr:c:{token}:1",
+    )
+    await (await test_container.get(TranslateCallbackHandler)).handle_callback(query, recording_bot)
+    assert not any(isinstance(call, SendMessage) for call in recording_bot.session.calls)
+
+
+async def test_retained_translation_rejects_new_identity_generation(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
+    """Do not reveal a previous private identity generation's retained translation after recovery."""
+    user_id = 790701
+    await (await test_container.get(ChatStore)).get_or_create_chat(user_id)
+    users = await test_container.get(UserStore)
+    user = await users.ingest_user(user_id)
+    assert user is not None
+    await users.set_trust(user_id, is_trusted=True, actor=ActorContext.cli())
+    now = WallClock().now()
+    state = TranslationChainState(
+        target=await _translation_target(test_container, user_id),
+        chat_id=user_id,
+        owner_id=user_id,
+        source_message_id=50,
+        parts=("First part", "Old generation private translation"),
+        last_message_id=701,
+        created_at=now,
+        expires_at=now + SNAPSHOT_TTL_SECONDS,
+    )
+    snapshots = await test_container.get(TranslationSnapshotPort)
+    await snapshots.save_chain("c" * 32, state)
+    session_maker = await test_container.get(async_sessionmaker)
+    async with session_maker() as session:
+        await session.execute(update(UserDB).where(UserDB.id == user.id).values(generation=user.generation + 1))
+        await session.commit()
+    query = _make_callback_query(
+        recording_bot,
+        query_id="recovered-private",
+        user_id=user_id,
+        chat_id=user_id,
+        chat_type="private",
+        message_id=701,
+        data=f"tr:c:{'c' * 32}:1",
     )
     await (await test_container.get(TranslateCallbackHandler)).handle_callback(query, recording_bot)
     assert not any(isinstance(call, SendMessage) for call in recording_bot.session.calls)

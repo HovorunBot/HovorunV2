@@ -29,6 +29,7 @@ from hovorunv2.application.translation.explicit_input import (
     translate_action_key,
 )
 from hovorunv2.application.translation.ports import TranslationScope
+from hovorunv2.application.translation.snapshots import TranslationDeliveryState, TranslationSnapshotPort
 from hovorunv2.application.translation.translation_rules import (
     resolve_target_language,
     resolve_translation_source,
@@ -63,6 +64,7 @@ class TranslateCommand(BaseCommand):
         i18n_manager: AudienceI18nManager,
         clock: Clock,
         settings: AppSettings,
+        snapshots: TranslationSnapshotPort,
     ) -> None:
         self._admission = admission
         self._payloads = payloads
@@ -71,6 +73,7 @@ class TranslateCommand(BaseCommand):
         self._i18n_manager = i18n_manager
         self._clock = clock
         self._settings = settings
+        self._snapshots = snapshots
         self._busy_gate = self._BUSY_GATE
 
     @property
@@ -221,6 +224,24 @@ class TranslateCommand(BaseCommand):
         now = self._clock.now()
         deadline = now + MAX_JOB_LIFETIME_SECONDS
         job_id = uuid.uuid4().hex
+        dedupe_key = translate_action_key(
+            target.telegram_id,
+            reply.message_id,
+            scope,
+            scoped_text,
+            effective_target,
+            target.entity_id,
+            target.generation,
+        )
+        prior = await self._snapshots.delivery_state(dedupe_key)
+        if prior is not None:
+            key = (
+                "translation-already-complete"
+                if prior == TranslationDeliveryState.COMPLETE
+                else "translation-unavailable"
+            )
+            await message.reply(get_message(key, locale))
+            return
         private_input = ExplicitTranslationInput(
             text=scoped_text,
             scope=scope,
@@ -233,15 +254,6 @@ class TranslateCommand(BaseCommand):
         )
         payload_bytes = json.dumps(private_input.model_dump(mode="json")).encode("utf-8")
         sealed = await self._payloads.seal(job_id, payload_bytes, deadline)
-        dedupe_key = translate_action_key(
-            target.telegram_id,
-            reply.message_id,
-            scope,
-            scoped_text,
-            effective_target,
-            target.entity_id,
-            target.generation,
-        )
         envelope = JobEnvelope(
             job_id=job_id,
             payload_ref=sealed.reference,

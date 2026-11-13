@@ -1,6 +1,7 @@
 """Verify bounded account-free Google translation with synthetic loopback HTTP."""
 
 import logging
+import time
 from http import HTTPStatus
 
 import pytest
@@ -285,3 +286,17 @@ def test_google_engine_translates_long_document_and_discards_partial_on_late_fai
     ):
         engine.translate(long_doc, "en", "uk")
     assert len(server.requests) == 2
+
+
+def test_google_hard_deadline_stops_drip_fed_response() -> None:
+    """Stop a slow continuous response within the shared allowance rather than resetting read timeouts."""
+    chunks = (b'<div class="result-container">', *(b"word " for _ in range(20)), b"</div>")
+    with (
+        HTTPFixture({"/m": [HTTPReply(chunks=chunks, chunk_delay_seconds=0.05)]}) as server,
+        GoogleTranslationEngine(base_url=server.url("/m"), max_attempts=1) as engine,
+    ):
+        started = time.monotonic()
+        with pytest.raises(TranslationError):
+            engine.translate("Bonjour", "fr", "uk", budget=TranslationBudget.from_timeout(0.15))
+        assert time.monotonic() - started < 0.8
+        assert len(server.requests) == 1

@@ -23,6 +23,7 @@ from hovorunv2.application.translation.snapshots import (
     SOURCE_CALLBACK_PREFIX,
     TOKEN_PATTERN,
     TranslationChainState,
+    TranslationDeliveryState,
     TranslationSnapshotPort,
     TranslationSourceSnapshot,
 )
@@ -96,6 +97,18 @@ class TranslateCallbackHandler:
         )
         return decision.allowed
 
+    async def _target_is_current(self, target: JobTarget) -> bool:
+        """Reject retained content belonging to a deleted or superseded identity generation."""
+        if target.kind == TargetKind.USER:
+            user = await self._users.get_by_telegram_id(target.telegram_id)
+            return user is not None and (user.id, user.generation) == (target.entity_id, target.generation)
+        chat = await self._chats.get_chat(target.telegram_id)
+        return chat is not None and (chat.id, chat.generation, chat.chat_id) == (
+            target.entity_id,
+            target.generation,
+            target.telegram_id,
+        )
+
     async def handle_callback(self, query: CallbackQuery, bot: Bot) -> None:
         """Dispatch Translate and Continue translation callbacks."""
         if query.data is None or not isinstance(query.message, Message) or query.from_user.is_bot:
@@ -121,8 +134,11 @@ class TranslateCallbackHandler:
         if snapshot.chat_id != msg.chat.id:
             await query.answer(get_message("translation-denied", locale), show_alert=True)
             return
-        if snapshot.thread_id is not None and snapshot.thread_id != msg.message_thread_id:
+        if snapshot.thread_id != msg.message_thread_id:
             await query.answer(get_message("translation-denied", locale), show_alert=True)
+            return
+        if snapshot.target.telegram_id != snapshot.chat_id or not await self._target_is_current(snapshot.target):
+            await query.answer(get_message("translation-expired", locale), show_alert=True)
             return
         if not await self._is_authorized(snapshot.chat_id, snapshot.owner_id, actor_id):
             await query.answer(get_message("translation-denied", locale), show_alert=True)
@@ -140,7 +156,7 @@ class TranslateCallbackHandler:
             await query.answer(get_message("translation-denied", locale), show_alert=True)
             return
         target, epoch, chat_target = await self._resolve_target(snapshot.chat_id, user.id, user.generation)
-        if target is None:
+        if target is None or target != snapshot.target:
             await query.answer(get_message("translation-unavailable", locale), show_alert=True)
             return
         effective_target = resolve_target_language(
@@ -149,21 +165,6 @@ class TranslateCallbackHandler:
         now = self._clock.now()
         deadline = now + MAX_JOB_LIFETIME_SECONDS
         job_id = uuid.uuid4().hex
-        private_input = ExplicitTranslationInput(
-            text=snapshot.text,
-            scope=snapshot.scope,
-            source_chat_id=snapshot.chat_id,
-            source_message_id=snapshot.source_message_id,
-            reply_to_message_id=msg.message_id,
-            message_thread_id=snapshot.thread_id if snapshot.thread_id is not None else msg.message_thread_id,
-            requested_target_lang=effective_target,
-            ui_locale=(await self._i18n_manager.get_chat_locale(snapshot.chat_id) or DEFAULT_LOCALE)
-            if snapshot.chat_id < 0
-            else locale,
-            snapshot_expires_at=snapshot.expires_at,
-        )
-        payload_bytes = json.dumps(private_input.model_dump(mode="json")).encode("utf-8")
-        sealed = await self._payloads.seal(job_id, payload_bytes, deadline)
         dedupe_key = translate_action_key(
             target.telegram_id,
             snapshot.source_message_id,
@@ -173,6 +174,30 @@ class TranslateCallbackHandler:
             target.entity_id,
             target.generation,
         )
+        prior = await self._snapshots.delivery_state(dedupe_key)
+        if prior is not None:
+            key = (
+                "translation-already-complete"
+                if prior == TranslationDeliveryState.COMPLETE
+                else "translation-unavailable"
+            )
+            await query.answer(get_message(key, locale), show_alert=True)
+            return
+        private_input = ExplicitTranslationInput(
+            text=snapshot.text,
+            scope=snapshot.scope,
+            source_chat_id=snapshot.chat_id,
+            source_message_id=snapshot.source_message_id,
+            reply_to_message_id=msg.message_id,
+            message_thread_id=snapshot.thread_id,
+            requested_target_lang=effective_target,
+            ui_locale=(await self._i18n_manager.get_chat_locale(snapshot.chat_id) or DEFAULT_LOCALE)
+            if snapshot.chat_id < 0
+            else locale,
+            snapshot_expires_at=snapshot.expires_at,
+        )
+        payload_bytes = json.dumps(private_input.model_dump(mode="json")).encode("utf-8")
+        sealed = await self._payloads.seal(job_id, payload_bytes, deadline)
         envelope = JobEnvelope(
             job_id=job_id,
             payload_ref=sealed.reference,
@@ -237,6 +262,9 @@ class TranslateCallbackHandler:
     ) -> TranslationChainState | None:
         chain = await self._snapshots.get_chain(token)
         if chain is None:
+            await query.answer(get_message("translation-expired", locale), show_alert=True)
+            return None
+        if chain.target.telegram_id != chain.chat_id or not await self._target_is_current(chain.target):
             await query.answer(get_message("translation-expired", locale), show_alert=True)
             return None
         if (

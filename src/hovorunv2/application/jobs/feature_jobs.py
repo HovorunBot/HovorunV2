@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final, Protocol
+from typing import Final, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -60,6 +60,8 @@ class JobEnvelope(BaseModel):
     dedupe_key: str = Field(pattern=r"^[a-f0-9]{64}$")
     feature_epoch: int = Field(ge=0)
     message_id: int = Field(gt=0)
+    message_thread_id: int | None = Field(default=None, gt=0)
+    ui_locale: Literal["uk", "en"] = "uk"
 
     @model_validator(mode="after")
     def _validate_model_binding(self) -> JobEnvelope:

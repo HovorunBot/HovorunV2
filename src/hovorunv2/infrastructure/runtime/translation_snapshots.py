@@ -6,6 +6,7 @@ import secrets
 
 import redis
 from cryptography.fernet import InvalidToken
+from pydantic import ValidationError
 from redis.exceptions import RedisError
 
 from hovorunv2.application.configuration import AppSettings
@@ -14,6 +15,7 @@ from hovorunv2.application.translation.snapshots import (
     TOKEN_PATTERN,
     SyncTranslationSnapshotPort,
     TranslationChainState,
+    TranslationDeliveryState,
     TranslationSnapshotPort,
     TranslationSourceSnapshot,
 )
@@ -73,6 +75,14 @@ class ValkeyTranslationSnapshotStore(TranslationSnapshotPort):
     def _lock_key(self, token: str, part_index: int) -> str:
         return f"{self._prefix}tr:lock:{token}:{part_index}"
 
+    async def delivery_state(self, action_key: str) -> TranslationDeliveryState | None:
+        """Read operational result state without retaining extra plaintext or renewing expiry."""
+        raw = await self._cache.client.get(f"{self._prefix}tr:result:{action_key}")
+        if raw is None:
+            return None
+        value = raw.decode("ascii") if isinstance(raw, bytes) else str(raw)
+        return TranslationDeliveryState(value)
+
     async def get_source(self, token: str) -> TranslationSourceSnapshot | None:
         """Load and decrypt an active source snapshot, returning None if missing or expired."""
         if TOKEN_PATTERN.fullmatch(token) is None or not self._key:
@@ -86,7 +96,11 @@ class ValkeyTranslationSnapshotStore(TranslationSnapshotPort):
         if plaintext is None:
             await self._cache.delete(key)
             return None
-        snapshot = TranslationSourceSnapshot.model_validate_json(plaintext)
+        try:
+            snapshot = TranslationSourceSnapshot.model_validate_json(plaintext)
+        except ValidationError:
+            await self._cache.delete(key)
+            return None
         if self._clock.now() >= snapshot.expires_at:
             await self._cache.delete(key)
             return None
@@ -105,7 +119,11 @@ class ValkeyTranslationSnapshotStore(TranslationSnapshotPort):
         if plaintext is None:
             await self._cache.delete(key)
             return None
-        chain = TranslationChainState.model_validate_json(plaintext)
+        try:
+            chain = TranslationChainState.model_validate_json(plaintext)
+        except ValidationError:
+            await self._cache.delete(key)
+            return None
         if self._clock.now() >= chain.expires_at:
             await self._cache.delete(key)
             return None
@@ -156,13 +174,40 @@ class WorkerTranslationSnapshotClient(SyncTranslationSnapshotPort):
         self._clock = clock
         self._prefix = namespace.value
 
+    def begin_result(self, action_key: str, expires_at: float) -> bool:
+        """Prevent duplicate delivery for the remainder of the source lifecycle."""
+        remaining = math.ceil(expires_at - self._clock.now())
+        if remaining <= 0:
+            msg = "Translation source expired before delivery."
+            raise ValueError(msg)
+        return bool(
+            self._client.set(
+                f"{self._prefix}tr:result:{action_key}",
+                TranslationDeliveryState.UNCERTAIN.value,
+                nx=True,
+                ex=remaining,
+            )
+        )
+
+    def complete_result(self, action_key: str) -> None:
+        """Mark delivery acknowledged while preserving the already established result expiry."""
+        self._client.set(
+            f"{self._prefix}tr:result:{action_key}",
+            TranslationDeliveryState.COMPLETE.value,
+            xx=True,
+            keepttl=True,
+        )
+
     def save_source(self, snapshot: TranslationSourceSnapshot) -> str:
         """Encrypt and store a source snapshot with fixed 24h expiry, returning its token."""
         if not self._key:
             msg = "Encryption key is required for translation snapshots."
             raise ValueError(msg)
         token = secrets.token_hex(16)
-        ttl = max(1, math.ceil(snapshot.expires_at - self._clock.now()))
+        ttl = math.ceil(snapshot.expires_at - self._clock.now())
+        if ttl <= 0:
+            msg = "Translation source expired before persistence."
+            raise ValueError(msg)
         sealed = _seal_json(self._key, snapshot.model_dump_json())
         self._client.set(f"{self._prefix}tr:src:{token}", sealed, ex=ttl)
         return token
@@ -177,6 +222,9 @@ class WorkerTranslationSnapshotClient(SyncTranslationSnapshotPort):
         if not self._key:
             msg = "Encryption key is required for translation chains."
             raise ValueError(msg)
-        ttl = max(1, math.ceil(state.expires_at - self._clock.now()))
+        ttl = math.ceil(state.expires_at - self._clock.now())
+        if ttl <= 0:
+            msg = "Translation chain expired before persistence."
+            raise ValueError(msg)
         sealed = _seal_json(self._key, state.model_dump_json())
         self._client.set(f"{self._prefix}tr:chain:{token}", sealed, ex=ttl)

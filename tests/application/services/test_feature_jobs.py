@@ -50,6 +50,7 @@ from hovorunv2.application.media.payloads import (
 )
 from hovorunv2.application.media.providers.base import BaseMediaClient
 from hovorunv2.application.media.providers.instagram import INSTAGRAM_CONFIG
+from hovorunv2.application.translation.ports import CancellationToken, TranslationBudget
 from hovorunv2.application.usage.budgets import BudgetRequest, ReservationDecision, ReservationState, UnitAmount
 from hovorunv2.application.usage.policies import MEDIA_BUCKET, UsageSafetyCaps, UsageUnit, UsageWindow
 from hovorunv2.application.usage.usage_ledger import AccountingSubject
@@ -128,7 +129,16 @@ class _FakeDetector:
 
 
 class _FakeEngine:
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        *,
+        budget: TranslationBudget | None = None,
+        cancel_token: CancellationToken | None = None,
+    ) -> str:
+        del budget, cancel_token
         return text
 
 

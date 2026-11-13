@@ -3,6 +3,7 @@
 import asyncio
 from http import HTTPStatus
 from pathlib import Path
+from threading import Event
 
 import pytest
 from dishka import AsyncContainer
@@ -11,6 +12,8 @@ from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.translation.hybrid_engine import HybridTranslationEngine
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.translation.ports import (
+    CancellationToken,
+    TranslationBudget,
     TranslationDocument,
     TranslationEnginePort,
     TranslationError,
@@ -33,7 +36,16 @@ class _RecordingLocalEngine(TranslationEnginePort):
         self.calls: list[tuple[str, str, str]] = []
         self._fail = fail
 
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        *,
+        budget: TranslationBudget | None = None,
+        cancel_token: CancellationToken | None = None,
+    ) -> str:
+        del budget, cancel_token
         self.calls.append((text, source_lang, target_lang))
         if self._fail:
             msg = "Local engine unavailable"
@@ -127,3 +139,41 @@ def test_hybrid_translation_offline_switch_skips_google_requests() -> None:
         assert hybrid.translate("Bonjour", "fr", "uk") == "[local:uk] Bonjour"
     assert len(server.requests) == 0
     assert local_engine.calls == [("Bonjour", "fr", "uk")]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("online_enabled", [True, False])
+def test_hybrid_rejects_expired_deadline_before_either_backend(online_enabled: bool) -> None:
+    """Do not start online work or fallback after the original job deadline expires."""
+    online = _RecordingLocalEngine()
+    local = _RecordingLocalEngine()
+    engine = HybridTranslationEngine(online, local, online_enabled=online_enabled)
+    with pytest.raises(TranslationError, match="deadline"):
+        engine.translate("Bonjour", "fr", "uk", budget=TranslationBudget(deadline_monotonic=0))
+    assert online.calls == []
+    assert local.calls == []
+
+
+class _EventCancellation(CancellationToken):
+    def __init__(self, event: Event) -> None:
+        self._event = event
+
+    def is_cancelled(self) -> bool:
+        return self._event.is_set()
+
+
+@pytest.mark.unit
+def test_hybrid_does_not_fall_back_after_cancellation_during_http() -> None:
+    """Stop the whole operation when cancellation arrives after the provider request starts."""
+    cancelled = Event()
+    reply = HTTPReply(body=b'<div class="result-container">Result</div>', started=cancelled)
+    local = _RecordingLocalEngine()
+    with (
+        HTTPFixture({"/m": [reply]}) as server,
+        GoogleTranslationEngine(base_url=server.url("/m")) as google,
+    ):
+        engine = HybridTranslationEngine(google, local)
+        with pytest.raises(TranslationError, match="cancelled"):
+            engine.translate("Bonjour", "fr", "uk", cancel_token=_EventCancellation(cancelled))
+        assert len(server.requests) == 1
+    assert local.calls == []

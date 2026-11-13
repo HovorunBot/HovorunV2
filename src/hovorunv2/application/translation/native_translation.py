@@ -12,6 +12,7 @@ from hovorunv2.application.translation.ports import (
     TranslationEnginePort,
     TranslationError,
     TranslationIntent,
+    check_translation_controls,
 )
 from hovorunv2.application.translation.translation_rules import (
     MIN_DETECTABLE_CHARS,
@@ -87,7 +88,7 @@ class NativeTranslationService:
         clean = sanitize_for_detection(raw_text)
         if sum(character.isalpha() for character in clean) < MIN_DETECTABLE_CHARS:
             return None
-        return self._run_translation(document, raw_text, clean)
+        return self._run_translation(document, raw_text, clean, cancel_token)
 
     def _can_proceed(
         self,
@@ -112,6 +113,7 @@ class NativeTranslationService:
         document: TranslationDocument,
         raw_text: str,
         clean: str,
+        cancel_token: CancellationToken | None,
     ) -> TranslationResult | None:
         chat_target, ignored = self._current_languages(document.chat_id)
         try:
@@ -123,7 +125,15 @@ class NativeTranslationService:
             source = normalize_language_code(self._detector.detect(clean))
             if not should_translate_for_intent(source, target, ignored, document.intent):
                 return None
-            translated = self._engine.translate(raw_text, source, target)
+            check_translation_controls(document.budget, cancel_token)
+            translated = self._engine.translate(
+                raw_text,
+                source,
+                target,
+                budget=document.budget,
+                cancel_token=cancel_token,
+            )
+            check_translation_controls(document.budget, cancel_token)
         except TranslationError, ValueError:
             if document.intent == TranslationIntent.EXPLICIT:
                 raise

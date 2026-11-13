@@ -28,7 +28,12 @@ from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.translation.hybrid_engine import HybridTranslationEngine
 from hovorunv2.application.translation.native_translation import NativeTranslationService
-from hovorunv2.application.translation.ports import TranslationEnginePort, TranslationError
+from hovorunv2.application.translation.ports import (
+    CancellationToken,
+    TranslationBudget,
+    TranslationEnginePort,
+    TranslationError,
+)
 from hovorunv2.application.usage.budgets import RuntimeNamespace, WallClock
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
@@ -52,7 +57,16 @@ from tests.utils.telegram.session import RecordingBot
 
 
 class _NeverCalledLocalEngine(TranslationEnginePort):
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        *,
+        budget: TranslationBudget | None = None,
+        cancel_token: CancellationToken | None = None,
+    ) -> str:
+        del budget, cancel_token
         msg = f"Unexpected local translation for {source_lang}->{target_lang}: {len(text)}"
         raise TranslationError(msg)
 

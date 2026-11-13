@@ -10,10 +10,10 @@ from http import HTTPStatus
 from types import TracebackType
 from typing import Final, Self
 
-import requests
-import requests.adapters
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR
+from curl_cffi.requests import Response, Session
+from curl_cffi.requests.exceptions import RequestException
 from tenacity import RetryCallState, Retrying, retry_if_exception_type, stop_after_attempt
-from urllib3.util.retry import Retry
 lazy from bs4 import BeautifulSoup
 lazy from deep_translator import GoogleTranslator
 lazy from deep_translator.constants import GOOGLE_LANGUAGES_TO_CODES
@@ -28,8 +28,10 @@ from hovorunv2.application.translation.ports import (
     TranslationBudget,
     TranslationEnginePort,
     TranslationError,
+    check_translation_controls,
 )
 from hovorunv2.domain.languages import normalize_language_code
+from hovorunv2.infrastructure.http_transport.response_body import BoundedResponseBody
 
 GOOGLE_MAX_ATTEMPTS: Final = 3
 GOOGLE_TOTAL_TIMEOUT_SECONDS: Final = 15.0
@@ -39,7 +41,7 @@ GOOGLE_BACKOFF_BASE_SECONDS: Final = 2.0
 GOOGLE_BACKOFF_MAX_SECONDS: Final = 8.0
 GOOGLE_MAX_JITTER_SECONDS: Final = 0.5
 GOOGLE_MAX_RESPONSE_BYTES: Final = 1024 * 1024
-HTTP_CHUNK_BYTES: Final = 64 * 1024
+MIN_CURL_TIMEOUT_SECONDS: Final = 0.001
 HTTP_STATUS_ENHANCE_YOUR_CALM: Final = 427
 GOOGLE_RETRYABLE_STATUSES: Final[frozenset[int]] = frozenset(
     {
@@ -114,19 +116,27 @@ def _parse_retry_after_seconds(raw_value: str | None, *, now_wall_time: float | 
     return max(0.0, seconds)
 
 
-def _read_bounded_text(response: requests.Response, max_bytes: int) -> str:
-    total = 0
-    chunks: list[bytes] = []
-    for chunk in response.iter_content(chunk_size=HTTP_CHUNK_BYTES):
-        if not chunk:
-            continue
-        total += len(chunk)
-        if total > max_bytes:
-            msg = "Google translation response exceeded size limit"
-            raise TranslationError(msg)
-        chunks.append(chunk)
-    encoding = response.encoding or "utf-8"
-    return b"".join(chunks).decode(encoding, errors="replace")
+class _GoogleResponseCollector:
+    """Bound bytes and check cancellation during a single native HTTP transfer."""
+
+    def __init__(
+        self,
+        limit: int,
+        budget: TranslationBudget,
+        clock: Callable[[], float],
+        cancel_token: CancellationToken | None,
+    ) -> None:
+        self.body = BoundedResponseBody(limit)
+        self._budget = budget
+        self._clock = clock
+        self._cancel_token = cancel_token
+
+    def write(self, chunk: bytes) -> int:
+        if self._budget.is_expired(self._clock()):
+            return CURL_WRITEFUNC_ERROR
+        if self._cancel_token is not None and self._cancel_token.is_cancelled():
+            return CURL_WRITEFUNC_ERROR
+        return self.body.write(chunk)
 
 
 class _BudgetedRetryWait:
@@ -159,19 +169,19 @@ class _BudgetedRetryWait:
             raise TranslationError(msg)
         outcome = retry_state.outcome
         exc = outcome.exception() if outcome is not None else None
-        if isinstance(exc, _GoogleTransientError) and exc.retry_after is not None:
-            delay = exc.retry_after
-            if delay >= remaining or delay > GOOGLE_BACKOFF_MAX_SECONDS:
-                msg = "Google translation Retry-After exceeds remaining budget"
-                raise TranslationError(msg)
-            return delay
         exponential = min(
             GOOGLE_BACKOFF_BASE_SECONDS * (2 ** (retry_state.attempt_number - 1)),
             GOOGLE_BACKOFF_MAX_SECONDS,
         )
         delay = min(GOOGLE_BACKOFF_MAX_SECONDS, exponential + self._jitter(GOOGLE_MAX_JITTER_SECONDS))
+        if isinstance(exc, _GoogleTransientError) and exc.retry_after is not None:
+            delay = max(delay, exc.retry_after)
         if delay >= remaining:
-            msg = "Google translation retry wait exceeds remaining budget"
+            msg = (
+                "Google translation Retry-After exceeds remaining budget"
+                if isinstance(exc, _GoogleTransientError) and exc.retry_after is not None
+                else "Google translation retry wait exceeds remaining budget"
+            )
             raise TranslationError(msg)
         return delay
 
@@ -207,14 +217,8 @@ class GoogleTranslationEngine(TranslationEnginePort):
     def _default_jitter(self, upper: float) -> float:
         return random.uniform(0.0, upper)  # noqa: S311
 
-    def _build_session(self) -> requests.Session:
-        session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(
-            max_retries=Retry(total=0, connect=0, read=0, redirect=0, status=0, other=0)
-        )
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
-        return session
+    def _build_session(self) -> Session:
+        return Session(trust_env=False)
 
     def __enter__(self) -> Self:
         """Enter the context manager and return this engine."""
@@ -235,10 +239,24 @@ class GoogleTranslationEngine(TranslationEnginePort):
             self._session.close()
             self._closed = True
 
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        *,
+        budget: TranslationBudget | None = None,
+        cancel_token: CancellationToken | None = None,
+    ) -> str:
         """Translate text using account-free Google Translate within the default budget."""
-        budget = TranslationBudget.from_timeout(self._total_timeout_seconds, now_monotonic=self._clock())
-        return self.translate_with_budget(text, source_lang, target_lang, budget=budget)
+        allowance = budget or TranslationBudget.from_timeout(self._total_timeout_seconds, now_monotonic=self._clock())
+        return self.translate_with_budget(
+            text,
+            source_lang,
+            target_lang,
+            budget=allowance,
+            cancel_token=cancel_token,
+        )
 
     def translate_with_budget(
         self,
@@ -265,6 +283,7 @@ class GoogleTranslationEngine(TranslationEnginePort):
             ValueError: If text is empty or either language code is unsupported.
             TranslationError: If translation fails, times out, or is cancelled.
         """
+        budget = TranslationBudget(min(budget.deadline_monotonic, self._clock() + self._total_timeout_seconds))
         if self._closed:
             msg = "GoogleTranslationEngine is closed"
             raise TranslationError(msg)
@@ -325,29 +344,42 @@ class GoogleTranslationEngine(TranslationEnginePort):
             msg = "Google translation deadline exceeded"
             raise TranslationError(msg)
 
-        timeout = (
-            min(self._connect_timeout_seconds, remaining),
-            min(self._read_timeout_seconds, remaining),
-        )
+        if remaining < MIN_CURL_TIMEOUT_SECONDS:
+            msg = "Google translation deadline exceeded"
+            raise TranslationError(msg)
+        transfer_timeout = min(self._read_timeout_seconds, remaining)
+        connect_timeout = min(self._connect_timeout_seconds, transfer_timeout)
+        read_timeout = max(0.0, transfer_timeout - connect_timeout)
+        collector = _GoogleResponseCollector(self._max_response_bytes, budget, self._clock, cancel_token)
         try:
-            with self._session.get(
+            response = self._session.get(
                 request_url,
                 params=params,
-                timeout=timeout,
-                stream=True,
+                timeout=(connect_timeout, read_timeout),
                 allow_redirects=False,
-            ) as response:
-                return self._handle_response(response)
-        except (requests.Timeout, requests.ConnectionError) as exc:
-            logger.warning("Google translation transient transport failure: %s", type(exc).__name__)
+                stream=False,
+                content_callback=collector.write,
+                discard_cookies=True,
+                proxy="",
+            )
+        except RequestException as exc:
+            if collector.body.exceeded:
+                msg = "Google translation response exceeded size limit"
+                raise TranslationError(msg) from None
+            if budget.is_expired(self._clock()):
+                msg = "Google translation deadline exceeded"
+                raise TranslationError(msg) from None
+            check_translation_controls(None, cancel_token)
             msg = f"Google translation transport failure: {type(exc).__name__}"
             raise _GoogleTransientError(msg) from None
-        except requests.RequestException as exc:
-            logger.warning("Google translation request failed: %s", type(exc).__name__)
-            msg = f"Google translation request failed: {type(exc).__name__}"
-            raise TranslationError(msg) from None
+        if budget.is_expired(self._clock()):
+            msg = "Google translation deadline exceeded"
+            raise TranslationError(msg)
+        check_translation_controls(None, cancel_token)
+        body = b"".join(collector.body.chunks).decode(response.encoding or "utf-8", errors="replace")
+        return self._handle_response(response, body)
 
-    def _handle_response(self, response: requests.Response) -> str:
+    def _handle_response(self, response: Response, html_body: str) -> str:
         status = response.status_code
         if status in GOOGLE_RETRYABLE_STATUSES:
             retry_after = _parse_retry_after_seconds(response.headers.get("Retry-After"))
@@ -359,7 +391,6 @@ class GoogleTranslationEngine(TranslationEnginePort):
             msg = f"Google translation failed with HTTP status {status}"
             raise TranslationError(msg)
 
-        html_body = _read_bounded_text(response, self._max_response_bytes)
         soup = BeautifulSoup(html_body, "html.parser")
         element = soup.find("div", class_="t0")
         if element is None:

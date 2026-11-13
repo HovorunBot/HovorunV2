@@ -43,7 +43,7 @@ from hovorunv2.application.jobs.http_ports import (
 )
 from hovorunv2.application.jobs.worker_lifecycle_service import WorkerLifecycleService
 from hovorunv2.application.media.actions import ActionOutcome, select_outcome
-from hovorunv2.application.media.deadlines import ExtractionDeadline
+from hovorunv2.application.media.deadlines import HANDOFF_RESERVE_SECONDS, ExtractionDeadline
 from hovorunv2.application.media.errors import (
     BrowserContinuationRequired,
     BrowserError,
@@ -68,8 +68,11 @@ from hovorunv2.application.media.rendering import (
     split_html_message,
 )
 from hovorunv2.application.translation.explicit_input import ExplicitTranslationInput
+from hovorunv2.application.translation.job_control import TranslationJobCancellation
 from hovorunv2.application.translation.native_translation import NativeTranslationService
 from hovorunv2.application.translation.ports import (
+    CancellationToken,
+    TranslationBudget,
     TranslationCatalogPort,
     TranslationDocument,
     TranslationError,
@@ -518,6 +521,7 @@ class FeatureJobRunner:
             sender_label,
             now,
             strip_hashtags=client.config.strip_hashtags,
+            cancel_token=TranslationJobCancellation(self._admission, self._policies, envelope),
         )
         if self._admission.begin_delivery(envelope.job_id, token, self._clock.now()) is None:
             self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
@@ -688,6 +692,7 @@ class FeatureJobRunner:
         now: float,
         *,
         strip_hashtags: bool,
+        cancel_token: CancellationToken | None = None,
     ) -> str | None:
         """Translate automatic payload inline when within budget, else preserve original with Translate button."""
         prepared_content = (
@@ -698,7 +703,13 @@ class FeatureJobRunner:
             if payload.quoted_payload and payload.quoted_payload.content
             else None
         )
-        translated_target = self._translate_payload(payload, envelope.target.telegram_id, strip_hashtags=strip_hashtags)
+        translated_target = self._translate_payload(
+            payload,
+            envelope.target.telegram_id,
+            self._translation_budget(envelope),
+            cancel_token,
+            strip_hashtags=strip_hashtags,
+        )
         content_translated = prepared_content is not None and payload.content != prepared_content
         quote_translated = (
             prepared_quote is not None
@@ -717,27 +728,38 @@ class FeatureJobRunner:
             payload.quoted_payload.content = prepared_quote
         source_text = "\n\n".join(part for part in (prepared_content, prepared_quote) if part)
         snapshot = TranslationSourceSnapshot(
+            target=envelope.target,
+            thread_id=envelope.message_thread_id,
             chat_id=envelope.target.telegram_id,
             owner_id=envelope.actor_id if envelope.target.kind == TargetKind.USER else None,
             source_message_id=envelope.message_id,
             target_lang=translated_target or self._settings.translation_target_lang,
-            ui_locale="uk",
+            ui_locale=envelope.ui_locale,
             text=source_text,
             scope=TranslationScope.FULL_SOURCE,
             created_at=now,
             expires_at=now + SNAPSHOT_TTL_SECONDS,
         )
         snap_token = self._snapshots.save_source(snapshot)
-        button_label = self._render_catalog_text("translation-btn-translate", "uk", "Перекласти")
+        button_label = self._render_catalog_text("translation-btn-translate", envelope.ui_locale, "Перекласти")
         return build_translate_button_markup(button_label, snap_token)
 
     def _translate_payload(
-        self, payload: RichMediaPayload, chat_id: int, *, strip_hashtags: bool = False
+        self,
+        payload: RichMediaPayload,
+        chat_id: int,
+        budget: TranslationBudget,
+        cancel_token: CancellationToken | None,
+        *,
+        strip_hashtags: bool = False,
     ) -> str | None:
         target_lang: str | None = None
         if payload.content:
             payload.content = prepare_caption_text(payload.content, strip_hashtags=strip_hashtags)
-            translated = self._translation.translate_if_needed(payload.content, chat_id)
+            translated = self._translation.translate_document(
+                TranslationDocument(text=payload.content, chat_id=chat_id, budget=budget),
+                cancel_token=cancel_token,
+            )
             if translated is not None:
                 target_lang = translated.target_lang
             payload.content = append_translation(payload.content, translated)
@@ -745,7 +767,10 @@ class FeatureJobRunner:
             payload.quoted_payload.content = prepare_caption_text(
                 payload.quoted_payload.content, strip_hashtags=strip_hashtags
             )
-            quote_translated = self._translation.translate_if_needed(payload.quoted_payload.content, chat_id)
+            quote_translated = self._translation.translate_document(
+                TranslationDocument(text=payload.quoted_payload.content, chat_id=chat_id, budget=budget),
+                cancel_token=cancel_token,
+            )
             if quote_translated is not None and target_lang is None:
                 target_lang = quote_translated.target_lang
             payload.quoted_payload.content = append_translation(payload.quoted_payload.content, quote_translated)
@@ -767,6 +792,17 @@ class FeatureJobRunner:
         if self._catalog is None:
             return fallback
         return self._catalog.render(key, locale=locale, **kwargs)
+
+    def _translation_budget(self, envelope: JobEnvelope) -> TranslationBudget:
+        """Preserve the job and stage cutoffs while reserving five seconds for delivery."""
+        available = (
+            min(
+                envelope.deadline - self._clock.now(),
+                self._safety.execution_seconds - (monotonic() - self._stage_started),
+            )
+            - HANDOFF_RESERVE_SECONDS
+        )
+        return TranslationBudget(monotonic() + max(0.0, available))
 
     def _execute_explicit_translation(
         self,
@@ -792,7 +828,13 @@ class FeatureJobRunner:
             self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
             return JobOutcome.COMPLETE.value
 
+        if req.snapshot_expires_at is not None and req.snapshot_expires_at <= self._clock.now():
+            self._complete_zero(envelope.job_id, token, JobOutcome.EXPIRED)
+            return JobOutcome.EXPIRED.value
+        budget = self._translation_budget(envelope)
+        cancellation = TranslationJobCancellation(self._admission, self._policies, envelope)
         document = TranslationDocument(
+            budget=budget,
             text=req.text,
             chat_id=envelope.target.telegram_id,
             intent=TranslationIntent.EXPLICIT,
@@ -801,21 +843,11 @@ class FeatureJobRunner:
             target_lang=req.requested_target_lang,
         )
         try:
-            result = self._translation.translate_document(document)
+            result = self._translation.translate_document(document, cancel_token=cancellation)
         except TranslationError, ValueError:
-            notice = self._render_catalog_text(
-                "translation-unavailable",
-                req.ui_locale,
-                "Translation is temporarily unavailable. Please try again later.",
-            )
-            self._telegram.send_message(
-                envelope.target.telegram_id,
-                html.escape(notice),
-                reply_to_message_id=req.reply_to_message_id,
-                message_thread_id=req.message_thread_id,
-            )
-            self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
-            return JobOutcome.FAILED.value
+            return self._translation_failure(envelope, req, token, budget, cancellation)
+        if budget.is_expired() or cancellation.is_cancelled():
+            return self._translation_failure(envelope, req, token, budget, cancellation)
 
         if result is None:
             clean_alpha = sum(ch.isalpha() for ch in sanitize_for_detection(html.unescape(req.text)))
@@ -844,9 +876,53 @@ class FeatureJobRunner:
 
         label = self._render_catalog_text("translation-label", req.ui_locale, "Translated:")
         rendered = f"{result.flag} <b>{html.escape(label)}</b>\n{html.escape(result.text)}"
-        if not self._deliver_explicit_parts(envelope, req, rendered, now):
+        return self._send_explicit_result(envelope, req, rendered, token, now)
+
+    def _translation_failure(
+        self,
+        envelope: JobEnvelope,
+        req: ExplicitTranslationInput,
+        token: str,
+        budget: TranslationBudget,
+        cancellation: CancellationToken,
+    ) -> str:
+        """Settle interrupted work without disclosing output or sending to revoked destinations."""
+        if cancellation.is_cancelled():
+            outcome = JobOutcome.CANCELLED
+        elif budget.is_expired():
+            outcome = JobOutcome.EXPIRED
+        else:
+            outcome = JobOutcome.FAILED
+            notice = self._render_catalog_text("translation-unavailable", req.ui_locale, "Translation unavailable.")
+            self._telegram.send_message(
+                envelope.target.telegram_id,
+                html.escape(notice),
+                reply_to_message_id=req.reply_to_message_id,
+                message_thread_id=req.message_thread_id,
+            )
+        self._complete_zero(envelope.job_id, token, outcome)
+        return outcome.value
+
+    def _send_explicit_result(
+        self, envelope: JobEnvelope, req: ExplicitTranslationInput, rendered: str, token: str, now: float
+    ) -> str:
+        """Fence retained result delivery and settle only acknowledged sends."""
+        expires_at = req.snapshot_expires_at or envelope.accepted_at + SNAPSHOT_TTL_SECONDS
+        if self._snapshots is not None and not self._snapshots.begin_result(envelope.dedupe_key, expires_at):
             self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
             return JobOutcome.COMPLETE.value
+        if self._admission.begin_delivery(envelope.job_id, token, self._clock.now()) is None:
+            self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
+            return JobOutcome.CANCELLED.value
+        try:
+            delivered = self._deliver_explicit_parts(envelope, req, rendered, now)
+        except TelegramDeliveryUncertainError:
+            return TicketState.DELIVERY_UNCERTAIN.value
+        if not delivered:
+            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
+            return JobOutcome.COMPLETE.value
+        if self._snapshots is not None:
+            self._snapshots.complete_result(envelope.dedupe_key)
         split_def = self._registry.require(CommandName.TRANSLATE)
         self._lifecycle.complete(envelope.job_id, token, self._settlement_intent(envelope, split_def, now))
         return JobOutcome.COMPLETE.value
@@ -859,14 +935,19 @@ class FeatureJobRunner:
         now: float,
     ) -> bool:
         parts = split_html_message(rendered, limit=TELEGRAM_MESSAGE_LIMIT)
-        if len(parts) == 1 or self._snapshots is None:
-            self._telegram.send_message(
+        if len(parts) == 1:
+            sent = self._telegram.send_message(
                 envelope.target.telegram_id,
                 parts[0],
                 reply_to_message_id=req.reply_to_message_id,
                 message_thread_id=req.message_thread_id,
             )
+            if sent is None:
+                raise TelegramDeliveryUncertainError
             return True
+        if self._snapshots is None:
+            msg = "Multipart translation requires retained continuation storage."
+            raise TranslationError(msg)
         expires_at = req.snapshot_expires_at if req.snapshot_expires_at is not None else now + SNAPSHOT_TTL_SECONDS
         if expires_at <= now:
             expired_notice = self._render_catalog_text(
@@ -897,13 +978,16 @@ class FeatureJobRunner:
             reply_markup=markup,
             message_thread_id=req.message_thread_id,
         )
-        if sent_id is not None:
+        if sent_id is None:
+            raise TelegramDeliveryUncertainError
+        if self._snapshots is not None:
             state = TranslationChainState(
+                target=envelope.target,
                 chat_id=envelope.target.telegram_id,
                 owner_id=envelope.actor_id if envelope.target.kind == TargetKind.USER else None,
                 source_message_id=req.source_message_id,
                 thread_id=req.message_thread_id,
-                ui_locale=req.ui_locale,
+                ui_locale="en" if req.ui_locale == "en" else "uk",
                 parts=parts,
                 next_part=1,
                 last_message_id=sent_id,

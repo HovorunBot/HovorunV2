@@ -95,6 +95,19 @@ class TranslationError(Exception):
     """Report an unavailable or failed translation without including caption contents."""
 
 
+def check_translation_controls(
+    budget: TranslationBudget | None,
+    cancel_token: CancellationToken | None,
+) -> None:
+    """Raise a safe failure if the caller cancelled work or its original allowance expired."""
+    if cancel_token is not None and cancel_token.is_cancelled():
+        msg = "Translation request was cancelled"
+        raise TranslationError(msg)
+    if budget is not None and budget.is_expired():
+        msg = "Translation deadline exceeded"
+        raise TranslationError(msg)
+
+
 class LanguageDetectorPort(Protocol):
     """Detect source language independently of translation inference."""
 
@@ -113,13 +126,23 @@ class LanguageDetectorPort(Protocol):
 class TranslationEnginePort(Protocol):
     """Translate captions without exposing transport or model ownership."""
 
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        *,
+        budget: TranslationBudget | None = None,
+        cancel_token: CancellationToken | None = None,
+    ) -> str:
         """Return usable translation or raise a semantic failure for caller recovery.
 
         Args:
             text: Original caption with decoded HTML entities.
             source_lang: Normalized source language identifier.
             target_lang: Normalized target language identifier.
+            budget: Original monotonic execution deadline, when provided.
+            cancel_token: Live cooperative cancellation context, when provided.
 
         Returns:
             Nonblank translated text.

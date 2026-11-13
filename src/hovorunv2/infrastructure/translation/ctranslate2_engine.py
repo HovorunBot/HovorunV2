@@ -12,7 +12,13 @@ from hovorunv2.application.translation.document_segmentation import (
     assemble_translated_document,
     plan_document_segments,
 )
-from hovorunv2.application.translation.ports import TranslationEnginePort, TranslationError
+from hovorunv2.application.translation.ports import (
+    CancellationToken,
+    TranslationBudget,
+    TranslationEnginePort,
+    TranslationError,
+    check_translation_controls,
+)
 from hovorunv2.application.translation.translation_rules import resolve_model_language
 from hovorunv2.infrastructure.translation.model_store import ModelStore
 
@@ -41,13 +47,23 @@ class CTranslate2Engine(TranslationEnginePort):
             msg = "CTranslate2Engine cannot be shared across processes"
             raise ValueError(msg)
 
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        *,
+        budget: TranslationBudget | None = None,
+        cancel_token: CancellationToken | None = None,
+    ) -> str:
         """Translate supported captions while preserving line breaks and blank lines.
 
         Args:
             text: Original caption with decoded HTML entities.
             source_lang: Source ISO language identifier.
             target_lang: Target ISO language identifier.
+            budget: Original monotonic execution deadline, when provided.
+            cancel_token: Live cooperative cancellation context, when provided.
 
         Returns:
             Nonblank translated text preserving the original line structure.
@@ -55,11 +71,12 @@ class CTranslate2Engine(TranslationEnginePort):
         Raises:
             TranslationError: If provisioning, tokenization, or native inference fails.
         """
+        check_translation_controls(budget, cancel_token)
         self._require_owner()
         source, target = self._validate_request(text, source_lang, target_lang)
         try:
             translator, processor = self._load()
-            return self._translate_lines(text, source, target, translator, processor)
+            return self._translate_lines(text, source, target, translator, processor, budget, cancel_token)
         except TranslationError:
             raise
         except Exception:
@@ -105,6 +122,8 @@ class CTranslate2Engine(TranslationEnginePort):
         target: str,
         translator: ctranslate2.Translator,
         processor: sentencepiece.SentencePieceProcessor,
+        budget: TranslationBudget | None,
+        cancel_token: CancellationToken | None,
     ) -> str:
         planned = plan_document_segments(
             text,
@@ -116,16 +135,18 @@ class CTranslate2Engine(TranslationEnginePort):
         if any(len(pieces) > MAX_SOURCE_TOKENS for pieces in tokens):
             msg = "Caption segment exceeds translation token bounds"
             raise TranslationError(msg)
-        results = translator.translate_batch(
-            [[source, *pieces, END_OF_SENTENCE] for pieces in tokens],
-            target_prefix=[[target] for _segment in segments],
-            beam_size=BEAM_SIZE,
-            max_batch_size=INFERENCE_BATCH_SIZE,
-            max_decoding_length=MAX_DECODING_TOKENS,
-            return_end_token=True,
-        )
         translated_segments: list[str] = []
-        for result in results:
+        for source_tokens in tokens:
+            check_translation_controls(budget, cancel_token)
+            result = translator.translate_batch(
+                [[source, *source_tokens, END_OF_SENTENCE]],
+                target_prefix=[[target]],
+                beam_size=BEAM_SIZE,
+                max_batch_size=INFERENCE_BATCH_SIZE,
+                max_decoding_length=MAX_DECODING_TOKENS,
+                return_end_token=True,
+            )[0]
+            check_translation_controls(budget, cancel_token)
             pieces = result.hypotheses[0]
             if not pieces or pieces[-1] != END_OF_SENTENCE:
                 msg = "Local translation exceeded the output limit"

@@ -9,7 +9,6 @@ from types import TracebackType
 from typing import Self
 from urllib.parse import urljoin
 
-from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from curl_cffi.requests import Session
 from curl_cffi.requests.exceptions import RequestException
 
@@ -24,24 +23,9 @@ from hovorunv2.infrastructure.http_transport.native_http import (
     SENSITIVE_HEADERS,
     validate_http_url,
 )
+from hovorunv2.infrastructure.http_transport.response_body import BoundedResponseBody
 
 MIN_CURL_TIMEOUT_SECONDS = 0.001
-
-
-@dataclass
-class _BoundedBody:
-    limit: int
-    chunks: list[bytes] = field(default_factory=list, repr=False)
-    size: int = 0
-    exceeded: bool = False
-
-    def write(self, chunk: bytes) -> int:
-        self.size += len(chunk)
-        if self.size > self.limit:
-            self.exceeded = True
-            return CURL_WRITEFUNC_ERROR
-        self.chunks.append(chunk)
-        return len(chunk)
 
 
 @dataclass(frozen=True)
@@ -117,7 +101,7 @@ class ExtractionHTTPClient:
         cookies: dict[str, str],
         params: HTTPQuery | None,
     ) -> _ReadResponse:
-        body = _BoundedBody(limit)
+        body = BoundedResponseBody(limit)
         try:
             response = self._session.get(
                 url,

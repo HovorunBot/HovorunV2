@@ -131,7 +131,16 @@ class _StubTranslationEngine(TranslationEnginePort):
         self.calls: list[tuple[str, str, str]] = []
         self._fail = fail
 
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        *,
+        budget: TranslationBudget | None = None,
+        cancel_token: CancellationToken | None = None,
+    ) -> str:
+        del budget, cancel_token
         self.calls.append((text, source_lang, target_lang))
         if self._fail:
             msg = "Engine unavailable"
