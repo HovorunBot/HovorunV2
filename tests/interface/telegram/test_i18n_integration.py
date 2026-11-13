@@ -81,7 +81,7 @@ async def test_e2e_private_language_switch_immediate_effect(
 
     dp = await _build_dispatcher(test_container)
 
-    # 1. Default unconfigured user receives English /start
+    # 1. Default unconfigured user receives Ukrainian /start
     await dp.feed_update(
         recording_bot,
         Update(
@@ -92,15 +92,15 @@ async def test_e2e_private_language_switch_immediate_effect(
         ),
     )
     first_msg = next(c for c in reversed(recording_bot.session.calls) if isinstance(c, SendMessage))
-    assert "Your Telegram Media Companion" in first_msg.text
+    assert "Ваш медіа-помічник" in first_msg.text
 
-    # 2. Switch UI language to Ukrainian via /settings callback
+    # 2. Switch UI language to English via /settings callback
     settings_msg = _make_message(
         recording_bot, chat_id=user_id, chat_type="private", user_id=user_id, text="/settings", message_id=2
     )
     sessions = await test_container.get(SettingsSessionService)
     context = await sessions.prepare_listing(user_id, settings_msg.chat.id, settings_msg.message_id)
-    raw_callback = SettingsCallback(menu=SettingsMenu.UI_LANG, action=SettingsAction.SELECT, value="uk")
+    raw_callback = SettingsCallback(menu=SettingsMenu.UI_LANG, action=SettingsAction.SELECT, value="en")
     token = await sessions.issue(context, [raw_callback.pack()])
     callback = raw_callback.model_copy(update={"token": token})
     recording_bot.session.responses.extend([True, True])
@@ -109,7 +109,7 @@ async def test_e2e_private_language_switch_immediate_effect(
         Update(
             update_id=2,
             callback_query=CallbackQuery(
-                id="cb-priv-uk",
+                id="cb-priv-en",
                 from_user=User(id=user_id, is_bot=False, first_name="Tester"),
                 chat_instance="synth",
                 message=settings_msg,
@@ -120,11 +120,11 @@ async def test_e2e_private_language_switch_immediate_effect(
 
     answers = [c for c in recording_bot.session.calls if isinstance(c, AnswerCallbackQuery)]
     edits = [c for c in recording_bot.session.calls if isinstance(c, EditMessageText)]
-    assert answers[-1].text == "Мову успішно змінено на українську."
+    assert answers[-1].text == "Language successfully changed to English."
     assert edits[-1].text is not None
-    assert "Мова інтерфейсу" in edits[-1].text
+    assert "Interface Language" in edits[-1].text
 
-    # 3. Subsequent /help renders in Ukrainian
+    # 3. Subsequent /help renders in English
     await dp.feed_update(
         recording_bot,
         Update(
@@ -134,8 +134,8 @@ async def test_e2e_private_language_switch_immediate_effect(
             ),
         ),
     )
-    uk_help = next(c for c in reversed(recording_bot.session.calls) if isinstance(c, SendMessage))
-    assert "Ваш медіа-помічник" in uk_help.text
+    en_help = next(c for c in reversed(recording_bot.session.calls) if isinstance(c, SendMessage))
+    assert "Your Telegram Media Companion" in en_help.text
 
 
 async def test_e2e_group_vs_private_audience_isolation(
@@ -165,7 +165,7 @@ async def test_e2e_group_vs_private_audience_isolation(
 
     dp = await _build_dispatcher(test_container)
 
-    # Admin switches group UI language to Ukrainian
+    # Admin switches group UI language to English
     group_settings_msg = _make_message(
         recording_bot, chat_id=group_id, chat_type="supergroup", user_id=admin_id, text="/settings", message_id=10
     )
@@ -173,7 +173,7 @@ async def test_e2e_group_vs_private_audience_isolation(
         test_container,
         group_settings_msg,
         admin_id,
-        SettingsCallback(menu=SettingsMenu.UI_LANG, action=SettingsAction.SELECT, value="uk"),
+        SettingsCallback(menu=SettingsMenu.UI_LANG, action=SettingsAction.SELECT, value="en"),
     )
     recording_bot.session.responses.extend([True, True])
     await dp.feed_update(
@@ -181,7 +181,7 @@ async def test_e2e_group_vs_private_audience_isolation(
         Update(
             update_id=10,
             callback_query=CallbackQuery(
-                id="cb-grp-uk",
+                id="cb-grp-en",
                 from_user=User(id=admin_id, is_bot=False, first_name="Admin"),
                 chat_instance="synth",
                 message=group_settings_msg,
@@ -190,7 +190,7 @@ async def test_e2e_group_vs_private_audience_isolation(
         ),
     )
 
-    # Member triggers /help and /feedback in group -> receives Ukrainian
+    # Member triggers /help and /feedback in group -> receives English
     await dp.feed_update(
         recording_bot,
         Update(
@@ -216,10 +216,10 @@ async def test_e2e_group_vs_private_audience_isolation(
     )
 
     group_msgs = [c for c in recording_bot.session.calls if isinstance(c, SendMessage) and c.chat_id == group_id]
-    assert "Ваш медіа-помічник" in group_msgs[-2].text
-    assert "Як надіслати відгук" in group_msgs[-1].text
+    assert "Your Telegram Media Companion" in group_msgs[-2].text
+    assert "How to send feedback" in group_msgs[-1].text
 
-    # Same member triggers /help in private chat -> retains default English
+    # Same member triggers /help in private chat -> retains default Ukrainian
     await dp.feed_update(
         recording_bot,
         Update(
@@ -230,17 +230,17 @@ async def test_e2e_group_vs_private_audience_isolation(
         ),
     )
     priv_msgs = [c for c in recording_bot.session.calls if isinstance(c, SendMessage) and c.chat_id == member_id]
-    assert "Your Telegram Media Companion" in priv_msgs[-1].text
+    assert "Ваш медіа-помічник" in priv_msgs[-1].text
 
 
 async def test_e2e_fallback_for_unconfigured_and_unsupported_locales(test_container: AsyncContainer) -> None:
-    """Unconfigured entities and unsupported locale codes fall back to English."""
+    """Unconfigured entities and unsupported locale codes fall back to Ukrainian."""
     i18n_manager = await test_container.get(AudienceI18nManager)
-    assert await i18n_manager.get_user_locale(999_888_777) == "en"
+    assert await i18n_manager.get_user_locale(999_888_777) == "uk"
     assert await i18n_manager.get_chat_locale(-100_999_888_777) is None
 
     resolved = await i18n_manager.get_locale(
         event_chat=Chat(id=-100_999_888_777, type="supergroup"),
         event_from_user=User(id=999_888_777, is_bot=False, first_name="Fallback"),
     )
-    assert resolved == "en"
+    assert resolved == "uk"

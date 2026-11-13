@@ -8,6 +8,7 @@ from aiogram_i18n.exceptions import KeyNotFoundError
 from hovorunv2.interface.telegram.i18n import (
     DEFAULT_LOCALE,
     LOCALE_NAMES,
+    SECONDARY_FALLBACK_LOCALE,
     SUPPORTED_LOCALES,
     create_i18n_core,
 )
@@ -16,7 +17,8 @@ from hovorunv2.interface.telegram.i18n import (
 @pytest.mark.unit
 def test_supported_locales_constants() -> None:
     """Verify supported locales and default fallback configuration."""
-    assert DEFAULT_LOCALE == "en"
+    assert DEFAULT_LOCALE == "uk"
+    assert SECONDARY_FALLBACK_LOCALE == "en"
     assert SUPPORTED_LOCALES == ("uk", "en")
     assert LOCALE_NAMES["uk"] == "Українська"
     assert LOCALE_NAMES["en"] == "English"
@@ -95,3 +97,57 @@ def test_i18n_core_extensible_with_third_locale(tmp_path: Path) -> None:
 
     assert "pl" in core.locales
     assert core.get("welcome", "pl") == "Witaj w Hovorun!"
+
+
+@pytest.mark.unit
+def test_i18n_core_falls_back_from_uk_to_english_when_key_missing(tmp_path: Path) -> None:
+    """Verify missing Ukrainian keys fall back to English as secondary fallback."""
+    test_locales = tmp_path / "locales"
+    uk_dir = test_locales / "uk"
+    en_dir = test_locales / "en"
+    uk_dir.mkdir(parents=True)
+    en_dir.mkdir(parents=True)
+    (uk_dir / "messages.ftl").write_text("welcome = Вітаємо!\n", encoding="utf-8")
+    (en_dir / "messages.ftl").write_text("welcome = Welcome!\nonly-en = English fallback\n", encoding="utf-8")
+
+    core = create_i18n_core(locales_dir=test_locales, default_locale="uk", load_now=True)
+
+    assert core.get("welcome", "uk") == "Вітаємо!"
+    assert core.get("only-en", "uk") == "English fallback"
+    with pytest.raises(KeyNotFoundError):
+        core.get("missing-everywhere", "uk")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("count", "expected_en", "expected_uk"),
+    [
+        (0, "0 more parts available", "Доступно ще 0 частин"),
+        (1, "1 more part available", "Доступна ще 1 частина"),
+        (2, "2 more parts available", "Доступні ще 2 частини"),
+        (5, "5 more parts available", "Доступно ще 5 частин"),
+        (11, "11 more parts available", "Доступно ще 11 частин"),
+        (21, "21 more parts available", "Доступна ще 21 частина"),
+        (22, "22 more parts available", "Доступні ще 22 частини"),
+        (25, "25 more parts available", "Доступно ще 25 частин"),
+    ],
+)
+def test_translation_catalog_keys_and_pluralization(count: int, expected_en: str, expected_uk: str) -> None:
+    """Verify translation UI keys, interpolation, and Ukrainian/English plural boundaries."""
+    core = create_i18n_core(load_now=True)
+
+    assert core.get("translation-btn-translate", "uk") == "Перекласти"
+    assert core.get("translation-btn-translate", "en") == "Translate"
+    assert core.get("translation-btn-continue", "uk") == "Продовжити переклад"
+    assert core.get("translation-btn-continue", "en") == "Continue translation"
+    assert core.get("translation-progress", "uk")
+    assert core.get("translation-help", "uk")
+    assert core.get("translation-reply-required", "uk")
+    assert core.get("translation-empty-source", "uk")
+    assert core.get("translation-unavailable", "uk")
+    assert core.get("translation-expired", "uk")
+    assert core.get("translation-denied", "uk")
+    assert core.get("translation-already-complete", "uk")
+    assert "xx" in core.get("translation-invalid-target", "uk", language="xx")
+    assert core.get("translation-remaining-parts", "en", count=count) == expected_en
+    assert core.get("translation-remaining-parts", "uk", count=count) == expected_uk

@@ -152,3 +152,22 @@ settings-ignored-toggled = Toggled { $language }
 settings-invalid-speech-mode = Invalid speech mode.
 settings-speech-unavailable = Speech configuration unavailable.
 settings-speech-mode-set = Speech mode set to: { $mode }
+
+# Translation UI
+translation-label = Translated:
+translation-btn-translate = Translate
+translation-btn-continue = Continue translation
+translation-progress = Translating...
+translation-help = Reply to a message with /translate [target] to translate the replied text or selected quote.
+translation-reply-required = Reply to a message with text or caption to translate it.
+translation-empty-source = No translatable text found in the selected message or quote.
+translation-invalid-target = Unsupported target language: { $language }.
+translation-unavailable = Translation is temporarily unavailable. Please try again later.
+translation-expired = Translation snapshot has expired. Request a new translation.
+translation-denied = You do not have access to use translation in this chat.
+translation-already-complete = Translation is already complete.
+translation-same-language = Source text is already in { $language }.
+translation-remaining-parts = { $count ->
+    [one] { $count } more part available
+   *[other] { $count } more parts available
+}

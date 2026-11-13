@@ -4,6 +4,12 @@ import pytest
 
 from hovorunv2.application.data.languages import LANGUAGES
 from hovorunv2.application.translation import translation_rules as rules
+from hovorunv2.application.translation.ports import (
+    TranslationBudget,
+    TranslationDocument,
+    TranslationIntent,
+    TranslationScope,
+)
 from hovorunv2.domain import languages
 
 pytestmark = pytest.mark.unit
@@ -111,3 +117,64 @@ def test_model_language_resolution_respects_supported_scripts(code: str, expecte
 def test_legacy_catalog_entries_use_canonical_language_metadata(alias: str, canonical: str) -> None:
     """Preserve legacy settings identifiers without duplicating their display metadata."""
     assert LANGUAGES[alias] == LANGUAGES[canonical]
+
+
+def test_redacted_representations_do_not_expose_text_contents() -> None:
+    """Ensure translation documents and results never leak message contents in repr."""
+    private_source = "Sensitive source text"
+    private_translated = "Sensitive translated text"
+    document = TranslationDocument(
+        text=private_source,
+        chat_id=123,
+        intent=TranslationIntent.EXPLICIT,
+        scope=TranslationScope.SELECTED_QUOTE,
+        source_message_id=456,
+        target_lang="uk",
+    )
+    result = rules.TranslationResult(private_translated, "uk", "🇬🇧")
+
+    assert private_source not in repr(document)
+    assert private_translated not in repr(result)
+    assert f"text_len={len(private_source)}" in repr(document)
+    assert f"text_len={len(private_translated)}" in repr(result)
+
+
+def test_explicit_intent_bypasses_ignored_languages_without_allowing_same_language() -> None:
+    """Allow explicit requests for ignored languages while still suppressing same-language no-ops."""
+    assert not rules.should_translate_for_intent("fr", "uk", ("fr",), TranslationIntent.AUTOMATIC)
+    assert rules.should_translate_for_intent("fr", "uk", ("fr",), TranslationIntent.EXPLICIT)
+    assert not rules.should_translate_for_intent("uk", "uk", ("fr",), TranslationIntent.EXPLICIT)
+    assert not rules.should_translate_for_intent("und", "uk", (), TranslationIntent.EXPLICIT)
+
+
+def test_target_precedence_and_source_scope_selection() -> None:
+    """Apply per-request target precedence and explicit quote scope over full source."""
+    assert rules.resolve_target_language("de", "uk", "en") == "de"
+    assert rules.resolve_target_language(None, "uk", "en") == "uk"
+    assert rules.resolve_target_language("  ", None, "en") == "en"
+    with pytest.raises(ValueError, match="target language"):
+        rules.resolve_target_language(None, None, "und")
+
+    text, scope = rules.resolve_translation_source("Full caption text", "Selected quote")
+    assert text == "Selected quote"
+    assert scope == TranslationScope.SELECTED_QUOTE
+
+    full_text, full_scope = rules.resolve_translation_source("Full caption text")
+    assert full_text == "Full caption text"
+    assert full_scope == TranslationScope.FULL_SOURCE
+
+    with pytest.raises(ValueError, match="quote"):
+        rules.resolve_translation_source("Full caption text", "   ")
+
+
+def test_translation_budget_tracks_monotonic_deadline() -> None:
+    """Validate finite positive budgets and report remaining time and expiration."""
+    with pytest.raises(ValueError, match="finite and positive"):
+        TranslationBudget.from_timeout(0.0)
+    with pytest.raises(ValueError, match="finite and positive"):
+        TranslationBudget.from_timeout(float("inf"))
+
+    budget = TranslationBudget.from_timeout(15.0, now_monotonic=100.0)
+    assert budget.remaining_seconds(now_monotonic=110.0) == 5.0
+    assert not budget.is_expired(now_monotonic=114.9)
+    assert budget.is_expired(now_monotonic=115.0)

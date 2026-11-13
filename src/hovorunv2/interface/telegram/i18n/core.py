@@ -2,13 +2,15 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from aiogram_i18n.context import I18nContext
 from aiogram_i18n.cores import FluentRuntimeCore
+from aiogram_i18n.exceptions import KeyNotFoundError
 
 LOCALES_DIR: Final[Path] = Path(__file__).resolve().parent.parent / "locales"
-DEFAULT_LOCALE: Final[str] = "en"
+DEFAULT_LOCALE: Final[str] = "uk"
+SECONDARY_FALLBACK_LOCALE: Final[str] = "en"
 SUPPORTED_LOCALES: Final[tuple[str, ...]] = ("uk", "en")
 LOCALE_NAMES: Final[dict[str, str]] = {
     "uk": "Українська",
@@ -16,26 +18,52 @@ LOCALE_NAMES: Final[dict[str, str]] = {
 }
 
 
+class FallbackFluentRuntimeCore(FluentRuntimeCore):
+    """FluentRuntimeCore with secondary locale fallback when a key is missing in the primary locale."""
+
+    def __init__(
+        self,
+        *args: Any,
+        secondary_fallback_locale: str | None = SECONDARY_FALLBACK_LOCALE,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._secondary_fallback_locale = secondary_fallback_locale
+
+    def get(self, message_id: str, locale: str | None = None, /, **kwargs: Any) -> str:
+        """Resolve a localized message, falling back to the secondary locale if missing."""
+        try:
+            return super().get(message_id, locale, **kwargs)
+        except KeyNotFoundError:
+            fallback = self._secondary_fallback_locale
+            if fallback is not None and fallback in self.locales and locale != fallback:
+                return super().get(message_id, fallback, **kwargs)
+            raise
+
+
 def create_i18n_core(
     locales_dir: Path | None = None,
     default_locale: str = DEFAULT_LOCALE,
     *,
+    secondary_fallback_locale: str | None = SECONDARY_FALLBACK_LOCALE,
     load_now: bool = False,
-) -> FluentRuntimeCore:
+) -> FallbackFluentRuntimeCore:
     """Create a configured FluentRuntimeCore instance for Telegram interaction catalogs.
 
     Args:
         locales_dir: Directory containing locale subfolders with .ftl files.
         default_locale: Default fallback locale code.
+        secondary_fallback_locale: Secondary fallback locale when a key is absent in the default locale.
         load_now: Whether to discover and load locales synchronously immediately.
 
     Returns:
-        Configured FluentRuntimeCore instance with isolating disabled for clean Telegram HTML.
+        Configured FallbackFluentRuntimeCore instance with isolating disabled for clean Telegram HTML.
     """
     path = locales_dir if locales_dir is not None else LOCALES_DIR
-    core = FluentRuntimeCore(
+    core = FallbackFluentRuntimeCore(
         path=path,
         default_locale=default_locale,
+        secondary_fallback_locale=secondary_fallback_locale,
         use_isolating=False,
         raise_key_error=True,
     )

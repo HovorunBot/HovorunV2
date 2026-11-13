@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from typing import Final, NamedTuple
 
 from hovorunv2.application.data.languages import ISO_CODE_LEN, LANGUAGES, REGIONAL_INDICATOR_OFFSET
+from hovorunv2.application.translation.ports import TranslationIntent, TranslationScope
 from hovorunv2.domain.languages import normalize_language_code
 
 DEFAULT_TRANSLATION_FLAG = "🌐"
@@ -18,6 +19,10 @@ class TranslationResult(NamedTuple):
     text: str
     target_lang: str
     flag: str
+
+    def __repr__(self) -> str:
+        """Return metadata without exposing translated text contents."""
+        return f"TranslationResult(target_lang={self.target_lang!r}, flag={self.flag!r}, text_len={len(self.text)})"
 
 
 def translation_flag(lang_code: str) -> str:
@@ -188,3 +193,79 @@ def should_translate_language(source_lang: str, target_lang: str, ignored_langs:
         if code == source_base or _language_identity(code) == source:
             return False
     return True
+
+
+def should_translate_for_intent(
+    source_lang: str,
+    target_lang: str,
+    ignored_langs: Iterable[str],
+    intent: TranslationIntent,
+) -> bool:
+    """Gate translation according to automatic vs explicit request intent.
+
+    Args:
+        source_lang: Detected source language identifier.
+        target_lang: Effective target language preference.
+        ignored_langs: Chat ignored-language preferences for automatic captions.
+        intent: Whether the request is automatic or explicitly requested by a user.
+
+    Returns:
+        Whether translation should proceed for the given intent.
+    """
+    effective_ignored = () if intent == TranslationIntent.EXPLICIT else ignored_langs
+    return should_translate_language(source_lang, target_lang, effective_ignored)
+
+
+def resolve_target_language(
+    requested_target: str | None,
+    chat_target: str | None,
+    default_target: str,
+) -> str:
+    """Resolve per-request target language without mutating persisted settings.
+
+    Args:
+        requested_target: Optional per-request target language override.
+        chat_target: Optional persisted chat target language.
+        default_target: Application fallback target language.
+
+    Returns:
+        Normalized effective target language code.
+
+    Raises:
+        ValueError: If no valid target language can be resolved.
+    """
+    for candidate in (requested_target, chat_target, default_target):
+        if candidate is None or not candidate.strip():
+            continue
+        normalized = normalize_language_code(candidate)
+        if normalized and normalized != "und":
+            return normalized
+    msg = "Translation target language could not be resolved"
+    raise ValueError(msg)
+
+
+def resolve_translation_source(
+    full_text: str,
+    selected_quote: str | None = None,
+) -> tuple[str, TranslationScope]:
+    """Select either the explicit quote or full source text for translation.
+
+    Args:
+        full_text: Complete caption or replied message text.
+        selected_quote: Optional explicit quote selected by the user.
+
+    Returns:
+        Tuple of ``(selected_text, scope)``.
+
+    Raises:
+        ValueError: If an explicit quote or full source text is empty.
+    """
+    if selected_quote is not None:
+        if not selected_quote.strip():
+            msg = "Selected quote must not be empty"
+            raise ValueError(msg)
+        return selected_quote, TranslationScope.SELECTED_QUOTE
+    if not full_text.strip():
+        msg = "Translation source text must not be empty"
+        raise ValueError(msg)
+    return full_text, TranslationScope.FULL_SOURCE

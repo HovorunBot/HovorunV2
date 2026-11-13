@@ -27,7 +27,7 @@ class HTTPReply:
     """One synthetic external response or an intentional uncertain connection close."""
 
     body: bytes = b""
-    status: HTTPStatus = HTTPStatus.OK
+    status: HTTPStatus | int = HTTPStatus.OK
     headers: Mapping[str, str] = field(default_factory=dict)
     disconnect: bool = False
     delay_seconds: float = 0

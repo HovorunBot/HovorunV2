@@ -4,12 +4,21 @@ import html
 from typing import Protocol
 
 from hovorunv2.application.configuration import AppSettings
-from hovorunv2.application.translation.ports import LanguageDetectorPort, TranslationEnginePort, TranslationError
+from hovorunv2.application.translation.ports import (
+    CancellationToken,
+    LanguageDetectorPort,
+    TranslationBudget,
+    TranslationDocument,
+    TranslationEnginePort,
+    TranslationError,
+    TranslationIntent,
+)
 from hovorunv2.application.translation.translation_rules import (
     MIN_DETECTABLE_CHARS,
     TranslationResult,
+    resolve_target_language,
     sanitize_for_detection,
-    should_translate_language,
+    should_translate_for_intent,
     translation_flag,
 )
 from hovorunv2.domain.languages import normalize_language_code
@@ -48,21 +57,84 @@ class NativeTranslationService:
         Returns:
             Selected translation, or None for blank text, ignored languages, or provider failure.
         """
-        raw_text = html.unescape(text)
+        document = TranslationDocument(text=text, chat_id=chat_id, intent=TranslationIntent.AUTOMATIC)
+        return self.translate_document(document)
+
+    def translate_document(
+        self,
+        document: TranslationDocument,
+        *,
+        cancel_token: CancellationToken | None = None,
+    ) -> TranslationResult | None:
+        """Translate a whole document according to request intent and eligibility rules.
+
+        Args:
+            document: Whole-document translation request and scope metadata.
+            cancel_token: Optional cooperative cancellation token.
+
+        Returns:
+            Complete translated result, or ``None`` when translation is skipped.
+
+        Raises:
+            ValueError: If an explicit request has invalid source text or target language.
+        """
+        if not self._can_proceed(document.budget, cancel_token, document.intent):
+            return None
+        raw_text = html.unescape(document.text)
+        if document.intent == TranslationIntent.EXPLICIT and not raw_text.strip():
+            msg = "Translation source text must not be empty"
+            raise ValueError(msg)
         clean = sanitize_for_detection(raw_text)
         if sum(character.isalpha() for character in clean) < MIN_DETECTABLE_CHARS:
             return None
-        target, ignored = self._current_languages(chat_id)
+        return self._run_translation(document, raw_text, clean)
+
+    def _can_proceed(
+        self,
+        budget: TranslationBudget | None,
+        cancel_token: CancellationToken | None,
+        intent: TranslationIntent,
+    ) -> bool:
+        if cancel_token is not None and cancel_token.is_cancelled():
+            if intent == TranslationIntent.EXPLICIT:
+                msg = "Translation request was cancelled"
+                raise TranslationError(msg)
+            return False
+        if budget is not None and budget.is_expired():
+            if intent == TranslationIntent.EXPLICIT:
+                msg = "Translation deadline exceeded"
+                raise TranslationError(msg)
+            return False
+        return True
+
+    def _run_translation(
+        self,
+        document: TranslationDocument,
+        raw_text: str,
+        clean: str,
+    ) -> TranslationResult | None:
+        chat_target, ignored = self._current_languages(document.chat_id)
         try:
+            target = resolve_target_language(
+                document.target_lang,
+                chat_target,
+                self._settings.translation_target_lang,
+            )
             source = normalize_language_code(self._detector.detect(clean))
-            if not should_translate_language(source, target, ignored):
+            if not should_translate_for_intent(source, target, ignored, document.intent):
                 return None
-            translated = self._engine.translate(raw_text, source, normalize_language_code(target))
+            translated = self._engine.translate(raw_text, source, target)
         except TranslationError, ValueError:
+            if document.intent == TranslationIntent.EXPLICIT:
+                raise
             return None
-        if not translated.strip():
+        stripped = translated.strip()
+        if not stripped:
+            if document.intent == TranslationIntent.EXPLICIT:
+                msg = "Translation engine returned empty text"
+                raise TranslationError(msg)
             return None
-        return TranslationResult(translated.strip(), target, translation_flag(source))
+        return TranslationResult(stripped, target, translation_flag(source))
 
     def _current_languages(self, chat_id: int) -> tuple[str, tuple[str, ...]]:
         preferences = self._preferences.chat_translation_settings(chat_id)

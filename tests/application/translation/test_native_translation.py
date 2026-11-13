@@ -9,6 +9,14 @@ from dishka import AsyncContainer
 
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.translation.native_translation import NativeTranslationService
+from hovorunv2.application.translation.ports import (
+    CancellationToken,
+    TranslationBudget,
+    TranslationDocument,
+    TranslationEnginePort,
+    TranslationError,
+    TranslationIntent,
+)
 from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.infrastructure.config import Settings
@@ -116,3 +124,78 @@ async def test_incomplete_local_translation_keeps_the_entire_original_caption(
             assert await asyncio.to_thread(service.escape_and_translate, caption, GROUP) == caption
         finally:
             engine.close()
+
+
+class _StubTranslationEngine(TranslationEnginePort):
+    def __init__(self, *, fail: bool = False) -> None:
+        self.calls: list[tuple[str, str, str]] = []
+        self._fail = fail
+
+    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+        self.calls.append((text, source_lang, target_lang))
+        if self._fail:
+            msg = "Engine unavailable"
+            raise TranslationError(msg)
+        return f"[{target_lang}] {text}"
+
+
+class _CancelledToken(CancellationToken):
+    def is_cancelled(self) -> bool:
+        return True
+
+
+async def test_explicit_translation_bypasses_ignored_languages_without_mutating_chat_settings(
+    test_container: AsyncContainer, postgres_database_url: str
+) -> None:
+    """Bypass ignored_languages and apply per-request target override for explicit requests only."""
+    settings = await test_container.get(Settings)
+    chats = await test_container.get(ChatStore)
+    await chats.update_translation_settings(GROUP, "uk", ["fr"], actor=ActorContext.cli())
+
+    engine = _StubTranslationEngine()
+    with WorkerDatabase(database_config(postgres_database_url)) as worker:
+        service = NativeTranslationService(Py3LangIdDetector(), engine, settings, worker.policies)
+        auto_result = await asyncio.to_thread(service.translate_if_needed, CAPTION, GROUP)
+        assert auto_result is None
+        assert engine.calls == []
+
+        explicit_doc = TranslationDocument(
+            text=CAPTION,
+            chat_id=GROUP,
+            intent=TranslationIntent.EXPLICIT,
+            target_lang="de",
+        )
+        explicit_result = await asyncio.to_thread(service.translate_document, explicit_doc)
+        assert explicit_result is not None
+        assert explicit_result.target_lang == "de"
+        assert explicit_result.text == f"[de] {CAPTION}"
+        assert engine.calls == [(CAPTION, "fr", "de")]
+        persisted = await asyncio.to_thread(worker.policies.chat_translation_settings, GROUP)
+        assert persisted == ("uk", ("fr",))
+
+
+async def test_explicit_translation_raises_on_engine_failure_cancellation_or_expired_budget(
+    test_container: AsyncContainer, postgres_database_url: str
+) -> None:
+    """Propagate TranslationError for explicit requests while keeping automatic captions resilient."""
+    settings = await test_container.get(Settings)
+    failing_engine = _StubTranslationEngine(fail=True)
+    with WorkerDatabase(database_config(postgres_database_url)) as worker:
+        service = NativeTranslationService(Py3LangIdDetector(), failing_engine, settings, worker.policies)
+        assert await asyncio.to_thread(service.translate_if_needed, CAPTION, GROUP) is None
+
+        explicit_doc = TranslationDocument(text=CAPTION, chat_id=GROUP, intent=TranslationIntent.EXPLICIT)
+        with pytest.raises(TranslationError, match="Engine unavailable"):
+            await asyncio.to_thread(service.translate_document, explicit_doc)
+
+        with pytest.raises(TranslationError, match="cancelled"):
+            await asyncio.to_thread(service.translate_document, explicit_doc, cancel_token=_CancelledToken())
+
+        expired_doc = TranslationDocument(
+            text=CAPTION,
+            chat_id=GROUP,
+            intent=TranslationIntent.EXPLICIT,
+            budget=TranslationBudget(deadline_monotonic=0.0),
+        )
+        with pytest.raises(TranslationError, match="deadline"):
+            await asyncio.to_thread(service.translate_document, expired_doc)

@@ -156,3 +156,24 @@ settings-ignored-toggled = Перемкнуто { $language }
 settings-invalid-speech-mode = Некоректний режим мовлення.
 settings-speech-unavailable = Налаштування мовлення недоступні.
 settings-speech-mode-set = Режим мовлення змінено на: { $mode }
+
+# Translation UI
+translation-label = Переклад:
+translation-btn-translate = Перекласти
+translation-btn-continue = Продовжити переклад
+translation-progress = Перекладаю...
+translation-help = Відповідайте на повідомлення командою /translate [мова], щоб перекласти текст або вибрану цитату.
+translation-reply-required = Дайте відповідь на повідомлення з текстом або підписом, щоб перекласти його.
+translation-empty-source = У вибраному повідомленні або цитаті немає тексту для перекладу.
+translation-invalid-target = Мова перекладу не підтримується: { $language }.
+translation-unavailable = Переклад тимчасово недоступний. Спробуйте пізніше.
+translation-expired = Термін дії перекладу минув. Запитайте переклад знову.
+translation-denied = У вас немає доступу до перекладу в цьому чаті.
+translation-already-complete = Переклад уже завершено.
+translation-same-language = Текст уже написаний мовою: { $language }.
+translation-remaining-parts = { $count ->
+    [one] Доступна ще { $count } частина
+    [few] Доступні ще { $count } частини
+    [many] Доступно ще { $count } частин
+   *[other] Доступно ще { $count } частини
+}
