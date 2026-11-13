@@ -53,6 +53,11 @@ class AppSettings(Protocol):
         ...
 
     @property
+    def translation_online_url(self) -> str | None:
+        """Return an optional override URL for the online translation endpoint."""
+        ...
+
+    @property
     def instagram_sessionid(self) -> str | None:
         """Return the optional Instagram session cookie."""
         ...

@@ -1,6 +1,7 @@
 """Select optional local caption translation using fresh persisted preferences."""
 
 import html
+import logging
 from typing import Protocol
 
 from hovorunv2.application.configuration import AppSettings
@@ -23,6 +24,8 @@ from hovorunv2.application.translation.translation_rules import (
     translation_flag,
 )
 from hovorunv2.domain.languages import normalize_language_code
+
+logger = logging.getLogger(__name__)
 
 
 class TranslationSettingsPort(Protocol):
@@ -134,9 +137,15 @@ class NativeTranslationService:
                 cancel_token=cancel_token,
             )
             check_translation_controls(document.budget, cancel_token)
-        except TranslationError, ValueError:
+        except (TranslationError, ValueError) as exc:
             if document.intent == TranslationIntent.EXPLICIT:
                 raise
+            logger.warning(
+                "Automatic translation skipped for chat=%s (%s): %s",
+                document.chat_id,
+                f"{source}->{target}" if "source" in locals() and "target" in locals() else "uninitialized",
+                type(exc).__name__,
+            )
             return None
         stripped = translated.strip()
         if not stripped:

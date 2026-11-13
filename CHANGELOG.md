@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **translation**: restore direct Google GTX endpoint with env override
+
 ## v0.6.0.3 (2026-11-14)
 
 ### Fix

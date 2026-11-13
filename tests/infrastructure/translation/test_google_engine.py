@@ -300,3 +300,24 @@ def test_google_hard_deadline_stops_drip_fed_response() -> None:
             engine.translate("Bonjour", "fr", "uk", budget=TranslationBudget.from_timeout(0.15))
         assert time.monotonic() - started < 0.8
         assert len(server.requests) == 1
+
+
+def test_google_gtx_json_endpoint_translates_segments() -> None:
+    """When configured with a GTX URL, GoogleTranslationEngine sends client=gtx and parses JSON fragments."""
+    payload = (
+        b'[[["\xd0\x9f\xd1\x80\xd0\xb8\xd0\xb2\xd1\x96\xd1\x82. ", "Hola. "],'
+        b' ["\xd0\xa1\xd0\xb2\xd1\x96\xd1\x82.", "Mundo."]]]'
+    )
+    with (
+        HTTPFixture({"/translate_a/single": [HTTPReply(body=payload, status=HTTPStatus.OK)]}) as server,
+        GoogleTranslationEngine(base_url=server.url("/translate_a/single")) as engine,
+    ):
+        translated = engine.translate("Hola. Mundo.", "es", "uk")
+    assert translated == "Привіт. Світ."
+    assert len(server.requests) == 1
+    path = server.requests[0].path
+    assert "client=gtx" in path
+    assert "dt=t" in path
+    assert "sl=es" in path
+    assert "tl=uk" in path
+    assert "q=" in path

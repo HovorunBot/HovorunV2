@@ -1,5 +1,6 @@
 """Bounded account-free Google Translate infrastructure adapter with Tenacity retries."""
 
+import json
 import logging
 import random
 import time
@@ -15,7 +16,6 @@ from curl_cffi.requests import Response, Session
 from curl_cffi.requests.exceptions import RequestException
 from tenacity import RetryCallState, Retrying, retry_if_exception_type, stop_after_attempt
 lazy from bs4 import BeautifulSoup
-lazy from deep_translator import GoogleTranslator
 lazy from deep_translator.constants import GOOGLE_LANGUAGES_TO_CODES
 
 from hovorunv2.application.translation.document_segmentation import (
@@ -41,6 +41,7 @@ GOOGLE_BACKOFF_BASE_SECONDS: Final = 2.0
 GOOGLE_BACKOFF_MAX_SECONDS: Final = 8.0
 GOOGLE_MAX_JITTER_SECONDS: Final = 0.5
 GOOGLE_MAX_RESPONSE_BYTES: Final = 1024 * 1024
+GOOGLE_TRANSLATION_URL: Final = "https://translate.googleapis.com/translate_a/single"
 MIN_CURL_TIMEOUT_SECONDS: Final = 0.001
 HTTP_STATUS_ENHANCE_YOUR_CALM: Final = 427
 GOOGLE_RETRYABLE_STATUSES: Final[frozenset[int]] = frozenset(
@@ -202,7 +203,7 @@ class GoogleTranslationEngine(TranslationEnginePort):
         sleep_fn: Callable[[float], None] = time.sleep,
         jitter_fn: Callable[[float], float] | None = None,
     ) -> None:
-        self._base_url = base_url
+        self._base_url = base_url.strip() or None if base_url else None
         self._total_timeout_seconds = total_timeout_seconds
         self._connect_timeout_seconds = connect_timeout_seconds
         self._read_timeout_seconds = read_timeout_seconds
@@ -296,8 +297,7 @@ class GoogleTranslationEngine(TranslationEnginePort):
             msg = f"Unsupported Google translation pair: {source_lang} -> {target_lang}"
             raise ValueError(msg)
 
-        translator = GoogleTranslator(source=google_source, target=google_target)
-        request_url = self._base_url if self._base_url is not None else str(translator._base_url)  # noqa: SLF001
+        request_url = self._base_url if self._base_url is not None else GOOGLE_TRANSLATION_URL
         planned = plan_document_segments(text, DEFAULT_GOOGLE_SEGMENT_CHARS)
         translated_segments: list[str] = []
 
@@ -317,12 +317,15 @@ class GoogleTranslationEngine(TranslationEnginePort):
         try:
             for line in planned:
                 for segment in line.segments:
-                    params = dict(translator._url_params)  # noqa: SLF001
-                    params["tl"] = google_target
-                    params["sl"] = google_source
-                    params[str(translator.payload_key or "q")] = segment
+                    params = {
+                        "client": "gtx",
+                        "sl": google_source,
+                        "tl": google_target,
+                        "dt": "t",
+                        "q": segment,
+                    }
                     translated_segments.append(
-                        retrying(self._attempt_request, translator, request_url, params, budget, cancel_token)
+                        retrying(self._attempt_request, request_url, params, budget, cancel_token)
                     )
         except _GoogleTransientError as exc:
             raise TranslationError(str(exc)) from None
@@ -330,7 +333,6 @@ class GoogleTranslationEngine(TranslationEnginePort):
 
     def _attempt_request(
         self,
-        translator: GoogleTranslator,
         request_url: str,
         params: dict[str, str],
         budget: TranslationBudget,
@@ -391,6 +393,13 @@ class GoogleTranslationEngine(TranslationEnginePort):
             msg = f"Google translation failed with HTTP status {status}"
             raise TranslationError(msg)
 
+        if html_body.lstrip().startswith("["):
+            gtx_translated = _extract_gtx_translation(html_body)
+            if not gtx_translated:
+                msg = "Google translation response contained empty text"
+                raise TranslationError(msg)
+            return gtx_translated
+
         soup = BeautifulSoup(html_body, "html.parser")
         element = soup.find("div", class_="t0")
         if element is None:
@@ -403,3 +412,17 @@ class GoogleTranslationEngine(TranslationEnginePort):
             msg = "Google translation response contained empty text"
             raise TranslationError(msg)
         return translated
+
+
+def _extract_gtx_translation(body: str) -> str:
+    """Extract joined sentence fragments from a Google GTX JSON payload."""
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        msg = "Google translation response contained invalid JSON"
+        raise TranslationError(msg) from None
+    if not isinstance(payload, list) or not payload or not isinstance(payload[0], list):
+        msg = "Google translation response missing result container"
+        raise TranslationError(msg)
+    parts = [item[0] for item in payload[0] if isinstance(item, list) and item and isinstance(item[0], str)]
+    return "".join(parts).strip()

@@ -78,7 +78,7 @@ def create_feature_runner(
     downloader = NativeMediaDownloader(http, destination_policy=http)
     delivery = custom_delivery or NativeTelegramDelivery(api, downloader)
     model_http = resources.enter_context(ModelHTTPClient(total_timeout=MODEL_DOWNLOAD_SECONDS))
-    google_engine = GoogleTranslationEngine()
+    google_engine = GoogleTranslationEngine(base_url=settings.translation_online_url)
     resources.callback(google_engine.close)
     local_engine = CTranslate2Engine(ModelStore(settings.translation_model_dir, model_http))
     resources.callback(local_engine.close)

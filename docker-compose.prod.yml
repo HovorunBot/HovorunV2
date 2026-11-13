@@ -158,6 +158,8 @@ services:
       TRANSLATION_MODEL_DIR: /app/data/models/m2m100-418M-int8
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
+      TRANSLATION_ONLINE_ENABLED: ${TRANSLATION_ONLINE_ENABLED:-true}
+      TRANSLATION_ONLINE_URL: ${TRANSLATION_ONLINE_URL:-}
     command:
       - /app/.venv/bin/celery
       - -A
@@ -204,6 +206,8 @@ services:
       TRANSLATION_MODEL_DIR: /app/data/models/m2m100-418M-int8
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
+      TRANSLATION_ONLINE_ENABLED: ${TRANSLATION_ONLINE_ENABLED:-true}
+      TRANSLATION_ONLINE_URL: ${TRANSLATION_ONLINE_URL:-}
     command:
       - /app/.venv/bin/celery
       - -A
