@@ -18,22 +18,23 @@ from hovorunv2.application.groups.activation import ActivationAction, Activation
 from hovorunv2.application.groups.activation_service import GroupActivationService
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.domain.enums import CommandName
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager, get_message
 from hovorunv2.interface.telegram.settings.callbacks import AccessAction, AccessCallback
 
 from .base import BaseCommand
 
 logger = logging.getLogger(__name__)
 
-RESULT_TEXT = {
-    ActivationOutcome.APPROVED: "✅ Group approval saved. Processing remains subject to current access checks.",
-    ActivationOutcome.ALREADY_APPROVED: "ℹ️ This chat is already approved.",  # noqa: RUF001
-    ActivationOutcome.REQUESTED: "⏳ Access request saved for bot administrator review.",
-    ActivationOutcome.ALREADY_PENDING: "⏳ Approval is already pending.",
-    ActivationOutcome.REJECTED: "❌ Access request rejected.",
-    ActivationOutcome.DENIED: "❌ Trusted users can activate the bot. Other group admins can request approval.",
-    ActivationOutcome.UNAVAILABLE: "❌ Group or user unavailable. Run /allow_chat in the group to refresh.",
-    ActivationOutcome.GROUP_BANNED: "❌ This group is restricted. Approval cannot remove that restriction.",
-    ActivationOutcome.STALE_REQUEST: "❌ This request is no longer available.",
+RESULT_KEYS: dict[ActivationOutcome, str] = {
+    ActivationOutcome.APPROVED: "access-approved",
+    ActivationOutcome.ALREADY_APPROVED: "access-already-approved",
+    ActivationOutcome.REQUESTED: "access-requested",
+    ActivationOutcome.ALREADY_PENDING: "access-already-pending",
+    ActivationOutcome.REJECTED: "access-rejected",
+    ActivationOutcome.DENIED: "access-denied",
+    ActivationOutcome.UNAVAILABLE: "access-unavailable",
+    ActivationOutcome.GROUP_BANNED: "access-group-banned",
+    ActivationOutcome.STALE_REQUEST: "access-stale-request",
 }
 SUCCESS_OUTCOMES = {
     ActivationOutcome.APPROVED,
@@ -49,10 +50,16 @@ class AccessCommand(BaseCommand):
 
     POLICY: ClassVar[CommandPolicy] = CommandPolicy(requires_admin=False, requires_approval=False, is_toggleable=False)
 
-    def __init__(self, activation_service: GroupActivationService, owner_notifier: OwnerNotifier) -> None:
-        """Receive mandatory activation and durable administrator-notification dependencies."""
+    def __init__(
+        self,
+        activation_service: GroupActivationService,
+        owner_notifier: OwnerNotifier,
+        i18n_manager: AudienceI18nManager,
+    ) -> None:
+        """Receive mandatory activation, administrator-notification, and i18n dependencies."""
         self._activation = activation_service
         self._notifier = owner_notifier
+        self._i18n_manager = i18n_manager
 
     @property
     def name(self) -> str:
@@ -77,18 +84,18 @@ class AccessCommand(BaseCommand):
             **kwargs: Additional handler context, unused.
         """
         if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
-            await message.answer("Run /allow_chat in the group you want to activate.")
+            await message.answer(get_message("access-run-in-group"))
             return
         if message.from_user is None or message.from_user.is_bot or message.sender_chat is not None:
             return
         logger.info("Processing /allow_chat command in chat %d from user %d", message.chat.id, message.from_user.id)
         target = await self._activation.target(message.chat.id)
         if target is None:
-            await message.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE])
+            await message.answer(get_message(RESULT_KEYS[ActivationOutcome.UNAVAILABLE]))
             return
         result = await self._enable(message, message.from_user, bot, target)
         logger.info("Allow chat result in chat %d: outcome=%s", message.chat.id, result.outcome.value)
-        await message.answer(RESULT_TEXT[result.outcome])
+        await message.answer(get_message(RESULT_KEYS[result.outcome]))
 
     async def _enable(self, message: Message, actor: User, bot: Bot, target: PermissionTarget) -> ActivationResult:
         result = await self._activation.enable(actor.id, target, message.chat.type)
@@ -128,7 +135,10 @@ class AccessCommand(BaseCommand):
                         action=action,
                     ).pack(),
                 )
-                for label, action in (("✅ Approve", AccessAction.APPROVE), ("❌ Reject", AccessAction.REJECT))
+                for label, action in (
+                    (get_message("access-btn-approve"), AccessAction.APPROVE),
+                    (get_message("access-btn-reject"), AccessAction.REJECT),
+                )
             ]
         )
         await self._notifier.broadcast(bot, request_text, reply_markup=builder.as_markup(), include_admins=True)
@@ -141,12 +151,13 @@ class AccessCommand(BaseCommand):
             callback_data: Unpacked access callback payload.
             bot: Telegram bot used to confirm approvals.
         """
+        user_locale = await self._i18n_manager.get_user_locale(query.from_user.id)
         message = query.message
         if not isinstance(message, Message) or query.from_user.is_bot:
-            await query.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE], show_alert=True)
+            await query.answer(get_message(RESULT_KEYS[ActivationOutcome.UNAVAILABLE], user_locale), show_alert=True)
             return
         if callback_data.group_id <= 0 or callback_data.generation <= 0:
-            await query.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE], show_alert=True)
+            await query.answer(get_message(RESULT_KEYS[ActivationOutcome.UNAVAILABLE], user_locale), show_alert=True)
             return
         logger.info(
             "Processing access callback in chat %d: action=%s group_id=%d",
@@ -160,12 +171,14 @@ class AccessCommand(BaseCommand):
                 message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}
                 or message.chat.id != callback_data.chat_id
             ):
-                await query.answer(RESULT_TEXT[ActivationOutcome.UNAVAILABLE], show_alert=True)
+                await query.answer(
+                    get_message(RESULT_KEYS[ActivationOutcome.UNAVAILABLE], user_locale), show_alert=True
+                )
                 return
             result = await self._enable(message, query.from_user, bot, target)
         else:
             if message.chat.type != ChatType.PRIVATE or message.chat.id != query.from_user.id:
-                await query.answer("Bot administration requires a private chat.", show_alert=True)
+                await query.answer(get_message("access-private-required", user_locale), show_alert=True)
                 return
             action = (
                 ActivationAction.APPROVE if callback_data.action == AccessAction.APPROVE else ActivationAction.REJECT
@@ -174,21 +187,27 @@ class AccessCommand(BaseCommand):
                 query.from_user.id, target, callback_data.request_id, action, message.chat.type
             )
             if result.outcome == ActivationOutcome.APPROVED:
+                group_locale = await self._i18n_manager.get_chat_locale(callback_data.chat_id)
                 try:
-                    await bot.send_message(callback_data.chat_id, RESULT_TEXT[result.outcome])
+                    await bot.send_message(
+                        callback_data.chat_id, get_message(RESULT_KEYS[result.outcome], group_locale)
+                    )
                 except TelegramAPIError:
                     logger.warning("Failed to deliver approval confirmation to chat %d", callback_data.chat_id)
         if result.outcome in SUCCESS_OUTCOMES:
             try:
                 await bot.edit_message_text(
-                    text=RESULT_TEXT[result.outcome],
+                    text=get_message(RESULT_KEYS[result.outcome]),
                     chat_id=message.chat.id,
                     message_id=message.message_id,
                     reply_markup=None,
                 )
             except TelegramAPIError:
                 logger.warning("Failed to edit access request prompt in chat %d", message.chat.id)
-        await query.answer(RESULT_TEXT[result.outcome], show_alert=result.outcome not in SUCCESS_OUTCOMES)
+        await query.answer(
+            get_message(RESULT_KEYS[result.outcome], user_locale),
+            show_alert=result.outcome not in SUCCESS_OUTCOMES,
+        )
 
     def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:
         """Register callback handlers with router.

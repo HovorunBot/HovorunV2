@@ -20,15 +20,10 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
 from hovorunv2.interface.access_arguments import AccessArgumentParser
+from hovorunv2.interface.telegram.i18n import get_message
 
 from .base import BaseCommand
 
-EMERGENCY_HELP = (
-    'Use /emergency FEATURE disable|enable --reason "internal reason" [--public "outage text"].\n'
-    "Internal reasons stay private. --public is suitable for affected users. "
-    "Queued work is cleared by the bounded recovery sweep; partial purges are never reported as complete."
-)
-EMERGENCY_UNAVAILABLE = "Emergency controls unavailable. Use /emergency privately."
 logger = get_logger(__name__)
 
 
@@ -78,7 +73,7 @@ class EmergencyCommand(BaseCommand):
             await self._administration.authorize(actor, message.chat.type)
             arguments = self._parse(shlex.split(message.text or "")[1:])
             if arguments is None:
-                await message.answer(EMERGENCY_HELP)
+                await message.answer(get_message("emergency-help"))
                 return
             state = await self._emergency.set_state(
                 arguments.feature,
@@ -101,7 +96,7 @@ class EmergencyCommand(BaseCommand):
             await message.answer(html.escape(self._summary(state, pending, queued)))
         except PermissionError, ValueError:
             logger.warning("Feature emergency command rejected: actor=%d", actor.actor_id)
-            await message.answer(EMERGENCY_UNAVAILABLE)
+            await message.answer(get_message("emergency-unavailable"))
 
     def _parse(self, words: list[str]) -> argparse.Namespace | None:
         """Parse the bounded private syntax without terminating the bot on invalid input.

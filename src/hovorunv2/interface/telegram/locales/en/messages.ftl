@@ -92,3 +92,63 @@ feedback-delivered = ✅ <b>Thank you!</b> Your feedback has been sent directly 
 feedback-unreachable = ⚠️ <b>Notice:</b> Developers are currently unreachable. Please try again later or reach out via GitHub.
 feedback-unavailable = Feedback is unavailable for this sender.
 feedback-cooldown = Please wait a moment before sending more feedback.
+
+# Access & Permissions
+access-approved = ✅ Group approval saved. Processing remains subject to current access checks.
+access-already-approved = ℹ️ This chat is already approved.
+access-requested = ⏳ Access request saved for bot administrator review.
+access-already-pending = ⏳ Approval is already pending.
+access-rejected = ❌ Access request rejected.
+access-denied = ❌ Trusted users can activate the bot. Other group admins can request approval.
+access-unavailable = ❌ Group or user unavailable. Run /allow_chat in the group to refresh.
+access-group-banned = ❌ This group is restricted. Approval cannot remove that restriction.
+access-stale-request = ❌ This request is no longer available.
+access-run-in-group = Run /allow_chat in the group you want to activate.
+access-private-required = Bot administration requires a private chat.
+access-btn-approve = ✅ Approve
+access-btn-reject = ❌ Reject
+
+# Administration
+admin-help =
+    Use /admin ACTION user|group ID|@known_username [options].
+    Actions: inspect, trust, untrust, ban, unban, requests, approve, accept, reject, beta-grant, beta-revoke, limits, limit-set, limit-reset.
+    Options: --reason "internal reason", --public "safe explanation", --ban-kind personal|full, --feature KEY|*, --request-id ID.
+    Limit options: --bucket feature:KEY|family:NAME, --unit requests|resource_units|tokens, --window-seconds N, --limit N, --burst N, --concurrency N, --pending N.
+    Internal reasons stay private. Only --public is suitable for disclosure. Role changes require CLI.
+admin-unavailable = Administration unavailable. Repeat /admin privately.
+admin-btn-confirm = Confirm
+admin-btn-cancel = Cancel
+
+# Beta Prompts
+beta-unavailable = Beta activation unavailable.
+beta-features-hint = Use /settings to choose features.
+beta-queued = { $count ->
+    [one] Queued { $count } beta introduction recipient.
+   *[other] Queued { $count } beta introduction recipients.
+}
+beta-activated = Activated
+beta-declined = Declined
+
+# Emergency & Recovery
+emergency-help =
+    Use /emergency FEATURE disable|enable --reason "internal reason" [--public "outage text"].
+    Internal reasons stay private. --public is suitable for affected users. Queued work is cleared by the bounded recovery sweep; partial purges are never reported as complete.
+emergency-unavailable = Emergency controls unavailable. Use /emergency privately.
+recovery-help = Use /recover user|group ID privately to inspect a deleted identity.
+recovery-unavailable = Recovery inspection unavailable. Use /recover privately.
+
+# Settings Alerts
+settings-unavailable = Settings unavailable. Reopen /settings.
+settings-expired = Settings expired. Reopen /settings.
+settings-group-usage-unavailable = Group usage unavailable.
+settings-personal-usage-private-only = Personal usage is available in private settings.
+settings-notifications-unavailable = Notifications unavailable.
+settings-language-not-supported = Language not supported.
+settings-feature-unavailable = Feature unavailable.
+settings-feature-enabled = { $command } enabled
+settings-feature-disabled = { $command } disabled
+settings-target-set = Target set to { $language }
+settings-ignored-toggled = Toggled { $language }
+settings-invalid-speech-mode = Invalid speech mode.
+settings-speech-unavailable = Speech configuration unavailable.
+settings-speech-mode-set = Speech mode set to: { $mode }

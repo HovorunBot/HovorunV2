@@ -19,6 +19,7 @@ from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.messaging.owner_notifier import OwnerNotifier
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager
 from hovorunv2.interface.telegram.transport.membership import TelegramMembershipAdapter
 from tests.utils.telegram.transport import API, BOT_CREDENTIAL, RecordedResponse
 
@@ -49,7 +50,11 @@ async def activation_runtime(container: AsyncContainer) -> AsyncGenerator[Activa
             await container.get(AuthorizationPolicy),
             await container.get(ActivationStore),
         )
-        yield ActivationRuntime(bot, service, AccessCommand(service, await container.get(OwnerNotifier)))
+        yield ActivationRuntime(
+            bot,
+            service,
+            AccessCommand(service, await container.get(OwnerNotifier), await container.get(AudienceI18nManager)),
+        )
 
 
 async def seed_activation(container: AsyncContainer, *, trusted: bool = True) -> PermissionTarget:

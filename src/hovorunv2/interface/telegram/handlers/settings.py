@@ -453,12 +453,12 @@ class SettingsCommand(BaseCommand):
             return
         index = int(callback.value)
         if index >= len(context.choices):
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
         target = context.choices[index]
         selected = context.model_copy(update={"target": target, "choices": []})
         if not await self._authorized(query.from_user.id, selected, query.bot):
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
         await self._show_main_menu(query.message, selected)
 
@@ -529,7 +529,7 @@ class SettingsCommand(BaseCommand):
             return
         status = await self._access_service.features.group_settings_status(context.target_chat_id, query.from_user.id)
         if status is None:
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
         explanations = {
             DecisionReason.ALLOWED: "Group processing is available.",
@@ -575,13 +575,13 @@ class SettingsCommand(BaseCommand):
             return
         if scope == "group":
             if context.target is None or context.target_chat_id >= 0:
-                await query.answer("Group usage unavailable.", show_alert=True)
+                await self._answer_user(query, "settings-group-usage-unavailable", show_alert=True)
                 return
             summary = await self._usage_views.for_group(context.target_chat_id)
             title = "📊 Group usage"
         else:
             if context.transport_chat_id <= 0:
-                await query.answer("Personal usage is available in private settings.", show_alert=True)
+                await self._answer_user(query, "settings-personal-usage-private-only", show_alert=True)
                 return
             summary = await self._usage_views.for_user(query.from_user.id)
             title = "📊 Your usage"
@@ -630,7 +630,7 @@ class SettingsCommand(BaseCommand):
             return
         target = await self._notification_target(query, context, scope)
         if target is None:
-            await query.answer("Notifications unavailable.", show_alert=True)
+            await self._answer_user(query, "settings-notifications-unavailable", show_alert=True)
             return
         preferences = await self._notification_preferences.preferences(target)
         builder = InlineKeyboardBuilder()
@@ -672,11 +672,11 @@ class SettingsCommand(BaseCommand):
         scope, _, category_value = (callback_data.value or "").partition(".")
         category = next((item for item in NotificationCategory if item.value == category_value), None)
         if category is None:
-            await query.answer("Notifications unavailable.", show_alert=True)
+            await self._answer_user(query, "settings-notifications-unavailable", show_alert=True)
             return
         target = await self._notification_target(query, context, scope)
         if target is None:
-            await query.answer("Notifications unavailable.", show_alert=True)
+            await self._answer_user(query, "settings-notifications-unavailable", show_alert=True)
             return
         current = await self._notification_preferences.resolve(target, category)
         transport = "private" if context.transport_chat_id > 0 else "group"
@@ -689,7 +689,7 @@ class SettingsCommand(BaseCommand):
                 transport_kind=transport,
             )
         except PermissionError, ValueError:
-            await query.answer("Notifications unavailable.", show_alert=True)
+            await self._answer_user(query, "settings-notifications-unavailable", show_alert=True)
             return
         await query.answer()
         await self._show_notifications(query, context, scope)
@@ -836,7 +836,7 @@ class SettingsCommand(BaseCommand):
 
         selected_locale = callback_data.value
         if selected_locale not in SUPPORTED_LOCALES:
-            await query.answer("Language not supported.", show_alert=True)
+            await self._answer_user(query, "settings-language-not-supported", show_alert=True)
             return
 
         i18n = I18nContext.get_current(no_error=True)
@@ -999,6 +999,25 @@ class SettingsCommand(BaseCommand):
             text += "\n\n" + "\n".join(sorted(guidance))
         await self._render(msg, text, builder, context)
 
+    async def _answer_user(
+        self,
+        query: CallbackQuery,
+        key: str,
+        *,
+        show_alert: bool = False,
+        **kwargs: object,
+    ) -> None:
+        """Answer a callback query in the clicking user's UI locale.
+
+        Args:
+            query: Callback query to answer.
+            key: Fluent message key.
+            show_alert: Whether to display the answer as a modal alert.
+            **kwargs: Dynamic arguments interpolated into the message.
+        """
+        user_locale = await self._i18n_manager.get_user_locale(query.from_user.id)
+        await query.answer(get_message(key, user_locale, **kwargs), show_alert=show_alert)
+
     async def handle_callback(self, query: CallbackQuery, callback_data: SettingsCallback) -> None:
         """Route callbacks to appropriate menu handlers.
 
@@ -1008,11 +1027,11 @@ class SettingsCommand(BaseCommand):
         """
         msg = query.message
         if not msg or not isinstance(msg, Message):
-            await query.answer("Settings expired. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-expired", show_alert=True)
             return
 
         if query.from_user.is_bot or query.bot is None:
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
         operation = callback_data.model_copy(update={"token": ""}).pack()
         context = await self._sessions.resolve(
@@ -1025,7 +1044,7 @@ class SettingsCommand(BaseCommand):
                 msg.chat.id,
                 callback_data.menu.value,
             )
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
         context = context.model_copy(update={"token": callback_data.token})
         logger.debug(
@@ -1039,11 +1058,11 @@ class SettingsCommand(BaseCommand):
         except TelegramAPIError as error:
             if "message to edit not found" in str(error):
                 with contextlib.suppress(TelegramAPIError):
-                    await query.answer("Settings expired. Reopen /settings.", show_alert=True)
+                    await self._answer_user(query, "settings-expired", show_alert=True)
                 return
             logger.warning("Settings callback Telegram operation failed: %s", error)
             with contextlib.suppress(TelegramAPIError):
-                await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+                await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
         if callback_data.menu == SettingsMenu.CLOSE:
             await self._sessions.consume(callback_data.token)
@@ -1154,13 +1173,16 @@ class SettingsCommand(BaseCommand):
         if callback_data.action == SettingsAction.TOGGLE and callback_data.value:
             cmd_name = callback_data.value
             if cmd_name in SPEECH_COMMANDS:
-                await query.answer("Feature unavailable.", show_alert=True)
+                await self._answer_user(query, "settings-feature-unavailable", show_alert=True)
                 return
             decision = await self._access_service.features.evaluate(
                 cmd_name, chat_id, query.from_user.id, configure=True
             )
             if not decision.allowed:
-                await query.answer(decision.guidance or "Feature unavailable.", show_alert=True)
+                if decision.guidance:
+                    await query.answer(decision.guidance, show_alert=True)
+                else:
+                    await self._answer_user(query, "settings-feature-unavailable", show_alert=True)
                 return
             definition = self._access_service.features.registry.require(cmd_name)
             if definition.channel == FeatureChannel.BETA and chat_id < 0:
@@ -1173,14 +1195,15 @@ class SettingsCommand(BaseCommand):
                         transport_kind="private" if context.transport_chat_id > 0 else "group",
                     )
                 except PermissionError, ValueError:
-                    await query.answer("Feature unavailable.", show_alert=True)
+                    await self._answer_user(query, "settings-feature-unavailable", show_alert=True)
                     return
                 is_enabled = not decision.selected
             else:
                 is_enabled = await self._command_service.toggle(
                     chat_id, cmd_name, actor=ActorContext.telegram(query.from_user.id)
                 )
-            await query.answer(f"{cmd_name} {'enabled' if is_enabled else 'disabled'}")
+            alert_key = "settings-feature-enabled" if is_enabled else "settings-feature-disabled"
+            await self._answer_user(query, alert_key, command=cmd_name)
         await self._show_modules_menu(query, context)
 
     async def _handle_lang_target_callback(
@@ -1203,7 +1226,7 @@ class SettingsCommand(BaseCommand):
             await self._language_service.update_settings(
                 chat_id, callback_data.value, ignored, actor=ActorContext.telegram(query.from_user.id)
             )
-            await query.answer(f"Target set to {callback_data.value}")
+            await self._answer_user(query, "settings-target-set", language=callback_data.value)
             await self._show_lang_menu(query, context)
         else:
             await self._show_lang_picker(msg, SettingsMenu.LANG_TARGET, callback_data.page, context)
@@ -1236,7 +1259,7 @@ class SettingsCommand(BaseCommand):
             await self._language_service.update_settings(
                 chat_id, target, ignored, actor=ActorContext.telegram(query.from_user.id)
             )
-            await query.answer(f"Toggled {callback_data.value}")
+            await self._answer_user(query, "settings-ignored-toggled", language=callback_data.value)
         await self._show_lang_picker(msg, SettingsMenu.LANG_IGNORED, callback_data.page, context)
 
     async def _speech_target(self, query: CallbackQuery, context: SettingsContext) -> PermissionTarget | None:
@@ -1276,12 +1299,12 @@ class SettingsCommand(BaseCommand):
 
         target = await self._speech_target(query, context)
         if target is None:
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
         try:
             current_mode = await self._speech_settings.mode(target)
         except ValueError:
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
 
         builder = InlineKeyboardBuilder()
@@ -1334,11 +1357,11 @@ class SettingsCommand(BaseCommand):
         try:
             new_mode = SpeechMode(callback_data.value)
         except ValueError:
-            await query.answer("Invalid speech mode.", show_alert=True)
+            await self._answer_user(query, "settings-invalid-speech-mode", show_alert=True)
             return
         target = await self._speech_target(query, context)
         if target is None:
-            await query.answer("Settings unavailable. Reopen /settings.", show_alert=True)
+            await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
         transport_kind = "private" if context.transport_chat_id > 0 else "group"
         try:
@@ -1349,10 +1372,10 @@ class SettingsCommand(BaseCommand):
                 transport_kind=transport_kind,
             )
         except PermissionError, ValueError:
-            await query.answer("Speech configuration unavailable.", show_alert=True)
+            await self._answer_user(query, "settings-speech-unavailable", show_alert=True)
             return
         mode_name = accepted_mode.value.replace("_", " ").capitalize()
-        await query.answer(f"Speech mode set to: {mode_name}")
+        await self._answer_user(query, "settings-speech-mode-set", mode=mode_name)
         await self._show_speech_menu(query, context)
 
     async def handle_close(self, query: CallbackQuery) -> None:

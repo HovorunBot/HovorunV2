@@ -20,21 +20,10 @@ from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.interface.access_arguments import parse_access
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
+from hovorunv2.interface.telegram.i18n import get_message
 from hovorunv2.interface.telegram.settings.callbacks import AdminCallback
 
 logger = logging.getLogger(__name__)
-
-ADMIN_HELP = (
-    "Use /admin ACTION user|group ID|@known_username [options].\n"
-    "Actions: inspect, trust, untrust, ban, unban, requests, approve, accept, reject, beta-grant, beta-revoke, "
-    "limits, limit-set, limit-reset.\n"
-    'Options: --reason "internal reason", --public "safe explanation", --ban-kind personal|full, '
-    "--feature KEY|*, --request-id ID.\n"
-    "Limit options: --bucket feature:KEY|family:NAME, --unit requests|resource_units|tokens, "
-    "--window-seconds N, --limit N, --burst N, --concurrency N, --pending N.\n"
-    "Internal reasons stay private. Only --public is suitable for disclosure. Role changes require CLI."
-)
-ADMIN_UNAVAILABLE = "Administration unavailable. Repeat /admin privately."
 
 
 class AdministrationCommand(BaseCommand):
@@ -75,7 +64,7 @@ class AdministrationCommand(BaseCommand):
             await self._administration.authorize(actor, message.chat.type)
             words = shlex.split(message.text or "")[1:]
             if not words:
-                await message.answer(ADMIN_HELP)
+                await message.answer(get_message("admin-help"))
                 return
             request = parse_access(words)
             logger.info(
@@ -106,16 +95,20 @@ class AdministrationCommand(BaseCommand):
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
-                        InlineKeyboardButton(text="Confirm", callback_data=AdminCallback(token=token).pack()),
                         InlineKeyboardButton(
-                            text="Cancel", callback_data=AdminCallback(token=token, cancel=True).pack()
+                            text=get_message("admin-btn-confirm"),
+                            callback_data=AdminCallback(token=token).pack(),
+                        ),
+                        InlineKeyboardButton(
+                            text=get_message("admin-btn-cancel"),
+                            callback_data=AdminCallback(token=token, cancel=True).pack(),
                         ),
                     ]
                 ]
             )
             await window.edit_reply_markup(reply_markup=keyboard)
         except PermissionError, ValueError:
-            await message.answer(ADMIN_UNAVAILABLE)
+            await message.answer(get_message("admin-unavailable"))
 
     async def handle_callback(self, query: CallbackQuery, callback_data: AdminCallback) -> None:
         """Reject other transports, stale authority and replay before touching audited state.
@@ -131,7 +124,7 @@ class AdministrationCommand(BaseCommand):
             or message.chat.id != query.from_user.id
             or query.from_user.is_bot
         ):
-            await query.answer(ADMIN_UNAVAILABLE, show_alert=True)
+            await query.answer(get_message("admin-unavailable"), show_alert=True)
             return
         try:
             actor = ActorContext.telegram(query.from_user.id)
@@ -140,7 +133,7 @@ class AdministrationCommand(BaseCommand):
                 callback_data.token, query.from_user.id, message.message_id, consume=True
             )
             if confirmation is None:
-                await query.answer(ADMIN_UNAVAILABLE, show_alert=True)
+                await query.answer(get_message("admin-unavailable"), show_alert=True)
                 return
             if callback_data.cancel:
                 result: dict[str, object] = {"cancelled": True}
@@ -158,7 +151,7 @@ class AdministrationCommand(BaseCommand):
             await message.edit_text(html.escape(json.dumps(result, ensure_ascii=False)), reply_markup=None)
             await query.answer()
         except PermissionError, ValueError:
-            await query.answer(ADMIN_UNAVAILABLE, show_alert=True)
+            await query.answer(get_message("admin-unavailable"), show_alert=True)
 
     def register_callbacks(self, router: Router, flags: Mapping[str, object]) -> None:
         """Register the same private admin policy for opaque confirmations.

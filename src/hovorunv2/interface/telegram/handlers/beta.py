@@ -19,12 +19,11 @@ from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, CommandName
 from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager, get_message
 from hovorunv2.interface.telegram.settings.callbacks import BetaAction, BetaCallback
 
 from .base import BaseCommand
 
-BETA_UNAVAILABLE = "Beta activation unavailable."
-BETA_FEATURES_HINT = "Use /settings to choose features."
 logger = get_logger(__name__)
 
 
@@ -39,11 +38,13 @@ class BetaPromptCommand(BaseCommand):
         prompts: BetaPromptService,
         users: UserStore,
         chats: ChatStore,
+        i18n_manager: AudienceI18nManager,
     ) -> None:
         self._administration = administration
         self._prompts = prompts
         self._users = users
         self._chats = chats
+        self._i18n_manager = i18n_manager
 
     @property
     def name(self) -> str:
@@ -67,25 +68,26 @@ class BetaPromptCommand(BaseCommand):
         try:
             await self._administration.authorize(actor, message.chat.type)
         except PermissionError:
-            await message.answer(BETA_UNAVAILABLE)
+            await message.answer(get_message("beta-unavailable"))
             return
         queued = await self._prompts.announce_new()
         logger.info("Queued beta introduction recipients: count=%d", queued)
-        await message.answer(f"Queued {queued} beta introduction recipient(s).")
+        await message.answer(get_message("beta-queued", count=queued))
 
     async def handle_callback(self, query: CallbackQuery, callback_data: BetaCallback) -> None:
         """Apply the announced subset decision with current authority revalidation."""
+        user_locale = await self._i18n_manager.get_user_locale(query.from_user.id)
         message = query.message
         if not isinstance(message, Message):
-            await query.answer(BETA_UNAVAILABLE, show_alert=True)
+            await query.answer(get_message("beta-unavailable", user_locale), show_alert=True)
             return
         if callback_data.action == BetaAction.FEATURES:
-            await query.answer(BETA_FEATURES_HINT, show_alert=True)
+            await query.answer(get_message("beta-features-hint", user_locale), show_alert=True)
             return
         target = await self._target(message, query.from_user.id)
         if target is None:
             logger.warning("Beta decision rejected: actor=%d chat=%d", query.from_user.id, message.chat.id)
-            await query.answer(BETA_UNAVAILABLE, show_alert=True)
+            await query.answer(get_message("beta-unavailable", user_locale), show_alert=True)
             return
         decision = BetaDecision.ACTIVE if callback_data.action == BetaAction.ACTIVATE else BetaDecision.DECLINED
         try:
@@ -104,7 +106,7 @@ class BetaPromptCommand(BaseCommand):
                 target.telegram_id,
                 callback_data.feature,
             )
-            await query.answer(BETA_UNAVAILABLE, show_alert=True)
+            await query.answer(get_message("beta-unavailable", user_locale), show_alert=True)
             return
         logger.info(
             "Beta decision recorded: actor=%d target=%s target_id=%s feature=%s decision=%s",
@@ -114,7 +116,8 @@ class BetaPromptCommand(BaseCommand):
             callback_data.feature,
             decision.value,
         )
-        await query.answer("Activated" if decision == BetaDecision.ACTIVE else "Declined")
+        answer_key = "beta-activated" if decision == BetaDecision.ACTIVE else "beta-declined"
+        await query.answer(get_message(answer_key, user_locale))
         with contextlib.suppress(TelegramAPIError):
             await message.edit_reply_markup(reply_markup=None)
 

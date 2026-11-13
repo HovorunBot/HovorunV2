@@ -2,6 +2,7 @@
 
 ### Feat
 
+- **i18n**: localize administrative and error feedback
 - **i18n**: localize primary bot interactive journeys
 - **settings**: add personal and group language selection
 - **i18n**: wire audience-aware aiogram-i18n middleware

@@ -19,11 +19,10 @@ from hovorunv2.application.identity.recovery import (
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName
 from hovorunv2.infrastructure.logger import get_logger
+from hovorunv2.interface.telegram.i18n import get_message
 
 from .base import BaseCommand
 
-RECOVERY_HELP = "Use /recover user|group ID privately to inspect a deleted identity."
-RECOVERY_UNAVAILABLE = "Recovery inspection unavailable. Use /recover privately."
 SECONDS_PER_HOUR = 3600
 RECOVERY_ARGUMENTS = 3
 RECOVERY_EXECUTION_ARGUMENTS = 5
@@ -62,7 +61,7 @@ class RecoveryCommand(BaseCommand):
             await self._administration.authorize(actor, message.chat.type)
             words = shlex.split(message.text or "")
             if len(words) < RECOVERY_ARGUMENTS or words[1] not in {"user", "group"}:
-                await message.answer(RECOVERY_HELP)
+                await message.answer(get_message("recovery-help"))
                 return
             target = int(words[2])
             if len(words) >= RECOVERY_EXECUTION_ARGUMENTS and words[3] in {"restore", "fresh"}:
@@ -75,7 +74,7 @@ class RecoveryCommand(BaseCommand):
             logger.info("Recovery preview served: actor=%d target=%s target_id=%d", actor.actor_id, words[1], target)
         except PermissionError, ValueError:
             logger.warning("Recovery command rejected: actor=%d", actor.actor_id)
-            await message.answer(RECOVERY_UNAVAILABLE)
+            await message.answer(get_message("recovery-unavailable"))
 
     async def _execute(
         self,

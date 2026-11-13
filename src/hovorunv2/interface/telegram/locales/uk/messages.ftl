@@ -94,3 +94,65 @@ feedback-delivered = ✅ <b>Дякуємо!</b> Ваш відгук надісл
 feedback-unreachable = ⚠️ <b>Зверніть увагу:</b> Наразі розробники недоступні. Будь ласка, спробуйте пізніше або зверніться через GitHub.
 feedback-unavailable = Відгук недоступний для цього відправника.
 feedback-cooldown = Будь ласка, зачекайте хвилинку перед відправкою нового відгуку.
+
+# Access & Permissions
+access-approved = ✅ Схвалення групи збережено. Обробка залежить від поточних перевірок доступу.
+access-already-approved = ℹ️ Цей чат уже схвалено.
+access-requested = ⏳ Запит на доступ збережено для розгляду адміністратором бота.
+access-already-pending = ⏳ Запит на схвалення вже очікує на розгляд.
+access-rejected = ❌ Запит на доступ відхилено.
+access-denied = ❌ Довірені користувачі можуть активувати бота. Інші адміністратори групи можуть надіслати запит на схвалення.
+access-unavailable = ❌ Група або користувач недоступні. Виконайте /allow_chat у групі для оновлення.
+access-group-banned = ❌ Ця група обмежена. Схвалення не може зняти це обмеження.
+access-stale-request = ❌ Цей запит більше не доступний.
+access-run-in-group = Виконайте /allow_chat у групі, яку потрібно активувати.
+access-private-required = Адміністрування бота можливе лише в приватному чаті.
+access-btn-approve = ✅ Схвалити
+access-btn-reject = ❌ Відхилити
+
+# Administration
+admin-help =
+    Використання: /admin ACTION user|group ID|@known_username [options].
+    Дії: inspect, trust, untrust, ban, unban, requests, approve, accept, reject, beta-grant, beta-revoke, limits, limit-set, limit-reset.
+    Опції: --reason "внутрішня причина", --public "публічне пояснення", --ban-kind personal|full, --feature KEY|*, --request-id ID.
+    Опції лімітів: --bucket feature:KEY|family:NAME, --unit requests|resource_units|tokens, --window-seconds N, --limit N, --burst N, --concurrency N, --pending N.
+    Внутрішні причини залишаються приватними. Лише --public придатний для розголошення. Зміна ролей потребує CLI.
+admin-unavailable = Адміністрування недоступне. Повторіть /admin у приватному чаті.
+admin-btn-confirm = Підтвердити
+admin-btn-cancel = Скасувати
+
+# Beta Prompts
+beta-unavailable = Бета-активація недоступна.
+beta-features-hint = Використовуйте /settings для вибору функцій.
+beta-queued = { $count ->
+    [one] Додано до черги { $count } отримувача бета-ознайомлення.
+    [few] Додано до черги { $count } отримувачів бета-ознайомлення.
+    [many] Додано до черги { $count } отримувачів бета-ознайомлення.
+   *[other] Додано до черги { $count } отримувача бета-ознайомлення.
+}
+beta-activated = Активовано
+beta-declined = Відхилено
+
+# Emergency & Recovery
+emergency-help =
+    Використання: /emergency FEATURE disable|enable --reason "внутрішня причина" [--public "текст повідомлення"].
+    Внутрішні причини залишаються приватними. --public призначений для користувачів. Черга очищується обмеженим відновленням; часткове очищення не повідомляється як завершене.
+emergency-unavailable = Аварійне керування недоступне. Використовуйте /emergency у приватному чаті.
+recovery-help = Використовуйте /recover user|group ID у приватному чаті для перегляду видаленого об'єкта.
+recovery-unavailable = Перегляд відновлення недоступний. Використовуйте /recover у приватному чаті.
+
+# Settings Alerts
+settings-unavailable = Налаштування недоступні. Відкрийте /settings знову.
+settings-expired = Сесія налаштувань застаріла. Відкрийте /settings знову.
+settings-group-usage-unavailable = Статистика групи недоступна.
+settings-personal-usage-private-only = Особиста статистика доступна лише в приватних налаштуваннях.
+settings-notifications-unavailable = Сповіщення недоступні.
+settings-language-not-supported = Мова не підтримується.
+settings-feature-unavailable = Функція недоступна.
+settings-feature-enabled = { $command } увімкнено
+settings-feature-disabled = { $command } вимкнено
+settings-target-set = Мову перекладу змінено на { $language }
+settings-ignored-toggled = Перемкнуто { $language }
+settings-invalid-speech-mode = Некоректний режим мовлення.
+settings-speech-unavailable = Налаштування мовлення недоступні.
+settings-speech-mode-set = Режим мовлення змінено на: { $mode }
