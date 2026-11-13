@@ -42,11 +42,10 @@ def test_decode_audio_rejects_empty_or_invalid() -> None:
     assert exc.value.reason == SpeechFailure.DECODE_FAILED
 
 
-def test_decode_audio_decodes_valid_ogg() -> None:
+@pytest.mark.parametrize("filename", ["speech_uk.ogg", "speech_en.ogg", "speech_uk_short.ogg"])
+def test_decode_audio_decodes_valid_ogg(filename: str) -> None:
     """Valid audio fixture decodes to 16kHz mono 32-bit float PCM."""
-    fixture_path = Path(__file__).parent.parent.parent / "utils" / "speech_uk.ogg"
-    if not fixture_path.is_file():
-        pytest.skip("speech_uk.ogg fixture not found")
+    fixture_path = Path(__file__).parents[2] / "utils" / filename
     data = fixture_path.read_bytes()
     pcm = decode_audio_to_pcm(data)
     assert len(pcm) > 0

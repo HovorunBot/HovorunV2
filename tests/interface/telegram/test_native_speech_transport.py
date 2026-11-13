@@ -2,6 +2,8 @@
 
 import json
 import time
+from http import HTTPStatus
+from pathlib import Path
 from urllib.parse import parse_qs
 
 import pytest
@@ -13,6 +15,58 @@ from hovorunv2.interface.telegram.transport.speech import NativeSpeechTransport
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from tests.utils.sync_http import HTTPFixture, HTTPReply, json_reply
 from tests.utils.telegram import BOT_CREDENTIAL
+
+
+def test_valid_ukrainian_voice_download_preserves_audio() -> None:
+    """Retrieve public Ukrainian Ogg bytes unchanged through Telegram metadata and file routes."""
+    audio = Path("tests/utils/speech_uk.ogg").read_bytes()
+    with (
+        HTTPFixture(
+            {
+                f"/bot{BOT_CREDENTIAL}/getFile": json_reply(
+                    {"ok": True, "result": {"file_path": "voice/synthetic.oga", "file_size": len(audio)}}
+                ),
+                f"/file/bot{BOT_CREDENTIAL}/voice/synthetic.oga": HTTPReply(body=audio),
+            }
+        ) as server,
+        SpeechAudioHTTPClient(BOT_CREDENTIAL, api_base=server.url(""), allowed_hosts=frozenset({"127.0.0.1"})) as http,
+    ):
+        transport = NativeSpeechTransport(NativeTelegramAPI(http, BOT_CREDENTIAL, api_base=server.url("")), http)
+        assert transport.download_audio("synthetic-private-id", time.time() + 10, cancelled=bool) == audio
+
+
+@pytest.mark.parametrize("metadata_failure", [False, True])
+def test_telegram_download_failure_does_not_reject_audio_format(
+    metadata_failure: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Report unavailable Telegram downloads separately from invalid recordings without leaking errors."""
+    metadata_route = f"/bot{BOT_CREDENTIAL}/getFile"
+    file_route = f"/file/bot{BOT_CREDENTIAL}/voice/synthetic.oga"
+    rejected = HTTPReply(status=HTTPStatus.SERVICE_UNAVAILABLE, body=b"synthetic-private-error")
+    with (
+        HTTPFixture(
+            {
+                metadata_route: rejected
+                if metadata_failure
+                else json_reply({"ok": True, "result": {"file_path": "voice/synthetic.oga"}}),
+                file_route: rejected,
+                f"/bot{BOT_CREDENTIAL}/sendMessage": json_reply({"ok": True, "result": {"message_id": 91}}),
+            }
+        ) as server,
+        SpeechAudioHTTPClient(BOT_CREDENTIAL, api_base=server.url(""), allowed_hosts=frozenset({"127.0.0.1"})) as http,
+    ):
+        transport = NativeSpeechTransport(NativeTelegramAPI(http, BOT_CREDENTIAL, api_base=server.url("")), http)
+        with pytest.raises(SpeechRecognitionError) as failure:
+            transport.download_audio("synthetic-private-id", time.time() + 10, cancelled=bool)
+        assert failure.value.reason == SpeechFailure.DOWNLOAD_FAILED
+        assert "synthetic-private-error" not in str(failure.value)
+        assert BOT_CREDENTIAL not in str(failure.value)
+        assert BOT_CREDENTIAL not in caplog.text
+        assert "synthetic-private-error" not in caplog.text
+        assert "synthetic-private-id" not in caplog.text
+        assert transport.deliver_speech(-123, 45, None, failure.value.reason) == 91
+        fields = parse_qs(server.requests[-1].body.decode())
+        assert fields["text"] == ["The audio could not be downloaded from Telegram. Please try again later."]
 
 
 @pytest.mark.parametrize("document", [False, True])

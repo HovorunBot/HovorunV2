@@ -15,6 +15,7 @@ from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI, T
 MAX_MESSAGE_CHARACTERS = 4096
 SPEECH_FAILURE_TEXT = {
     SpeechFailure.INVALID_INPUT: "This audio is unsupported or exceeds the speech limits.",
+    SpeechFailure.DOWNLOAD_FAILED: "The audio could not be downloaded from Telegram. Please try again later.",
     SpeechFailure.DECODE_FAILED: "This audio could not be decoded.",
     SpeechFailure.MODEL_UNAVAILABLE: "Speech recognition is unavailable. The model must be prepared by an operator.",
     SpeechFailure.INFERENCE_FAILED: "Speech recognition could not finish. Please try again later.",

@@ -44,6 +44,7 @@ class SpeechFailure(StrEnum):
     """Allow only operational codes in exceptions, diagnostics and user feedback."""
 
     INVALID_INPUT = "invalid_input"
+    DOWNLOAD_FAILED = "download_failed"
     DECODE_FAILED = "decode_failed"
     MODEL_UNAVAILABLE = "model_unavailable"
     INFERENCE_FAILED = "inference_failed"

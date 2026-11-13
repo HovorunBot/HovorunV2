@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **speech**: repair private voice processing
+
 ## v0.5.1.2 (2026-11-12)
 
 ### Fix

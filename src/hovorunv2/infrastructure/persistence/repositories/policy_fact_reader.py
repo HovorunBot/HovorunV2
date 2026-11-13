@@ -383,6 +383,16 @@ class PolicyFactReader:
             ValueError: If the automatic group or direct user is unavailable.
         """
         if trigger == TriggerKind.AUTOMATIC:
+            if group_id is None and actor_id is not None and actor_id > 0:
+                user = self.session.scalar(active_user(actor_id))
+                if user is None:
+                    msg = "Private automatic usage requires an active user."
+                    raise ValueError(msg)
+                return (
+                    UsageSubject(TargetKind.USER, actor_id, user.id, user.generation),
+                    user.is_trusted,
+                    authority_allowed(self.policy, user.role, "bot:administer"),
+                )
             chat = self.session.scalar(active_chat(group_id or 0))
             if chat is None or chat.chat_id != group_id or chat.chat_type not in {"group", "supergroup"}:
                 msg = "Automatic usage requires an active canonical group."

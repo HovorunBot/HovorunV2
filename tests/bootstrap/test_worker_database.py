@@ -32,7 +32,7 @@ from hovorunv2.bootstrap.worker_database import WorkerDatabase
 from hovorunv2.domain.audit import ActorContext, AuditEventDB
 from hovorunv2.domain.ban import BanKind
 from hovorunv2.domain.beta import BetaEntitlementDB
-from hovorunv2.domain.enums import ChatStatus, Role, TargetKind
+from hovorunv2.domain.enums import ChatStatus, CommandName, Role, TargetKind
 from hovorunv2.domain.membership import GroupMembershipStateDB, MemberEvidenceDB
 from hovorunv2.domain.role import UserRoleDB
 from hovorunv2.domain.usage_accounting import UsageAccountingEventDB, UsageAggregateDB
@@ -228,6 +228,28 @@ async def test_usage_overrides_are_fresh_and_subject_scoped(
             USER, Role.ADMIN, actor=ActorContext.cli(reason="synthetic")
         )
         assert (await asyncio.to_thread(worker.policies.resolve, key, TriggerKind.DIRECT, USER)).bypass_personal_quota
+
+
+@pytest.mark.parametrize(("trusted", "role"), [(False, Role.USER), (True, Role.USER), (False, Role.ADMIN)])
+async def test_private_automatic_speech_keeps_bot_and_worker_usage_in_agreement(
+    test_container: AsyncContainer, postgres_database_url: str, *, trusted: bool, role: Role
+) -> None:
+    """Charge private automatic speech to its active user with matching trust and authority policy."""
+    user, _group = await usage_subjects(test_container)
+    await (await test_container.get(UserStore)).set_trust(USER, is_trusted=trusted, actor=ActorContext.cli())
+    await (await test_container.get(RoleService)).set_role(USER, role, actor=ActorContext.cli())
+    bot = await test_container.get(UsagePolicyService)
+    expected = await bot.resolve(CommandName.TRANSCRIBE_AUTO, TriggerKind.AUTOMATIC, USER)
+    with WorkerDatabase(database_config(postgres_database_url)) as worker:
+        actual = await asyncio.to_thread(
+            worker.policies.resolve, CommandName.TRANSCRIBE_AUTO, TriggerKind.AUTOMATIC, USER
+        )
+        assert actual == expected
+        assert actual.subject == user
+        assert actual.bypass_personal_quota == (role == Role.ADMIN)
+        ordinary = FEATURE_REGISTRY.all()[0].key
+        with pytest.raises(ValueError, match="Automatic usage requires an active canonical group"):
+            await asyncio.to_thread(worker.policies.resolve, ordinary, TriggerKind.AUTOMATIC, USER)
 
 
 async def native_probe(url: str, event_id: str) -> dict[str, int]:

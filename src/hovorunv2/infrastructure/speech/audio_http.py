@@ -1,6 +1,7 @@
 """Bound authenticated speech downloads without logging token-bearing URLs."""
 
 import json
+import logging
 import time
 from collections.abc import Callable
 
@@ -14,6 +15,7 @@ from hovorunv2.infrastructure.http_transport.native_http import HTTP_CHUNK_BYTES
 AUDIO_READ_TIMEOUT_SECONDS = 5
 AUDIO_TOTAL_TIMEOUT_SECONDS = 30
 MAX_METADATA_BYTES = 64_000
+logger = logging.getLogger(__name__)
 
 
 class SpeechAudioHTTPClient(NativeHTTPClient, SpeechAudioPort):
@@ -55,13 +57,14 @@ class SpeechAudioHTTPClient(NativeHTTPClient, SpeechAudioPort):
             payload = json.loads(body)
         except SpeechRecognitionError:
             raise
-        except Exception:
-            raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT) from None
+        except Exception as error:
+            logger.warning("Speech metadata download failed: %s", type(error).__name__)
+            raise SpeechRecognitionError(SpeechFailure.DOWNLOAD_FAILED) from None
         if not isinstance(payload, dict) or payload.get("ok") is not True:
-            raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT)
+            raise SpeechRecognitionError(SpeechFailure.DOWNLOAD_FAILED)
         result = payload.get("result")
         if not isinstance(result, dict):
-            raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT)
+            raise SpeechRecognitionError(SpeechFailure.DOWNLOAD_FAILED)
         return result
 
     def fetch_file(self, file_path: str, deadline: float, *, cancelled: Callable[[], bool]) -> bytes:
@@ -86,8 +89,9 @@ class SpeechAudioHTTPClient(NativeHTTPClient, SpeechAudioPort):
                 return self._read_response(response, cutoff, cancelled, MAX_AUDIO_BYTES)
         except SpeechRecognitionError:
             raise
-        except Exception:
-            raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT) from None
+        except Exception as error:
+            logger.warning("Speech audio download failed: %s", type(error).__name__)
+            raise SpeechRecognitionError(SpeechFailure.DOWNLOAD_FAILED) from None
 
     def _read_response(
         self, response: requests.Response, cutoff: float, cancelled: Callable[[], bool], limit: int

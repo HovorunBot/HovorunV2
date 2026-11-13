@@ -4,6 +4,7 @@ import logging
 import secrets
 from functools import partial
 from time import monotonic
+from traceback import extract_tb
 
 from pydantic import ValidationError
 
@@ -105,6 +106,8 @@ class SpeechJobRunner:
 
     def _handle_unexpected(self, envelope: JobEnvelope, error: Exception) -> str:
         logger.log(logging.ERROR, "Speech execution deferred: %s", type(error).__name__)
+        for frame in extract_tb(error.__traceback__):
+            logger.error("Speech failure frame: %s:%d", frame.name, frame.lineno)
         try:
             current = self._admission.get(envelope.job_id)
         except Exception:
@@ -261,6 +264,7 @@ class SpeechJobRunner:
         self._admission.finish(envelope.job_id, outcome, token=token)
 
     def _handle_failure(self, envelope: JobEnvelope, token: str, reason: SpeechFailure) -> str:
+        logger.warning("Speech execution stopped: %s", reason.value)
         outcome = {
             SpeechFailure.CANCELLED: JobOutcome.CANCELLED,
             SpeechFailure.DEADLINE_EXCEEDED: JobOutcome.EXPIRED,
