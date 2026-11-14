@@ -299,6 +299,7 @@ async def test_auto_overflow_creates_encrypted_snapshot_and_fits_inline_stays_bu
                 raw_stored = sync_redis.get(keys[0]) if keys else None
             finally:
                 sync_redis.close()
+            assert "<b>Translated:</b>" in (short_payload.content or "")
             assert "Короткий переклад." in (short_payload.content or "")
             assert "Довгий переклад" not in (long_payload.content or "")
             return markup_short, markup_long, raw_stored
