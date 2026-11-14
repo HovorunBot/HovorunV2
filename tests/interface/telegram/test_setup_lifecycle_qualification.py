@@ -244,7 +244,7 @@ async def _verify_settings_and_rerun(
     settings_edit = [m for m in recording_bot.session.calls if isinstance(m, EditMessageText)][-1]
     assert settings_edit.text is not None
     assert "Target: <code>ja</code>" in settings_edit.text
-    assert f"Speech: <code>{SpeechMode.MANUAL_ONLY.value}</code>" in settings_edit.text
+    assert "Speech: <code>Manual only</code>" in settings_edit.text
     assert _has_configure_button(settings_edit.reply_markup)
     assert any(isinstance(m, AnswerCallbackQuery) for m in recording_bot.session.calls)
 

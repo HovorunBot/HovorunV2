@@ -45,7 +45,7 @@ settings-main-group-summary =
     Інтерфейс: <code>{ $ui_locale }</code> | Цільова: <code>{ $target_lang }</code> | Ігноровані: <code>{ $ignored }</code> | Мовлення: <code>{ $speech }</code>
 settings-none = немає
 settings-speech-mode-off = Вимкнено
-settings-speech-mode-manual_only = Лише вручну
+settings-speech-mode-manual = Лише вручну
 settings-speech-mode-manual_and_automatic = Вручну + автоматично
 settings-btn-languages = 🌐 Мови
 settings-btn-modules = ⚙️ Модулі

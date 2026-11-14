@@ -43,7 +43,7 @@ settings-main-group-summary =
     UI: <code>{ $ui_locale }</code> | Target: <code>{ $target_lang }</code> | Ignored: <code>{ $ignored }</code> | Speech: <code>{ $speech }</code>
 settings-none = none
 settings-speech-mode-off = Off
-settings-speech-mode-manual_only = Manual only
+settings-speech-mode-manual = Manual only
 settings-speech-mode-manual_and_automatic = Manual + automatic
 settings-btn-languages = 🌐 Languages
 settings-btn-modules = ⚙️ Modules

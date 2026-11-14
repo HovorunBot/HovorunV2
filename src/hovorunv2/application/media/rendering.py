@@ -19,7 +19,7 @@ _TAG_TOKEN_RE = re.compile(r"^</?([a-zA-Z0-9]+)(?:\s+[^>]*)?>$")
 _TOKEN_RE = re.compile(r"<[^>]+>|&[a-zA-Z0-9#]+;|\n\n|\n|\s+|[^\s<&]+")
 _RENDERED_HEADER_RE = re.compile(r"^🗣 [^\n]+ shared a post by [^\n]+\n\n")
 _RENDERED_FOOTER_RE = re.compile(r"\n🔗 [^\n]+$")
-_RENDERED_METRICS_RE = re.compile(r"\n(?:[^\w\s]+(?:\s+[\d,.KMkmBb]+)+\s*)+$")
+_RENDERED_METRICS_RE = re.compile(r"\n(?:[^\w\s]+(?:\s+[\d,.KMkmBb]+)+(?:\s*\|\s*)?)+\s*$")
 
 
 @dataclass(frozen=True, slots=True)

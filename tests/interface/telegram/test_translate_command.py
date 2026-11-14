@@ -396,7 +396,7 @@ async def test_translate_extracts_content_only_from_rendered_bot_post(
     rendered = (
         "🗣 User shared a post by Nachez (@Nachez98)\n\n"
         "Haas y Racing Bulls votan EN CONTRA de cambiar el límite presupuestario.\n\n"
-        "🔁 47 ❤️ 1194 💬 69\n"
+        "🔁 1.4K | ❤️ 6.6K | 💬 140\n"
         "🔗 Open on X"
     )
     bot_user = User(id=999999, is_bot=True, first_name="Hovorun", username="hovorun_bot")

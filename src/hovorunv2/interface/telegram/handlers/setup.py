@@ -327,6 +327,7 @@ class SetupWizardHandler:
             message_thread_id=thread_id,
             text=text,
             reply_markup=markup,
+            parse_mode="HTML",
         )
         bound = await self._draft_service.bind_message(
             session_id=started.draft.session_id,
@@ -577,7 +578,7 @@ class SetupWizardHandler:
 
     async def _safe_edit(self, msg: Message, text: str, reply_markup: InlineKeyboardMarkup | None) -> None:
         try:
-            await msg.edit_text(text=text, reply_markup=reply_markup)
+            await msg.edit_text(text=text, reply_markup=reply_markup, parse_mode="HTML")
         except TelegramBadRequest:
             return
 
