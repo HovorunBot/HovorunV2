@@ -127,23 +127,26 @@ services:
       <<: *app-environment
     command: ["/app/.venv/bin/hovorunv2"]
 
-  worker-media:
+  worker:
     <<: *app-hardening
+    init: true
     tmpfs:
-      - /tmp:rw,nosuid,nodev,size=256m,mode=1777
-    mem_limit: ${WORKER_MEDIA_MEMORY_LIMIT:-1536m}
-    pids_limit: 256
+      - /tmp:rw,nosuid,nodev,size=1024m,mode=1777
+    mem_limit: ${WORKER_MEMORY_LIMIT:-2048m}
+    pids_limit: 512
+    cpus: 2
     logging: *logging
-    image: hovorunv2-worker-media:${APP_TAG:-dev}
+    image: hovorunv2-worker:${APP_TAG:-dev}
     build:
       context: .
-      target: worker-media
+      target: worker
       args:
         APP_VERSION: ${APP_VERSION:-}
     stop_grace_period: 150s
     healthcheck: *worker-health
     volumes:
       - translation_models:/app/data/models
+      - speech_models:/app/data/models/speech:ro
     restart: unless-stopped
     depends_on:
       migrate:
@@ -152,31 +155,38 @@ services:
         condition: service_healthy
     environment:
       <<: *app-environment
-      WORKER_ROLE: media
+      WORKER_ROLE: all
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
+      VXINSTAGRAM_ENABLED: ${VXINSTAGRAM_ENABLED:-true}
       TRANSLATION_MODEL_DIR: /app/data/models/m2m100-418M-int8
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
       TRANSLATION_ONLINE_ENABLED: ${TRANSLATION_ONLINE_ENABLED:-true}
       TRANSLATION_ONLINE_URL: ${TRANSLATION_ONLINE_URL:-}
+      SPEECH_MODEL_DIR: /app/data/models/speech
+      SPEECH_MODEL_IDLE_TIMEOUT: ${SPEECH_MODEL_IDLE_TIMEOUT:-300}
     command:
       - /app/.venv/bin/celery
       - -A
       - hovorunv2.bootstrap.worker_app:celery_app
       - worker
       - --pool=prefork
-      - --concurrency=${MEDIA_CONCURRENCY:-1}
+      - --concurrency=${WORKER_CONCURRENCY:-1}
       - --max-tasks-per-child=10
+      - --prefetch-multiplier=1
+      - --beat
+      - -s
+      - /tmp/celerybeat-schedule
       - --loglevel=INFO
       - --without-gossip
       - --without-mingle
       - --without-heartbeat
-      - "--queues=work:{work}:media"
+      - "--queues=work:{work}:media,work:{work}:speech,work:{work}:operations"
 
   worker-browser:
     <<: *app-hardening
     tmpfs:
-      - /tmp:rw,nosuid,nodev,size=512m,mode=1777
+      - /tmp:rw,nosuid,nodev,size=1024m,mode=1777
     mem_limit: ${WORKER_BROWSER_MEMORY_LIMIT:-1536m}
     pids_limit: 512
     logging: *logging
@@ -201,6 +211,9 @@ services:
       <<: *app-environment
       WORKER_ROLE: browser
       INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
+      VXINSTAGRAM_ENABLED: ${VXINSTAGRAM_ENABLED:-true}
+      BROWSER_MAX_TABS: ${BROWSER_MAX_TABS:-4}
+      BROWSER_IDLE_TIMEOUT: ${BROWSER_IDLE_TIMEOUT:-600}
       TRANSLATION_MODEL_DIR: /app/data/models/m2m100-418M-int8
       TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
       TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
@@ -220,174 +233,8 @@ services:
       - --without-heartbeat
       - "--queues=work:{work}:browser"
 
-  worker-compression:
-    <<: *app-hardening
-    tmpfs:
-      - /tmp:rw,nosuid,nodev,size=512m,mode=1777
-    mem_limit: ${WORKER_COMPRESSION_MEMORY_LIMIT:-2g}
-    pids_limit: 512
-    cpus: 2
-    logging: *logging
-    image: hovorunv2-worker-compression:${APP_TAG:-dev}
-    build:
-      context: .
-      target: worker-compression
-      args:
-        APP_VERSION: ${APP_VERSION:-}
-    stop_grace_period: 150s
-    healthcheck: *worker-health
-    volumes:
-      - translation_models:/app/data/models
-    restart: unless-stopped
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      valkey:
-        condition: service_healthy
-    environment:
-      <<: *app-environment
-      WORKER_ROLE: compression
-      TRANSLATION_MODEL_DIR: /app/data/models/m2m100-418M-int8
-      INSTAGRAM_SESSIONID: ${INSTAGRAM_SESSIONID:-}
-      TRANSLATION_TARGET_LANG: ${TRANSLATION_TARGET_LANG:-uk}
-      TRANSLATION_IGNORED_LANGS: '${TRANSLATION_IGNORED_LANGS:-["en", "ru", "uk", "und"]}'
-    command:
-      - /app/.venv/bin/celery
-      - -A
-      - hovorunv2.bootstrap.worker_app:celery_app
-      - worker
-      - --pool=prefork
-      - --concurrency=1
-      - --max-tasks-per-child=1
-      - --loglevel=INFO
-      - --without-gossip
-      - --without-mingle
-      - --without-heartbeat
-      - "--queues=work:{work}:compression"
-
-  worker-speech:
-    profiles: [speech]
-    container_name: ${COMPOSE_PROJECT_NAME:-hovorunv2-dev}-worker-speech
-    image: hovorunv2-dev-worker-speech:${APP_TAG:-latest}
-    build:
-      context: .
-      target: worker-speech
-    mem_limit: 2g
-    cpus: 2
-    pids_limit: 128
-    init: true
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    ulimits:
-      core: 0
-    logging: *logging
-    stop_grace_period: 150s
-    healthcheck: *worker-health
-    restart: unless-stopped
-    volumes:
-      - speech_models:/app/data/models/speech:ro
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      valkey:
-        condition: service_healthy
-    environment:
-      <<: *app-environment
-      WORKER_ROLE: speech
-      SPEECH_MODEL_DIR: /app/data/models/speech
-      SPEECH_MODEL_IDLE_TIMEOUT: ${SPEECH_MODEL_IDLE_TIMEOUT:-300}
-    command:
-      - /app/.venv/bin/celery
-      - -A
-      - hovorunv2.bootstrap.worker_app:celery_app
-      - worker
-      - --pool=prefork
-      - --concurrency=1
-      - --prefetch-multiplier=1
-      - --loglevel=INFO
-      - --without-gossip
-      - --without-mingle
-      - --without-heartbeat
-      - --pidfile=
-      - "--queues=work:{work}:speech"
-
-  worker-operations:
-    <<: *app-hardening
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
-    mem_limit: ${WORKER_OPERATIONS_MEMORY_LIMIT:-512m}
-    pids_limit: 128
-    logging: *logging
-    image: hovorunv2-worker-ops:${APP_TAG:-dev}
-    build:
-      context: .
-      target: worker-operations
-      args:
-        APP_VERSION: ${APP_VERSION:-}
-    stop_grace_period: 150s
-    healthcheck: *worker-health
-    restart: unless-stopped
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      valkey:
-        condition: service_healthy
-    environment:
-      <<: *app-environment
-      WORKER_ROLE: operations
-    command:
-      - /app/.venv/bin/celery
-      - -A
-      - hovorunv2.bootstrap.worker_app:celery_app
-      - worker
-      - --pool=prefork
-      - --concurrency=1
-      - --loglevel=INFO
-      - --without-gossip
-      - --without-mingle
-      - --without-heartbeat
-      - "--queues=work:{work}:operations"
-
-  beat:
-    <<: *app-hardening
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
-    mem_limit: ${BEAT_MEMORY_LIMIT:-256m}
-    pids_limit: 64
-    logging: *logging
-    image: hovorunv2-worker-ops:${APP_TAG:-dev}
-    build:
-      context: .
-      target: worker-operations
-      args:
-        APP_VERSION: ${APP_VERSION:-}
-    restart: unless-stopped
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      valkey:
-        condition: service_healthy
-    environment:
-      VALKEY_URL: redis://valkey:6379/0
-      APP_VERSION: ${APP_VERSION:-}
-      WORKER_ROLE: operations
-    command:
-      - /app/.venv/bin/celery
-      - -A
-      - hovorunv2.bootstrap.worker_app:celery_app
-      - beat
-      - --loglevel=INFO
-      - --schedule=/var/lib/celery/beat/celerybeat-schedule
-      - --pidfile=/var/lib/celery/beat/celerybeat.pid
-    volumes:
-      - beat_state:/var/lib/celery/beat
-
 volumes:
   postgres_data:
   valkey_data:
-  beat_state:
   translation_models:
   speech_models:

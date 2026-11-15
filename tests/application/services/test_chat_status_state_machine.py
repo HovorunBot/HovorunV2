@@ -86,7 +86,7 @@ async def test_state_machine_flow(test_container: AsyncContainer) -> None:
                 notification = next(
                     item
                     for item in sent_fields(http, "sendMessage")
-                    if "reply_markup" in item and "Access Request" in item["text"]
+                    if "reply_markup" in item and "Запит на доступ" in item["text"]
                 )
                 data = AccessCallback.unpack(
                     json.loads(notification["reply_markup"])["inline_keyboard"][0][0]["callback_data"]

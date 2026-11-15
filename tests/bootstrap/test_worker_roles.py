@@ -262,3 +262,57 @@ async def test_speech_role_verifies_assets_without_starting_model(test_container
     finally:
         context.close()
     assert await asyncio.to_thread(children.read_text) == before
+
+
+async def test_consolidated_worker_role_composes_media_and_operations(
+    test_container: object, postgres_database_url: str
+) -> None:
+    """Consolidated worker role initializes media/translation/compression and operations runners together."""
+    del test_container
+    settings = Settings(
+        database_url=postgres_database_url,
+        bot_token="synthetic:token",  # noqa: S106
+        speech_enabled=False,
+        browser_enabled=False,
+        _env_file=None,
+    )
+    clock = ManualClock()
+    namespace = RuntimeNamespace("test:{all}:")
+    context = WorkerChildContext(
+        settings=settings,
+        namespace=namespace,
+        safety=UsageSafetyCaps(),
+        clock=clock,
+        role=WorkerRole.ALL,
+    )
+    try:
+        context.open()
+        assert context.role == WorkerRole.ALL
+        assert context.runner is not None
+        assert context.operations is not None
+        assert context.browser is None
+        with pytest.raises(ValueError, match="Speech runner is not initialized"):
+            _ = context.speech_runner
+        assert context.operations.sweep_expired_cleanups() == 0
+        assert context.recover() == 0
+    finally:
+        context.close()
+
+
+async def test_consolidated_worker_role_composes_speech_when_enabled(test_container: AsyncContainer) -> None:
+    """Consolidated worker role initializes media, operations, and speech runners when speech is enabled."""
+    settings = (await test_container.get(Settings)).model_copy(
+        update={
+            "speech_enabled": True,
+            "speech_model_dir": qualified_model_directory(),
+        }
+    )
+    context = WorkerChildContext(settings=settings, role=WorkerRole.ALL)
+    try:
+        context.open()
+        assert context.role == WorkerRole.ALL
+        assert context.runner is not None
+        assert context.operations is not None
+        assert context.speech_runner is not None
+    finally:
+        context.close()

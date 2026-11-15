@@ -22,11 +22,8 @@ CHILD_STOP_SECONDS = 10
 BUILD_ROLES = (
     "migrate",
     "bot",
-    "worker-operations",
-    "worker-media",
-    "worker-compression",
+    "worker",
     "worker-browser",
-    "worker-speech",
 )
 TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
 FALSE_VALUES = frozenset({"false", "0", "no", "off"})
@@ -74,7 +71,7 @@ class DockerStack:
 
     def _enabled(self, name: str) -> bool:
         """Require an explicit boolean value for an optional deployment capability."""
-        raw = str(self._configuration["services"]["worker-media"]["environment"].get(name, "False")).lower()
+        raw = str(self._configuration["services"]["worker"]["environment"].get(name, "False")).lower()
         if raw not in TRUE_VALUES | FALSE_VALUES:
             msg = f"{name} must be a boolean (True or False)."
             raise ValueError(msg)
@@ -82,10 +79,7 @@ class DockerStack:
 
     def _optional_workers(self) -> tuple[tuple[str, bool, str], ...]:
         """Describe optional services and their operator enablement contracts."""
-        return (
-            ("browser", self._browser_enabled, "BROWSER_ENABLED"),
-            ("speech", self._speech_enabled, "SPEECH_ENABLED"),
-        )
+        return (("browser", self._browser_enabled, "BROWSER_ENABLED"),)
 
     def _run(self, command: list[str]) -> None:
         with subprocess.Popen(command, cwd=PROJECT_ROOT, env=self._environment) as process:  # noqa: S603
@@ -184,15 +178,13 @@ class DockerStack:
 
     def prepare_speech(self) -> None:
         """Prepare the public speech inventory without starting the worker or application stack."""
-        service = self._configuration["services"]["worker-speech"]
+        service = self._configuration["services"]["worker"]
         if not self._image_exists(service["image"]):
-            self._build_roles(["worker-speech"], force=False)
+            self._build_roles(["worker"], force=False)
         volume = self._configuration["volumes"]["speech_models"]["name"]
         self._run(
             [
                 *self._compose,
-                "--profile",
-                "speech",
                 "run",
                 "--rm",
                 "--no-deps",
@@ -201,7 +193,7 @@ class DockerStack:
                 # Use a separate target: Compose can retain the service's read-only flag
                 # when a run-time volume replaces a mount at the same destination.
                 f"{volume}:/speech-models:rw",
-                "worker-speech",
+                "worker",
                 "/app/.venv/bin/python",
                 "-m",
                 "hovorunv2.bootstrap.speech_assets",
@@ -241,24 +233,7 @@ class DockerStack:
             arguments = [*arguments, "--wait", "--wait-timeout", "180"]
         self._run([*self._compose, *profiles, *arguments])
         if starting:
-            self._cleanup_legacy_translation_models()
             self.clean_images()
-
-    def _cleanup_legacy_translation_models(self) -> None:
-        if "worker-media" not in self._configuration.get("services", {}):
-            return
-        self._run(
-            [
-                *self._compose,
-                "exec",
-                "-T",
-                "worker-media",
-                "rm",
-                "-rf",
-                "/app/data/models/nllb-200-distilled-600M-int8",
-                "/app/data/models/nllb-200-distilled-600M-int8.lock",
-            ]
-        )
 
     def execute(self, command: list[str]) -> None:
         """Serialize mutations so cleanup and builds cannot conflict.
@@ -372,10 +347,9 @@ class DockerStack:
         if res.returncode == 0:
             flushed = True
         if not flushed:
-            for volume_suffix in ("valkey_data", "beat_state"):
-                volume_name = f"{self._project}_{volume_suffix}"
-                with suppress(subprocess.CalledProcessError):
-                    self._run(["docker", "volume", "rm", "-f", volume_name])
+            volume_name = f"{self._project}_valkey_data"
+            with suppress(subprocess.CalledProcessError):
+                self._run(["docker", "volume", "rm", "-f", volume_name])
 
 
 def _clean_local_artifacts() -> None:

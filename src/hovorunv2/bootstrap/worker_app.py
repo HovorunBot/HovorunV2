@@ -1,4 +1,4 @@
-"""Celery application for independently deployed native worker and Beat containers."""
+"""Celery application for the consolidated native worker (with embedded Beat) and optional browser worker."""
 
 import logging
 

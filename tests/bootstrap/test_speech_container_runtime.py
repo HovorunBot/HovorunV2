@@ -58,7 +58,7 @@ def test_speech_prefork_runs_with_private_temporary_storage(tmp_path: Path, envi
     environment_file = tmp_path / "runtime.env"
     environment_file.write_text("SPEECH_ENABLED=False\nBROWSER_ENABLED=False\n")
     override = tmp_path / "runtime.yml"
-    override.write_text(yaml.safe_dump({"services": {"worker-speech": {"image": image, "build": None}}}))
+    override.write_text(yaml.safe_dump({"services": {"worker": {"image": image, "build": None}}}))
     command = [
         "docker",
         "compose",
@@ -70,8 +70,6 @@ def test_speech_prefork_runs_with_private_temporary_storage(tmp_path: Path, envi
         str(PROJECT_ROOT / f"docker-compose.{environment}.yml"),
         "--file",
         str(override),
-        "--profile",
-        "speech",
     ]
     environment_values = os.environ | {
         "APP_ENV_FILE": str(environment_file),
@@ -84,7 +82,7 @@ def test_speech_prefork_runs_with_private_temporary_storage(tmp_path: Path, envi
     }
     try:
         result = subprocess.run(  # noqa: S603
-            [*command, "run", "--rm", "--no-deps", "-T", "worker-speech", "python", "-c", PREFORK_PROBE],
+            [*command, "run", "--rm", "--no-deps", "-T", "worker", "python", "-c", PREFORK_PROBE],
             env=environment_values,
             check=False,
             capture_output=True,

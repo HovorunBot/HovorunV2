@@ -38,13 +38,14 @@ async def test_group_settings_retain_controls_and_explain_permissions(
             await command.handle(message.as_(bot), bot)
             markup = json.loads(sent_fields(http, "editMessageText")[-1]["reply_markup"])
             labels = [item["text"] for row in markup["inline_keyboard"] for item in row]
-            assert "🌐 Languages" in labels
-            assert "⚙️ Modules" in labels
+            assert "🌐 Мови" in labels
+            assert "⚙️ Модулі" in labels
             assert not any(word in label.lower() for word in ("trust", "ban", "role") for label in labels)
             await command.handle_callback(query_for(message, bot, actor), button(http, SettingsMenu.ACCESS))
             text = sent_fields(http, "editMessageText")[-1]["text"]
-            assert "Group processing is available" in text
-            assert "verification is unavailable or expired" in text
+            assert "Обробка в групі доступна" in text
+            assert "недоступна" in text
+            assert "застаріла" in text
             assert "Bot permissions are missing" in text
             assert not (await service.evaluate(CAPABLE.key, GROUP, actor)).allowed
 

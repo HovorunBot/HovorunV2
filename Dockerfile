@@ -46,11 +46,7 @@ FROM builder-base AS builder-bot
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --extra bot
 
-FROM builder-base AS builder-worker-ops
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --extra worker-ops
-
-FROM builder-base AS builder-worker-media
+FROM builder-base AS builder-worker
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --extra worker-media
 
@@ -85,42 +81,27 @@ USER appuser
 CMD ["/app/.venv/bin/hovorunv2"]
 
 # -----------------------------------------------------------------------------
-# Runtime target: worker-operations (operations + beat + cleanup)
+# Runtime target: worker (media, speech, translation, operations + embedded Beat)
 # -----------------------------------------------------------------------------
-FROM base AS worker-operations
-
-ARG APP_VERSION=""
-ENV APP_VERSION=${APP_VERSION} \
-    WORKER_ROLE=operations
-
-COPY --from=builder-worker-ops --chown=appuser:appuser /app/.venv /app/.venv
-COPY --chown=appuser:appuser README.md CHANGES.md* ./
-RUN install -d -m 0755 -o appuser -g appuser /var/lib/celery/beat
-
-USER appuser
-CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "operations"]
-
-# -----------------------------------------------------------------------------
-# Runtime target: worker-media (yt-dlp, instaloader, bs4, native download)
-# -----------------------------------------------------------------------------
-FROM base AS worker-media
+FROM base AS worker
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get -o Acquire::Queue-Mode=access -o Acquire::Retries=3 install -y --no-install-recommends \
-        ffmpeg ca-certificates
+        ffmpeg ca-certificates util-linux
 
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION} \
-    WORKER_ROLE=media
+    WORKER_ROLE=all
 
-RUN mkdir -p /app/data/models && chown -R appuser:appuser /app/data
+RUN mkdir -p /app/data/models/speech && chown -R appuser:appuser /app/data
 
-COPY --from=builder-worker-media --chown=appuser:appuser /app/.venv /app/.venv
+COPY --from=builder-worker --chown=appuser:appuser /app/.venv /app/.venv
+COPY --chown=appuser:appuser README.md CHANGES.md* ./
 
 USER appuser
-CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "media,translation"]
+CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "--beat", "-s", "/tmp/celerybeat-schedule", "-Q", "work:default:media,work:default:speech,work:default:operations"]
 
 # -----------------------------------------------------------------------------
 # Runtime target: worker-browser (Chromium + pydoll-python fallback)
@@ -137,54 +118,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get -o Acquire::Queue-Mode=access -o Acquire::Retries=3 install -y --no-install-recommends \
-        chromium fonts-liberation ca-certificates ffmpeg
+        chromium fonts-liberation ca-certificates ffmpeg util-linux
 
 RUN mkdir -p /app/data/models && chown -R appuser:appuser /app/data
 
 COPY --from=builder-worker-browser --chown=appuser:appuser /app/.venv /app/.venv
 
 USER appuser
-CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "browser", "--concurrency=1"]
-
-# Build the qualified CPU runtime from an immutable, digest-verified source archive.
-FROM base AS builder-whisper
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates cmake ninja-build g++ && rm -rf /var/lib/apt/lists/*
-WORKDIR /build
-ARG WHISPER_CPP_VERSION=1.9.5
-ADD --checksum=sha256:ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720 \
-    https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v${WHISPER_CPP_VERSION}.tar.gz \
-    whisper.tar.gz
-RUN mkdir source && tar -xzf whisper.tar.gz --strip-components=1 -C source
-RUN cmake -S source -B output -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DGGML_NATIVE=OFF -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON \
-    -DGGML_CUDA=OFF -DGGML_VULKAN=OFF -DGGML_BLAS=OFF \
-    -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=OFF -DWHISPER_CURL=OFF \
-    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON '-DCMAKE_INSTALL_RPATH=$ORIGIN' \
-    -DBUILD_SHARED_LIBS=ON && cmake --build output --target whisper -j2
-COPY src/hovorunv2/infrastructure/speech/whisper_helper.cpp ./
-RUN g++ -std=c++17 -O2 -Wall -Wextra -Werror -Isource/include -Isource/ggml/include \
-    whisper_helper.cpp -Loutput/bin '-Wl,-rpath,$ORIGIN/../lib/hovorun-speech' \
-    -lwhisper -o hovorun-whisper-helper
-
-FROM base AS worker-speech
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg ca-certificates util-linux libgomp1 libstdc++6 && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /app/data/models/speech && chown -R appuser:appuser /app/data
-COPY --from=builder-worker-ops --chown=appuser:appuser /app/.venv /app/.venv
-COPY --from=builder-whisper /build/hovorun-whisper-helper /usr/local/bin/hovorun-whisper-helper
-COPY --from=builder-whisper /build/output/bin/lib*.so* /usr/local/lib/hovorun-speech/
-COPY --from=builder-whisper /build/source/LICENSE /usr/local/share/licenses/whisper.cpp/LICENSE
-ENV WORKER_ROLE=speech
-USER appuser
-CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=1", "--prefetch-multiplier=1", "-Q", "work:{work}:speech"]
+CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "work:default:browser", "--concurrency=1"]
 
 # -----------------------------------------------------------------------------
 # Default target
 # -----------------------------------------------------------------------------
-FROM worker-browser AS worker-compression
-
-ENV WORKER_ROLE=compression
-CMD ["/app/.venv/bin/celery", "-A", "hovorunv2.bootstrap.worker_app:celery_app", "worker", "--loglevel=INFO", "-Q", "work:{work}:compression", "--concurrency=1"]
-
 FROM bot AS default

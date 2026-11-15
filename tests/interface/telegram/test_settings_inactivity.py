@@ -28,7 +28,7 @@ def _buttons(transport: RecordingSession) -> list[SettingsCallback]:
         SettingsCallback.unpack(button.callback_data)
         for row in edit.reply_markup.inline_keyboard
         for button in row
-        if button.callback_data is not None
+        if button.callback_data is not None and button.callback_data.startswith(f"{SettingsCallback.__prefix__}:")
     ]
 
 

@@ -89,7 +89,7 @@ async def test_group_ban_denies_admin_with_cooldown_safe_explanation(test_contai
                 messages = sent_fields(http, "sendMessage")
                 assert len(messages) == 1
                 assert messages[0]["text"] == (
-                    "🚫 Bot processing is unavailable in this group. Contact a bot administrator privately."
+                    "🚫 Обробка в цій групі недоступна. Зверніться до адміністратора бота приватно."
                 )
                 assert await cache.get(key) == 1
                 await cache.delete(key)

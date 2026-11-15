@@ -321,7 +321,7 @@ async def test_bot_admin_can_inspect_all_active_groups_but_cannot_bypass_feature
                 query_for(message, bot, SECOND), button(http, SettingsMenu.GROUP_SELECT, value="0")
             )
             await command.handle_callback(query_for(message, bot, SECOND), button(http, SettingsMenu.ACCESS))
-            assert "Group processing is restricted" in rendered_text(http)
+            assert "Обробку в групі обмежено" in rendered_text(http)
             assert not sent_fields(http, "getChatMember")
         access = await test_container.get(AccessService)
         assert not (await access.features.evaluate(str(CommandName.TWITTER_POST), GROUP, SECOND)).allowed
@@ -362,6 +362,6 @@ async def test_private_manager_can_inspect_uncertainty_without_enabling_features
             query = query_for(message, bot, SECOND)
             await command.handle_callback(query, button(http, SettingsMenu.GROUP_SELECT, value="0"))
             await command.handle_callback(query, button(http, SettingsMenu.ACCESS))
-            assert "Administrator verification is unavailable or expired" in rendered_text(http)
+            assert "Перевірка адміністратора недоступна" in rendered_text(http)
         access = await test_container.get(AccessService)
         assert not (await access.features.evaluate(str(CommandName.TWITTER_POST), GROUP, SECOND)).allowed

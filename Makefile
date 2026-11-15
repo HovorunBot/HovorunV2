@@ -37,7 +37,7 @@ all: setup run
 ## Fetch/check out code, create server .env if absent, and build the selected role images.
 setup: checkout env-init build
 
-## Build and start the selected bot, native workers, Beat, migration service, PostgreSQL and Valkey.
+## Build and start the selected bot, consolidated native worker (with embedded Beat), migration service, PostgreSQL and Valkey.
 run: build
 ifneq ($(filter $(INVALIDATE),1 true yes on TRUE YES ON),)
 	@$(MAKE) invalidate-runtime
@@ -241,7 +241,7 @@ endif
 clean:
 	$(DOCKER_COMPOSE) clean
 
-## Snapshot Postgres, Valkey, and Beat state with rotation; BACKUP_KEEP=n controls retention.
+## Snapshot Postgres and Valkey state with rotation; BACKUP_KEEP=n controls retention.
 backup:
 	@sh scripts/backup.sh $(DOCKER_COMPOSE)
 
@@ -255,7 +255,7 @@ status:
 	@echo "--- Valkey memory ---"
 	$(DOCKER_COMPOSE) exec -T valkey valkey-cli INFO memory | grep -E "used_memory_human|maxmemory_human|maxmemory_policy"
 	@echo "--- Queue depth ---"
-	@for queue in media browser operations; do \
+	@for queue in media speech browser operations; do \
 		printf 'work:{work}:%s: ' "$$queue"; \
 		$(DOCKER_COMPOSE) exec -T valkey valkey-cli LLEN "work:{work}:$$queue"; \
 	done

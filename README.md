@@ -41,11 +41,11 @@ make compose-run ARGS="--no-deps bot hovorun-admin role add 123456789 --role own
 make run
 ```
 
-A dedicated migration container applies schema upgrades before the bot starts. Bot, media worker, operations worker and one Beat scheduler run as independent services from dedicated, role-optimized container images and restart independently. Browser fallback is disabled by default. Set `BROWSER_ENABLED=True` in the selected environment file to build and start the separate browser worker with Chromium and pydoll-python. With `BROWSER_ENABLED=False` or an absent setting, Make builds the four standard role images (`hovorunv2-migrate`, `hovorunv2-bot`, `hovorunv2-worker-ops`, `hovorunv2-worker-media`) and stops any previously running browser worker on startup. Direct extraction remains available; requests requiring browser fallback fail promptly without queuing an unavailable worker or consuming quota. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
+A dedicated migration container applies schema upgrades before the bot starts. The `bot` and consolidated `worker` (handling media extraction, video compression, local translation, optional speech transcription, operations, and embedded Celery Beat) run as independent services from dedicated, role-optimized container images and restart independently. Browser fallback is disabled by default. Set `BROWSER_ENABLED=True` in the selected environment file to build and start the optional `worker-browser` container with Chromium and pydoll-python. With `BROWSER_ENABLED=False` or an absent setting, Make builds the three core role images (`hovorunv2-migrate`, `hovorunv2-bot`, `hovorunv2-worker`) and stops any previously running browser worker on startup. Direct extraction remains available; requests requiring browser fallback fail promptly without queuing an unavailable worker or consuming quota. CLI administration needs PostgreSQL access and requires no Telegram or Valkey connection.
 
 | Command | Purpose |
 | --- | --- |
-| `make run` | Start the bot, native workers, Beat, PostgreSQL and Valkey |
+| `make run` | Start the bot, consolidated native worker (with embedded Beat), PostgreSQL and Valkey |
 | `make stop` | Stop production services and preserve volumes |
 | `make restart` | Restart services (optional `INVALIDATE=1` to clear transient runtime state) |
 | `make run-dev` | Start the complete development stack in Docker |
@@ -59,7 +59,7 @@ Each environment has one complete Compose file: `docker-compose.dev.yml` or `doc
 
 Builds require Docker Buildx with BuildKit enabled (`DOCKER_BUILDKIT=1`). Builds leverage persistent daemon BuildKit layer caching and package caches across invocations. Passing `FORCE=1` rebuilds images without cache. The multi-stage runtime images exclude compilers, build tools, package managers, and duplicate source files, executing directly via `/app/.venv/bin/*` as a non-root `appuser`. Previous application images stay available during builds and startup checks. Docker logs rotate at three 10 MB files per container.
 
-Run `make clean` to reclaim artifacts from older deployments, or `make COMPOSE_ENV=dev clean` locally. It prunes dangling images (`docker image prune -f`), prunes BuildKit build cache (`docker builder prune -f`), and removes local build artifacts. It does not stop running application containers or remove PostgreSQL, Valkey, Beat volumes, `.env`, `data/` or `.venv/`.
+Run `make clean` to reclaim artifacts from older deployments, or `make COMPOSE_ENV=dev clean` locally. It prunes dangling images (`docker image prune -f`), prunes BuildKit build cache (`docker builder prune -f`), and removes local build artifacts. It does not stop running application containers or remove PostgreSQL or Valkey volumes, `.env`, `data/` or `.venv/`.
 
 Default resource caps, memory ceilings, and operational settings can be customized via the variables documented in `example.env`. Base images and tools are pinned by digest; builds remain local and target the host architecture.
 
@@ -71,9 +71,9 @@ See [administration](docs/administration.md) for role and trust commands, access
 
 Caption and explicit reply language detection runs locally with py3langid. Automatic media/post captions skip ignored languages, the selected target language, and text with insufficient alphabetic content; explicit `/translate [target]` replies and `Translate` button clicks override ignored languages and use either the per-request target or the chat/default target without mutating saved chat preferences.
 
-Translation uses a Google-first online engine (`deep-translator` + `tenacity` with bounded 15s budget and `TRANSLATION_ONLINE_ENABLED` offline switch) with automatic atomic fallback to an on-demand CTranslate2 M2M100-418M int8 CPU model when online translation is disabled or unavailable. Account-based and paid providers (including Microsoft Translator F0) are deferred. When an automatic translated response exceeds Telegram's caption or message budget, the original post/media is preserved with a source-bound `Translate` button (encrypted 24-hour non-renewing Valkey snapshot) and multi-part results use `Continue translation` chains rather than `.txt` fallback.
+Translation uses a Google-first online engine (direct GTX JSON transport with `tenacity` retries within a bounded 15s budget and `TRANSLATION_ONLINE_ENABLED` offline switch) with automatic atomic fallback to an on-demand CTranslate2 M2M100-418M int8 CPU model when online translation is disabled or unavailable. Account-based and paid providers (including Microsoft Translator F0) are deferred. When an automatic translated response exceeds Telegram's caption or message budget, the original post/media is preserved with a source-bound `Translate` button (encrypted 24-hour non-renewing Valkey snapshot) and multi-part results use `Continue translation` chains rather than `.txt` fallback.
 
-The first required local fallback translation downloads about 496 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. Media, browser and compression workers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's MIT license and attribution.
+The first required local fallback translation downloads about 496 MB of checksum-verified model assets into `TRANSLATION_MODEL_DIR`. The `worker` and optional `worker-browser` containers mount the persistent `translation_models` volume at `/app/data/models`; the Docker images contain no model weights. Preserve the volume between deployments; its license and attribution files must travel with redistributed model assets. Each active worker child loads its own model, so measure memory before increasing concurrency. See [third-party notices](THIRD_PARTY_NOTICES.md) for the model's MIT license and attribution.
 
 ## Access and privacy
 
@@ -92,4 +92,4 @@ See the [contributor guide](CONTRIBUTING.md) for setup, checks and contribution 
 
 Application code: [BSD 3-Clause](LICENSE). Separately downloaded M2M100-418M translation model assets: **MIT**. See [third-party notices](THIRD_PARTY_NOTICES.md) for model attribution and license terms.
 
-Optional local voice/audio transcription is documented in [speech recognition](docs/speech-recognition.md). Prepare its pinned model with `make prepare-speech`; keep `SPEECH_ENABLED=False` until the target-server capacity release gate passes.
+Optional local voice/audio transcription (via CTranslate2 Whisper `int8`) is documented in [speech recognition](docs/speech-recognition.md). Prepare its pinned model with `make prepare-speech` before setting `SPEECH_ENABLED=True` on the `worker` service.

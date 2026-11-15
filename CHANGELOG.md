@@ -8,6 +8,7 @@
 
 ### Refactor
 
+- **deploy**: consolidate worker containers and qualify v0.6.0 stabilization
 - **v0.6.0**: complete i18n, unify HTTP/translation deps, and migrate speech to CTranslate2
 
 ### Perf

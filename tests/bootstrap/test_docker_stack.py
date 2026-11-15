@@ -65,22 +65,16 @@ def _scenario(root: Path, browser_enabled: str, speech_enabled: str = "False") -
         "services": {
             "migrate": {"image": "hovorunv2-dev-migrate:test", "build": {"target": "migrate"}},
             "bot": {"image": "hovorunv2-dev-bot:test", "build": {"target": "bot"}},
-            "worker-operations": {"image": "hovorunv2-dev-ops:test", "build": {"target": "worker-operations"}},
-            "worker-media": {
-                "image": "hovorunv2-dev-media:test",
-                "build": {"target": "worker-media"},
+            "worker": {
+                "image": "hovorunv2-dev-worker:test",
+                "build": {"target": "worker"},
                 "environment": {
                     "BROWSER_ENABLED": browser_enabled,
                     "SPEECH_ENABLED": speech_enabled,
                     "BOT_TOKEN": "synthetic-private-credential",
                 },
             },
-            "worker-compression": {
-                "image": "hovorunv2-dev-compression:test",
-                "build": {"target": "worker-compression"},
-            },
             "worker-browser": {"image": "hovorunv2-dev-browser:test", "build": {"target": "worker-browser"}},
-            "worker-speech": {"image": "hovorunv2-dev-speech:test", "build": {"target": "worker-speech"}},
         },
     }
     return StackScenario(
@@ -102,9 +96,7 @@ async def test_build_selects_browser_and_uses_persistent_caching(tmp_path: Path,
     calls = scenario.calls()
     builds = [call for call in calls if call[:2] == ["buildx", "build"]]
     expected_targets = (
-        ["migrate", "bot", "worker-operations", "worker-media", "worker-compression", "worker-browser"]
-        if enabled == "True"
-        else ["migrate", "bot", "worker-operations", "worker-media", "worker-compression"]
+        ["migrate", "bot", "worker", "worker-browser"] if enabled == "True" else ["migrate", "bot", "worker"]
     )
     assert [call[call.index("--target") + 1] for call in builds] == expected_targets
     assert all("--load" in call for call in builds)
@@ -127,17 +119,12 @@ async def test_build_skips_when_all_images_already_exist(tmp_path: Path) -> None
     """Skip building images when all configured targets exist."""
     scenario = _scenario(tmp_path, "True")
     scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
-        "hovorunv2-dev-migrate:test\n"
-        "hovorunv2-dev-bot:test\n"
-        "hovorunv2-dev-ops:test\n"
-        "hovorunv2-dev-media:test\n"
-        "hovorunv2-dev-compression:test\n"
-        "hovorunv2-dev-browser:test\n"
+        "hovorunv2-dev-migrate:test\nhovorunv2-dev-bot:test\nhovorunv2-dev-worker:test\nhovorunv2-dev-browser:test\n"
     )
     assert await scenario.run("build") == 0
     calls = scenario.calls()
     inspects = [call for call in calls if call[:2] == ["image", "inspect"]]
-    assert len(inspects) == 6
+    assert len(inspects) == 4
     assert not any(call[:1] == ["buildx"] for call in calls)
 
 
@@ -145,7 +132,7 @@ async def test_build_builds_only_missing_image_when_one_exists(tmp_path: Path) -
     """Build only the absent image target when another role is already present."""
     scenario = _scenario(tmp_path, "True")
     scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
-        "hovorunv2-dev-migrate:test\nhovorunv2-dev-bot:test\nhovorunv2-dev-ops:test\nhovorunv2-dev-media:test\nhovorunv2-dev-compression:test\n"
+        "hovorunv2-dev-migrate:test\nhovorunv2-dev-bot:test\nhovorunv2-dev-worker:test\n"
     )
     assert await scenario.run("build") == 0
     calls = scenario.calls()
@@ -158,12 +145,7 @@ async def test_build_force_rebuilds_all_existing_images(tmp_path: Path) -> None:
     """Force flag rebuilds all role targets without cache even when images already exist locally."""
     scenario = _scenario(tmp_path, "True")
     scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
-        "hovorunv2-dev-migrate:test\n"
-        "hovorunv2-dev-bot:test\n"
-        "hovorunv2-dev-ops:test\n"
-        "hovorunv2-dev-media:test\n"
-        "hovorunv2-dev-compression:test\n"
-        "hovorunv2-dev-browser:test\n"
+        "hovorunv2-dev-migrate:test\nhovorunv2-dev-bot:test\nhovorunv2-dev-worker:test\nhovorunv2-dev-browser:test\n"
     )
     assert await scenario.run("build", "--force") == 0
     calls = scenario.calls()
@@ -171,9 +153,7 @@ async def test_build_force_rebuilds_all_existing_images(tmp_path: Path) -> None:
     assert [call[call.index("--target") + 1] for call in builds] == [
         "migrate",
         "bot",
-        "worker-operations",
-        "worker-media",
-        "worker-compression",
+        "worker",
         "worker-browser",
     ]
     assert all("--no-cache" in call and "--load" in call for call in builds)
@@ -184,12 +164,7 @@ async def test_build_force_via_environment_rebuilds_all_existing_images(tmp_path
     scenario = _scenario(tmp_path, "True")
     scenario.environment["FORCE"] = "1"
     scenario.environment["DOCKER_TEST_EXISTING_IMAGES"] = (
-        "hovorunv2-dev-migrate:test\n"
-        "hovorunv2-dev-bot:test\n"
-        "hovorunv2-dev-ops:test\n"
-        "hovorunv2-dev-media:test\n"
-        "hovorunv2-dev-compression:test\n"
-        "hovorunv2-dev-browser:test\n"
+        "hovorunv2-dev-migrate:test\nhovorunv2-dev-bot:test\nhovorunv2-dev-worker:test\nhovorunv2-dev-browser:test\n"
     )
     assert await scenario.run("build") == 0
     calls = scenario.calls()
@@ -197,9 +172,7 @@ async def test_build_force_via_environment_rebuilds_all_existing_images(tmp_path
     assert [call[call.index("--target") + 1] for call in builds] == [
         "migrate",
         "bot",
-        "worker-operations",
-        "worker-media",
-        "worker-compression",
+        "worker",
         "worker-browser",
     ]
     assert all("--no-cache" in call and "--load" in call for call in builds)
@@ -286,7 +259,7 @@ async def test_build_executes_with_buildkit_enabled(tmp_path: Path) -> None:
     assert await scenario.run("build") == 0
     calls = scenario.calls()
     builds = [call for call in calls if call[:2] == ["buildx", "build"]]
-    assert len(builds) == 5
+    assert len(builds) == 3
 
 
 async def test_active_stack_lock_blocks_cleanup(tmp_path: Path) -> None:
@@ -317,27 +290,25 @@ async def test_invalidate_runtime_dispatches_valkey_cleanup(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize("enabled", ["False", "True"])
-async def test_speech_build_and_start_follow_operator_switch(tmp_path: Path, enabled: str) -> None:
-    """The speech switch controls building, startup profiles and stale-worker removal."""
+async def test_speech_switch_validates_without_spawning_separate_speech_profile(tmp_path: Path, enabled: str) -> None:
+    """Speech runs inside the consolidated worker without a separate Compose profile or container."""
     scenario = _scenario(tmp_path, "False", enabled)
     assert await scenario.run("build") == 0
     builds = [call for call in scenario.calls() if call[:2] == ["buildx", "build"]]
-    assert any("worker-speech" in call for call in builds) == (enabled == "True")
+    assert [call[call.index("--target") + 1] for call in builds] == ["migrate", "bot", "worker"]
     assert await scenario.run("up", "-d", "--no-build") == 0
     startup = next(call for call in scenario.calls() if "up" in call)
-    assert ("speech" in startup) == (enabled == "True")
-    stops = [call for call in scenario.calls() if "--stop" in call and "worker-speech" in call]
-    assert bool(stops) == (enabled == "False")
+    assert "speech" not in startup
 
 
-async def test_speech_preparation_does_not_enable_or_start_worker(tmp_path: Path) -> None:
-    """Preparation can populate the dedicated volume while speech remains disabled."""
+async def test_speech_preparation_runs_in_worker_without_starting_stack(tmp_path: Path) -> None:
+    """Preparation populates the dedicated speech volume via the worker image while speech remains disabled."""
     scenario = _scenario(tmp_path, "False")
     assert await scenario.run("prepare-speech") == 0
     calls = scenario.calls()
     preparation = next(call for call in calls if "run" in call)
     assert "--no-deps" in preparation
     assert "synthetic-speech-models:/speech-models:rw" in preparation
+    assert "worker" in preparation
     assert preparation[-3:] == ["prepare", "--model-dir", "/speech-models"]
     assert not any("up" in call or "start" in call for call in calls)
-    assert await scenario.run("run", "--rm", "worker-speech") != 0
