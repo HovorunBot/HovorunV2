@@ -6,6 +6,10 @@
 - **telegram**: fix setup HTML rendering, speech mode locale key, and pipe metrics
 - **translation**: restore direct Google GTX endpoint with env override
 
+### Refactor
+
+- **v0.6.0**: complete i18n, unify HTTP/translation deps, and migrate speech to CTranslate2
+
 ## v0.6.0.3 (2026-11-14)
 
 ### Fix

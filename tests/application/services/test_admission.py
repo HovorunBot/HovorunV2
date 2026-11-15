@@ -19,6 +19,7 @@ from hovorunv2.domain.enums import TargetKind
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
 from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
+from hovorunv2.infrastructure.runtime.cache import CacheService
 from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.identities import FEATURE
 from tests.utils.jobs import PRIVATE_BODY, job_envelope
@@ -162,9 +163,14 @@ async def test_handoff_recovers_crashes_before_enqueue_and_before_acknowledgemen
     async with runtime_cache(test_container) as (cache, namespace):
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
         store = ValkeyAdmissionStore(cache, namespace)
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps(), store)
+        unavailable_cache = CacheService("redis://127.0.0.1:1/0")
         unavailable = CeleryFeatureQueue(
-            settings.model_copy(update={"valkey_url": "redis://127.0.0.1:1/0"}), clock, namespace, UsageSafetyCaps()
+            settings.model_copy(update={"valkey_url": "redis://127.0.0.1:1/0"}),
+            clock,
+            namespace,
+            UsageSafetyCaps(),
+            ValkeyAdmissionStore(unavailable_cache, namespace),
         )
         try:
             sealed = await payloads.seal("crash-handoff", PRIVATE_BODY, clock.now() + 300)
@@ -197,6 +203,7 @@ async def test_handoff_recovers_crashes_before_enqueue_and_before_acknowledgemen
             assert (await recovered.handoff(envelope.job_id)).state == AdmissionState.TERMINAL
         finally:
             await unavailable.close()
+            await unavailable_cache.close()
             await queue.close()
 
 
@@ -214,7 +221,7 @@ async def test_application_admission_rechecks_actor_target_access_and_original_d
     async with runtime_cache(test_container) as (cache, namespace):
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
         store = ValkeyAdmissionStore(cache, namespace)
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps(), store)
         try:
             service = await admission_service(test_container, store, queue, clock)
             sealed = await payloads.seal("private-action", PRIVATE_BODY, clock.now() + 300)

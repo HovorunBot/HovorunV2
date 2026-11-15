@@ -21,7 +21,9 @@ _TOKEN_RE = re.compile(r"<[^>]+>|&[a-zA-Z0-9#]+;|\n\n|\n|\s+|[^\s<&]+")
 _RENDERED_HEADER_RE = re.compile(r"^🗣 [^\n]+ shared a post by [^\n]+\n\n")
 _RENDERED_FOOTER_RE = re.compile(r"\n🔗 [^\n]+$")
 _RENDERED_METRICS_RE = re.compile(r"\n(?:[^\w\s]+(?:\s+[\d,.KMkmBb]+)+(?:\s*\|\s*)?)+\s*$")
-_RENDERED_TRANSLATION_RE = re.compile(r"(?:^|\n\n)[^\w\s\n][^\n]*\bTranslated:\n.*?(?=\n\n🔄 |\Z)", re.DOTALL)
+_RENDERED_TRANSLATION_RE = re.compile(
+    r"(?:^|\n\n)[^\w\s\n][^\n]*\b(?:Translated|Переклад):\n.*?(?=\n\n🔄 |\Z)", re.DOTALL
+)
 _RENDERED_QUOTE_HEADER_RE = re.compile(r"^🔄 [^\n]+\n?", re.MULTILINE)
 _BMP_MAX_CODEPOINT = 0xFFFF
 

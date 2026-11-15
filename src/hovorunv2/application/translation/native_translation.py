@@ -155,6 +155,23 @@ class NativeTranslationService:
             return None
         return TranslationResult(stripped, target, translation_flag(source))
 
+    def effective_target_language(self, chat_id: int, requested_target_lang: str | None = None) -> str:
+        """Resolve the effective target language code for a chat and optional explicit override.
+
+        Args:
+            chat_id: Numeric chat ID owning the translation preference.
+            requested_target_lang: Optional explicit target language override.
+
+        Returns:
+            Effective normalized target language code.
+        """
+        chat_target, _ = self._current_languages(chat_id)
+        return resolve_target_language(
+            requested_target_lang,
+            chat_target,
+            self._settings.translation_target_lang,
+        )
+
     def _current_languages(self, chat_id: int) -> tuple[str, tuple[str, ...]]:
         preferences = self._preferences.chat_translation_settings(chat_id)
         target, ignored = preferences if preferences is not None else (None, None)

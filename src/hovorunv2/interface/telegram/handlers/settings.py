@@ -62,12 +62,6 @@ UI_LANGUAGE_LABELS: Final[dict[str, str]] = {
     "uk": "🇺🇦 Українська",
     "en": "🇬🇧 English",
 }
-NOTIFICATION_LABELS: Final[dict[NotificationCategory, str]] = {
-    NotificationCategory.RELEASE: "🚀 Releases",
-    NotificationCategory.BETA: "🧪 Beta invites",
-    NotificationCategory.FEATURE_STATUS: "🛠 Feature status",
-    NotificationCategory.ANNOUNCEMENT: "📣 Announcements",
-}
 
 PROGRESS_SEGMENTS: Final = 10
 PROGRESS_FILLED: Final = "█"
@@ -177,12 +171,13 @@ def _quota_state(remaining: int, limit: int) -> str:
     return "🟢"
 
 
-def _render_feature_usage(feature: FeatureUsage, *, unlimited: bool) -> tuple[str, ...]:
+def _render_feature_usage(feature: FeatureUsage, *, unlimited: bool, locale: str) -> tuple[str, ...]:
     """Render one feature's quota as a heading plus a progress line.
 
     Args:
         feature: Feature usage totals to render.
         unlimited: Whether the subject bypasses personal quota.
+        locale: Target UI locale code.
 
     Returns:
         HTML-formatted lines for the feature.
@@ -192,33 +187,49 @@ def _render_feature_usage(feature: FeatureUsage, *, unlimited: bool) -> tuple[st
     if unlimited:
         return (
             f"♾ <b>{feature.display_name}</b>",
-            f"{feature.consumed} {unit} used · per {window} · personal quota unlimited",
+            get_message(
+                "settings-usage-unlimited-line",
+                locale,
+                consumed=feature.consumed,
+                unit=unit,
+                window=window,
+            ),
         )
     state = _quota_state(feature.remaining, feature.limit)
     bar = _progress_bar(feature.consumed, feature.limit)
     return (
         f"{state} <b>{feature.display_name}</b>",
-        f"{bar} {feature.consumed}/{feature.limit} {unit} · {feature.remaining} left · per {window}",
+        get_message(
+            "settings-usage-quota-line",
+            locale,
+            bar=bar,
+            consumed=feature.consumed,
+            limit=feature.limit,
+            unit=unit,
+            remaining=feature.remaining,
+            window=window,
+        ),
     )
 
 
-def _render_safety_caps(safety: UsageSafetyCaps) -> tuple[str, ...]:
+def _render_safety_caps(safety: UsageSafetyCaps, locale: str) -> tuple[str, ...]:
     """Render independent application safety ceilings as a compact list.
 
     Args:
         safety: Application safety caps to render.
+        locale: Target UI locale code.
 
     Returns:
         HTML-formatted safety cap lines.
     """
     return (
-        "🛡 <b>Safety caps</b>",
-        f"🔀 concurrency {safety.global_concurrency}",
-        f"⏳ pending {safety.global_pending}",
-        f"📦 payload {_format_bytes(safety.payload_bytes)}",
-        f"🗂 total payload {_format_bytes(safety.total_payload_bytes)}",
-        f"⏱ deadline {_format_duration(safety.deadline_seconds)}",
-        f"⚙ execution {_format_duration(safety.execution_seconds)}",
+        get_message("settings-safety-caps-title", locale),
+        get_message("settings-safety-concurrency", locale, value=safety.global_concurrency),
+        get_message("settings-safety-pending", locale, value=safety.global_pending),
+        get_message("settings-safety-payload", locale, value=_format_bytes(safety.payload_bytes)),
+        get_message("settings-safety-total-payload", locale, value=_format_bytes(safety.total_payload_bytes)),
+        get_message("settings-safety-deadline", locale, value=_format_duration(safety.deadline_seconds)),
+        get_message("settings-safety-execution", locale, value=_format_duration(safety.execution_seconds)),
     )
 
 
@@ -354,8 +365,9 @@ class SettingsCommand(BaseCommand):
         try:
             token = await self._sessions.issue(context, [callback.pack() for callback in callbacks])
         except ValueError:
+            locale = await self._resolve_locale(context)
             with contextlib.suppress(TelegramAPIError):
-                await message.edit_text("Settings expired. Reopen /settings.", reply_markup=None)
+                await message.edit_text(get_message("settings-expired", locale), reply_markup=None)
             return
         markup = builder.as_markup()
         for row in markup.inline_keyboard:
@@ -399,48 +411,57 @@ class SettingsCommand(BaseCommand):
             for group in page.groups
         ]
         listing = context.model_copy(update={"target": None, "choices": choices})
+        locale = await self._resolve_locale(listing)
         builder = InlineKeyboardBuilder()
         for index, group in enumerate(page.groups):
             builder.row(
                 InlineKeyboardButton(
-                    text=group.title or f"Group {group.telegram_id}",
+                    text=group.title
+                    or get_message("settings-groups-fallback-title", locale, group_id=group.telegram_id),
                     callback_data=SettingsCallback(menu=SettingsMenu.GROUP_SELECT, value=str(index)).pack(),
                 )
             )
         if page.next_after is not None:
             builder.row(
                 InlineKeyboardButton(
-                    text="More groups ➡️",
+                    text=get_message("settings-btn-more-groups", locale),
                     callback_data=SettingsCallback(menu=SettingsMenu.GROUPS, page=page.next_after).pack(),
                 )
             )
         if after_id:
             builder.row(
-                InlineKeyboardButton(text="First page", callback_data=SettingsCallback(menu=SettingsMenu.GROUPS).pack())
+                InlineKeyboardButton(
+                    text=get_message("settings-btn-first-page", locale),
+                    callback_data=SettingsCallback(menu=SettingsMenu.GROUPS).pack(),
+                )
             )
         builder.row(
             InlineKeyboardButton(
-                text="📊 My usage", callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="own").pack()
+                text=get_message("settings-btn-my-usage", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.USAGE, value="own").pack(),
             )
         )
         builder.row(
             InlineKeyboardButton(
-                text="🔔 My notifications",
+                text=get_message("settings-btn-my-notifications", locale),
                 callback_data=SettingsCallback(menu=SettingsMenu.NOTIFICATIONS, value="own").pack(),
             )
         )
         builder.row(
             InlineKeyboardButton(
-                text="🌐 Interface language",
+                text=get_message("settings-btn-interface-language", locale),
                 callback_data=SettingsCallback(menu=SettingsMenu.UI_LANG).pack(),
             )
         )
         builder.row(
-            InlineKeyboardButton(text="❌ Close", callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack())
+            InlineKeyboardButton(
+                text=get_message("settings-btn-close", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.CLOSE).pack(),
+            )
         )
-        text = "👥 <b>Manage groups</b>\n\nSelect a group to configure. Authority is checked again for every action."
+        text = get_message("settings-groups-title", locale)
         if not page.groups:
-            text += "\n\nNo verified groups on this page. Only known groups you can currently manage are shown."
+            text += "\n\n" + get_message("settings-groups-empty", locale)
         await self._render(message, text, builder, listing)
 
     async def _select_group(self, query: CallbackQuery, callback: SettingsCallback, context: SettingsContext) -> None:
@@ -585,33 +606,34 @@ class SettingsCommand(BaseCommand):
         if status is None:
             await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
+        locale = await self._resolve_locale(context)
         explanations = {
-            DecisionReason.ALLOWED: "Group processing is available.",
-            DecisionReason.NOT_APPROVED: "Group activation is required. Use /allow_chat.",
-            DecisionReason.MEMBER_EVIDENCE_UNKNOWN: "Administrator verification is unavailable or expired.",
-            DecisionReason.ADMIN_FULL_BANNED: "Group processing is suspended. Contact a bot administrator privately.",
-            DecisionReason.GROUP_BANNED: "Group processing is restricted. Contact a bot administrator privately.",
-            DecisionReason.ENTITY_UNAVAILABLE: "This group is unavailable.",
+            DecisionReason.ALLOWED: get_message("settings-access-allowed", locale),
+            DecisionReason.NOT_APPROVED: get_message("settings-access-not-approved", locale),
+            DecisionReason.MEMBER_EVIDENCE_UNKNOWN: get_message("settings-access-member-unknown", locale),
+            DecisionReason.ADMIN_FULL_BANNED: get_message("settings-access-admin-banned", locale),
+            DecisionReason.GROUP_BANNED: get_message("settings-access-group-banned", locale),
+            DecisionReason.ENTITY_UNAVAILABLE: get_message("settings-access-entity-unavailable", locale),
         }
         verification = (
-            "Bot permission verification is current."
+            get_message("settings-access-bot-verified", locale)
             if status.bot_verified
-            else "Bot permission verification is unavailable or expired. Administrator rights can help verification."
+            else get_message("settings-access-bot-unverified", locale)
         )
-        text = "🔎 <b>Access & permissions</b>\n\n" + explanations.get(
-            status.access_reason, "Group access is unavailable."
+        text = (
+            get_message("settings-access-title", locale)
+            + "\n\n"
+            + explanations.get(status.access_reason, get_message("settings-access-unavailable", locale))
         )
         text += "\n\n" + verification
         if status.guidance:
             text += "\n\n" + "\n".join(status.guidance)
-        text += (
-            "\n\nOnly features that require administrator rights need those rights. "
-            "Beta activation is explicit in Modules."
-        )
+        text += "\n\n" + get_message("settings-access-footer", locale)
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(
-                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()
+                text=get_message("settings-back-btn", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack(),
             )
         )
         await self._render(message, text, builder, context)
@@ -627,33 +649,35 @@ class SettingsCommand(BaseCommand):
         message = query.message
         if not isinstance(message, Message):
             return
+        locale = await self._resolve_locale(context)
         if scope == "group":
             if context.target is None or context.target_chat_id >= 0:
                 await self._answer_user(query, "settings-group-usage-unavailable", show_alert=True)
                 return
             summary = await self._usage_views.for_group(context.target_chat_id)
-            title = "📊 Group usage"
+            title = get_message("settings-usage-group-title", locale)
         else:
             if context.transport_chat_id <= 0:
                 await self._answer_user(query, "settings-personal-usage-private-only", show_alert=True)
                 return
             summary = await self._usage_views.for_user(query.from_user.id)
-            title = "📊 Your usage"
+            title = get_message("settings-usage-own-title", locale)
         builder = InlineKeyboardBuilder()
         back = SettingsMenu.GROUPS if context.target is None else SettingsMenu.MAIN
         builder.row(
             InlineKeyboardButton(
-                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=back).pack()
+                text=get_message("settings-back-btn", locale), callback_data=SettingsCallback(menu=back).pack()
             )
         )
-        await self._render(message, self._render_usage(title, summary), builder, context)
+        await self._render(message, self._render_usage(title, summary, locale), builder, context)
 
-    def _render_usage(self, title: str, summary: UsageSummary) -> str:
+    def _render_usage(self, title: str, summary: UsageSummary, locale: str) -> str:
         """Render aggregate totals, effective remaining allowance and independent safety caps.
 
         Args:
             title: Heading for the usage report.
             summary: Aggregated usage summary to render.
+            locale: Target UI locale code.
 
         Returns:
             HTML-formatted usage report.
@@ -661,14 +685,14 @@ class SettingsCommand(BaseCommand):
         lines = [f"<b>{title}</b>", ""]
         if summary.features:
             for feature in summary.features:
-                lines.extend(_render_feature_usage(feature, unlimited=summary.unlimited_personal_quota))
+                lines.extend(_render_feature_usage(feature, unlimited=summary.unlimited_personal_quota, locale=locale))
                 lines.append("")
         else:
-            lines.append("No feature usage is currently configured.")
+            lines.append(get_message("settings-usage-empty", locale))
             lines.append("")
-        lines.extend(_render_safety_caps(summary.safety))
+        lines.extend(_render_safety_caps(summary.safety, locale))
         if summary.unlimited_personal_quota:
-            lines.extend(("", "Bot administrators bypass ordinary personal quota; safety caps still apply."))
+            lines.extend(("", get_message("settings-usage-admin-note", locale)))
         return "\n".join(lines)
 
     async def _show_notifications(self, query: CallbackQuery, context: SettingsContext, scope: str | None) -> None:
@@ -686,10 +710,11 @@ class SettingsCommand(BaseCommand):
         if target is None:
             await self._answer_user(query, "settings-notifications-unavailable", show_alert=True)
             return
+        locale = await self._resolve_locale(context)
         preferences = await self._notification_preferences.preferences(target)
         builder = InlineKeyboardBuilder()
         for preference in preferences:
-            label = NOTIFICATION_LABELS[preference.category]
+            label = get_message(f"settings-notif-{preference.category.value}", locale)
             builder.row(
                 InlineKeyboardButton(
                     text=f"{'✅' if preference.enabled else '❌'} {label}",
@@ -703,13 +728,13 @@ class SettingsCommand(BaseCommand):
         back = SettingsMenu.GROUPS if scope == "own" else SettingsMenu.MAIN
         builder.row(
             InlineKeyboardButton(
-                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=back).pack()
+                text=get_message("settings-back-btn", locale), callback_data=SettingsCallback(menu=back).pack()
             )
         )
         text = (
-            "🔔 <b>Notification preferences</b>\n\n"
-            "Toggle routine release, beta, feature-status and announcement categories. "
-            "Request progress and administration confirmations are always delivered."
+            get_message("settings-notifications-title", locale)
+            + "\n\n"
+            + get_message("settings-notifications-body", locale)
         )
         await self._render(message, text, builder, context)
 
@@ -806,20 +831,20 @@ class SettingsCommand(BaseCommand):
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(
-                text=f"🗣 Interface: {ui_label}",
+                text=get_message("settings-lang-interface-btn", current_ui_locale, language=ui_label),
                 callback_data=SettingsCallback(menu=SettingsMenu.UI_LANG).pack(),
             )
         )
         builder.row(
             InlineKeyboardButton(
-                text=f"🎯 Target: {target_label}",
+                text=get_message("settings-lang-target-btn", current_ui_locale, language=target_label),
                 callback_data=SettingsCallback(menu=SettingsMenu.LANG_TARGET, page=0).pack(),
             )
         )
         visible_ignored = [code for code in ignored if code != "und"]
         builder.row(
             InlineKeyboardButton(
-                text=f"🚫 Ignored ({len(visible_ignored)})",
+                text=get_message("settings-lang-ignored-btn", current_ui_locale, count=len(visible_ignored)),
                 callback_data=SettingsCallback(menu=SettingsMenu.LANG_IGNORED, page=0).pack(),
             )
         )
@@ -897,24 +922,17 @@ class SettingsCommand(BaseCommand):
             return
 
         i18n = I18nContext.get_current(no_error=True)
+        actor = ActorContext.telegram(query.from_user.id)
         if context.target is None:
-            await self._i18n_manager.set_user_locale(query.from_user.id, selected_locale)
+            await self._i18n_manager.set_user_locale(query.from_user.id, selected_locale, actor=actor)
             if i18n is not None:
-                await i18n.set_locale(selected_locale)
-            alert = (
-                "Мову успішно змінено на українську."
-                if selected_locale == "uk"
-                else "Language successfully changed to English."
-            )
+                i18n.locale = selected_locale
+            alert = get_message("settings-language-changed", selected_locale)
         else:
-            await self._i18n_manager.set_chat_locale(context.target_chat_id, selected_locale)
+            await self._i18n_manager.set_chat_locale(context.target_chat_id, selected_locale, actor=actor)
             if i18n is not None and context.transport_chat_id == context.target_chat_id:
-                await i18n.set_locale(selected_locale)
-            alert = (
-                "Мову групи успішно змінено на українську."
-                if selected_locale == "uk"
-                else "Group language successfully changed to English."
-            )
+                i18n.locale = selected_locale
+            alert = get_message("settings-group-language-changed", selected_locale)
 
         await query.answer(alert)
         await self._show_ui_lang_menu(query, context)
@@ -948,16 +966,18 @@ class SettingsCommand(BaseCommand):
             builder.row(self._build_language_button(code, menu_type, page, target, ignored))
         self._add_language_navigation(builder, menu_type, page, total_pages)
 
+        locale = await self._resolve_locale(context)
         builder.row(
             InlineKeyboardButton(
-                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack()
+                text=get_message("settings-back-btn", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.LANG).pack(),
             )
         )
 
         title = (
-            "🎯 <b>Select Target Language</b>"
+            get_message("settings-lang-target-title", locale)
             if menu_type == SettingsMenu.LANG_TARGET
-            else "🚫 <b>Toggle Ignored Languages</b>"
+            else get_message("settings-lang-ignored-title", locale)
         )
         await self._render(message, title, builder, context)
 
@@ -1043,15 +1063,17 @@ class SettingsCommand(BaseCommand):
                 )
             )
 
+        locale = await self._resolve_locale(context)
         builder.adjust(2)
         builder.row(
             InlineKeyboardButton(
-                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()
+                text=get_message("settings-back-btn", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack(),
             )
         )
 
-        text = "⚙️ <b>Modules Settings</b>\n\nToggle Video (🎬) and Image/Text (🖼️) capture per platform:"
-        text += "\nEligible beta features start disabled. Select a feature to explicitly enable or disable it."
+        text = get_message("settings-modules-title", locale) + "\n\n" + get_message("settings-modules-body", locale)
+        text += "\n" + get_message("settings-modules-beta-hint", locale)
         if guidance:
             text += "\n\n" + "\n".join(sorted(guidance))
         await self._render(msg, text, builder, context)
@@ -1374,13 +1396,11 @@ class SettingsCommand(BaseCommand):
             await self._answer_user(query, "settings-unavailable", show_alert=True)
             return
 
+        locale = await self._resolve_locale(context)
         builder = InlineKeyboardBuilder()
-        for mode, label in (
-            (SpeechMode.OFF, "Off"),
-            (SpeechMode.MANUAL_ONLY, "Manual only (/transcribe)"),
-            (SpeechMode.MANUAL_AND_AUTOMATIC, "Manual + automatic"),
-        ):
+        for mode in (SpeechMode.OFF, SpeechMode.MANUAL_ONLY, SpeechMode.MANUAL_AND_AUTOMATIC):
             marker = "🔘" if mode == current_mode else "⚪"
+            label = get_message(f"settings-speech-mode-{mode.value}", locale)
             builder.row(
                 InlineKeyboardButton(
                     text=f"{marker} {label}",
@@ -1391,21 +1411,21 @@ class SettingsCommand(BaseCommand):
             )
         builder.row(
             InlineKeyboardButton(
-                text=get_message("settings-back-btn"), callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack()
+                text=get_message("settings-back-btn", locale),
+                callback_data=SettingsCallback(menu=SettingsMenu.MAIN).pack(),
             )
         )
 
         text = (
-            "🗣 <b>Speech Recognition Settings</b>\n\n"
-            "Select speech recognition mode for this chat:\n\n"
-            "• <b>Off</b>: Disabled completely.\n"
-            "• <b>Manual only</b>: Transcribe voice messages via <code>/transcribe</code> reply.\n"
-            "• <b>Manual + automatic</b>: Transcribes voice messages automatically and supports "
-            "<code>/transcribe</code>.\n\n"
-            "💡 <i>Automatic recognition runs locally and offline. No voice audio or transcripts are retained.</i>"
+            f"{get_message('settings-speech-title', locale)}\n\n"
+            f"{get_message('settings-speech-body', locale)}\n\n"
+            f"{get_message('settings-speech-desc-off', locale)}\n"
+            f"{get_message('settings-speech-desc-manual', locale)}\n"
+            f"{get_message('settings-speech-desc-auto', locale)}\n\n"
+            f"{get_message('settings-speech-privacy-note', locale)}"
         )
         if context.target_chat_id < 0:
-            text += f"\n\nGroup: <code>{context.target_chat_id}</code>"
+            text += "\n\n" + get_message("settings-speech-group-label", locale, group_id=context.target_chat_id)
         await self._render(msg, text, builder, context)
 
     async def _handle_speech_callback(
@@ -1441,7 +1461,8 @@ class SettingsCommand(BaseCommand):
         except PermissionError, ValueError:
             await self._answer_user(query, "settings-speech-unavailable", show_alert=True)
             return
-        mode_name = accepted_mode.value.replace("_", " ").capitalize()
+        user_locale = await self._i18n_manager.get_user_locale(query.from_user.id)
+        mode_name = get_message(f"settings-speech-mode-{accepted_mode.value}", user_locale)
         await self._answer_user(query, "settings-speech-mode-set", mode=mode_name)
         await self._show_speech_menu(query, context)
 

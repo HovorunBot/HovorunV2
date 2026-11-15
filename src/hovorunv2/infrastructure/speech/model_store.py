@@ -15,8 +15,8 @@ from hovorunv2.application.jobs.http_ports import HTTPTransportError
 from hovorunv2.application.speech.contracts import SpeechFailure, SpeechRecognitionError
 from hovorunv2.infrastructure.http_transport.native_http import HTTP_CHUNK_BYTES, NativeHTTPClient
 
-SPEECH_MODEL_REPOSITORY = "ggerganov/whisper.cpp"
-SPEECH_MODEL_REVISION = "5359861c739e955e79d9a303bcbc70fb988958b1"
+SPEECH_MODEL_REPOSITORY = "Systran/faster-whisper-small"
+SPEECH_MODEL_REVISION = "536b0662742c02347bc0e980a01041f333bce120"
 SPEECH_MODEL_BASE_URL = f"https://huggingface.co/{SPEECH_MODEL_REPOSITORY}/resolve/{SPEECH_MODEL_REVISION}"
 MODEL_DOWNLOAD_SECONDS = 90
 MODEL_LOCK_SECONDS = 10
@@ -61,9 +61,24 @@ class ModelFile:
 
 SPEECH_MODEL_FILES = (
     ModelFile(
-        "ggml-small-q8_0.bin",
-        264464607,
-        "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f",
+        "config.json",
+        2370,
+        "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
+    ),
+    ModelFile(
+        "model.bin",
+        483546902,
+        "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+    ),
+    ModelFile(
+        "tokenizer.json",
+        2203239,
+        "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+    ),
+    ModelFile(
+        "vocabulary.txt",
+        459861,
+        "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
     ),
 )
 

@@ -1,17 +1,14 @@
 """Bounded synchronous HTTP owned by the native worker process using it."""
 
 import ipaddress
-import json
 import logging
 import time
 from collections.abc import Mapping
 from contextlib import suppress
 from email.utils import parsedate_to_datetime
+from functools import partial
 from http import HTTPStatus
-from os import getpid
-from types import TracebackType
-from typing import Self
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 import requests
 import requests.adapters
@@ -24,12 +21,19 @@ from hovorunv2.application.jobs.http_ports import (
     HTTPQuery,
     HTTPTransportError,
 )
-from hovorunv2.utils.network_destinations import is_public_address, require_public_host
+from hovorunv2.infrastructure.http_transport.sync_base import (
+    HTTP_CHUNK_BYTES,
+    MAX_DOWNLOAD_BYTES,
+    MAX_REDIRECTS,
+    MAX_RESPONSE_BYTES,
+    REDIRECT_STATUSES,
+    SENSITIVE_HEADERS,
+    SyncHTTPClientBase,
+    decode_json_bytes,
+    validate_http_url,
+)
+from hovorunv2.utils.network_destinations import is_public_address
 
-MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
-MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-HTTP_CHUNK_BYTES = 64 * 1024
-MAX_REDIRECTS = 5
 CONNECT_TIMEOUT_SECONDS = 5
 READ_TIMEOUT_SECONDS = 30
 TOTAL_TIMEOUT_SECONDS = 60
@@ -37,44 +41,23 @@ MAX_RATE_LIMIT_RETRIES = 2
 MIN_RATE_LIMIT_DELAY_SECONDS = 1.0
 MAX_RATE_LIMIT_DELAY_SECONDS = 10.0
 logger = logging.getLogger(__name__)
-REDIRECT_STATUSES = frozenset(
-    {
-        HTTPStatus.MOVED_PERMANENTLY,
-        HTTPStatus.FOUND,
-        HTTPStatus.SEE_OTHER,
-        HTTPStatus.TEMPORARY_REDIRECT,
-        HTTPStatus.PERMANENT_REDIRECT,
-    }
-)
-SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"})
 
-
-def validate_http_url(url: str, *, allowed_hosts: frozenset[str] = frozenset()) -> tuple[str, str, int | None]:
-    """Require an HTTP origin without embedded credentials, invalid port, or private destination.
-
-    Args:
-        url: Untrusted request or redirect destination.
-        allowed_hosts: Optional test-only explicit allowlist of hostnames or IPs.
-
-    Returns:
-        Scheme, hostname and optional port for credential-scope comparison.
-
-    Raises:
-        HTTPTransportError: If the target has an unsupported, malformed, or non-public origin.
-    """
-    try:
-        parts = urlsplit(url)
-        if parts.scheme not in {"http", "https"} or not parts.hostname:
-            raise HTTPTransportError(HTTPFailure.REJECTED)
-        if parts.username or parts.password:
-            raise HTTPTransportError(HTTPFailure.REJECTED)
-        port = parts.port or (443 if parts.scheme == "https" else 80)
-        require_public_host(parts.hostname, port, allowed_hosts=allowed_hosts)
-        origin = parts.scheme, parts.hostname, parts.port
-    except ValueError:
-        raise HTTPTransportError(HTTPFailure.REJECTED) from None
-    else:
-        return origin
+__all__ = [
+    "CONNECT_TIMEOUT_SECONDS",
+    "HTTP_CHUNK_BYTES",
+    "MAX_DOWNLOAD_BYTES",
+    "MAX_RATE_LIMIT_DELAY_SECONDS",
+    "MAX_RATE_LIMIT_RETRIES",
+    "MAX_REDIRECTS",
+    "MAX_RESPONSE_BYTES",
+    "MIN_RATE_LIMIT_DELAY_SECONDS",
+    "READ_TIMEOUT_SECONDS",
+    "REDIRECT_STATUSES",
+    "SENSITIVE_HEADERS",
+    "TOTAL_TIMEOUT_SECONDS",
+    "NativeHTTPClient",
+    "validate_http_url",
+]
 
 
 def _require_success(response: requests.Response) -> None:
@@ -112,29 +95,16 @@ def _parse_retry_delay(
     return min(max(min_delay * (2**attempt), min_delay), max_delay)
 
 
-def _decode_json(raw: bytes) -> object:
-    try:
-        return json.loads(raw)
-    except ValueError, UnicodeError:
-        raise HTTPTransportError(HTTPFailure.MALFORMED) from None
+def _response_status(response: requests.Response) -> int:
+    return response.status_code
 
 
-def _redirect_target(
-    response: requests.Response,
-    current: str,
-    method: str,
-    *,
-    allowed_hosts: frozenset[str] = frozenset(),
-) -> tuple[str, tuple[str, str, int | None]]:
-    try:
-        target = urljoin(current, response.headers.get("Location", ""))
-        next_origin = validate_http_url(target, allowed_hosts=allowed_hosts)
-    finally:
-        response.close()
-    # A mutating request is never automatically resent to a redirect target.
-    if method != "GET":
-        raise HTTPTransportError(HTTPFailure.REJECTED)
-    return target, next_origin
+def _response_location(response: requests.Response) -> str | None:
+    return response.headers.get("Location")
+
+
+def _response_close(response: requests.Response) -> None:
+    response.close()
 
 
 def _verify_peer_destination(resp: object, req_url: str | None, allowed_hosts: frozenset[str]) -> None:
@@ -176,8 +146,10 @@ class _PublicDestinationAdapter(requests.adapters.HTTPAdapter):
         return super().build_response(req, resp)
 
 
-class NativeHTTPClient:
+class NativeHTTPClient(SyncHTTPClientBase):
     """Never retry mutating requests automatically or retain URL-bearing exception diagnostics."""
+
+    _client_label = "Native HTTP"
 
     def __init__(
         self,
@@ -195,8 +167,6 @@ class NativeHTTPClient:
     ) -> None:
         if (
             min(
-                max_bytes,
-                max_response_bytes,
                 connect_timeout,
                 read_timeout,
                 total_timeout,
@@ -204,57 +174,38 @@ class NativeHTTPClient:
                 max_rate_limit_delay,
             )
             <= 0
-            or max_redirects < 0
             or max_rate_limit_retries < 0
         ):
             msg = "HTTP bounds must be positive and retry/redirect counts nonnegative."
             raise ValueError(msg)
+        super().__init__(
+            max_bytes=max_bytes,
+            max_response_bytes=max_response_bytes,
+            max_redirects=max_redirects,
+            allowed_hosts=allowed_hosts,
+        )
         self._session: requests.Session | None = requests.Session()
         self._session.trust_env = False
-        self._allowed_hosts = allowed_hosts
         adapter = _PublicDestinationAdapter(allowed_hosts=allowed_hosts)
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
-        self._owner = getpid()
-        self._max_bytes = max_bytes
-        self._response_bytes = max_response_bytes
         self._timeout = (connect_timeout, read_timeout)
         self._total_timeout = total_timeout
-        self._max_redirects = max_redirects
         self._max_rate_limit_retries = max_rate_limit_retries
         self._min_rate_limit_delay = min_rate_limit_delay
         self._max_rate_limit_delay = max_rate_limit_delay
 
-    def __enter__(self) -> Self:
-        """Keep context-managed clients in their owning process."""
-        self._require_session()
-        return self
-
-    def __exit__(
-        self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
-    ) -> None:
-        """Close every pooled connection deterministically."""
-        self.close()
-
-    def validate_url(self, url: str) -> None:
-        """Require an HTTP origin without embedded credentials, invalid port, or private destination.
-
-        Args:
-            url: Untrusted destination to validate.
-        """
-        validate_http_url(url, allowed_hosts=self._allowed_hosts)
-
     def _require_session(self) -> requests.Session:
-        if self._session is None or self._owner != getpid():
+        self._require_open()
+        if self._session is None:
             msg = "Native HTTP requires an open client in its owning process."
             raise ValueError(msg)
         return self._session
 
-    def close(self) -> None:
-        """Invalidate the client after closing its owned session."""
-        session = self._require_session()
-        session.close()
-        self._session = None
+    def _close_transport(self) -> None:
+        if self._session is not None:
+            self._session.close()
+            self._session = None
 
     def _should_retry_rate_limit(self, response: requests.Response, method: str, attempt: int) -> bool:
         return (
@@ -268,12 +219,12 @@ class NativeHTTPClient:
         session: requests.Session,
         method: str,
         current: str,
-        *,
         params: HTTPQuery | None,
         request_headers: dict[str, str],
+        cookie_values: dict[str, str],
+        *,
         data: HTTPForm | None,
         files: HTTPFiles | None,
-        cookie_values: dict[str, str],
         start_time: float,
     ) -> requests.Response:
         for attempt in range(self._max_rate_limit_retries + 1):
@@ -323,33 +274,25 @@ class NativeHTTPClient:
         started: float | None = None,
     ) -> requests.Response:
         session = self._require_session()
-        origin = validate_http_url(url, allowed_hosts=self._allowed_hosts)
-        current = url
-        request_headers = dict(headers or {})
-        cookie_values = dict(cookies or {})
         start_time = started if started is not None else time.monotonic()
-        for _ in range(self._max_redirects + 1):
-            response = self._execute_attempt(
+        return self._execute_redirect_loop(
+            method,
+            url,
+            params=params,
+            headers=headers,
+            cookies=cookies,
+            send_fn=partial(
+                self._execute_attempt,
                 session,
                 method,
-                current,
-                params=params,
-                request_headers=request_headers,
                 data=data,
                 files=files,
-                cookie_values=cookie_values,
                 start_time=start_time,
-            )
-            if response.status_code not in REDIRECT_STATUSES:
-                return response
-            target, next_origin = _redirect_target(response, current, method, allowed_hosts=self._allowed_hosts)
-            if next_origin != origin:
-                request_headers = {
-                    key: value for key, value in request_headers.items() if key.lower() not in SENSITIVE_HEADERS
-                }
-                cookie_values = {}
-            current, origin, params = target, next_origin, None
-        raise HTTPTransportError(HTTPFailure.REJECTED)
+            ),
+            status_fn=_response_status,
+            location_fn=_response_location,
+            close_fn=_response_close,
+        )
 
     def _read(self, response: requests.Response, limit: int, started: float) -> bytes:
         length = response.headers.get("Content-Length")
@@ -389,7 +332,7 @@ class NativeHTTPClient:
 
     def read_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
         """Return bounded decoded JSON, including null; operational failure raises a safe transport error."""
-        return _decode_json(self._get_bytes_required(url, self._response_bytes, params=params, headers=headers))
+        return decode_json_bytes(self._get_bytes_required(url, self._response_bytes, params=params, headers=headers))
 
     def read_text(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> str:
         """Return bounded provider text; preserve replacement decoding for non-UTF-8 HTML."""
@@ -422,7 +365,7 @@ class NativeHTTPClient:
         try:
             with self._request(method.upper(), url, data=data, files=files) as response:
                 raw = self._read(response, self._response_bytes, time.monotonic())
-                result = _decode_json(raw)
+                result = decode_json_bytes(raw)
                 if response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
                     raise HTTPTransportError
                 return result

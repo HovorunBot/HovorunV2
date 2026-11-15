@@ -248,9 +248,6 @@ async def test_speech_role_verifies_assets_without_starting_model(test_container
     settings = (await test_container.get(Settings)).model_copy(
         update={
             "speech_model_dir": qualified_model_directory(),
-            "speech_helper_path": Path(
-                os.environ.get("HOVORUN_SPEECH_TEST_HELPER", "/usr/local/bin/hovorun-whisper-helper")
-            ),
         }
     )
     children = Path(f"/proc/self/task/{os.getpid()}/children")

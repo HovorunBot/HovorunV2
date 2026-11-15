@@ -95,3 +95,27 @@ def test_preparation_reports_filesystem_failure_without_exposing_paths(tmp_path:
     assert "EACCES" in diagnostic
     assert "writable" in diagnostic
     assert str(directory) not in diagnostic
+
+
+def test_require_ready_rejects_missing_or_corrupt_ctranslate2_artifact(tmp_path: Path) -> None:
+    """require_ready fails with MODEL_UNAVAILABLE if any pinned artifact is missing or tampered."""
+    directory = tmp_path / "models"
+    directory.mkdir()
+    files = {
+        "config.json": b"{}",
+        "model.bin": b"weights",
+        "tokenizer.json": b"{}",
+        "vocabulary.txt": b"a\nb\n",
+    }
+    artifacts = tuple(ModelFile(name, len(data), hashlib.sha256(data).hexdigest()) for name, data in files.items())
+    for name, data in files.items():
+        (directory / name).write_bytes(data)
+
+    with SpeechModelHTTPClient() as http:
+        store = SpeechModelStore(directory, http, artifacts=artifacts)
+        assert store.require_ready() == directory
+
+        (directory / "vocabulary.txt").write_bytes(b"tampered")
+        with pytest.raises(SpeechRecognitionError) as exc:
+            store.require_ready()
+        assert exc.value.reason == SpeechFailure.MODEL_UNAVAILABLE

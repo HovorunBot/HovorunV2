@@ -49,10 +49,8 @@ worker-ops = [
     "requests",
 ]
 worker-media = [
-    "beautifulsoup4",
     "ctranslate2",
     "curl-cffi",
-    "deep-translator",
     "fluent-runtime",
     "hovorunv2[worker-ops]",
     "py3langid",

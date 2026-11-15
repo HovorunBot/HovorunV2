@@ -10,8 +10,8 @@ import pytest
 import redis.asyncio as redis
 from dishka import AsyncContainer
 
-from hovorunv2.application.jobs.admission import AdmissionState, AdmissionUnavailableError
-from hovorunv2.application.jobs.feature_jobs import EnqueueState, JobOutcome, JobStatus
+from hovorunv2.application.jobs.admission import AdmissionPort, AdmissionState, AdmissionUnavailableError
+from hovorunv2.application.jobs.feature_jobs import EnqueueState, FeatureQueuePort, JobOutcome, JobStatus
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.worker_runtime import WorkerRuntime, worker_child_context
 from hovorunv2.infrastructure.config import Settings
@@ -35,7 +35,9 @@ async def test_republication_after_lost_ack_preserves_envelope_and_exclusive_cla
     settings = await test_container.get(Settings)
     clock = ManualClock(time.time())
     async with runtime_cache(test_container) as (cache, namespace):
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(
+            settings, clock, namespace, UsageSafetyCaps(), ValkeyAdmissionStore(cache, namespace)
+        )
         try:
             envelope = job_envelope("b" * 32, clock)
             await admit_test_job(settings, cache, namespace, clock, envelope)
@@ -77,7 +79,9 @@ async def test_cancellation_tombstones_pending_but_does_not_complete_active_work
     settings = await test_container.get(Settings)
     clock = ManualClock(time.time())
     async with runtime_cache(test_container) as (cache, namespace):
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(
+            settings, clock, namespace, UsageSafetyCaps(), ValkeyAdmissionStore(cache, namespace)
+        )
         try:
             pending = job_envelope("a" * 32, clock, job_id="cancel-pending")
             await admit_test_job(settings, cache, namespace, clock, pending)
@@ -114,7 +118,9 @@ async def test_original_schedule_deadline_and_missing_claim_fail_closed(test_con
     settings = await test_container.get(Settings)
     clock = ManualClock(time.time())
     async with runtime_cache(test_container) as (cache, namespace):
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(
+            settings, clock, namespace, UsageSafetyCaps(), ValkeyAdmissionStore(cache, namespace)
+        )
         try:
             envelope = job_envelope("a" * 32, clock)
             assert await queue.claim(envelope) is None
@@ -153,7 +159,9 @@ async def test_runner_bridge_claims_before_private_payload_load(test_container: 
     settings = await test_container.get(Settings)
     clock = ManualClock(time.time())
     async with runtime_cache(test_container) as (cache, namespace):
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(
+            settings, clock, namespace, UsageSafetyCaps(), ValkeyAdmissionStore(cache, namespace)
+        )
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
         try:
             sealed = await payloads.seal("cancelled", PRIVATE_BODY, clock.now() + 300)
@@ -188,7 +196,7 @@ async def test_unreadable_admission_raises_inside_queue_and_is_contained_at_work
     clock = ManualClock(time.time())
     safety = UsageSafetyCaps()
     async with runtime_cache(test_container) as (cache, namespace), AsyncExitStack() as resources:
-        queue = CeleryFeatureQueue(settings, clock, namespace, safety)
+        queue = CeleryFeatureQueue(settings, clock, namespace, safety, ValkeyAdmissionStore(cache, namespace))
         store = ValkeyAdmissionStore(cache, namespace)
         resources.push_async_callback(queue.close)
         envelope = job_envelope("a" * 32, clock)
@@ -232,7 +240,9 @@ async def test_enqueue_routes_speech_job_to_speech_queue(test_container: AsyncCo
     settings = await test_container.get(Settings)
     clock = ManualClock(time.time())
     async with runtime_cache(test_container) as (cache, namespace):
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(
+            settings, clock, namespace, UsageSafetyCaps(), ValkeyAdmissionStore(cache, namespace)
+        )
         try:
             envelope = job_envelope("b" * 32, clock, feature="transcribe")
             await admit_test_job(settings, cache, namespace, clock, envelope)
@@ -244,3 +254,11 @@ async def test_enqueue_routes_speech_job_to_speech_queue(test_container: AsyncCo
             assert speech_messages[0] == envelope.model_dump(mode="json")
         finally:
             await queue.close()
+
+
+async def test_dishka_feature_queue_shares_container_admission_port(test_container: AsyncContainer) -> None:
+    """Dishka-managed FeatureQueuePort reuses the container AdmissionPort instead of a duplicate Valkey pool."""
+    queue = await test_container.get(FeatureQueuePort)
+    admission = await test_container.get(AdmissionPort)
+    assert isinstance(queue, CeleryFeatureQueue)
+    assert queue._admission is admission  # noqa: SLF001

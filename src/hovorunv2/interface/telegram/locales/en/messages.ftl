@@ -1,18 +1,5 @@
 # English translations for HovorunV2 Telegram interactions
 
-# Common
-welcome = Welcome to Hovorun!
-greeting = Hello, { $name }!
-item-count = { $count ->
-    [one] { $count } item
-   *[other] { $count } items
-}
-status-html = <b>Status:</b> { $status }
-plural-files-html = { $count ->
-    [one] <b>{ $count }</b> file processed
-   *[other] <b>{ $count }</b> files processed
-}
-
 # Settings
 settings-title = ⚙️ <b>Settings</b>
 settings-language-btn = 🌐 Language: { $language }
@@ -242,3 +229,111 @@ setup-unavailable = ⚠️ One or more selected features are currently unavailab
 setup-group-only = ℹ️ Guided setup runs directly inside the target group chat.
 setup-duplicate = This action was already processed.
 setup-none = None
+
+
+# Settings Submenus
+settings-groups-title =
+    👥 <b>Manage groups</b>
+
+    Select a group to configure. Authority is checked again for every action.
+settings-groups-empty = No verified groups on this page. Only known groups you can currently manage are shown.
+settings-groups-fallback-title = Group { $group_id }
+settings-btn-more-groups = More groups ➡️
+settings-btn-first-page = First page
+settings-btn-my-notifications = 🔔 My notifications
+settings-btn-interface-language = 🌐 Interface language
+settings-access-title = 🔎 <b>Access & permissions</b>
+settings-access-allowed = Group processing is available.
+settings-access-not-approved = Group activation is required. Use /allow_chat.
+settings-access-member-unknown = Administrator verification is unavailable or expired.
+settings-access-admin-banned = Group processing is suspended. Contact a bot administrator privately.
+settings-access-group-banned = Group processing is restricted. Contact a bot administrator privately.
+settings-access-entity-unavailable = This group is unavailable.
+settings-access-unavailable = Group access is unavailable.
+settings-access-bot-verified = Bot permission verification is current.
+settings-access-bot-unverified = Bot permission verification is unavailable or expired. Administrator rights can help verification.
+settings-access-footer = Only features that require administrator rights need those rights. Beta activation is explicit in Modules.
+settings-usage-group-title = 📊 Group usage
+settings-usage-own-title = 📊 Your usage
+settings-usage-empty = No feature usage is currently configured.
+settings-usage-admin-note = Bot administrators bypass ordinary personal quota; safety caps still apply.
+settings-usage-unlimited-line = { $consumed } { $unit } used · per { $window } · personal quota unlimited
+settings-usage-quota-line = { $bar } { $consumed }/{ $limit } { $unit } · { $remaining } left · per { $window }
+settings-safety-caps-title = 🛡 <b>Safety caps</b>
+settings-safety-concurrency = 🔀 concurrency { $value }
+settings-safety-pending = ⏳ pending { $value }
+settings-safety-payload = 📦 payload { $value }
+settings-safety-total-payload = 🗂 total payload { $value }
+settings-safety-deadline = ⏱ deadline { $value }
+settings-safety-execution = ⚙ execution { $value }
+settings-notifications-title = <b>🔔 Notification preferences</b>
+settings-notifications-body = Toggle routine release, beta, feature-status and announcement categories. Request progress and administration confirmations are always delivered.
+settings-notif-release = 🚀 Releases
+settings-notif-beta = 🧪 Beta invites
+settings-notif-feature_status = 🛠 Feature status
+settings-notif-announcement = 📣 Announcements
+settings-lang-interface-btn = 🗣 Interface: { $language }
+settings-lang-target-btn = 🎯 Target: { $language }
+settings-lang-ignored-btn = 🚫 Ignored ({ $count })
+settings-lang-target-title = 🎯 <b>Select Target Language</b>
+settings-lang-ignored-title = 🚫 <b>Toggle Ignored Languages</b>
+settings-modules-title = ⚙️ <b>Modules Settings</b>
+settings-modules-body = Toggle Video (🎬) and Image/Text (🖼️) capture per platform:
+settings-modules-beta-hint = Eligible beta features start disabled. Select a feature to explicitly enable or disable it.
+settings-speech-title = 🗣 <b>Speech Recognition Settings</b>
+settings-speech-body = Select speech recognition mode for this chat:
+settings-speech-desc-off = • <b>Off</b>: Disabled completely.
+settings-speech-desc-manual = • <b>Manual only</b>: Transcribe voice messages via <code>/transcribe</code> reply.
+settings-speech-desc-auto = • <b>Manual + automatic</b>: Transcribes voice messages automatically and supports <code>/transcribe</code>.
+settings-speech-privacy-note = 💡 <i>Automatic recognition runs locally and offline. No voice audio or transcripts are retained.</i>
+settings-speech-group-label = Group: <code>{ $group_id }</code>
+
+# Speech Recognition
+speech-duplicate = ⏳ Transcription is already in progress or completed for this message.
+speech-unavailable-bot = Speech recognition is unavailable on this bot.
+speech-disabled-chat = Speech recognition is disabled in this chat. Enable it in /settings.
+speech-reply-required = Reply to a voice or audio message with /transcribe to transcribe it.
+speech-other-chat = Cannot transcribe messages from another chat.
+speech-other-topic = Cannot transcribe messages from a different topic.
+speech-bot-source = Cannot transcribe messages sent by bots.
+speech-media-unsupported = Only voice and audio messages are supported for transcription.
+speech-file-unavailable = Audio file reference is unavailable.
+speech-duration-missing = Cannot transcribe audio without duration metadata.
+speech-duration-limit = Audio duration ({ $duration }s) exceeds the maximum limit of { $max_seconds }s.
+speech-size-missing = Cannot transcribe audio without file size metadata.
+speech-size-limit = Audio file size exceeds the maximum limit of { $max_mb } MB.
+speech-no-speech = No speech detected.
+speech-transcript-header = Transcript
+speech-transcript-document-caption = Speech transcript
+speech-failure-invalid_input = This audio is unsupported or exceeds the speech limits.
+speech-failure-download_failed = The audio could not be downloaded from Telegram. Please try again later.
+speech-failure-decode_failed = This audio could not be decoded.
+speech-failure-model_unavailable = Speech recognition is unavailable. The model must be prepared by an operator.
+speech-failure-inference_failed = Speech recognition could not finish. Please try again later.
+speech-failure-output_limit = The transcript exceeded the supported output limit.
+speech-failure-deadline_exceeded = This transcription request expired before it could finish.
+speech-failure-cancelled = This transcription request was cancelled.
+
+# Access Requests & Middleware Denials
+access-request-dm =
+    🔔 <b>Access Request</b>
+
+    <b>Group:</b> { $group }
+    <b>Group ID:</b> <code>{ $group_id }</code>
+    <b>Requester ID:</b> <code>{ $requester_id }</code>
+    <b>Username:</b> { $username }
+access-unknown-group = Unknown
+access-unavailable-username = Unavailable
+access-user-banned = 🚫 You are banned from using bot commands.
+access-no-permission = 🚫 You don't have permission to do this.
+access-group-unavailable = 🚫 Bot processing is unavailable in this group. Contact a bot administrator privately.
+access-middleware-denied = 🚫 Access denied.
+access-group-not-approved = 🚫 This group is not approved yet.
+
+# Worker & Handler Notices
+notice-busy = ⏳ I'm handling the maximum number of media requests right now. Please try again in a moment.
+notice-application-failure = ⚠️ The bot encountered a problem while processing this request.
+notice-timeout = ⌛ This request timed out before it could finish. Please try again.
+notice-extraction-failure = ⚠️ Media could not be extracted. The post may be unavailable or require signing in.
+notice-limit-wait = ⏳ Request limits are currently reached. Your request is queued until capacity is available.
+notice-limit-failure = ⚠️ This request could not run within the current usage limits. Please try again later.

@@ -55,7 +55,13 @@ class SyncTelegramSpeechPort(Protocol):
         ...
 
     def deliver_speech(
-        self, chat_id: int, source_message_id: int, thread_id: int | None, result: SpeechResult | SpeechFailure
+        self,
+        chat_id: int,
+        source_message_id: int,
+        thread_id: int | None,
+        result: SpeechResult | SpeechFailure,
+        *,
+        ui_locale: str = "uk",
     ) -> int:
         """Require a confirmed source-bound reply or raise a definite/uncertain Telegram delivery error."""
         ...

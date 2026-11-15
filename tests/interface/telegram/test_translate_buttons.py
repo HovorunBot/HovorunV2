@@ -101,8 +101,8 @@ async def _translation_target(container: AsyncContainer, chat_id: int) -> JobTar
 
 
 def _google_html(translated: str) -> HTTPReply:
-    body = f'<html><body><div class="result-container">{translated}</div></body></html>'.encode()
-    return HTTPReply(body=body, status=HTTPStatus.OK, headers={"Content-Type": "text/html; charset=utf-8"})
+    body = json.dumps([[[translated, "src"]]]).encode()
+    return HTTPReply(body=body, status=HTTPStatus.OK, headers={"Content-Type": "application/json; charset=utf-8"})
 
 
 def _make_callback_query(
@@ -151,7 +151,7 @@ def _run_explicit_button_job(
     with (
         HTTPFixture(routes) as server,
         NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
-        GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+        GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google_engine,
         WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
         WorkerRuntime(settings, clock, namespace, safety) as runtime,
         closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
@@ -218,7 +218,7 @@ async def test_auto_overflow_creates_encrypted_snapshot_and_fits_inline_stays_bu
                 }
             ) as server,
             NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
-            GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+            GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google_engine,
             WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
             WorkerRuntime(settings, clock, namespace, safety) as runtime,
             closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
@@ -784,7 +784,7 @@ async def test_auto_translation_media_caption_1025_to_4096_preserves_original_an
                 }
             ) as server,
             NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
-            GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+            GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google_engine,
             WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
             WorkerRuntime(settings, clock, namespace, safety) as runtime,
             closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
@@ -907,7 +907,9 @@ async def test_explicit_translation_releases_dedupe_on_failure_and_same_language
                 }
             ) as server,
             NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
-            GoogleTranslationEngine(base_url=server.url("/m"), sleep_fn=lambda _s: None) as google_engine,
+            GoogleTranslationEngine(
+                base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"}), sleep_fn=lambda _s: None
+            ) as google_engine,
             WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
             WorkerRuntime(settings, clock, namespace, safety) as runtime,
             closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
@@ -1068,7 +1070,7 @@ async def test_explicit_translation_catches_snapshot_expiry_value_error_and_send
                 }
             ) as server,
             NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
-            GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+            GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google_engine,
             WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
             WorkerRuntime(settings, clock, namespace, safety) as runtime,
             closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,

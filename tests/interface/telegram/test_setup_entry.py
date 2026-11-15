@@ -16,7 +16,7 @@ from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.settings.setup_apply import SetupApplyService
 from hovorunv2.domain.audit import ActorContext
-from hovorunv2.domain.enums import DEFAULT_COMMANDS, ChatStatus, CommandName, Role, SpeechMode
+from hovorunv2.domain.enums import DEFAULT_COMMANDS, ChatStatus, CommandName, Role
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.fixtures import INITIAL_COMMANDS
 from hovorunv2.interface.telegram.handlers.access import AccessCommand
@@ -235,8 +235,8 @@ async def test_setup_command_registration_group_only_and_settings_entry(
         ).as_(recording_bot)
         await settings_cmd.handle(grp_settings, recording_bot)
         sent_settings = [c for c in recording_bot.session.calls if isinstance(c, EditMessageText)][-1]
-        assert "Target: <code>fr</code>" in (sent_settings.text or "")
-        assert f"Speech: <code>{SpeechMode.OFF.value}</code>" in (sent_settings.text or "")
+        assert "<code>fr</code>" in (sent_settings.text or "")
+        assert "<code>Вимкнено</code>" in (sent_settings.text or "")
         assert _has_configure_button(sent_settings.reply_markup) is True
 
         # Rerunning /setup preserves saved configuration until Apply

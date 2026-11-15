@@ -12,6 +12,7 @@ from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.setup import SetupWizardHandler
 from hovorunv2.interface.telegram.handlers.translate_callbacks import TranslateCallbackHandler
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager
 from hovorunv2.interface.telegram.middlewares import (
     AccessMiddleware,
     LogContextMiddleware,
@@ -30,6 +31,7 @@ def _register_middlewares(
     settings: AppSettings,
     reminders: ChatReminderService,
     reconciliation: MembershipReconciliationService,
+    i18n_manager: AudienceI18nManager | None = None,
 ) -> None:
     """Attach identity, logging, access and caching middlewares to router.
 
@@ -42,6 +44,7 @@ def _register_middlewares(
         settings: Application settings consumed by the access middleware.
         reminders: Reminder service used for unapproved-group prompts.
         reconciliation: Service refreshing stale membership before protected actions.
+        i18n_manager: Optional i18n manager for localized access denial prompts.
     """
     router.message.outer_middleware(identity_middleware)
     router.callback_query.outer_middleware(identity_middleware)
@@ -55,8 +58,8 @@ def _register_middlewares(
 
     router.message.middleware(MembershipRefreshMiddleware(reconciliation))
     router.callback_query.middleware(MembershipRefreshMiddleware(reconciliation))
-    router.message.middleware(AccessMiddleware(access_service, cache, settings, reminders))
-    router.callback_query.middleware(AccessMiddleware(access_service, cache, settings, reminders))
+    router.message.middleware(AccessMiddleware(access_service, cache, settings, reminders, i18n_manager))
+    router.callback_query.middleware(AccessMiddleware(access_service, cache, settings, reminders, i18n_manager))
     router.message.middleware(MessageCacheMiddleware(message_service))
 
 
@@ -92,6 +95,7 @@ def build_router(
     bot_join_handler: BotJoinHandler | None = None,
     translate_callback_handler: TranslateCallbackHandler | None = None,
     setup_wizard_handler: SetupWizardHandler | None = None,
+    i18n_manager: AudienceI18nManager | None = None,
 ) -> Router:
     """Build and configure the main Telegram router with middlewares and handlers.
 
@@ -107,6 +111,7 @@ def build_router(
         bot_join_handler: Optional handler for bot membership changes.
         translate_callback_handler: Optional handler for translation button callbacks.
         setup_wizard_handler: Optional handler for guided setup callbacks.
+        i18n_manager: Optional i18n manager for localized access denial prompts.
 
     Returns:
         Configured Telegram router.
@@ -121,6 +126,7 @@ def build_router(
         settings,
         reminders,
         reconciliation,
+        i18n_manager,
     )
     if bot_join_handler:
         bot_join_handler.register(router)

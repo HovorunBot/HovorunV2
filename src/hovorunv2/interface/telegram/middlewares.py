@@ -8,6 +8,7 @@ from aiogram.dispatcher.middlewares.user_context import EVENT_CONTEXT_KEY, Event
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, TelegramObject, Update
+from aiogram_i18n.context import I18nContext
 
 from hovorunv2.application.access.access_service import AccessService, CommandPolicy
 from hovorunv2.application.access.permissions import DecisionReason
@@ -21,6 +22,7 @@ from hovorunv2.application.operations.reminder_service import ChatReminderServic
 from hovorunv2.domain.enums import PROVIDER_SPLIT_COMMANDS, CommandName
 from hovorunv2.infrastructure.logger import get_logger, set_log_context
 from hovorunv2.interface.telegram.handlers.help import HelpCommand
+from hovorunv2.interface.telegram.i18n import DEFAULT_LOCALE, AudienceI18nManager, get_message
 
 logger = get_logger(__name__)
 
@@ -146,6 +148,7 @@ class AccessMiddleware(BaseMiddleware):
         cache: CachePort,
         settings: AppSettings,
         reminders: ChatReminderService,
+        i18n_manager: AudienceI18nManager | None = None,
     ) -> None:
         """Initialize middleware with dependencies."""
         super().__init__()
@@ -153,6 +156,29 @@ class AccessMiddleware(BaseMiddleware):
         self._cache = cache
         self._settings = settings
         self._reminders = reminders
+        self._i18n_manager = i18n_manager
+
+    async def _actor_locale(self, user_id: int | None, data: dict[str, object] | None = None) -> str:
+        if self._i18n_manager is not None and user_id is not None:
+            return await self._i18n_manager.get_user_locale(user_id)
+        if data is not None:
+            i18n = data.get("i18n")
+            if isinstance(i18n, I18nContext):
+                return i18n.locale
+        ctx = I18nContext.get_current(no_error=True)
+        return ctx.locale if ctx is not None else DEFAULT_LOCALE
+
+    async def _group_locale(self, chat_id: int, data: dict[str, object] | None = None) -> str:
+        if self._i18n_manager is not None:
+            chat_locale = await self._i18n_manager.get_chat_locale(chat_id)
+            if chat_locale:
+                return chat_locale
+        if data is not None:
+            i18n = data.get("i18n")
+            if isinstance(i18n, I18nContext):
+                return i18n.locale
+        ctx = I18nContext.get_current(no_error=True)
+        return ctx.locale if ctx is not None else DEFAULT_LOCALE
 
     async def _handle_private_chat(
         self,
@@ -178,7 +204,7 @@ class AccessMiddleware(BaseMiddleware):
         """
         if not user_id or await self._access_service.is_banned(user_id):
             logger.info("Private chat access denied (banned or missing user)")
-            await self._deny_private_chat(event)
+            await self._deny_private_chat(event, user_id, data)
             return None
 
         if await self._access_service.is_admin(user_id):
@@ -201,7 +227,7 @@ class AccessMiddleware(BaseMiddleware):
 
         if policy.requires_admin or policy.requires_group_admin:
             logger.info("Private chat access denied: admin required (command: %s)", command_name or "none")
-            await self._deny_private_chat(event)
+            await self._deny_private_chat(event, user_id, data)
             return None
 
         if await self._access_service.is_trusted(user_id):
@@ -209,7 +235,7 @@ class AccessMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         logger.info("Private chat access denied for user (command: %s)", command_name or "none")
-        await self._deny_private_chat(event)
+        await self._deny_private_chat(event, user_id, data)
         return None
 
     async def _handle_group_chat(
@@ -243,7 +269,8 @@ class AccessMiddleware(BaseMiddleware):
         if user_id and await self._access_service.is_banned(user_id) and not policy.is_automatic:
             logger.info("Direct action denied for banned user %d in group %d", user_id, chat_id)
             if isinstance(event, CallbackQuery):
-                await event.answer("🚫 You are banned from using bot commands.", show_alert=True)
+                locale = await self._actor_locale(user_id, data)
+                await event.answer(get_message("access-user-banned", locale), show_alert=True)
             return None
 
         raw_bot = data.get("bot")
@@ -268,18 +295,27 @@ class AccessMiddleware(BaseMiddleware):
             decision.reason,
         )
         if isinstance(event, Message) and chat_id < 0:
-            await self._send_group_denial(event, chat_id, reason=decision.reason)
+            await self._send_group_denial(event, chat_id, reason=decision.reason, data=data)
         if isinstance(event, CallbackQuery):
-            await event.answer("🚫 You don't have permission to do this.", show_alert=True)
+            locale = await self._actor_locale(user_id, data)
+            await event.answer(get_message("access-no-permission", locale), show_alert=True)
         return None
 
-    async def _send_group_denial(self, event: Message, chat_id: int, *, reason: DecisionReason | None = None) -> None:
+    async def _send_group_denial(
+        self,
+        event: Message,
+        chat_id: int,
+        *,
+        reason: DecisionReason | None = None,
+        data: dict[str, object] | None = None,
+    ) -> None:
         """Send cooldown-limited guidance only for group or administrator bans.
 
         Args:
             event: Telegram message being answered.
             chat_id: Telegram chat ID of the group.
             reason: Optional pre-evaluated group access denial reason.
+            data: Optional middleware context dictionary.
         """
         effective_reason = (
             reason if reason is not None else (await self._access_service.evaluate_group_access(chat_id)).reason
@@ -290,8 +326,9 @@ class AccessMiddleware(BaseMiddleware):
         if await self._cache.get(key):
             return
         await self._cache.set(key, 1, expire=DENIAL_COOLDOWN_SECONDS)
+        locale = await self._group_locale(chat_id, data)
         try:
-            await event.answer("🚫 Bot processing is unavailable in this group. Contact a bot administrator privately.")
+            await event.answer(get_message("access-group-unavailable", locale))
         except TelegramAPIError:
             logger.warning("Could not deliver access guidance in group %d", chat_id)
 
@@ -334,13 +371,14 @@ class AccessMiddleware(BaseMiddleware):
                 command_name = candidate
                 break
 
+        user_id, chat_id, is_private = self._extract_event_context(event)
         if not policy or not isinstance(policy, CommandPolicy):
             logger.warning("Event missing required command policy: denying by default")
             if isinstance(event, CallbackQuery):
-                await event.answer("🚫 Access denied.", show_alert=True)
+                locale = await self._actor_locale(user_id, data)
+                await event.answer(get_message("access-middleware-denied", locale), show_alert=True)
             return None
 
-        user_id, chat_id, is_private = self._extract_event_context(event)
         if not chat_id:
             return None
 
@@ -391,7 +429,7 @@ class AccessMiddleware(BaseMiddleware):
             reason or FeatureDenial.UNKNOWN_FEATURE,
         )
         if is_private:
-            await self._deny_private_feature(event, user_id)
+            await self._deny_private_feature(event, user_id, data)
             return
         await self._deny_group_feature(event, data, user_id, chat_id, reason=reason)
 
@@ -399,16 +437,18 @@ class AccessMiddleware(BaseMiddleware):
         self,
         event: TelegramObject,
         user_id: int | None,
+        data: dict[str, object],
     ) -> None:
         """Show the private landing help or a feature alert for a denied feature."""
         if user_id is not None and (
             await self._access_service.is_banned(user_id)
             or (not await self._access_service.is_admin(user_id) and not await self._access_service.is_trusted(user_id))
         ):
-            await self._deny_private_chat(event)
+            await self._deny_private_chat(event, user_id, data)
             return
         if isinstance(event, CallbackQuery):
-            await event.answer("Feature unavailable.", show_alert=True)
+            locale = await self._actor_locale(user_id, data)
+            await event.answer(get_message("settings-feature-unavailable", locale), show_alert=True)
 
     async def _deny_group_feature(
         self,
@@ -426,33 +466,51 @@ class AccessMiddleware(BaseMiddleware):
             else (await self._access_service.evaluate_group_access(chat_id)).reason
         )
         if group_reason == DecisionReason.NOT_APPROVED:
-            await self._not_approved(event, data, chat_id)
+            await self._not_approved(event, data, chat_id, user_id)
             return
         if group_reason in {DecisionReason.GROUP_BANNED, DecisionReason.ADMIN_FULL_BANNED}:
-            await self._group_denied(event, chat_id, reason=group_reason)
+            await self._group_denied(event, chat_id, user_id, data, reason=group_reason)
             return
         if user_id is not None and await self._access_service.is_banned(user_id):
             if isinstance(event, CallbackQuery):
-                await event.answer("🚫 You are banned from using bot commands.", show_alert=True)
+                locale = await self._actor_locale(user_id, data)
+                await event.answer(get_message("access-user-banned", locale), show_alert=True)
             return
         if isinstance(event, CallbackQuery):
-            await event.answer("Feature unavailable.", show_alert=True)
+            locale = await self._actor_locale(user_id, data)
+            await event.answer(get_message("settings-feature-unavailable", locale), show_alert=True)
 
-    async def _not_approved(self, event: TelegramObject, data: dict[str, object], chat_id: int) -> None:
+    async def _not_approved(
+        self,
+        event: TelegramObject,
+        data: dict[str, object],
+        chat_id: int,
+        user_id: int | None = None,
+    ) -> None:
         """Send the one-time approval prompt or a callback alert for an unapproved group."""
         if isinstance(event, CallbackQuery):
-            await event.answer("🚫 This group is not approved yet.", show_alert=True)
+            locale = await self._actor_locale(user_id, data)
+            await event.answer(get_message("access-group-not-approved", locale), show_alert=True)
             return
         bot = data.get("bot")
         if isinstance(event, Message) and isinstance(bot, Bot):
             await self._reminders.send_unauthorized_prompt(bot, chat_id, force=False)
 
-    async def _group_denied(self, event: TelegramObject, chat_id: int, *, reason: DecisionReason | None = None) -> None:
+    async def _group_denied(
+        self,
+        event: TelegramObject,
+        chat_id: int,
+        user_id: int | None = None,
+        data: dict[str, object] | None = None,
+        *,
+        reason: DecisionReason | None = None,
+    ) -> None:
         """Send group-ban guidance or a callback denial alert."""
         if isinstance(event, Message):
-            await self._send_group_denial(event, chat_id, reason=reason)
+            await self._send_group_denial(event, chat_id, reason=reason, data=data)
         elif isinstance(event, CallbackQuery):
-            await event.answer("🚫 Access denied.", show_alert=True)
+            locale = await self._actor_locale(user_id, data)
+            await event.answer(get_message("access-middleware-denied", locale), show_alert=True)
 
     async def _feature_allowed(
         self,
@@ -513,14 +571,22 @@ class AccessMiddleware(BaseMiddleware):
             return user_id, 0, False
         return None, 0, False
 
-    async def _deny_private_chat(self, event: TelegramObject) -> None:
+    async def _deny_private_chat(
+        self,
+        event: TelegramObject,
+        user_id: int | None = None,
+        data: dict[str, object] | None = None,
+    ) -> None:
         """Send landing page or access denied alert to non-admin private chat users.
 
         Args:
             event: Telegram message or callback query to answer.
+            user_id: Telegram user ID of the actor, or None when absent.
+            data: Optional middleware context dictionary.
         """
+        locale = await self._actor_locale(user_id, data)
         if isinstance(event, Message):
             help_cmd = HelpCommand(self._settings, self._access_service)
-            await event.answer(help_cmd.get_help_text(), parse_mode="HTML", disable_web_page_preview=True)
+            await event.answer(help_cmd.get_help_text(locale=locale), parse_mode="HTML", disable_web_page_preview=True)
         elif isinstance(event, CallbackQuery):
-            await event.answer("🚫 Access denied.", show_alert=True)
+            await event.answer(get_message("access-middleware-denied", locale), show_alert=True)

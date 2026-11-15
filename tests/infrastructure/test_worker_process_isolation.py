@@ -68,7 +68,9 @@ async def test_worker_completes_admitted_work_without_bot_and_restarts_cleanly(
     clock = ManualClock(time.time())
     chat_id, generation = await _seed_entities(test_container)
     async with runtime_cache(test_container) as (cache, namespace):
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(
+            settings, clock, namespace, UsageSafetyCaps(), ValkeyAdmissionStore(cache, namespace)
+        )
         try:
             first = await _admit(settings, cache, namespace, clock, "restart-first", chat_id, generation)
             async with native_feature_worker(settings, namespace, (namespace.value + "media",)) as worker:
@@ -99,7 +101,9 @@ async def test_sigkilled_prefork_child_is_replaced_and_keeps_exclusive_claim(
     clock = ManualClock(time.time())
     chat_id, generation = await _seed_entities(test_container)
     async with runtime_cache(test_container) as (cache, namespace):
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(
+            settings, clock, namespace, UsageSafetyCaps(), ValkeyAdmissionStore(cache, namespace)
+        )
         try:
             async with native_feature_worker(settings, namespace, (namespace.value + "media",)) as worker:
                 first_child = await worker.child_pid()

@@ -4,7 +4,6 @@ from typing import NewType
 
 from aiogram_i18n import I18nMiddleware
 from dishka import Provider, Scope, alias, provide
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from hovorunv2.application.access.administration_service import AdministrationService
 from hovorunv2.application.access.ports import UnauthorizedPromptSender
@@ -12,6 +11,8 @@ from hovorunv2.application.features.beta_prompts import BetaPromptService
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
 from hovorunv2.application.groups.group_management_service import GroupManagementService
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.identity.recovery import RecoveryPreviewService
 from hovorunv2.application.messaging.feedback_service import FeedbackService
 from hovorunv2.application.messaging.message_service import MessageService
@@ -103,16 +104,17 @@ class InterfaceAndUtilityProvider(Provider):
     translate_callback_handler = provide(TranslateCallbackHandler)
 
     @provide(scope=Scope.APP)
-    def get_i18n_manager(self, session_maker: async_sessionmaker) -> AudienceI18nManager:
+    def get_i18n_manager(self, chats: ChatStore, users: UserStore) -> AudienceI18nManager:
         """Provide audience-aware i18n manager for Telegram interactions.
 
         Args:
-            session_maker: Database session factory for querying audience locales.
+            chats: Chat store for querying and persisting chat locales.
+            users: User store for querying and persisting user locales.
 
         Returns:
             Configured AudienceI18nManager instance.
         """
-        return AudienceI18nManager(session_maker=session_maker)
+        return AudienceI18nManager(chats=chats, users=users)
 
     @provide(scope=Scope.APP)
     def get_i18n_middleware(self, manager: AudienceI18nManager) -> I18nMiddleware:

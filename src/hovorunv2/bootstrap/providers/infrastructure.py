@@ -14,6 +14,7 @@ from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.bootstrap.database import DatabaseProvider
 from hovorunv2.infrastructure.config import DatabaseSettings, Settings
 from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
+from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.runtime.cache import CacheService
 from hovorunv2.interface.telegram.transport.membership import TelegramMembershipAdapter
 
@@ -46,9 +47,10 @@ class InfrastructureProvider(DatabaseProvider):
         clock: Clock,
         namespace: RuntimeNamespace,
         safety: UsageSafetyCaps,
+        admission: ValkeyAdmissionStore,
     ) -> AsyncIterable[FeatureQueuePort]:
         """Own a separate typed feature queue connection without starting a worker prematurely."""
-        queue = CeleryFeatureQueue(config, clock, namespace, safety)
+        queue = CeleryFeatureQueue(config, clock, namespace, safety, admission)
         yield queue
         await queue.close()
 

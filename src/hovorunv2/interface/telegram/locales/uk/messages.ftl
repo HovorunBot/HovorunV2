@@ -1,20 +1,5 @@
 # Ukrainian translations for HovorunV2 Telegram interactions
 
-# Common
-welcome = Ласкаво просимо до Говоруна!
-greeting = Привіт, { $name }!
-item-count = { $count ->
-    [one] { $count } елемент
-    [few] { $count } елементи
-   *[many] { $count } елементів
-}
-status-html = <b>Статус:</b> { $status }
-plural-files-html = { $count ->
-    [one] <b>{ $count }</b> файл оброблено
-    [few] <b>{ $count }</b> файли оброблено
-   *[many] <b>{ $count }</b> файлів оброблено
-}
-
 # Settings
 settings-title = ⚙️ <b>Налаштування</b>
 settings-language-btn = 🌐 Мова: { $language }
@@ -248,3 +233,111 @@ setup-unavailable = ⚠️ Обрану функцію або конфігура
 setup-group-only = ℹ️ Кероване налаштування запускається безпосередньо в цільовому груповому чаті.
 setup-duplicate = Цю дію вже оброблено.
 setup-none = Немає
+
+
+# Settings Submenus
+settings-groups-title =
+    👥 <b>Керування групами</b>
+
+    Оберіть групу для налаштування. Повноваження перевіряються повторно для кожної дії.
+settings-groups-empty = На цій сторінці немає підтверджених груп. Показано лише відомі групи, якими ви можете керувати.
+settings-groups-fallback-title = Група { $group_id }
+settings-btn-more-groups = Більше груп ➡️
+settings-btn-first-page = Перша сторінка
+settings-btn-my-notifications = 🔔 Мої сповіщення
+settings-btn-interface-language = 🌐 Мова інтерфейсу
+settings-access-title = 🔎 <b>Доступ і дозволи</b>
+settings-access-allowed = Обробка в групі доступна.
+settings-access-not-approved = Потрібна активація групи. Виконайте /allow_chat.
+settings-access-member-unknown = Перевірка адміністратора недоступна або застаріла.
+settings-access-admin-banned = Обробку в групі призупинено. Зверніться до адміністратора бота приватно.
+settings-access-group-banned = Обробку в групі обмежено. Зверніться до адміністратора бота приватно.
+settings-access-entity-unavailable = Ця група недоступна.
+settings-access-unavailable = Доступ групи недоступний.
+settings-access-bot-verified = Перевірка дозволів бота актуальна.
+settings-access-bot-unverified = Перевірка дозволів бота недоступна або застаріла. Права адміністратора можуть допомогти перевірці.
+settings-access-footer = Лише функції, що потребують прав адміністратора, вимагають цих прав. Бета-функції вмикаються явно в Модулях.
+settings-usage-group-title = 📊 Використання групи
+settings-usage-own-title = 📊 Моє використання
+settings-usage-empty = Використання функцій наразі не налаштовано.
+settings-usage-admin-note = Адміністратори бота обходять звичайну особисту квоту; обмеження безпеки все ще діють.
+settings-usage-unlimited-line = Використано { $consumed } { $unit } · за { $window } · особиста квота необмежена
+settings-usage-quota-line = { $bar } { $consumed }/{ $limit } { $unit } · залишилось { $remaining } · за { $window }
+settings-safety-caps-title = 🛡 <b>Обмеження безпеки</b>
+settings-safety-concurrency = 🔀 паралельність { $value }
+settings-safety-pending = ⏳ у черзі { $value }
+settings-safety-payload = 📦 дані { $value }
+settings-safety-total-payload = 🗂 загалом даних { $value }
+settings-safety-deadline = ⏱ дедлайн { $value }
+settings-safety-execution = ⚙ виконання { $value }
+settings-notifications-title = <b>🔔 Налаштування сповіщень</b>
+settings-notifications-body = Перемикайте категорії релізів, бета-запрошень, статусу функцій та оголошень. Прогрес запитів і підтвердження адміністрування доставляються завжди.
+settings-notif-release = 🚀 Релізи
+settings-notif-beta = 🧪 Бета-запрошення
+settings-notif-feature_status = 🛠 Статус функцій
+settings-notif-announcement = 📣 Оголошення
+settings-lang-interface-btn = 🗣 Інтерфейс: { $language }
+settings-lang-target-btn = 🎯 Цільова: { $language }
+settings-lang-ignored-btn = 🚫 Ігноровані ({ $count })
+settings-lang-target-title = 🎯 <b>Оберіть мову перекладу</b>
+settings-lang-ignored-title = 🚫 <b>Ігноровані мови</b>
+settings-modules-title = ⚙️ <b>Налаштування модулів</b>
+settings-modules-body = Перемикайте обробку відео (🎬) та зображень/тексту (🖼️) для кожної платформи:
+settings-modules-beta-hint = Доступні бета-функції за замовчуванням вимкнені. Оберіть функцію, щоб увімкнути або вимкнути її.
+settings-speech-title = 🗣 <b>Налаштування розпізнавання мовлення</b>
+settings-speech-body = Оберіть режим розпізнавання мовлення для цього чату:
+settings-speech-desc-off = • <b>Вимкнено</b>: Повністю вимкнено.
+settings-speech-desc-manual = • <b>Лише вручну</b>: Розпізнавання голосових повідомлень через відповідь <code>/transcribe</code>.
+settings-speech-desc-auto = • <b>Вручну + автоматично</b>: Автоматично розпізнає голосові повідомлення та підтримує <code>/transcribe</code>.
+settings-speech-privacy-note = 💡 <i>Автоматичне розпізнавання працює локально та офлайн. Аудіо та транскрипти не зберігаються.</i>
+settings-speech-group-label = Група: <code>{ $group_id }</code>
+
+# Speech Recognition
+speech-duplicate = ⏳ Розпізнавання для цього повідомлення вже триває або завершено.
+speech-unavailable-bot = Розпізнавання мовлення недоступне на цьому боті.
+speech-disabled-chat = Розпізнавання мовлення вимкнено в цьому чаті. Увімкніть його в /settings.
+speech-reply-required = Дайте відповідь на голосове або аудіоповідомлення командою /transcribe, щоб розпізнати його.
+speech-other-chat = Неможливо розпізнати повідомлення з іншого чату.
+speech-other-topic = Неможливо розпізнати повідомлення з іншої теми.
+speech-bot-source = Неможливо розпізнати повідомлення від ботів.
+speech-media-unsupported = Для розпізнавання підтримуються лише голосові та аудіоповідомлення.
+speech-file-unavailable = Посилання на аудіофайл недоступне.
+speech-duration-missing = Неможливо розпізнати аудіо без метаданих тривалості.
+speech-duration-limit = Тривалість аудіо ({ $duration }с) перевищує максимальний ліміт { $max_seconds }с.
+speech-size-missing = Неможливо розпізнати аудіо без метаданих розміру файлу.
+speech-size-limit = Розмір аудіофайлу перевищує максимальний ліміт { $max_mb } МБ.
+speech-no-speech = Мовлення не виявлено.
+speech-transcript-header = Транскрипт
+speech-transcript-document-caption = Транскрипт мовлення
+speech-failure-invalid_input = Це аудіо не підтримується або перевищує ліміти розпізнавання.
+speech-failure-download_failed = Не вдалося завантажити аудіо з Telegram. Спробуйте пізніше.
+speech-failure-decode_failed = Це аудіо не вдалося декодувати.
+speech-failure-model_unavailable = Розпізнавання мовлення недоступне. Модель має підготувати оператор.
+speech-failure-inference_failed = Не вдалося завершити розпізнавання мовлення. Спробуйте пізніше.
+speech-failure-output_limit = Транскрипт перевищив підтримуваний ліміт довжини.
+speech-failure-deadline_exceeded = Час очікування запиту на розпізнавання вичерпано.
+speech-failure-cancelled = Цей запит на розпізнавання було скасовано.
+
+# Access Requests & Middleware Denials
+access-request-dm =
+    🔔 <b>Запит на доступ</b>
+
+    <b>Група:</b> { $group }
+    <b>ID групи:</b> <code>{ $group_id }</code>
+    <b>ID запитувача:</b> <code>{ $requester_id }</code>
+    <b>Username:</b> { $username }
+access-unknown-group = Невідома
+access-unavailable-username = Недоступний
+access-user-banned = 🚫 Вам заборонено використовувати команди бота.
+access-no-permission = 🚫 У вас немає прав для цієї дії.
+access-group-unavailable = 🚫 Обробка в цій групі недоступна. Зверніться до адміністратора бота приватно.
+access-middleware-denied = 🚫 Доступ заборонено.
+access-group-not-approved = 🚫 Цю групу ще не схвалено.
+
+# Worker & Handler Notices
+notice-busy = ⏳ Зараз обробляється максимальна кількість медіазапитів. Спробуйте за мить.
+notice-application-failure = ⚠️ Під час обробки цього запиту сталася помилка.
+notice-timeout = ⌛ Час очікування запиту вичерпано до завершення. Спробуйте ще раз.
+notice-extraction-failure = ⚠️ Не вдалося отримати медіа. Можливо, допис недоступний або потребує входу.
+notice-limit-wait = ⏳ Ліміти запитів вичерпано. Ваш запит у черзі до появи вільної квоти.
+notice-limit-failure = ⚠️ Цей запит не вдалося виконати в межах поточних лімітів. Спробуйте пізніше.

@@ -1,5 +1,6 @@
 """Speech job runner composition for native speech worker child processes."""
 
+from collections.abc import Callable
 from contextlib import ExitStack
 
 import redis
@@ -14,7 +15,7 @@ from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
 from hovorunv2.infrastructure.speech.audio_http import SpeechAudioHTTPClient
 from hovorunv2.infrastructure.speech.model_store import MODEL_DOWNLOAD_SECONDS, SpeechModelHTTPClient, SpeechModelStore
-from hovorunv2.infrastructure.speech.whisper_engine import WhisperCppEngine
+from hovorunv2.infrastructure.speech.whisper_engine import CTranslate2WhisperEngine
 from hovorunv2.interface.telegram.transport.speech import NativeSpeechTransport
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 
@@ -31,12 +32,14 @@ def create_speech_runner(
     clock: Clock,
     safety: UsageSafetyCaps,
     namespace: RuntimeNamespace,
+    *,
+    idle_hooks: list[Callable[[], bool]] | None = None,
 ) -> SpeechJobRunner:
     """Compose the SpeechJobRunner with its child-owned engine and dependencies.
 
     Args:
         settings: Application runtime settings.
-        resources: Child-owned resource stack that cleans up the engine helper.
+        resources: Child-owned resource stack that cleans up the engine.
         admission: Child-owned admission client.
         payloads: Child-owned encrypted payload client.
         budgets: Child-owned budget reservation client.
@@ -46,25 +49,21 @@ def create_speech_runner(
         clock: Time provider.
         safety: Usage safety limits.
         namespace: Runtime namespace.
+        idle_hooks: Optional list receiving the engine's idle-unload callback.
 
     Returns:
         Configured SpeechJobRunner ready to orchestrate speech recognition.
-
-    Raises:
-        FileNotFoundError: If the native helper has not been installed.
     """
     model_http = resources.enter_context(SpeechModelHTTPClient(total_timeout=MODEL_DOWNLOAD_SECONDS))
     model_store = SpeechModelStore(settings.speech_model_dir, model_http)
     model_store.require_ready()
-    if not settings.speech_helper_path.is_file():
-        msg = "The speech helper must be installed before worker startup."
-        raise FileNotFoundError(msg)
-    engine = WhisperCppEngine(
+    engine = CTranslate2WhisperEngine(
         model_store,
-        helper_path=settings.speech_helper_path,
         idle_timeout_seconds=settings.speech_model_idle_timeout,
         clock=clock,
     )
+    if idle_hooks is not None:
+        idle_hooks.append(engine.unload_idle)
     audio_http = resources.enter_context(SpeechAudioHTTPClient(settings.bot_token, clock=clock))
     speech_api = NativeTelegramAPI(audio_http, settings.bot_token)
     resources.callback(engine.close)

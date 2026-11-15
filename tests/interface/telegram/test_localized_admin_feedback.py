@@ -19,6 +19,7 @@ from hovorunv2.application.identity.membership import (
     MembershipStatus,
 )
 from hovorunv2.application.identity.membership_store import MembershipStore
+from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.settings.admin_session_service import AdminSessionService
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.chat import ChatDB
@@ -197,7 +198,8 @@ async def test_admin_emergency_recovery_localized_in_uk_and_en(
     await _set_user_locale(test_container, uk_admin_id, "uk")
     await _set_user_locale(test_container, en_non_admin_id, "en")
 
-    session_factory = await test_container.get(async_sessionmaker)
+    chats = await test_container.get(ChatStore)
+    users = await test_container.get(UserStore)
     admin_cmd = await test_container.get(AdministrationCommand)
     emergency_cmd = await test_container.get(EmergencyCommand)
     recovery_cmd = await test_container.get(RecoveryCommand)
@@ -208,7 +210,7 @@ async def test_admin_emergency_recovery_localized_in_uk_and_en(
     dp.message.register(recovery_cmd.handle, recovery_cmd.trigger)
     I18nMiddleware(
         core=create_i18n_core(load_now=True),
-        manager=AudienceI18nManager(session_maker=session_factory, default_locale="en"),
+        manager=AudienceI18nManager(chats=chats, users=users, default_locale="en"),
     ).setup(dp)
 
     for idx, text in enumerate(("/admin", "/emergency", "/recover"), start=1):

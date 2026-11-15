@@ -7,15 +7,15 @@ from hovorunv2.infrastructure.speech.model_store import (
     SpeechModelStore,
 )
 from hovorunv2.infrastructure.speech.whisper_engine import (
-    WhisperCppEngine,
+    CTranslate2WhisperEngine,
     decode_audio_to_pcm,
 )
 
 __all__ = [
     "SPEECH_MODEL_FILES",
+    "CTranslate2WhisperEngine",
     "SpeechModelDownloadPort",
     "SpeechModelHTTPClient",
     "SpeechModelStore",
-    "WhisperCppEngine",
     "decode_audio_to_pcm",
 ]

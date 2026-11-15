@@ -262,3 +262,50 @@ class SQLAlchemyUserStore(UserStore):
             audit_if=lambda r: r[1],
         )
         return res[0]
+
+    async def _execute_set_ui_locale(
+        self,
+        session: AsyncSession,
+        telegram_id: int,
+        ui_locale: str | None,
+        platform: str,
+    ) -> bool:
+        """Update user UI locale on session."""
+        await lock_async_mutation(session, MutationLocks(users=(telegram_id,), platform=platform))
+        repo = SQLAlchemyUserRepository(session)
+        return await repo.set_ui_locale(telegram_id, ui_locale, platform)
+
+    async def set_ui_locale(
+        self,
+        telegram_id: int,
+        ui_locale: str | None,
+        platform: str = "telegram",
+        actor: ActorContext | None = None,
+    ) -> bool:
+        """Persist UI locale preference for an active user.
+
+        Args:
+            telegram_id: Numeric Telegram ID of the user.
+            ui_locale: Canonical locale code ('uk' or 'en') or None to reset.
+            platform: Platform of the user identity.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            True if the user was found and updated, False otherwise.
+        """
+        operation = partial(
+            self._execute_set_ui_locale,
+            telegram_id=telegram_id,
+            ui_locale=ui_locale,
+            platform=platform,
+        )
+
+        return await self._audited_uow.execute(
+            actor=actor or ActorContext.system("set_ui_locale"),
+            target_type="user",
+            target_id=telegram_id,
+            action="set_ui_locale",
+            operation=operation,
+            changed_fields={"ui_locale": ui_locale},
+            audit_if=bool,
+        )

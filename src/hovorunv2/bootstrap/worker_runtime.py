@@ -282,6 +282,7 @@ class WorkerChildContext:
         self._recovery: FeatureRecoveryService | None = None
         self._operations: WorkerOperationsRunner | None = None
         self._speech_runner: SpeechJobRunner | None = None
+        self._idle_hooks: list[Callable[[], bool]] = []
         self._opened = runner is not None
         self._resources = ExitStack()
 
@@ -357,6 +358,7 @@ class WorkerChildContext:
                 clock=self._clock,
                 safety=self._safety,
                 namespace=self._namespace,
+                idle_hooks=self._idle_hooks,
             )
 
     def _open_operations_runner(
@@ -460,6 +462,8 @@ class WorkerChildContext:
 
     def recover(self) -> int:
         """Run bounded single-pass recovery sweep across admission lifecycle."""
+        for hook in self._idle_hooks:
+            hook()
         if self._runner is not None:
             return self._runner.recover()
         if self._recovery is not None:
@@ -471,6 +475,7 @@ class WorkerChildContext:
         try:
             self._resources.close()
         finally:
+            self._idle_hooks.clear()
             self._operations = None
             self._speech_runner = None
             self._runner = None

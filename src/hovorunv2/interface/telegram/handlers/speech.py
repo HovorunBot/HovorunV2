@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from aiogram import Bot, F
 from aiogram.exceptions import TelegramAPIError
@@ -19,7 +19,6 @@ from hovorunv2.application.identity.ports import UserStore
 from hovorunv2.application.jobs.admission import AdmissionState
 from hovorunv2.application.jobs.admission_service import AdmissionService
 from hovorunv2.application.jobs.feature_jobs import (
-    APPLICATION_FAILURE_NOTICE_TEXT,
     MAX_JOB_LIFETIME_SECONDS,
     JobEnvelope,
     JobTarget,
@@ -36,7 +35,8 @@ from hovorunv2.application.usage.budgets import Clock
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import CommandName, SpeechMode, TargetKind
 from hovorunv2.infrastructure.logger import get_logger
-from hovorunv2.interface.telegram.handlers.base import BUSY_NOTICE_TEXT, BaseCommand, BusyNoticeGate
+from hovorunv2.interface.telegram.handlers.base import BaseCommand, BusyNoticeGate
+from hovorunv2.interface.telegram.i18n import DEFAULT_LOCALE, AudienceI18nManager, get_message
 
 logger = get_logger(__name__)
 
@@ -60,6 +60,7 @@ class BaseSpeechHandler(BaseCommand):
         speech_settings: SpeechSettingsStore,
         clock: Clock,
         settings: AppSettings,
+        i18n_manager: AudienceI18nManager,
     ) -> None:
         """Initialize handler dependencies."""
         self._admission = admission
@@ -69,7 +70,18 @@ class BaseSpeechHandler(BaseCommand):
         self._speech_settings = speech_settings
         self._settings = settings
         self._clock = clock
+        self._i18n_manager = i18n_manager
         self._busy_gate = self._BUSY_GATE
+
+    async def _resolve_ui_locale(self, message: Message) -> Literal["uk", "en"]:
+        """Resolve the audience UI locale ('uk' or 'en') for the incoming speech event."""
+        if message.chat.id < 0:
+            locale = await self._i18n_manager.get_chat_locale(message.chat.id) or DEFAULT_LOCALE
+        elif message.from_user is not None:
+            locale = await self._i18n_manager.get_user_locale(message.from_user.id)
+        else:
+            locale = DEFAULT_LOCALE
+        return "en" if locale == "en" else "uk"
 
     async def _resolve_sender(self, message: Message) -> tuple[int | None, int | None] | None:
         """Resolve numeric actor, generation,  from Telegram message.
@@ -162,12 +174,12 @@ class BaseSpeechHandler(BaseCommand):
         trigger = TriggerKind.DIRECT if direct else TriggerKind.AUTOMATIC
         return target, user.generation, trigger, TargetKind.USER, user.telegram_id
 
-    async def _reply_application_failure(self, message: Message) -> None:
+    async def _reply_application_failure(self, message: Message, ui_locale: str) -> None:
         """Send bounded failure feedback without leaking internal details."""
         if not self._busy_gate.should_notify(message.chat.id, self._clock.now()):
             return
         try:
-            await message.reply(APPLICATION_FAILURE_NOTICE_TEXT)
+            await message.reply(get_message("notice-application-failure", ui_locale))
         except TelegramAPIError:
             logger.exception("Speech admission failure feedback unavailable")
 
@@ -208,6 +220,7 @@ class BaseSpeechHandler(BaseCommand):
         dedupe_key = speech_action_key(
             target.telegram_id, source_message.message_id, target.entity_id, target.generation
         )
+        ui_locale = await self._resolve_ui_locale(message)
         envelope = JobEnvelope(
             job_id=job_id,
             payload_ref=sealed.reference,
@@ -223,20 +236,21 @@ class BaseSpeechHandler(BaseCommand):
             dedupe_key=dedupe_key,
             feature_epoch=epoch,
             message_id=source_message.message_id,
+            ui_locale=ui_locale,
         )
         result = await self._admission.admit(envelope, sealed)
         if result.state == AdmissionState.ACCEPTED:
             handoff = await self._admission.handoff(envelope.job_id)
             if handoff.state == AdmissionState.UNAVAILABLE and trigger == TriggerKind.DIRECT:
-                await self._reply_application_failure(message)
+                await self._reply_application_failure(message, ui_locale)
         elif trigger == TriggerKind.DIRECT:
             if result.state == AdmissionState.DUPLICATE:
-                await message.reply("⏳ Transcription is already in progress or completed for this message.")
+                await message.reply(get_message("speech-duplicate", ui_locale))
             elif result.state == AdmissionState.FULL:
                 if self._busy_gate.should_notify(message.chat.id, now):
-                    await message.reply(BUSY_NOTICE_TEXT)
+                    await message.reply(get_message("notice-busy", ui_locale))
             elif result.state == AdmissionState.UNAVAILABLE:
-                await self._reply_application_failure(message)
+                await self._reply_application_failure(message, ui_locale)
             else:
                 logger.info("Speech admission denied for %s (%s)", feature, result.state.value)
 
@@ -265,37 +279,42 @@ class TranscribeCommand(BaseSpeechHandler):
         """Return whether the message triggers the transcribe command."""
         return self._is_slash_command_triggered(message, CommandName.TRANSCRIBE)
 
-    def _validate_reply(self, message: Message, reply: Message | None) -> str | None:
+    def _validate_reply(self, message: Message, reply: Message | None, *, ui_locale: str) -> str | None:
         """Validate reply context and sender, returning error message on rejection."""
         if reply is None:
-            return "Reply to a voice or audio message with /transcribe to transcribe it."
+            return get_message("speech-reply-required", ui_locale)
         if reply.chat.id != message.chat.id:
-            return "Cannot transcribe messages from another chat."
+            return get_message("speech-other-chat", ui_locale)
         if message.message_thread_id != reply.message_thread_id:
-            return "Cannot transcribe messages from a different topic."
+            return get_message("speech-other-topic", ui_locale)
         if _is_bot_source(reply):
-            return "Cannot transcribe messages sent by bots."
+            return get_message("speech-bot-source", ui_locale)
         return None
 
-    def _validate_media(self, media: Audio | Voice | None) -> str | None:
+    def _validate_media(self, media: Audio | Voice | None, *, ui_locale: str) -> str | None:
         """Validate audio bounds and presence, returning error message on rejection."""
         if media is None:
-            return "Only voice and audio messages are supported for transcription."
+            return get_message("speech-media-unsupported", ui_locale)
         if not media.file_id:
-            return "Audio file reference is unavailable."
-        return self._validate_media_bounds(media)
+            return get_message("speech-file-unavailable", ui_locale)
+        return self._validate_media_bounds(media, ui_locale=ui_locale)
 
-    def _validate_media_bounds(self, media: Audio | Voice) -> str | None:
+    def _validate_media_bounds(self, media: Audio | Voice, *, ui_locale: str) -> str | None:
         """Validate audio duration and size limits."""
         if media.duration is None or media.duration <= 0:
-            return "Cannot transcribe audio without duration metadata."
+            return get_message("speech-duration-missing", ui_locale)
         if media.duration > MAX_AUDIO_SECONDS:
-            return f"Audio duration ({media.duration}s) exceeds the maximum limit of {MAX_AUDIO_SECONDS}s."
+            return get_message(
+                "speech-duration-limit",
+                ui_locale,
+                duration=media.duration,
+                max_seconds=MAX_AUDIO_SECONDS,
+            )
         if media.file_size is None or media.file_size <= 0:
-            return "Cannot transcribe audio without file size metadata."
+            return get_message("speech-size-missing", ui_locale)
         if media.file_size > MAX_AUDIO_BYTES:
             limit_mb = MAX_AUDIO_BYTES // 1_000_000
-            return f"Audio file size exceeds the maximum limit of {limit_mb} MB."
+            return get_message("speech-size-limit", ui_locale, max_mb=limit_mb)
         return None
 
     async def handle(self, message: Message, bot: Bot, **kwargs: object) -> None:
@@ -306,20 +325,21 @@ class TranscribeCommand(BaseSpeechHandler):
             bot: Bot instance bound to the handler.
             **kwargs: Unused extra context.
         """
+        ui_locale = await self._resolve_ui_locale(message)
         if not self._settings.speech_enabled:
-            await message.reply("Speech recognition is unavailable on this bot.")
+            await message.reply(get_message("speech-unavailable-bot", ui_locale))
             return
         reply = message.reply_to_message
-        reply_error = self._validate_reply(message, reply)
+        reply_error = self._validate_reply(message, reply, ui_locale=ui_locale)
         if reply_error:
             await message.reply(reply_error)
             return
 
         assert reply is not None
         media = reply.voice or reply.audio
-        media_error = self._validate_media(media)
+        media_error = self._validate_media(media, ui_locale=ui_locale)
         if media_error or not media:
-            await message.reply(media_error or "Only voice and audio messages are supported for transcription.")
+            await message.reply(media_error or get_message("speech-media-unsupported", ui_locale))
             return
 
         sender = await self._resolve_sender(message)
@@ -335,7 +355,7 @@ class TranscribeCommand(BaseSpeechHandler):
         perm_target = PermissionTarget(target.kind.value, target.entity_id, target.generation, target.telegram_id)
         mode = await self._speech_settings.mode(perm_target)
         if mode == SpeechMode.OFF:
-            await message.reply("Speech recognition is disabled in this chat. Enable it in /settings.")
+            await message.reply(get_message("speech-disabled-chat", ui_locale))
             return
 
         thread_id = reply.message_thread_id or message.message_thread_id

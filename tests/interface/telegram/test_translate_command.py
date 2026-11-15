@@ -1,6 +1,7 @@
 """End-to-end behavioral tests for reply-based /translate [target] requests."""
 
 import asyncio
+import json
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -73,8 +74,8 @@ class _NeverCalledLocalEngine(TranslationEnginePort):
 
 
 def _google_html(translated: str) -> HTTPReply:
-    body = f'<html><body><div class="result-container">{translated}</div></body></html>'.encode()
-    return HTTPReply(body=body, status=HTTPStatus.OK, headers={"Content-Type": "text/html; charset=utf-8"})
+    body = json.dumps([[[translated, "src"]]]).encode()
+    return HTTPReply(body=body, status=HTTPStatus.OK, headers={"Content-Type": "application/json; charset=utf-8"})
 
 
 def _make_reply_source(
@@ -135,7 +136,7 @@ def _run_translate_envelope(
     with (
         HTTPFixture(routes) as server,
         NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
-        GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+        GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google_engine,
         WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
         WorkerRuntime(settings, clock, namespace, safety) as runtime,
         closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,

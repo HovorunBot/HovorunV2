@@ -38,7 +38,6 @@ from hovorunv2.application.usage.budgets import RUNTIME_RETENTION_SECONDS, Clock
 from hovorunv2.application.usage.policies import UsageSafetyCaps
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
-from hovorunv2.infrastructure.runtime.cache import CacheService
 
 BROKER_VISIBILITY_SECONDS = 2 * RUNTIME_RETENTION_SECONDS
 BROKER_SOCKET_SECONDS = 2
@@ -311,11 +310,17 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
     before invoking an executor. A running claim is never reclaimed on a timer.
     """
 
-    def __init__(self, settings: Settings, clock: Clock, namespace: RuntimeNamespace, safety: UsageSafetyCaps) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        clock: Clock,
+        namespace: RuntimeNamespace,
+        safety: UsageSafetyCaps,
+        admission: ValkeyAdmissionStore,
+    ) -> None:
         self._clock = clock
         self._safety = safety
-        self._cache = CacheService(settings.valkey_url)
-        self._admission = ValkeyAdmissionStore(self._cache, namespace)
+        self._admission = admission
         self._media_queue = namespace.value + "media"
         self._browser_queue = namespace.value + "browser"
         self._compression_queue = namespace.value + "compression"
@@ -470,7 +475,4 @@ class CeleryFeatureQueue(FeatureQueuePort, SyncQueuePublisherPort):
 
     async def close(self) -> None:
         """Close owned clients without starting a worker or touching other queues."""
-        try:
-            await asyncio.to_thread(self._app.close)
-        finally:
-            await self._cache.close()
+        await asyncio.to_thread(self._app.close)

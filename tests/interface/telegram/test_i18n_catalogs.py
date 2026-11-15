@@ -37,33 +37,33 @@ def test_i18n_core_formats_basic_messages() -> None:
     """Verify basic message retrieval and named variable substitution in English and Ukrainian."""
     core = create_i18n_core(load_now=True)
 
-    assert core.get("welcome", "en") == "Welcome to Hovorun!"
-    assert core.get("welcome", "uk") == "Ласкаво просимо до Говоруна!"
+    assert core.get("settings-title", "en") == "⚙️ <b>Settings</b>"
+    assert core.get("settings-title", "uk") == "⚙️ <b>Налаштування</b>"
 
-    assert core.get("greeting", "en", name="Alice") == "Hello, Alice!"
-    assert core.get("greeting", "uk", name="Олена") == "Привіт, Олена!"
+    assert core.get("settings-target-set", "en", language="English") == "Target set to English"
+    assert core.get("settings-target-set", "uk", language="English") == "Мову перекладу змінено на English"
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("count", "expected_en", "expected_uk"),
     [
-        (0, "0 items", "0 елементів"),
-        (1, "1 item", "1 елемент"),
-        (2, "2 items", "2 елементи"),
-        (5, "5 items", "5 елементів"),
-        (11, "11 items", "11 елементів"),
-        (21, "21 items", "21 елемент"),
-        (22, "22 items", "22 елементи"),
-        (25, "25 items", "25 елементів"),
+        (0, "Queued 0 beta introduction recipients.", "Додано до черги 0 отримувачів бета-ознайомлення."),
+        (1, "Queued 1 beta introduction recipient.", "Додано до черги 1 отримувача бета-ознайомлення."),
+        (2, "Queued 2 beta introduction recipients.", "Додано до черги 2 отримувачів бета-ознайомлення."),
+        (5, "Queued 5 beta introduction recipients.", "Додано до черги 5 отримувачів бета-ознайомлення."),
+        (11, "Queued 11 beta introduction recipients.", "Додано до черги 11 отримувачів бета-ознайомлення."),
+        (21, "Queued 21 beta introduction recipients.", "Додано до черги 21 отримувача бета-ознайомлення."),
+        (22, "Queued 22 beta introduction recipients.", "Додано до черги 22 отримувачів бета-ознайомлення."),
+        (25, "Queued 25 beta introduction recipients.", "Додано до черги 25 отримувачів бета-ознайомлення."),
     ],
 )
 def test_i18n_core_ukrainian_and_english_plurals(count: int, expected_en: str, expected_uk: str) -> None:
     """Verify CLDR plural rules for English and all 8 required Ukrainian boundary cases."""
     core = create_i18n_core(load_now=True)
 
-    assert core.get("item-count", "en", count=count) == expected_en
-    assert core.get("item-count", "uk", count=count) == expected_uk
+    assert core.get("beta-queued", "en", count=count) == expected_en
+    assert core.get("beta-queued", "uk", count=count) == expected_uk
 
 
 @pytest.mark.unit
@@ -71,8 +71,8 @@ def test_i18n_core_isolating_disabled_for_html() -> None:
     """Verify isolating control characters are omitted so Telegram HTML parsing succeeds."""
     core = create_i18n_core(load_now=True)
 
-    rendered = core.get("status-html", "en", status="Active")
-    assert rendered == "<b>Status:</b> Active"
+    rendered = core.get("settings-target-set", "en", language="English")
+    assert rendered == "Target set to English"
     assert "\u2068" not in rendered
     assert "\u2069" not in rendered
 

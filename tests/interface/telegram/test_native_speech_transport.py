@@ -67,7 +67,7 @@ def test_telegram_download_failure_does_not_reject_audio_format(
         assert "synthetic-private-id" not in caplog.text
         assert transport.deliver_speech(-123, 45, None, failure.value.reason) == 91
         fields = parse_qs(server.requests[-1].body.decode())
-        assert fields["text"] == ["The audio could not be downloaded from Telegram. Please try again later."]
+        assert fields["text"] == ["Не вдалося завантажити аудіо з Telegram. Спробуйте пізніше."]  # noqa: RUF001
 
 
 @pytest.mark.parametrize("document", [False, True])

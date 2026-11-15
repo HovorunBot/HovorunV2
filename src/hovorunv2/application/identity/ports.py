@@ -58,6 +58,16 @@ class UserStore(Protocol):
         """List identity generations for recovery; an empty list means no history."""
         ...
 
+    async def set_ui_locale(
+        self,
+        telegram_id: int,
+        ui_locale: str | None,
+        platform: str = "telegram",
+        actor: ActorContext | None = None,
+    ) -> bool:
+        """Persist UI locale preference for an active user."""
+        ...
+
 
 @dataclass(frozen=True)
 class ResolvedTarget:

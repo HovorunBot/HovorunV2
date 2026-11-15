@@ -1,13 +1,9 @@
 """Bound native media reads by libcurl's total timeout and one shared deadline."""
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from http import HTTPStatus
-from os import getpid
-from types import TracebackType
-from typing import Self
-from urllib.parse import urljoin
 
 from curl_cffi.requests import Session
 from curl_cffi.requests.exceptions import RequestException
@@ -15,15 +11,14 @@ from curl_cffi.requests.exceptions import RequestException
 from hovorunv2.application.jobs.http_ports import HTTPFailure, HTTPHeaders, HTTPQuery, HTTPTransportError
 from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import MediaExtractionError
-from hovorunv2.infrastructure.http_transport.native_http import (
+from hovorunv2.infrastructure.http_transport.response_body import BoundedResponseBody
+from hovorunv2.infrastructure.http_transport.sync_base import (
     MAX_DOWNLOAD_BYTES,
     MAX_REDIRECTS,
     MAX_RESPONSE_BYTES,
-    REDIRECT_STATUSES,
-    SENSITIVE_HEADERS,
-    validate_http_url,
+    SyncHTTPClientBase,
+    decode_json_bytes,
 )
-from hovorunv2.infrastructure.http_transport.response_body import BoundedResponseBody
 
 MIN_CURL_TIMEOUT_SECONDS = 0.001
 
@@ -37,8 +32,18 @@ class _ReadResponse:
     url: str = field(repr=False)
 
 
-class ExtractionHTTPClient:
+def _read_response_status(response: _ReadResponse) -> int:
+    return response.status
+
+
+def _read_response_location(response: _ReadResponse) -> str:
+    return response.location
+
+
+class ExtractionHTTPClient(SyncHTTPClientBase):
     """Own non-streaming libcurl transfers; callbacks bound bytes without background workers."""
+
+    _client_label = "Extraction HTTP"
 
     def __init__(
         self,
@@ -49,39 +54,17 @@ class ExtractionHTTPClient:
         max_redirects: int = MAX_REDIRECTS,
         allowed_hosts: frozenset[str] = frozenset(),
     ) -> None:
-        if min(max_bytes, max_response_bytes) <= 0 or max_redirects < 0:
-            msg = "Extraction HTTP bounds must be positive and redirects nonnegative."
-            raise ValueError(msg)
+        super().__init__(
+            max_bytes=max_bytes,
+            max_response_bytes=max_response_bytes,
+            max_redirects=max_redirects,
+            allowed_hosts=allowed_hosts,
+        )
         self._deadline = deadline
         self._session = Session(trust_env=False)
-        self._allowed_hosts = allowed_hosts
-        self._owner = getpid()
-        self._closed = False
-        self._max_bytes = max_bytes
-        self._response_bytes = max_response_bytes
-        self._max_redirects = max_redirects
 
-    def __enter__(self) -> Self:
-        """Validate resource ownership before allowing extraction reads."""
-        self._require_open()
-        return self
-
-    def __exit__(
-        self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
-    ) -> None:
-        """Close the native handle even when a read or worker cancellation fails."""
-        self.close()
-
-    def _require_open(self) -> None:
-        if self._closed or self._owner != getpid():
-            msg = "Extraction HTTP requires an open client in its owning process."
-            raise ValueError(msg)
-
-    def close(self) -> None:
-        """Release the child-owned native session without retaining request data."""
-        self._require_open()
+    def _close_transport(self) -> None:
         self._session.close()
-        self._closed = True
 
     def _remaining(self) -> float:
         try:
@@ -95,11 +78,11 @@ class ExtractionHTTPClient:
 
     def _read_once(
         self,
-        url: str,
         limit: int,
+        url: str,
+        params: HTTPQuery | None,
         headers: dict[str, str],
         cookies: dict[str, str],
-        params: HTTPQuery | None,
     ) -> _ReadResponse:
         body = BoundedResponseBody(limit)
         try:
@@ -136,27 +119,19 @@ class ExtractionHTTPClient:
         headers: HTTPHeaders | None = None,
         cookies: Mapping[str, str] | None = None,
     ) -> _ReadResponse:
-        self._require_open()
-        origin = validate_http_url(url, allowed_hosts=self._allowed_hosts)
-        request_headers, cookie_values = dict(headers or {}), dict(cookies or {})
-        current = url
-        for _ in range(self._max_redirects + 1):
-            response = self._read_once(current, limit, request_headers, cookie_values, params)
-            if response.status not in REDIRECT_STATUSES:
-                if response.status != HTTPStatus.OK:
-                    raise HTTPTransportError(HTTPFailure.REJECTED)
-                return response
-            if not response.location:
-                raise HTTPTransportError(HTTPFailure.REJECTED)
-            current = urljoin(current, response.location)
-            next_origin = validate_http_url(current, allowed_hosts=self._allowed_hosts)
-            if next_origin != origin:
-                request_headers = {
-                    key: value for key, value in request_headers.items() if key.lower() not in SENSITIVE_HEADERS
-                }
-                cookie_values = {}
-            origin, params = next_origin, None
-        raise HTTPTransportError(HTTPFailure.REJECTED)
+        response = self._execute_redirect_loop(
+            "GET",
+            url,
+            params=params,
+            headers=headers,
+            cookies=cookies,
+            send_fn=partial(self._read_once, limit),
+            status_fn=_read_response_status,
+            location_fn=_read_response_location,
+        )
+        if response.status != HTTPStatus.OK:
+            raise HTTPTransportError(HTTPFailure.REJECTED)
+        return response
 
     def read_json(self, url: str, params: HTTPQuery | None = None, headers: HTTPHeaders | None = None) -> object:
         """Require a bounded JSON response without accepting challenge/login HTML.
@@ -175,10 +150,7 @@ class ExtractionHTTPClient:
         response = self._read(url, self._response_bytes, params=params, headers=headers)
         if response.content_type != "application/json":
             raise HTTPTransportError(HTTPFailure.MALFORMED)
-        try:
-            return json.loads(response.body)
-        except ValueError, UnicodeError:
-            raise HTTPTransportError(HTTPFailure.MALFORMED) from None
+        return decode_json_bytes(response.body)
 
     def download_bytes(
         self, url: str, headers: HTTPHeaders | None = None, *, cookies: Mapping[str, str] | None = None

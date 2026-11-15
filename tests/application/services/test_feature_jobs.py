@@ -373,7 +373,9 @@ async def test_real_celery_messages_are_private_and_duplicate_execution_is_block
     chat_id, generation = await _seed_entities(test_container, 390001, -390001)
     async with runtime_cache(test_container) as (cache, namespace):
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(
+            settings, clock, namespace, UsageSafetyCaps(), ValkeyAdmissionStore(cache, namespace)
+        )
         try:
             sealed = await payloads.seal("feature-job", PRIVATE_BODY, clock.now() + 300)
             await payloads.put(sealed)

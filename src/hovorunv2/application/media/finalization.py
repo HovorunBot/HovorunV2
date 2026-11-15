@@ -24,19 +24,25 @@ def prepare_caption_text(raw_text: str, *, strip_hashtags: bool = False) -> str:
     return html.escape(text)
 
 
-def append_translation(content: str, translated: TranslationResult | None) -> str:
+def append_translation(
+    content: str,
+    translated: TranslationResult | None,
+    *,
+    label: str = "Translated:",
+) -> str:
     """Append the translation display block without allowing translated markup.
 
     Args:
         content: Base caption content.
         translated: Optional translation result to append.
+        label: Localized translation section label.
 
     Returns:
         Caption text with the translation block appended when present.
     """
     if translated is None:
         return content
-    return f"{content}\n\n{translated.flag} <b>Translated:</b>\n{html.escape(translated.text)}"
+    return f"{content}\n\n{translated.flag} <b>{html.escape(label)}</b>\n{html.escape(translated.text)}"
 
 
 def escape_payload_authors(payload: RichMediaPayload, original_url: str) -> None:

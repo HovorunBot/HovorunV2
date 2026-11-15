@@ -10,6 +10,7 @@ from hovorunv2.application.speech.contracts import NoSpeech, SpeechFailure, Spee
 from hovorunv2.application.speech.policies import MAX_AUDIO_BYTES
 from hovorunv2.application.speech.ports import SpeechAudioPort, SyncTelegramSpeechPort
 from hovorunv2.application.usage.budgets import Clock, WallClock
+from hovorunv2.interface.telegram.i18n.core import get_message
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI, TelegramMethod, extract_message_ids
 
 MAX_MESSAGE_CHARACTERS = 4096
@@ -78,7 +79,13 @@ class NativeSpeechTransport(SyncTelegramSpeechPort):
         return path
 
     def deliver_speech(
-        self, chat_id: int, source_message_id: int, thread_id: int | None, result: SpeechResult | SpeechFailure
+        self,
+        chat_id: int,
+        source_message_id: int,
+        thread_id: int | None,
+        result: SpeechResult | SpeechFailure,
+        *,
+        ui_locale: str = "uk",
     ) -> int:
         """Require one acknowledged text or document reply, without fallback into another route.
 
@@ -87,6 +94,7 @@ class NativeSpeechTransport(SyncTelegramSpeechPort):
             source_message_id: Original audio message to reply to.
             thread_id: Exact source topic, when present.
             result: Private transcript, no-speech outcome, or safe failure code.
+            ui_locale: Target UI locale code for user-facing notices.
 
         Returns:
             Acknowledged message identifier.
@@ -101,24 +109,27 @@ class NativeSpeechTransport(SyncTelegramSpeechPort):
         fields: dict[str, str | int | float | bool] = dict(data)
         if thread_id is not None:
             fields["message_thread_id"] = thread_id
-        method, content, files = self._render(result)
+        method, content, files = self._render(result, ui_locale=ui_locale)
         fields.update(content)
         ids = extract_message_ids(self._api.call(method, data=fields, files=files))
         if len(ids) != 1:
             raise TelegramDeliveryUncertainError(ids)
         return ids[0]
 
-    def _render(self, result: SpeechResult | SpeechFailure) -> tuple[TelegramMethod, HTTPForm, HTTPFiles | None]:
+    def _render(
+        self, result: SpeechResult | SpeechFailure, *, ui_locale: str = "uk"
+    ) -> tuple[TelegramMethod, HTTPForm, HTTPFiles | None]:
         if isinstance(result, SpeechFailure):
-            return TelegramMethod.SEND_MESSAGE, {"text": SPEECH_FAILURE_TEXT[result]}, None
+            return TelegramMethod.SEND_MESSAGE, {"text": get_message(f"speech-failure-{result.value}", ui_locale)}, None
         if isinstance(result, NoSpeech):
-            return TelegramMethod.SEND_MESSAGE, {"text": "No speech detected."}, None
-        header = f"<b>Transcript</b> ({html.escape(result.language or 'und')}):\n\n"
+            return TelegramMethod.SEND_MESSAGE, {"text": get_message("speech-no-speech", ui_locale)}, None
+        header_label = html.escape(get_message("speech-transcript-header", ui_locale))
+        header = f"<b>{header_label}</b> ({html.escape(result.language or 'und')}):\n\n"
         text = header + html.escape(result.text)
         if len(text) <= MAX_MESSAGE_CHARACTERS:
             return TelegramMethod.SEND_MESSAGE, {"text": text, "parse_mode": "HTML"}, None
         return (
             TelegramMethod.SEND_DOCUMENT,
-            {"caption": "Speech transcript"},
+            {"caption": get_message("speech-transcript-document-caption", ui_locale)},
             {"document": ("transcript.txt", result.text.encode("utf-8"), "text/plain; charset=utf-8")},
         )

@@ -34,6 +34,7 @@ from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from hovorunv2.infrastructure.speech.whisper_engine import SAMPLE_RATE, decode_audio_to_pcm
 from hovorunv2.interface.telegram.handlers.speech import BaseSpeechHandler, SpeechVoiceHandler, TranscribeCommand
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager
 from tests.utils.jobs import admission_service, broker_envelopes
 from tests.utils.runtime import ManualClock, runtime_cache
 from tests.utils.speech import GROUP, USER, group_speech_target, private_speech_target
@@ -63,6 +64,7 @@ async def _handler(
         await container.get(SpeechSettingsStore),
         clock,
         settings,
+        await container.get(AudienceI18nManager),
     )
 
 
@@ -113,9 +115,9 @@ async def test_voice_ingress_through_broker_delivers_and_charges_once(
     source = await asyncio.to_thread(_voice_message, USER if private else GROUP, audio)
     message = _manual_request(source) if manual else source
     async with runtime_cache(test_container) as (cache, namespace), AsyncExitStack() as resources:
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
-        resources.push_async_callback(queue.close)
         store = ValkeyAdmissionStore(cache, namespace)
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps(), store)
+        resources.push_async_callback(queue.close)
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
         handler = await _handler(test_container, queue, store, payloads, clock, manual=manual)
         async with RecordingBot(BOT_CREDENTIAL, session=RecordingSession()) as bot:

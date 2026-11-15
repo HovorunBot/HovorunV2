@@ -15,8 +15,6 @@ from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from curl_cffi.requests import Response, Session
 from curl_cffi.requests.exceptions import RequestException
 from tenacity import RetryCallState, Retrying, retry_if_exception_type, stop_after_attempt
-lazy from bs4 import BeautifulSoup
-lazy from deep_translator.constants import GOOGLE_LANGUAGES_TO_CODES
 
 from hovorunv2.application.translation.document_segmentation import (
     DEFAULT_GOOGLE_SEGMENT_CHARS,
@@ -32,6 +30,7 @@ from hovorunv2.application.translation.ports import (
 )
 from hovorunv2.domain.languages import normalize_language_code
 from hovorunv2.infrastructure.http_transport.response_body import BoundedResponseBody
+from hovorunv2.infrastructure.http_transport.sync_base import validate_http_url
 
 GOOGLE_MAX_ATTEMPTS: Final = 3
 GOOGLE_TOTAL_TIMEOUT_SECONDS: Final = 15.0
@@ -65,6 +64,142 @@ _GOOGLE_LANGUAGE_ALIASES: Final[dict[str, str]] = {
     "zh-hk": "zh-TW",
     "he": "iw",
     "jv": "jw",
+}
+
+GOOGLE_LANGUAGES_TO_CODES: Final[dict[str, str]] = {
+    "afrikaans": "af",
+    "albanian": "sq",
+    "amharic": "am",
+    "arabic": "ar",
+    "armenian": "hy",
+    "assamese": "as",
+    "aymara": "ay",
+    "azerbaijani": "az",
+    "bambara": "bm",
+    "basque": "eu",
+    "belarusian": "be",
+    "bengali": "bn",
+    "bhojpuri": "bho",
+    "bosnian": "bs",
+    "bulgarian": "bg",
+    "catalan": "ca",
+    "cebuano": "ceb",
+    "chichewa": "ny",
+    "chinese (simplified)": "zh-CN",
+    "chinese (traditional)": "zh-TW",
+    "corsican": "co",
+    "croatian": "hr",
+    "czech": "cs",
+    "danish": "da",
+    "dhivehi": "dv",
+    "dogri": "doi",
+    "dutch": "nl",
+    "english": "en",
+    "esperanto": "eo",
+    "estonian": "et",
+    "ewe": "ee",
+    "filipino": "tl",
+    "finnish": "fi",
+    "french": "fr",
+    "frisian": "fy",
+    "galician": "gl",
+    "georgian": "ka",
+    "german": "de",
+    "greek": "el",
+    "guarani": "gn",
+    "gujarati": "gu",
+    "haitian creole": "ht",
+    "hausa": "ha",
+    "hawaiian": "haw",
+    "hebrew": "iw",
+    "hindi": "hi",
+    "hmong": "hmn",
+    "hungarian": "hu",
+    "icelandic": "is",
+    "igbo": "ig",
+    "ilocano": "ilo",
+    "indonesian": "id",
+    "irish": "ga",
+    "italian": "it",
+    "japanese": "ja",
+    "javanese": "jw",
+    "kannada": "kn",
+    "kazakh": "kk",
+    "khmer": "km",
+    "kinyarwanda": "rw",
+    "konkani": "gom",
+    "korean": "ko",
+    "krio": "kri",
+    "kurdish (kurmanji)": "ku",
+    "kurdish (sorani)": "ckb",
+    "kyrgyz": "ky",
+    "lao": "lo",
+    "latin": "la",
+    "latvian": "lv",
+    "lingala": "ln",
+    "lithuanian": "lt",
+    "luganda": "lg",
+    "luxembourgish": "lb",
+    "macedonian": "mk",
+    "maithili": "mai",
+    "malagasy": "mg",
+    "malay": "ms",
+    "malayalam": "ml",
+    "maltese": "mt",
+    "maori": "mi",
+    "marathi": "mr",
+    "meiteilon (manipuri)": "mni-Mtei",
+    "mizo": "lus",
+    "mongolian": "mn",
+    "myanmar": "my",
+    "nepali": "ne",
+    "norwegian": "no",
+    "odia (oriya)": "or",
+    "oromo": "om",
+    "pashto": "ps",
+    "persian": "fa",
+    "polish": "pl",
+    "portuguese": "pt",
+    "punjabi": "pa",
+    "quechua": "qu",
+    "romanian": "ro",
+    "russian": "ru",
+    "samoan": "sm",
+    "sanskrit": "sa",
+    "scots gaelic": "gd",
+    "sepedi": "nso",
+    "serbian": "sr",
+    "sesotho": "st",
+    "shona": "sn",
+    "sindhi": "sd",
+    "sinhala": "si",
+    "slovak": "sk",
+    "slovenian": "sl",
+    "somali": "so",
+    "spanish": "es",
+    "sundanese": "su",
+    "swahili": "sw",
+    "swedish": "sv",
+    "tajik": "tg",
+    "tamil": "ta",
+    "tatar": "tt",
+    "telugu": "te",
+    "thai": "th",
+    "tigrinya": "ti",
+    "tsonga": "ts",
+    "turkish": "tr",
+    "turkmen": "tk",
+    "twi": "ak",
+    "ukrainian": "uk",
+    "urdu": "ur",
+    "uyghur": "ug",
+    "uzbek": "uz",
+    "vietnamese": "vi",
+    "welsh": "cy",
+    "xhosa": "xh",
+    "yiddish": "yi",
+    "yoruba": "yo",
+    "zulu": "zu",
 }
 
 logger = logging.getLogger(__name__)
@@ -202,8 +337,12 @@ class GoogleTranslationEngine(TranslationEnginePort):
         clock_fn: Callable[[], float] = time.monotonic,
         sleep_fn: Callable[[float], None] = time.sleep,
         jitter_fn: Callable[[float], float] | None = None,
+        allowed_hosts: frozenset[str] = frozenset(),
     ) -> None:
-        self._base_url = base_url.strip() or None if base_url else None
+        normalized_base_url = base_url.strip() or None if base_url else None
+        if normalized_base_url is not None:
+            validate_http_url(normalized_base_url, allowed_hosts=allowed_hosts)
+        self._base_url = normalized_base_url
         self._total_timeout_seconds = total_timeout_seconds
         self._connect_timeout_seconds = connect_timeout_seconds
         self._read_timeout_seconds = read_timeout_seconds
@@ -380,7 +519,7 @@ class GoogleTranslationEngine(TranslationEnginePort):
         body = b"".join(collector.body.chunks).decode(response.encoding or "utf-8", errors="replace")
         return self._handle_response(response, body)
 
-    def _handle_response(self, response: Response, html_body: str) -> str:
+    def _handle_response(self, response: Response, response_body: str) -> str:
         status = response.status_code
         if status in GOOGLE_RETRYABLE_STATUSES:
             retry_after = _parse_retry_after_seconds(response.headers.get("Retry-After"))
@@ -392,25 +531,11 @@ class GoogleTranslationEngine(TranslationEnginePort):
             msg = f"Google translation failed with HTTP status {status}"
             raise TranslationError(msg)
 
-        if html_body.lstrip().startswith("["):
-            gtx_translated = _extract_gtx_translation(html_body)
-            if not gtx_translated:
-                msg = "Google translation response contained empty text"
-                raise TranslationError(msg)
-            return gtx_translated
-
-        soup = BeautifulSoup(html_body, "html.parser")
-        element = soup.find("div", class_="t0")
-        if element is None:
-            element = soup.find("div", class_="result-container")
-        if element is None:
-            msg = "Google translation response missing result container"
-            raise TranslationError(msg)
-        translated = element.get_text(strip=True)
-        if not translated:
+        gtx_translated = _extract_gtx_translation(response_body)
+        if not gtx_translated:
             msg = "Google translation response contained empty text"
             raise TranslationError(msg)
-        return translated
+        return gtx_translated
 
 
 def _extract_gtx_translation(body: str) -> str:

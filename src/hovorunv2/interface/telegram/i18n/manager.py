@@ -2,11 +2,11 @@
 
 from aiogram.types import Chat, User
 from aiogram_i18n.managers import BaseManager
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from hovorunv2.application.groups.ports import ChatStore
+from hovorunv2.application.identity.ports import UserStore
+from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import Platform
-from hovorunv2.infrastructure.persistence.repositories.chat_repository import SQLAlchemyChatRepository
-from hovorunv2.infrastructure.persistence.repositories.user_repository import SQLAlchemyUserRepository
 from hovorunv2.interface.telegram.i18n.core import DEFAULT_LOCALE
 
 
@@ -15,17 +15,20 @@ class AudienceI18nManager(BaseManager):
 
     def __init__(
         self,
-        session_maker: async_sessionmaker,
+        chats: ChatStore,
+        users: UserStore,
         default_locale: str = DEFAULT_LOCALE,
     ) -> None:
-        """Initialize audience manager with database session factory and default locale.
+        """Initialize audience manager with chat and user stores and default locale.
 
         Args:
-            session_maker: Async session maker for reading user and chat preferences.
+            chats: Chat store for reading and persisting chat locale preferences.
+            users: User store for reading and persisting user locale preferences.
             default_locale: Fallback locale when preferences are unset or unconfigured.
         """
         super().__init__(default_locale=default_locale)
-        self._session_maker = session_maker
+        self._chats = chats
+        self._users = users
 
     async def _resolve_locale(
         self,
@@ -94,37 +97,41 @@ class AudienceI18nManager(BaseManager):
         Returns:
             The configured locale code or None.
         """
-        async with self._session_maker() as session:
-            repo = SQLAlchemyChatRepository(session)
-            chat = await repo.get_by_id(chat_id, platform=Platform.TELEGRAM.value)
-            return chat.ui_locale if chat is not None else None
+        chat = await self._chats.get_chat(chat_id, platform=Platform.TELEGRAM.value)
+        return chat.ui_locale if chat is not None else None
 
     async def _get_user_locale(self, telegram_id: int) -> str | None:
-        async with self._session_maker() as session:
-            repo = SQLAlchemyUserRepository(session)
-            user = await repo.get_by_telegram_id(telegram_id, platform=Platform.TELEGRAM.value)
-            return user.ui_locale if user is not None else None
+        user = await self._users.get_by_telegram_id(telegram_id, platform=Platform.TELEGRAM.value)
+        return user.ui_locale if user is not None else None
 
-    async def set_chat_locale(self, chat_id: int, locale: str) -> None:
-        """Persist UI locale for a chat.
+    async def set_chat_locale(
+        self,
+        chat_id: int,
+        locale: str,
+        *,
+        actor: ActorContext | None = None,
+    ) -> None:
+        """Persist UI locale for a chat through the audited, locked ChatStore.
 
         Args:
             chat_id: Numeric Telegram chat ID.
             locale: Normalized locale code ('uk' or 'en').
+            actor: Optional actor context recorded on the audit event.
         """
-        async with self._session_maker() as session:
-            repo = SQLAlchemyChatRepository(session)
-            await repo.set_ui_locale(chat_id, locale, platform=Platform.TELEGRAM.value)
-            await session.commit()
+        await self._chats.set_ui_locale(chat_id, locale, platform=Platform.TELEGRAM.value, actor=actor)
 
-    async def set_user_locale(self, telegram_id: int, locale: str) -> None:
-        """Persist UI locale for a user.
+    async def set_user_locale(
+        self,
+        telegram_id: int,
+        locale: str,
+        *,
+        actor: ActorContext | None = None,
+    ) -> None:
+        """Persist UI locale for a user through the audited, locked UserStore.
 
         Args:
             telegram_id: Numeric Telegram user ID.
             locale: Normalized locale code ('uk' or 'en').
+            actor: Optional actor context recorded on the audit event.
         """
-        async with self._session_maker() as session:
-            repo = SQLAlchemyUserRepository(session)
-            await repo.set_ui_locale(telegram_id, locale, platform=Platform.TELEGRAM.value)
-            await session.commit()
+        await self._users.set_ui_locale(telegram_id, locale, platform=Platform.TELEGRAM.value, actor=actor)

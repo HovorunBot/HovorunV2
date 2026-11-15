@@ -362,3 +362,50 @@ class SQLAlchemyChatStore(ChatStore):
             operation=operation,
             changed_fields={"encryption_salt": salt},
         )
+
+    async def _execute_set_ui_locale(
+        self,
+        session: AsyncSession,
+        chat_id: int,
+        ui_locale: str | None,
+        platform: str,
+    ) -> bool:
+        """Update chat UI locale on session."""
+        await lock_async_mutation(session, MutationLocks(chats=(chat_id,), platform=platform))
+        repo = SQLAlchemyChatRepository(session)
+        return await repo.set_ui_locale(chat_id, ui_locale, platform)
+
+    async def set_ui_locale(
+        self,
+        chat_id: int,
+        ui_locale: str | None,
+        platform: str = "telegram",
+        actor: ActorContext | None = None,
+    ) -> bool:
+        """Persist UI locale preference for an active chat.
+
+        Args:
+            chat_id: Numeric chat ID of the chat.
+            ui_locale: Canonical locale code ('uk' or 'en') or None to reset.
+            platform: Platform of the chat identity.
+            actor: Optional actor context recorded on the audit event.
+
+        Returns:
+            True if the chat was found and updated, False otherwise.
+        """
+        operation = partial(
+            self._execute_set_ui_locale,
+            chat_id=chat_id,
+            ui_locale=ui_locale,
+            platform=platform,
+        )
+
+        return await self._audited_uow.execute(
+            actor=actor or ActorContext.system("set_ui_locale"),
+            target_type="chat",
+            target_id=str(chat_id),
+            action="set_ui_locale",
+            operation=operation,
+            changed_fields={"ui_locale": ui_locale},
+            audit_if=bool,
+        )

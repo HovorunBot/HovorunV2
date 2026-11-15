@@ -1,6 +1,7 @@
 """Verify Google-first hybrid routing, lazy local fallback, offline switch, and source preservation."""
 
 import asyncio
+import json
 from http import HTTPStatus
 from pathlib import Path
 from threading import Event
@@ -54,8 +55,8 @@ class _RecordingLocalEngine(TranslationEnginePort):
 
 
 def _google_html(translated: str) -> HTTPReply:
-    body = f'<html><body><div class="result-container">{translated}</div></body></html>'.encode()
-    return HTTPReply(body=body, status=HTTPStatus.OK, headers={"Content-Type": "text/html; charset=utf-8"})
+    body = json.dumps([[[translated, "src"]]]).encode()
+    return HTTPReply(body=body, status=HTTPStatus.OK, headers={"Content-Type": "application/json; charset=utf-8"})
 
 
 async def test_hybrid_translation_gates_ignored_languages_and_prefers_google_without_loading_local(
@@ -73,7 +74,7 @@ async def test_hybrid_translation_gates_ignored_languages_and_prefers_google_wit
 
     with (
         HTTPFixture({"/m": [_google_html("Привіт, ось гарне фото нашої подорожі до Франції.")]}) as server,
-        GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+        GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google_engine,
         ModelHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as model_http,
         WorkerDatabase(database_config(postgres_database_url)) as worker,
     ):
@@ -106,7 +107,7 @@ async def test_hybrid_translation_falls_back_locally_and_preserves_source_when_b
     caption = "Bonjour, voici une belle photographie de notre voyage en France."
     with (
         HTTPFixture({"/m": [HTTPReply(body=b"forbidden", status=HTTPStatus.FORBIDDEN)]}) as server,
-        GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+        GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google_engine,
         WorkerDatabase(database_config(postgres_database_url)) as worker,
     ):
         local_ok = _RecordingLocalEngine(fail=False)
@@ -132,7 +133,7 @@ def test_hybrid_translation_offline_switch_skips_google_requests() -> None:
     """Route directly to local engine without HTTP requests when online translation is disabled."""
     with (
         HTTPFixture({"/m": [_google_html("Should not be called")]}) as server,
-        GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+        GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google_engine,
     ):
         local_engine = _RecordingLocalEngine(fail=False)
         hybrid = HybridTranslationEngine(google_engine, local_engine, online_enabled=False)
@@ -166,11 +167,11 @@ class _EventCancellation(CancellationToken):
 def test_hybrid_does_not_fall_back_after_cancellation_during_http() -> None:
     """Stop the whole operation when cancellation arrives after the provider request starts."""
     cancelled = Event()
-    reply = HTTPReply(body=b'<div class="result-container">Result</div>', started=cancelled)
+    reply = HTTPReply(body=b'[[["Result", "src"]]]', started=cancelled)
     local = _RecordingLocalEngine()
     with (
         HTTPFixture({"/m": [reply]}) as server,
-        GoogleTranslationEngine(base_url=server.url("/m")) as google,
+        GoogleTranslationEngine(base_url=server.url("/m"), allowed_hosts=frozenset({"127.0.0.1"})) as google,
     ):
         engine = HybridTranslationEngine(google, local)
         with pytest.raises(TranslationError, match="cancelled"):

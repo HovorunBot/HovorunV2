@@ -240,7 +240,11 @@ class SpeechJobRunner:
             return JobOutcome.CANCELLED.value
         try:
             self._telegram.deliver_speech(
-                envelope.target.telegram_id, payload.source_message_id, payload.message_thread_id, result
+                envelope.target.telegram_id,
+                payload.source_message_id,
+                payload.message_thread_id,
+                result,
+                ui_locale=envelope.ui_locale,
             )
         except TelegramDeliveryUncertainError:
             return TicketState.DELIVERY_UNCERTAIN.value
@@ -291,7 +295,11 @@ class SpeechJobRunner:
             return
         try:
             self._telegram.deliver_speech(
-                envelope.target.telegram_id, envelope.message_id, self._source.message_thread_id, reason
+                envelope.target.telegram_id,
+                envelope.message_id,
+                self._source.message_thread_id,
+                reason,
+                ui_locale=envelope.ui_locale,
             )
         except TelegramRejectedError, TelegramDeliveryUncertainError:
             return  # The notice claim prevents retries after uncertain acceptance.

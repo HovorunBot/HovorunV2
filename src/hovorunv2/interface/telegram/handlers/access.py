@@ -3,6 +3,7 @@
 import html
 import logging
 from collections.abc import Mapping
+from functools import partial
 from typing import ClassVar
 
 from aiogram import Bot, Router
@@ -93,18 +94,19 @@ class AccessCommand(BaseCommand):
             **kwargs: Additional handler context, unused.
         """
         if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
-            await message.answer(get_message("access-run-in-group"))
+            actor_locale = await self._i18n_manager.get_user_locale(message.from_user.id) if message.from_user else None
+            await message.answer(get_message("access-run-in-group", actor_locale))
             return
         if message.from_user is None or message.from_user.is_bot or message.sender_chat is not None:
             return
         logger.info("Processing /allow_chat command in chat %d from user %d", message.chat.id, message.from_user.id)
+        group_locale = await self._i18n_manager.get_chat_locale(message.chat.id)
         target = await self._activation.target(message.chat.id)
         if target is None:
-            await message.answer(get_message(RESULT_KEYS[ActivationOutcome.UNAVAILABLE]))
+            await message.answer(get_message(RESULT_KEYS[ActivationOutcome.UNAVAILABLE], group_locale))
             return
         result = await self._enable(message, message.from_user, bot, target)
         logger.info("Allow chat result in chat %d: outcome=%s", message.chat.id, result.outcome.value)
-        group_locale = await self._i18n_manager.get_chat_locale(message.chat.id)
         markup = _build_configure_chat_markup(group_locale) if result.outcome == ActivationOutcome.APPROVED else None
         await message.answer(get_message(RESULT_KEYS[result.outcome], group_locale), reply_markup=markup)
 
@@ -114,24 +116,28 @@ class AccessCommand(BaseCommand):
             await self._notify_request(message, actor, bot, target, result.request_id)
         return result
 
-    async def _notify_request(
-        self, message: Message, actor: User, bot: Bot, target: PermissionTarget, request_id: int
-    ) -> None:
-        """Notify current ADMIN/OWNER recipients once, using only public operational metadata.
-
-        Args:
-            message: Telegram message carrying the group context.
-            actor: User requesting activation.
-            bot: Telegram bot used to broadcast the request.
-            target: Permission target for the group being activated.
-            request_id: Identifier of the saved activation request.
-        """
-        request_text = (
-            "🔔 <b>Access Request</b>\n\n"
-            f"<b>Group:</b> {html.escape(message.chat.title or 'Unknown')}\n"
-            f"<b>Group ID:</b> <code>{target.telegram_id}</code>\n"
-            f"<b>Requester ID:</b> <code>{actor.id}</code>\n"
-            f"<b>Username:</b> {html.escape('@' + actor.username) if actor.username else 'Unavailable'}"
+    async def _render_request_dm(
+        self,
+        recipient_id: int,
+        *,
+        message: Message,
+        actor: User,
+        target: PermissionTarget,
+        request_id: int,
+    ) -> tuple[str, InlineKeyboardMarkup]:
+        """Render an access-request DM and its decision buttons in the recipient's personal locale."""
+        locale = await self._i18n_manager.get_user_locale(recipient_id)
+        group_name = html.escape(message.chat.title or get_message("access-unknown-group", locale))
+        username = (
+            html.escape("@" + actor.username) if actor.username else get_message("access-unavailable-username", locale)
+        )
+        request_text = get_message(
+            "access-request-dm",
+            locale,
+            group=group_name,
+            group_id=str(target.telegram_id),
+            requester_id=str(actor.id),
+            username=username,
         )
         builder = InlineKeyboardBuilder()
         builder.row(
@@ -147,12 +153,27 @@ class AccessCommand(BaseCommand):
                     ).pack(),
                 )
                 for label, action in (
-                    (get_message("access-btn-approve"), AccessAction.APPROVE),
-                    (get_message("access-btn-reject"), AccessAction.REJECT),
+                    (get_message("access-btn-approve", locale), AccessAction.APPROVE),
+                    (get_message("access-btn-reject", locale), AccessAction.REJECT),
                 )
             ]
         )
-        await self._notifier.broadcast(bot, request_text, reply_markup=builder.as_markup(), include_admins=True)
+        return request_text, builder.as_markup()
+
+    async def _notify_request(
+        self, message: Message, actor: User, bot: Bot, target: PermissionTarget, request_id: int
+    ) -> None:
+        """Notify current ADMIN/OWNER recipients once in their personal locale.
+
+        Args:
+            message: Telegram message carrying the group context.
+            actor: User requesting activation.
+            bot: Telegram bot used to broadcast the request.
+            target: Permission target for the group being activated.
+            request_id: Identifier of the saved activation request.
+        """
+        render = partial(self._render_request_dm, message=message, actor=actor, target=target, request_id=request_id)
+        await self._notifier.broadcast_localized(bot, render, include_admins=True)
 
     async def handle_callback(self, query: CallbackQuery, callback_data: AccessCallback, bot: Bot) -> None:
         """Use the callback actor and revalidate the exact selected group/request at mutation.
@@ -210,7 +231,7 @@ class AccessCommand(BaseCommand):
         if result.outcome in SUCCESS_OUTCOMES:
             try:
                 await bot.edit_message_text(
-                    text=get_message(RESULT_KEYS[result.outcome]),
+                    text=get_message(RESULT_KEYS[result.outcome], user_locale),
                     chat_id=message.chat.id,
                     message_id=message.message_id,
                     reply_markup=None,

@@ -202,7 +202,7 @@ async def test_claim_rejects_envelope_that_disagrees_with_admitted_identity(
     async with runtime_cache(test_container) as (cache, namespace):
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
         store = ValkeyAdmissionStore(cache, namespace)
-        queue = CeleryFeatureQueue(settings, clock, namespace, safety)
+        queue = CeleryFeatureQueue(settings, clock, namespace, safety, store)
         try:
             sealed = await payloads.seal("envelope-fence", PRIVATE_BODY, clock.now() + 300)
             envelope = job_envelope(sealed.reference, clock, job_id=sealed.job_id)
@@ -227,7 +227,7 @@ async def test_publishing_without_admission_cannot_create_executable_ticket(test
     clock = ManualClock(time.time())
     async with runtime_cache(test_container) as (cache, namespace):
         store = ValkeyAdmissionStore(cache, namespace)
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps(), store)
         try:
             envelope = job_envelope("f" * 32, clock, job_id="unadmitted")
             assert await queue.enqueue(envelope) == EnqueueState.UNAVAILABLE
@@ -338,7 +338,7 @@ async def test_provider_admission_checks_both_splits_and_reserves_shared_media_p
     async with runtime_cache(test_container) as (cache, namespace):
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
         store = ValkeyAdmissionStore(cache, namespace)
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps(), store)
         try:
             service = await admission_service(test_container, store, queue, clock)
             for index in range(2):
@@ -386,7 +386,7 @@ async def test_sender_chat_automatic_group_duplicates_share_one_ticket_and_encry
     async with runtime_cache(test_container) as (cache, namespace):
         payloads = ValkeyPayloadStore(cache, settings, clock, namespace, UsageSafetyCaps())
         store = ValkeyAdmissionStore(cache, namespace)
-        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps())
+        queue = CeleryFeatureQueue(settings, clock, namespace, UsageSafetyCaps(), store)
         try:
             service = await admission_service(test_container, store, queue, clock)
             entries = []

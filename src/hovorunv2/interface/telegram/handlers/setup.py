@@ -35,10 +35,10 @@ _UI_LABELS: Final[dict[str, str]] = {
     "uk": "🇺🇦 Українська",
     "en": "🇬🇧 English",
 }
-_SPEECH_OPTIONS: Final[tuple[tuple[SpeechMode, str], ...]] = (
-    (SpeechMode.OFF, "Off"),
-    (SpeechMode.MANUAL_ONLY, "Manual (/transcribe)"),
-    (SpeechMode.MANUAL_AND_AUTOMATIC, "Manual + auto"),
+_SPEECH_MODES: Final[tuple[SpeechMode, ...]] = (
+    SpeechMode.OFF,
+    SpeechMode.MANUAL_ONLY,
+    SpeechMode.MANUAL_AND_AUTOMATIC,
 )
 
 
@@ -72,7 +72,7 @@ def _format_summary_values(values: SetupConfigurationValues, locale: str) -> dic
         else get_message("setup-none", locale)
     )
     speech_mode = values.speech_mode or SpeechMode.OFF
-    speech_label = dict(_SPEECH_OPTIONS).get(speech_mode, speech_mode.value)
+    speech_label = get_message(f"settings-speech-mode-{speech_mode.value}", locale)
     return {
         "ui_locale": ui_label,
         "target_lang": tgt_label,
@@ -186,8 +186,9 @@ def render_setup_screen(
             f"{get_message('setup-step-speech-body', locale, speech_mode=summary['speech_mode'])}"
         )
         current_mode = draft.draft.speech_mode or SpeechMode.OFF
-        for mode, label in _SPEECH_OPTIONS:
+        for mode in _SPEECH_MODES:
             mark = "✅ " if current_mode == mode else ""
+            label = get_message(f"settings-speech-mode-{mode.value}", locale)
             builder.button(
                 text=f"{mark}{label}",
                 callback_data=SetupCallback(

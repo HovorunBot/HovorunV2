@@ -11,6 +11,7 @@ from billiard.exceptions import SoftTimeLimitExceeded
 
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.configuration import AppSettings
+from hovorunv2.application.data.languages import LANGUAGES, resolve_language_code
 from hovorunv2.application.features.emergency import envelope_is_current
 from hovorunv2.application.features.feature_policy import SyncPolicyPort
 from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureDefinition, FeatureRegistry
@@ -290,7 +291,11 @@ class FeatureJobRunner:
             self._admission.finish(envelope.job_id, JobOutcome.EXPIRED)
         except Exception:
             logger.exception("Expired ticket reconciliation deferred")
-        self._notify(envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
+        self._notify(
+            envelope,
+            NoticeKind.TERMINAL,
+            self._render_catalog_text("notice-timeout", envelope.ui_locale, TIMEOUT_NOTICE_TEXT),
+        )
 
     def _resolve_unclaimed(self, envelope: JobEnvelope) -> str:
         ticket = self._admission.get(envelope.job_id)
@@ -397,7 +402,13 @@ class FeatureJobRunner:
     def _notify_application_failure(self, envelope: JobEnvelope) -> None:
         """Attempt authorized failure feedback without interrupting task recovery."""
         try:
-            self._notify(envelope, NoticeKind.FAILURE, APPLICATION_FAILURE_NOTICE_TEXT)
+            self._notify(
+                envelope,
+                NoticeKind.FAILURE,
+                self._render_catalog_text(
+                    "notice-application-failure", envelope.ui_locale, APPLICATION_FAILURE_NOTICE_TEXT
+                ),
+            )
         except Exception:
             logger.exception("Application failure feedback unavailable")
 
@@ -417,7 +428,11 @@ class FeatureJobRunner:
                 if deferred is None:
                     self._finish_ticket_safe(envelope.job_id, token, JobOutcome.CANCELLED)
                     return JobOutcome.CANCELLED.value
-                self._notify(envelope, NoticeKind.DELAYED, LIMIT_WAIT_NOTICE_TEXT)
+                self._notify(
+                    envelope,
+                    NoticeKind.DELAYED,
+                    self._render_catalog_text("notice-limit-wait", envelope.ui_locale, LIMIT_WAIT_NOTICE_TEXT),
+                )
                 return ReservationState.WAITING.value
         if reservation.state == ReservationState.UNAVAILABLE:
             # A lost reserve acknowledgement can hide a live reservation; do not refund it.
@@ -430,13 +445,15 @@ class FeatureJobRunner:
             else JobOutcome.FAILED
         )
         self._finish_ticket_safe(envelope.job_id, token, outcome)
-        notices = {
-            ReservationState.EXPIRED: TIMEOUT_NOTICE_TEXT,
-            ReservationState.WAITING: LIMIT_FAILURE_NOTICE_TEXT,
-            ReservationState.IMPOSSIBLE: LIMIT_FAILURE_NOTICE_TEXT,
+        notice_specs = {
+            ReservationState.EXPIRED: ("notice-timeout", TIMEOUT_NOTICE_TEXT),
+            ReservationState.WAITING: ("notice-limit-failure", LIMIT_FAILURE_NOTICE_TEXT),
+            ReservationState.IMPOSSIBLE: ("notice-limit-failure", LIMIT_FAILURE_NOTICE_TEXT),
         }
-        notice = notices.get(reservation.state, APPLICATION_FAILURE_NOTICE_TEXT)
-        self._notify(envelope, NoticeKind.TERMINAL, notice)
+        key, fallback = notice_specs.get(
+            reservation.state, ("notice-application-failure", APPLICATION_FAILURE_NOTICE_TEXT)
+        )
+        self._notify(envelope, NoticeKind.TERMINAL, self._render_catalog_text(key, envelope.ui_locale, fallback))
         return outcome.value
 
     def _extract_and_deliver(
@@ -457,12 +474,22 @@ class FeatureJobRunner:
         except SoftTimeLimitExceeded:
             self._complete_zero(envelope.job_id, token, JobOutcome.EXPIRED)
             logger.exception("Feature extraction reached its execution time limit")
-            self._notify(envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
+            self._notify(
+                envelope,
+                NoticeKind.TERMINAL,
+                self._render_catalog_text("notice-timeout", envelope.ui_locale, TIMEOUT_NOTICE_TEXT),
+            )
             return JobOutcome.EXPIRED.value
         except MediaExtractionError, BrowserError, HTTPTransportError:
             self._complete_zero(envelope.job_id, token, JobOutcome.FAILED)
             logger.exception("Worker media extraction failed")
-            self._notify(envelope, NoticeKind.TERMINAL, EXTRACTION_FAILURE_NOTICE_TEXT)
+            self._notify(
+                envelope,
+                NoticeKind.TERMINAL,
+                self._render_catalog_text(
+                    "notice-extraction-failure", envelope.ui_locale, EXTRACTION_FAILURE_NOTICE_TEXT
+                ),
+            )
             return JobOutcome.FAILED.value
         return self._finish_extraction(envelope, raw_payload, client, loaded.sender_label, token, now, stage)
 
@@ -708,6 +735,7 @@ class FeatureJobRunner:
             self._translation_budget(envelope),
             cancel_token,
             strip_hashtags=strip_hashtags,
+            ui_locale=envelope.ui_locale,
         )
         content_translated = prepared_content is not None and payload.content != prepared_content
         quote_translated = (
@@ -751,8 +779,10 @@ class FeatureJobRunner:
         cancel_token: CancellationToken | None,
         *,
         strip_hashtags: bool = False,
+        ui_locale: str = "uk",
     ) -> str | None:
         target_lang: str | None = None
+        label = self._render_catalog_text("translation-label", ui_locale, "Translated:")
         if payload.content:
             payload.content = prepare_caption_text(payload.content, strip_hashtags=strip_hashtags)
             translated = self._translation.translate_document(
@@ -761,7 +791,7 @@ class FeatureJobRunner:
             )
             if translated is not None:
                 target_lang = translated.target_lang
-            payload.content = append_translation(payload.content, translated)
+            payload.content = append_translation(payload.content, translated, label=label)
         if payload.quoted_payload and payload.quoted_payload.content:
             payload.quoted_payload.content = prepare_caption_text(
                 payload.quoted_payload.content, strip_hashtags=strip_hashtags
@@ -772,7 +802,9 @@ class FeatureJobRunner:
             )
             if quote_translated is not None and target_lang is None:
                 target_lang = quote_translated.target_lang
-            payload.quoted_payload.content = append_translation(payload.quoted_payload.content, quote_translated)
+            payload.quoted_payload.content = append_translation(
+                payload.quoted_payload.content, quote_translated, label=label
+            )
         return target_lang
 
     def _settlement_intent(self, envelope: JobEnvelope, split_def: FeatureDefinition, now: float) -> SettlementIntent:
@@ -858,12 +890,16 @@ class FeatureJobRunner:
                     "No translatable text found in the message.",
                 )
             else:
-                target_lang = req.requested_target_lang or self._settings.translation_target_lang
+                target_lang = self._translation.effective_target_language(
+                    envelope.target.telegram_id, req.requested_target_lang
+                )
+                canonical = resolve_language_code(target_lang) or target_lang
+                language_display = LANGUAGES[canonical].display_name if canonical in LANGUAGES else target_lang
                 notice = self._render_catalog_text(
                     "translation-same-language",
                     req.ui_locale,
-                    f"Source text is already in {target_lang}.",
-                    language=target_lang,
+                    f"Source text is already in {language_display}.",
+                    language=language_display,
                 )
             self._telegram.send_message(
                 envelope.target.telegram_id,

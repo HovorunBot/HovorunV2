@@ -16,7 +16,7 @@ from hovorunv2.bootstrap.worker_runtime import WorkerRuntime
 from hovorunv2.infrastructure.config import Settings
 from hovorunv2.infrastructure.speech.audio_http import SpeechAudioHTTPClient
 from hovorunv2.infrastructure.speech.model_store import SpeechModelHTTPClient, SpeechModelStore
-from hovorunv2.infrastructure.speech.whisper_engine import WhisperCppEngine
+from hovorunv2.infrastructure.speech.whisper_engine import CTranslate2WhisperEngine
 from hovorunv2.interface.telegram.transport.speech import NativeSpeechTransport
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from tests.utils.runtime import ManualClock
@@ -59,9 +59,6 @@ def speech_execution(
 ) -> Generator[SpeechExecution]:
     """Run real stores, policy, inference and transport; replace only external HTTP endpoints."""
     model_dir = missing_model if missing_model is not None else qualified_model_directory()
-    helper_path = Path(
-        os.environ.get("HOVORUN_SPEECH_TEST_HELPER", "src/hovorunv2/infrastructure/speech/whisper_helper")
-    )
     routes = {
         f"/bot{BOT_CREDENTIAL}/getFile": json_reply(
             {
@@ -82,7 +79,7 @@ def speech_execution(
         WorkerDatabase(settings) as database,
         WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
     ):
-        engine = WhisperCppEngine(SpeechModelStore(model_dir, model_http), helper_path=helper_path, clock=clock)
+        engine = CTranslate2WhisperEngine(SpeechModelStore(model_dir, model_http), clock=clock)
         try:
             yield SpeechExecution(
                 SpeechJobRunner(

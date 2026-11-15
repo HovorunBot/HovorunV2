@@ -58,7 +58,6 @@ class Settings(BrokerSettings, DatabaseSettings, ErrorLoggingSettings):
     translation_online_enabled: bool = True
     translation_online_url: str | None = None
     speech_enabled: bool = False
-    speech_helper_path: Path = Path("/usr/local/bin/hovorun-whisper-helper")
     speech_model_idle_timeout: int = 300
     speech_model_dir: Path = Path("/app/data/models/speech")
     browser_enabled: bool = False

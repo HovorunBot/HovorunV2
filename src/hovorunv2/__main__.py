@@ -30,6 +30,7 @@ from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
 from hovorunv2.interface.telegram.handlers.setup import SetupWizardHandler
 from hovorunv2.interface.telegram.handlers.translate_callbacks import TranslateCallbackHandler
+from hovorunv2.interface.telegram.i18n import AudienceI18nManager
 from hovorunv2.interface.telegram.middlewares import LogContextMiddleware
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 
@@ -58,6 +59,7 @@ async def build_bot_router(container: AsyncContainer, settings: Settings) -> Rou
     cache = await container.get(CachePort)
     reminders = await container.get(ChatReminderService)
     reconciliation = await container.get(MembershipReconciliationService)
+    i18n_manager = await container.get(AudienceI18nManager)
     return build_router(
         commands=commands,
         message_service=message_service,
@@ -70,6 +72,7 @@ async def build_bot_router(container: AsyncContainer, settings: Settings) -> Rou
         bot_join_handler=bot_join_handler,
         translate_callback_handler=translate_callback_handler,
         setup_wizard_handler=setup_wizard_handler,
+        i18n_manager=i18n_manager,
     )
 
 

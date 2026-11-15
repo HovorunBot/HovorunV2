@@ -68,8 +68,8 @@ async def test_group_settings_menus_authorization_and_persistence(
         test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.SPEECH)
     )
     assert speech_edit.text is not None
-    assert "Speech Recognition Settings" in speech_edit.text
-    assert "Automatic recognition runs locally" in speech_edit.text
+    assert "Налаштування розпізнавання мовлення" in speech_edit.text
+    assert "Автоматичне розпізнавання працює локально" in speech_edit.text
 
     recording_bot.session.responses.extend([True, True])
     await _send_group_callback(
@@ -112,12 +112,12 @@ async def test_group_settings_menus_authorization_and_persistence(
         test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.USAGE, value="group")
     )
     assert usage_edit.text is not None
-    assert "Group usage" in usage_edit.text
+    assert "Використання групи" in usage_edit.text
     assert usage_edit.text.count("Media uploads — shared across all providers") == 1
     assert "0/12 requests" in usage_edit.text
     assert "Youtube video links" not in usage_edit.text
     assert "Instagram video links" not in usage_edit.text
-    assert "Safety caps" in usage_edit.text
+    assert "Обмеження безпеки" in usage_edit.text
     await _assert_group_main_menu_localized(command, message, recording_bot)
 
     # 4. Group notification menu binds every category, then return to main and close
@@ -130,7 +130,7 @@ async def test_group_settings_menus_authorization_and_persistence(
         SettingsCallback(menu=SettingsMenu.NOTIFICATIONS, value="group"),
     )
     assert notif_edit.text is not None
-    assert "Notification preferences" in notif_edit.text
+    assert "Налаштування сповіщень" in notif_edit.text
     notif_callbacks = _unpack_callbacks(notif_edit.reply_markup)
     assert {item.value for item in notif_callbacks if item.menu == SettingsMenu.NOTIFICATIONS} == {
         f"group.{category.value}" for category in NotificationCategory
@@ -193,7 +193,7 @@ async def test_private_settings_menus_and_persistence(
     await command.handle_callback(query_for(message, recording_bot, USER), notif_open)
     notif_edit = _last_edit(recording_bot)
     assert notif_edit.text is not None
-    assert "Notification preferences" in notif_edit.text
+    assert "Налаштування сповіщень" in notif_edit.text
     release_toggle = next(cb for cb in _unpack_callbacks(notif_edit.reply_markup) if cb.value == "own.release")
     recording_bot.session.responses.extend([True, True])
     await command.handle_callback(query_for(message, recording_bot, USER), await _issue(release_toggle))
@@ -224,9 +224,9 @@ async def test_private_settings_menus_and_persistence(
     await command.handle_callback(query_for(message, recording_bot, USER), usage_open)
     usage_edit = _last_edit(recording_bot)
     assert usage_edit.text is not None
-    assert "Your usage" in usage_edit.text
-    assert "personal quota unlimited" in usage_edit.text
-    assert "Safety caps" in usage_edit.text
+    assert "Моє використання" in usage_edit.text
+    assert "Адміністратори бота обходять звичайну особисту квоту" in usage_edit.text
+    assert "Обмеження безпеки" in usage_edit.text
 
 
 async def _assert_group_main_menu_localized(
@@ -304,13 +304,15 @@ async def test_settings_modules_excludes_non_toggleable_and_preserves_canonical_
         test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.LANG)
     )
     assert lang_menu_edit.reply_markup is not None
-    assert "🎯 Target: 🇨🇳 Chinese (Simplified)" in (lang_menu_edit.text or "") or any(
-        "Target: 🇨🇳 Chinese (Simplified)" in btn.text
+    assert "🎯 Цільова: 🇨🇳 Chinese (Simplified)" in (lang_menu_edit.text or "") or any(
+        "Цільова: 🇨🇳 Chinese (Simplified)" in btn.text
         for row in lang_menu_edit.reply_markup.inline_keyboard
         for btn in row
     )
     assert any(
-        f"Ignored ({visible_count})" in btn.text for row in lang_menu_edit.reply_markup.inline_keyboard for btn in row
+        f"Ігноровані ({visible_count})" in btn.text
+        for row in lang_menu_edit.reply_markup.inline_keyboard
+        for btn in row
     )
     main_edit = await _send_group_callback(
         test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.MAIN)

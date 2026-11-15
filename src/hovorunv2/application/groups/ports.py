@@ -65,3 +65,13 @@ class ChatStore(Protocol):
     async def get_historical_by_chat_id(self, chat_id: int, platform: str = "telegram") -> list[ChatDB]:
         """List chat identity generations; an empty list means no history."""
         ...
+
+    async def set_ui_locale(
+        self,
+        chat_id: int,
+        ui_locale: str | None,
+        platform: str = "telegram",
+        actor: ActorContext | None = None,
+    ) -> bool:
+        """Persist UI locale preference for an active chat."""
+        ...
