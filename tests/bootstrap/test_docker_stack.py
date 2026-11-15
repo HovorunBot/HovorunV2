@@ -312,3 +312,21 @@ async def test_speech_preparation_runs_in_worker_without_starting_stack(tmp_path
     assert "worker" in preparation
     assert preparation[-3:] == ["prepare", "--model-dir", "/speech-models"]
     assert not any("up" in call or "start" in call for call in calls)
+
+
+async def test_makefile_deploy_browser_enables_browser_and_builds_all_roles() -> None:
+    """`make deploy-browser` sets `BROWSER_ENABLED=True` and delegates to `deploy` (build + up)."""
+    process = await asyncio.create_subprocess_exec(
+        "make",
+        "-n",
+        "deploy-browser",
+        cwd=PROJECT_ROOT,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    output, error = await process.communicate()
+    assert process.returncode == 0, error.decode()
+    plan = output.decode()
+    assert "BROWSER_ENABLED=True" in plan
+    assert "-- build" in plan
+    assert "-- up -d --no-build --remove-orphans" in plan

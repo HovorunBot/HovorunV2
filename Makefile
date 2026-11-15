@@ -24,7 +24,7 @@ MESSAGE ?=
 INVALIDATE ?= 0
 FORCE ?= 0
 
-.PHONY: all setup run stop restart restart-dev restart-clean invalidate-runtime update deploy help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
+.PHONY: all setup run stop restart restart-dev restart-clean invalidate-runtime update deploy deploy-browser help install-git checkout migrate dev run-dev stop-dev env-init build build-prod \
         infrastructure compose-config compose-run verify-build tag-release release-tag release-dry-run release-preview changelog \
         test test-unit test-fast test-profile test-coverage lint format type-check lint-imports check install-hooks \
         clean backup logs status \
@@ -69,6 +69,10 @@ update: checkout build
 ## Build and recreate changed services in the selected stack; remove orphan containers.
 deploy: build
 	$(DOCKER_COMPOSE) up -d --no-build --remove-orphans
+
+## Build and recreate all stack services including the optional browser worker; remove orphan containers.
+deploy-browser:
+	@BROWSER_ENABLED=True $(MAKE) COMPOSE_ENV="$(COMPOSE_ENV)" APP_ENV_FILE="$(APP_ENV_FILE)" APP_VERSION="$(APP_VERSION)" FORCE="$(FORCE)" deploy
 
 ## Build the role images, start PostgreSQL if needed, and run Alembic upgrades.
 migrate: build
