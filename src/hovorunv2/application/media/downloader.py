@@ -2,7 +2,6 @@
 
 import html
 import logging
-import tempfile
 import time
 from collections.abc import Callable, Mapping
 from contextlib import nullcontext
@@ -39,9 +38,13 @@ DEFAULT_DOWNLOAD_HEADERS: Mapping[str, str] = {
 }
 
 
-def is_hls_manifest(content: bytes) -> bool:
-    """Return whether the content is a small HLS manifest."""
-    return len(content) < HLS_MANIFEST_SIZE_THRESHOLD and "#EXTM3U" in content.decode("utf-8", errors="ignore")
+def is_hls_manifest_file(path: Path) -> bool:
+    """Return whether the file on disk is a small HLS manifest."""
+    if not path.is_file() or path.stat().st_size >= HLS_MANIFEST_SIZE_THRESHOLD:
+        return False
+    with path.open("rb") as stream:
+        head = stream.read(HLS_MANIFEST_SIZE_THRESHOLD)
+    return "#EXTM3U" in head.decode("utf-8", errors="ignore")
 
 
 def _enforce_download_limit(event: dict[str, object], *, max_bytes: int) -> None:
@@ -78,32 +81,31 @@ class _DownloadBudget:
             raise yt_dlp.utils.DownloadError(msg)
 
 
-def _require_content(content: bytes, max_bytes: int = MAX_MEDIA_BYTES) -> bytes:
-    if len(content) > max_bytes:
-        raise MediaDownloadError(MediaFailure.TOO_LARGE)
-    if not content:
+def _require_file(output: Path, max_bytes: int = MAX_MEDIA_BYTES, *, root: Path | None = None) -> Path:
+    if root is not None and not output.resolve().is_relative_to(root.resolve()):
         raise MediaDownloadError(MediaFailure.UNUSABLE)
-    return content
-
-
-def _read_downloaded_file(output: Path, root: Path, max_bytes: int) -> bytes:
-    if not output.resolve().is_relative_to(root.resolve()) or not output.is_file():
+    if not output.is_file():
         raise MediaDownloadError(MediaFailure.UNUSABLE)
-    if output.stat().st_size > max_bytes:
+    size = output.stat().st_size
+    if size > max_bytes:
         raise MediaDownloadError(MediaFailure.TOO_LARGE)
-    with output.open("rb") as stream:
-        content = stream.read(max_bytes + 1)
-    return _require_content(content, max_bytes)
+    if size == 0:
+        raise MediaDownloadError(MediaFailure.UNUSABLE)
+    return output
 
 
 def _download_options(
-    root: Path, max_bytes: int, *, timeout_seconds: float = DOWNLOAD_TIMEOUT_SECONDS
+    root: Path,
+    max_bytes: int,
+    *,
+    timeout_seconds: float = DOWNLOAD_TIMEOUT_SECONDS,
+    prefix: str = "downloaded",
 ) -> dict[str, object]:
     bounded_timeout = max(1, int(timeout_seconds))
     return {
         "format": '(bestvideo+bestaudio/best)[protocol~="^(https?|m3u8)"]',
         "merge_output_format": "mp4",
-        "outtmpl": str(root / "downloaded.%(ext)s"),
+        "outtmpl": str(root / f"{prefix}.%(ext)s"),
         "quiet": True,
         "logger": MediaBackendLogger(),
         "no_warnings": True,
@@ -120,10 +122,17 @@ def _download_options(
 
 
 def _download_to_file(
-    url: str, root: Path, max_bytes: int, *, timeout_seconds: float = DOWNLOAD_TIMEOUT_SECONDS
+    url: str,
+    root: Path,
+    max_bytes: int,
+    *,
+    timeout_seconds: float = DOWNLOAD_TIMEOUT_SECONDS,
+    prefix: str = "downloaded",
 ) -> Path:
     try:
-        with yt_dlp.YoutubeDL(_download_options(root, max_bytes, timeout_seconds=timeout_seconds)) as ydl:
+        with yt_dlp.YoutubeDL(
+            _download_options(root, max_bytes, timeout_seconds=timeout_seconds, prefix=prefix)
+        ) as ydl:
             info = ydl.extract_info(url, download=True)
             if not info:
                 raise MediaDownloadError(MediaFailure.UNUSABLE)
@@ -137,23 +146,27 @@ def _download_to_file(
         raise
 
 
-def download_ytdlp_bytes(
+def download_ytdlp_file(
     url: str,
+    dest_dir: Path,
     *,
     destination_policy: DestinationPolicyPort,
     max_bytes: int = MAX_SOURCE_MEDIA_BYTES,
     deadline: ExtractionDeadline | None = None,
-) -> bytes:
-    """Require bounded output while owning and cleaning every temporary backend artifact.
+    prefix: str = "downloaded",
+) -> Path:
+    """Download bounded media to a file inside ``dest_dir`` using yt-dlp.
 
     Args:
         url: Media URL to download.
+        dest_dir: Caller-owned directory where the downloaded file will be stored.
         destination_policy: Mandatory policy validating public network destinations.
         max_bytes: Upper bound on the downloaded payload.
         deadline: Optional extraction deadline bounding execution wall-clock time.
+        prefix: Filename prefix inside ``dest_dir``.
 
     Returns:
-        Downloaded content bytes.
+        Path to the downloaded media file inside ``dest_dir``.
 
     Raises:
         MediaDownloadError: If the backend fails or the output exceeds the bound.
@@ -176,11 +189,9 @@ def download_ytdlp_bytes(
 
     guard = OperationTimeout(expires_at) if current_thread() is main_thread() else nullcontext()
     try:
-        with guard, tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            return _read_downloaded_file(
-                _download_to_file(url, root, max_bytes, timeout_seconds=remaining), root, max_bytes
-            )
+        with guard:
+            output = _download_to_file(url, dest_dir, max_bytes, timeout_seconds=remaining, prefix=prefix)
+            return _require_file(output, max_bytes, root=dest_dir)
     except MediaDownloadError:
         logger.warning("Media backend download failed")
         raise
@@ -196,107 +207,155 @@ class NativeMediaDownloader:
         self._http = http
         self._destination_policy = destination_policy
 
-    def _direct_download(self, url: str) -> bytes:
+    def _direct_download_to_path(self, url: str, dest: Path) -> Path:
         try:
-            content = self._http.download_bytes(url, headers=DEFAULT_DOWNLOAD_HEADERS)
+            self._http.download_to_path(url, dest, headers=DEFAULT_DOWNLOAD_HEADERS)
         except HTTPTransportError as error:
             code = MediaFailure.TOO_LARGE if error.code == HTTPFailure.TOO_LARGE else MediaFailure.UNAVAILABLE
             raise MediaDownloadError(code) from None
-        return _require_content(content, MAX_SOURCE_MEDIA_BYTES)
+        return _require_file(dest, MAX_SOURCE_MEDIA_BYTES)
 
-    def download(
+    def download_to_path(
         self,
         url: str,
+        dest_dir: Path,
         *,
         is_video: bool = False,
         deadline: ExtractionDeadline | None = None,
         on_compression: Callable[[], None] | None = None,
-    ) -> bytes:
-        """Require direct bytes or fall back to the video-only strategy.
+        index: int = 0,
+    ) -> Path:
+        """Download media to a bounded file in ``dest_dir`` or fall back to yt-dlp.
 
         Args:
             url: Media URL to download.
+            dest_dir: Caller-owned temporary directory.
             is_video: Whether the media is a video.
             deadline: Optional shared deadline bounding the download.
             on_compression: Optional callback invoked immediately before compression starts.
+            index: Item index used to keep filenames distinct inside ``dest_dir``.
 
         Returns:
-            Downloaded content bytes.
+            Path to the downloaded (and possibly compressed) media file.
 
         Raises:
             MediaDownloadError: If the download fails and no fallback applies.
         """
         logger.info("Worker starting media download")
         try:
-            content = self._download(url, is_video=is_video, deadline=deadline)
-            content = (
-                prepare_video(content, deadline=deadline, on_compression=on_compression)
+            path = self._download_to_path(url, dest_dir, is_video=is_video, deadline=deadline, index=index)
+            path = (
+                prepare_video(path, work_dir=dest_dir, deadline=deadline, on_compression=on_compression)
                 if is_video
-                else _require_content(content)
+                else _require_file(path)
             )
         except MediaDownloadError as error:
             logger.warning("Media download failed (%s)", error.code)
             raise
-        logger.info("Worker downloaded %s media bytes", len(content))
-        return content
+        logger.info("Worker downloaded %s media bytes", path.stat().st_size)
+        return path
 
-    def _download(self, url: str, *, is_video: bool, deadline: ExtractionDeadline | None = None) -> bytes:
+    def _download_to_path(
+        self,
+        url: str,
+        dest_dir: Path,
+        *,
+        is_video: bool,
+        deadline: ExtractionDeadline | None = None,
+        index: int = 0,
+    ) -> Path:
         clean_url = html.unescape(url)
+        prefix = f"ytdlp_{index}"
         if is_video and (".m3u8" in clean_url or "blob:" in clean_url):
-            return download_ytdlp_bytes(clean_url, destination_policy=self._destination_policy, deadline=deadline)
+            return download_ytdlp_file(
+                clean_url, dest_dir, destination_policy=self._destination_policy, deadline=deadline, prefix=prefix
+            )
+        dest = dest_dir / f"source_{index}.media"
         try:
-            content = self._direct_download(clean_url)
+            path = self._direct_download_to_path(clean_url, dest)
         except MediaDownloadError:
             if not is_video:
                 raise
-            return download_ytdlp_bytes(clean_url, destination_policy=self._destination_policy, deadline=deadline)
-        if is_video and is_hls_manifest(content):
-            return download_ytdlp_bytes(clean_url, destination_policy=self._destination_policy, deadline=deadline)
-        return content
+            return download_ytdlp_file(
+                clean_url, dest_dir, destination_policy=self._destination_policy, deadline=deadline, prefix=prefix
+            )
+        if is_video and is_hls_manifest_file(path):
+            return download_ytdlp_file(
+                clean_url, dest_dir, destination_policy=self._destination_policy, deadline=deadline, prefix=prefix
+            )
+        return path
 
-    def _download_item(
+    def _download_item_to_path(
         self,
         item: MediaItem,
+        dest_dir: Path,
+        index: int,
         *,
         deadline: ExtractionDeadline | None = None,
         on_compression: Callable[[], None] | None = None,
-    ) -> bytes | MediaFailure:
+    ) -> Path | MediaFailure:
         try:
-            if item.data is not None:
+            if item.file_path is not None:
                 return (
-                    prepare_video(item.data, deadline=deadline, on_compression=on_compression)
+                    prepare_video(item.file_path, work_dir=dest_dir, deadline=deadline, on_compression=on_compression)
                     if item.is_video
-                    else _require_content(item.data)
+                    else _require_file(item.file_path)
+                )
+            if item.data is not None:
+                source = dest_dir / f"item_{index}.media"
+                source.write_bytes(item.data)
+                return (
+                    prepare_video(source, work_dir=dest_dir, deadline=deadline, on_compression=on_compression)
+                    if item.is_video
+                    else _require_file(source)
                 )
             if item.requires_download:
-                content = download_ytdlp_bytes(item.url, destination_policy=self._destination_policy, deadline=deadline)
-                return (
-                    prepare_video(content, deadline=deadline, on_compression=on_compression)
-                    if item.is_video
-                    else _require_content(content)
+                path = download_ytdlp_file(
+                    item.url,
+                    dest_dir,
+                    destination_policy=self._destination_policy,
+                    deadline=deadline,
+                    prefix=f"ytdlp_{index}",
                 )
-            return self.download(item.url, is_video=item.is_video, deadline=deadline, on_compression=on_compression)
+                return (
+                    prepare_video(path, work_dir=dest_dir, deadline=deadline, on_compression=on_compression)
+                    if item.is_video
+                    else _require_file(path)
+                )
+            return self.download_to_path(
+                item.url,
+                dest_dir,
+                is_video=item.is_video,
+                deadline=deadline,
+                on_compression=on_compression,
+                index=index,
+            )
         except MediaDownloadError as error:
             return error.code
 
     def download_batch(
         self,
         items: list[MediaItem],
+        dest_dir: Path,
         *,
         deadline: ExtractionDeadline | None = None,
         on_compression: Callable[[], None] | None = None,
-    ) -> list[bytes | MediaFailure]:
-        """Download every item while preserving order and explicit failures.
+    ) -> list[Path | MediaFailure]:
+        """Download every item to ``dest_dir`` while preserving order and explicit failures.
 
-        Existing in-memory bytes are reused without a second download.
+        Existing file paths or in-memory bytes are reused without a second download.
 
         Args:
             items: Media items to download in order.
+            dest_dir: Caller-owned temporary directory for downloaded/compressed files.
             deadline: Optional shared deadline bounding batch downloads.
             on_compression: Optional callback invoked immediately before compression starts.
 
         Returns:
-            One bytes payload or MediaFailure per input item, in input order.
+            One file Path or MediaFailure per input item, in input order.
         """
         allowance = deadline or ExtractionDeadline.after(BATCH_TIMEOUT_SECONDS)
-        return [self._download_item(item, deadline=allowance, on_compression=on_compression) for item in items]
+        return [
+            self._download_item_to_path(item, dest_dir, index, deadline=allowance, on_compression=on_compression)
+            for index, item in enumerate(items)
+        ]

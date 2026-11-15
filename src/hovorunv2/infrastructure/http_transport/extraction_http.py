@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from http import HTTPStatus
+from pathlib import Path
 
 from curl_cffi.requests import Session
 from curl_cffi.requests.exceptions import RequestException
@@ -157,3 +158,15 @@ class ExtractionHTTPClient(SyncHTTPClientBase):
     ) -> bytes:
         """Return bounded media bytes within the original shared deadline."""
         return self._read(url, self._max_bytes, headers=headers, cookies=cookies).body
+
+    def download_to_path(
+        self,
+        url: str,
+        dest: Path,
+        headers: HTTPHeaders | None = None,
+        *,
+        cookies: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Write bounded media to dest Path within the original shared deadline."""
+        dest.write_bytes(self.download_bytes(url, headers=headers, cookies=cookies))
+        return dest

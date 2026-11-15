@@ -13,7 +13,6 @@ from sqlalchemy.engine import make_url
 
 from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_jobs import (
-    COMPRESSION_JOB_FUNCTION,
     FEATURE_JOB_FUNCTION,
     SPEECH_JOB_FUNCTION,
     JobEnvelope,
@@ -130,7 +129,6 @@ def log_received_feature_task(request: Request, **kwargs: object) -> None:
     if request.name not in {
         FEATURE_JOB_FUNCTION,
         SPEECH_JOB_FUNCTION,
-        COMPRESSION_JOB_FUNCTION,
         "run_media_job",
         "run_browser_job",
     }:
@@ -141,8 +139,6 @@ def log_received_feature_task(request: Request, **kwargs: object) -> None:
             default_stage = JobStage.BROWSER
         elif request.name == "run_speech_job":
             default_stage = JobStage.SPEECH
-        elif request.name == "run_compression_job":
-            default_stage = JobStage.COMPRESSION
         else:
             default_stage = JobStage.MEDIA
         stage = JobStage(request.kwargs.get("stage", default_stage))

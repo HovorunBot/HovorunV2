@@ -3,10 +3,13 @@
 import functools
 import json
 import logging
-from contextlib import suppress
+import tempfile
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass
+from pathlib import Path
 
 from hovorunv2.application.jobs.http_ports import (
+    HTTPFileContent,
     HTTPFiles,
     HTTPForm,
     TelegramDeliveryUncertainError,
@@ -36,12 +39,20 @@ class _DeliveryOutcome:
     markup_attached: bool = False
 
 
-def _media_group(items: list[MediaItem], start: int, caption: str) -> tuple[list[dict[str, str]], HTTPFiles]:
-    files: dict[str, tuple[str, bytes, str]] = {}
+def _media_group(
+    items: list[MediaItem], start: int, caption: str, stack: ExitStack
+) -> tuple[list[dict[str, str]], HTTPFiles]:
+    files: dict[str, tuple[str, HTTPFileContent, str]] = {}
     media: list[dict[str, str]] = []
     for index, item in enumerate(items):
         source = item.url
-        if item.data is not None:
+        if item.file_path is not None:
+            name = f"media{index}"
+            extension, mime = ("mp4", "video/mp4") if item.is_video else ("jpg", "image/jpeg")
+            stream = stack.enter_context(item.file_path.open("rb"))
+            files[name] = (f"media_{start + index}.{extension}", stream, mime)
+            source = "attach://" + name
+        elif item.data is not None:
             name = f"media{index}"
             extension, mime = ("mp4", "video/mp4") if item.is_video else ("jpg", "image/jpeg")
             files[name] = (f"media_{start + index}.{extension}", item.data, mime)
@@ -51,6 +62,16 @@ def _media_group(items: list[MediaItem], start: int, caption: str) -> tuple[list
             value.update({"caption": caption, "parse_mode": "HTML"})
         media.append(value)
     return media, files
+
+
+def _item_exceeds_video_limit(item: MediaItem) -> bool:
+    if not item.is_video:
+        return False
+    if item.file_path is not None:
+        return item.file_path.is_file() and item.file_path.stat().st_size > TELEGRAM_VIDEO_BYTES
+    if item.data is not None:
+        return len(item.data) > TELEGRAM_VIDEO_BYTES
+    return False
 
 
 def _group_request(
@@ -119,15 +140,16 @@ class NativeTelegramDelivery:
         reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         logger.info("Worker updating placeholder with uploaded Telegram media item")
-        media, files = _media_group([item], 0, caption)
-        fields: dict[str, str | int | float | bool] = {
-            "chat_id": chat_id,
-            "message_id": placeholder,
-            "media": json.dumps(media[0]),
-        }
-        if reply_markup is not None:
-            fields["reply_markup"] = reply_markup
-        return extract_message_ids(self._api.call(TelegramMethod.EDIT_MESSAGE_MEDIA, fields, files or None))
+        with ExitStack() as stack:
+            media, files = _media_group([item], 0, caption, stack)
+            fields: dict[str, str | int | float | bool] = {
+                "chat_id": chat_id,
+                "message_id": placeholder,
+                "media": json.dumps(media[0]),
+            }
+            if reply_markup is not None:
+                fields["reply_markup"] = reply_markup
+            return extract_message_ids(self._api.call(TelegramMethod.EDIT_MESSAGE_MEDIA, fields, files or None))
 
     def _send_items(
         self,
@@ -163,9 +185,10 @@ class NativeTelegramDelivery:
         reply_markup: str | None = None,
     ) -> tuple[int, ...]:
         logger.info("Worker sending %s Telegram media items", len(items))
-        media, files = _media_group(items, start, caption)
-        method, fields = _group_request(chat_id, message_id, media, reply_markup=reply_markup)
-        receipts = extract_message_ids(self._api.call(method, fields, files or None))
+        with ExitStack() as stack:
+            media, files = _media_group(items, start, caption, stack)
+            method, fields = _group_request(chat_id, message_id, media, reply_markup=reply_markup)
+            receipts = extract_message_ids(self._api.call(method, fields, files or None))
         logger.info("Telegram acknowledged %s media messages", len(receipts))
         if len(receipts) != len(items):
             raise TelegramDeliveryUncertainError(receipts)
@@ -196,10 +219,7 @@ class NativeTelegramDelivery:
         reply_markup: str | None = None,
     ) -> _DeliveryOutcome:
         logger.info("Telegram could not fetch media URLs; starting download and upload fallback")
-        oversized = any(
-            item.is_video and item.data is not None and len(item.data) > TELEGRAM_VIDEO_BYTES
-            for item in payload.media_items
-        )
+        oversized = any(_item_exceeds_video_limit(item) for item in payload.media_items)
         progress = (
             "Preparing video; oversized files will be compressed to fit Telegram..."
             if oversized
@@ -223,52 +243,54 @@ class NativeTelegramDelivery:
         *,
         reply_markup: str | None = None,
     ) -> _DeliveryOutcome:
-        contents = self._downloader.download_batch(
-            payload.media_items,
-            on_compression=functools.partial(self._notify_compression, chat_id, caption, placeholder),
-        )
-        items = [
-            MediaItem(item.url, item.is_video, data)
-            for item, data in zip(payload.media_items, contents, strict=True)
-            if isinstance(data, bytes)
-        ]
-        if not items:
-            logger.error("Worker media download fallback produced no usable media")
-            reason = (
-                "Media is too large, view on original resource."
-                if MediaFailure.TOO_LARGE in contents
-                else "Failed to download media."
+        with tempfile.TemporaryDirectory(prefix="hovorun-delivery-") as tmp_dir:
+            contents = self._downloader.download_batch(
+                payload.media_items,
+                Path(tmp_dir),
+                on_compression=functools.partial(self._notify_compression, chat_id, caption, placeholder),
             )
-            receipts = self._text(
-                chat_id,
-                caption + f"\n\n⚠️ <i>{reason}</i>",
-                message_id=placeholder,
-                reply_markup=reply_markup,
-            )
-            return _DeliveryOutcome(receipts, markup_attached=reply_markup is not None)
-        markup_attached = False
-        try:
-            if len(items) == 1:
-                receipts = self._edit_media(chat_id, placeholder, items[0], caption, reply_markup=reply_markup)
+            items = [
+                MediaItem(item.url, item.is_video, file_path=result)
+                for item, result in zip(payload.media_items, contents, strict=True)
+                if isinstance(result, Path)
+            ]
+            if not items:
+                logger.error("Worker media download fallback produced no usable media")
+                reason = (
+                    "Media is too large, view on original resource."
+                    if MediaFailure.TOO_LARGE in contents
+                    else "Failed to download media."
+                )
+                receipts = self._text(
+                    chat_id,
+                    caption + f"\n\n⚠️ <i>{reason}</i>",
+                    message_id=placeholder,
+                    reply_markup=reply_markup,
+                )
                 return _DeliveryOutcome(receipts, markup_attached=reply_markup is not None)
-            receipts = self._send_items(chat_id, message_id, items, caption)
-        except TelegramRejectedError as exc:
-            logger.exception("Telegram rejected worker media upload (%s)", exc.reason)
-            text = (
-                "Media is too large, view on original resource."
-                if exc.reason == TelegramRejection.TOO_LARGE
-                else ("Failed to upload media.")
-            )
-            receipts = self._text(
-                chat_id,
-                caption + f"\n\n⚠️ <i>{text}</i>",
-                message_id=placeholder,
-                reply_markup=reply_markup,
-            )
-            markup_attached = reply_markup is not None
-        with suppress(TelegramRejectedError, TelegramDeliveryUncertainError):
-            self._api.call(TelegramMethod.DELETE_MESSAGE, {"chat_id": chat_id, "message_id": placeholder})
-        return _DeliveryOutcome(receipts, markup_attached=markup_attached)
+            markup_attached = False
+            try:
+                if len(items) == 1:
+                    receipts = self._edit_media(chat_id, placeholder, items[0], caption, reply_markup=reply_markup)
+                    return _DeliveryOutcome(receipts, markup_attached=reply_markup is not None)
+                receipts = self._send_items(chat_id, message_id, items, caption)
+            except TelegramRejectedError as exc:
+                logger.exception("Telegram rejected worker media upload (%s)", exc.reason)
+                text = (
+                    "Media is too large, view on original resource."
+                    if exc.reason == TelegramRejection.TOO_LARGE
+                    else "Failed to upload media."
+                )
+                receipts = self._text(
+                    chat_id,
+                    caption + f"\n\n⚠️ <i>{text}</i>",
+                    message_id=placeholder,
+                    reply_markup=reply_markup,
+                )
+                markup_attached = reply_markup is not None
+            with suppress(TelegramRejectedError, TelegramDeliveryUncertainError):
+                self._api.call(TelegramMethod.DELETE_MESSAGE, {"chat_id": chat_id, "message_id": placeholder})
+            return _DeliveryOutcome(receipts, markup_attached=markup_attached)
 
     def deliver(
         self,
@@ -363,12 +385,9 @@ class NativeTelegramDelivery:
         reply_markup: str | None = None,
         message_thread_id: int | None = None,
     ) -> _DeliveryOutcome:
-        if any(item.requires_download and item.data is None for item in payload.media_items):
+        if any(item.requires_download and item.data is None and item.file_path is None for item in payload.media_items):
             return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
-        if any(
-            item.is_video and item.data is not None and len(item.data) > TELEGRAM_VIDEO_BYTES
-            for item in payload.media_items
-        ):
+        if any(_item_exceeds_video_limit(item) for item in payload.media_items):
             return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
         try:
             receipts = self._send_items(chat_id, message_id, payload.media_items, caption, reply_markup=reply_markup)
@@ -379,7 +398,7 @@ class NativeTelegramDelivery:
             if exc.reason == TelegramRejection.FETCH:
                 return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
             if exc.reason == TelegramRejection.TOO_LARGE:
-                if any(item.is_video and item.data is None for item in payload.media_items):
+                if any(item.is_video and item.data is None and item.file_path is None for item in payload.media_items):
                     return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
                 logger.exception("Telegram rejected oversized worker media")
                 receipts = self._text(

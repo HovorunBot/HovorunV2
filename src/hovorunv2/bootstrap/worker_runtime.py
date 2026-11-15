@@ -15,7 +15,6 @@ from celery.signals import worker_process_init, worker_process_shutdown
 from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_jobs import (
-    COMPRESSION_JOB_FUNCTION,
     FEATURE_JOB_FUNCTION,
     SPEECH_JOB_FUNCTION,
     JobEnvelope,
@@ -153,7 +152,6 @@ class WorkerQueuePublisher:
         self._safety = safety
         self._media_queue = namespace.value + "media"
         self._browser_queue = namespace.value + "browser"
-        self._compression_queue = namespace.value + "compression"
         self._speech_queue = namespace.value + "speech"
         self._app = Celery("worker_publisher", broker=broker_url)
         self._app.conf.update(
@@ -176,14 +174,11 @@ class WorkerQueuePublisher:
         queue = {
             JobStage.MEDIA: self._media_queue,
             JobStage.BROWSER: self._browser_queue,
-            JobStage.COMPRESSION: self._compression_queue,
             JobStage.SPEECH: self._speech_queue,
         }[stage]
         with self._app.connection_for_write() as connection, self._app.amqp.Producer(connection) as producer:
             self._app.send_task(
-                SPEECH_JOB_FUNCTION
-                if stage == JobStage.SPEECH
-                else (COMPRESSION_JOB_FUNCTION if stage == JobStage.COMPRESSION else FEATURE_JOB_FUNCTION),
+                SPEECH_JOB_FUNCTION if stage == JobStage.SPEECH else FEATURE_JOB_FUNCTION,
                 kwargs={"envelope": envelope.model_dump(mode="json"), "stage": stage.value},
                 task_id=envelope.job_id,
                 producer=producer,

@@ -182,9 +182,6 @@ async def drain_and_run_media(
             browser_msgs = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "browser")
             for b_msg in browser_msgs:
                 outcome_val = runner.run(b_msg, JobStage.BROWSER)
-            compression_msgs = await asyncio.to_thread(broker_envelopes, settings, namespace.value, "compression")
-            for compression_msg in compression_msgs:
-                outcome_val = runner.run(compression_msg, JobStage.COMPRESSION)
             outcomes.append(JobOutcome(outcome_val))
 
     final_outcome = outcomes[0] if len(outcomes) == 1 else JobOutcome.COMPLETE

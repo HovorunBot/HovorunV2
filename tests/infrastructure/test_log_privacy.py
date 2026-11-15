@@ -5,6 +5,7 @@ import io
 import logging
 import sys
 from http import HTTPStatus
+from pathlib import Path
 
 import pytest
 from aiogram import Bot
@@ -96,7 +97,7 @@ async def test_exception_payloads_never_reach_console_or_telegram(test_container
 
 
 async def test_media_download_failure_logs_no_message_url(
-    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Verify the producer emits no URL even before the sink formatter runs."""
     # Alembic migration tests disable pre-existing loggers through fileConfig.
@@ -109,7 +110,7 @@ async def test_media_download_failure_logs_no_message_url(
         downloader = NativeMediaDownloader(http, destination_policy=http)
         with caplog.at_level(logging.WARNING):
             with pytest.raises(MediaDownloadError) as error:
-                await asyncio.to_thread(downloader.download, target_url)
+                await asyncio.to_thread(downloader.download_to_path, target_url, tmp_path)
             assert error.value.__cause__ is None
             assert error.value.__suppress_context__
         assert all(target_url not in record.getMessage() for record in caplog.records)

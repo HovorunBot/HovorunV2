@@ -5,7 +5,6 @@ import logging
 import math
 import shutil
 import subprocess
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +26,7 @@ BITS_PER_BYTE = 8
 OUTPUT_BUDGET_RATIO = 0.90
 DURATION_TOLERANCE_SECONDS = 0.25
 LOCAL_FORMATS = "mov,matroska,webm,avi,mpeg,mpegvideo,mpegts,flv,ogg,asf"
+SUBPROCESS_AS_LIMIT_BYTES = 1024 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -43,12 +43,21 @@ def _executable(name: str) -> str:
 
 
 def _run(arguments: list[str], deadline: ExtractionDeadline, *, capture: bool = False) -> bytes:
+    remaining = deadline.remaining()
+    cpu_seconds = max(1, math.ceil(remaining) * 2)
+    bounded = [
+        _executable("prlimit"),
+        f"--as={SUBPROCESS_AS_LIMIT_BYTES}",
+        f"--cpu={cpu_seconds}",
+        "--",
+        *arguments,
+    ]
     result = subprocess.run(  # noqa: S603
-        arguments,
+        bounded,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        timeout=deadline.remaining(),
+        timeout=remaining,
         check=True,
     )
     return result.stdout if capture else b""
@@ -88,7 +97,15 @@ def _probe(path: Path, deadline: ExtractionDeadline) -> _VideoFacts:
     return _VideoFacts(duration, any(stream["codec_type"] == "audio" for stream in streams))
 
 
-def _encode(source: Path, output: Path, bitrate: int, max_bytes: int, deadline: ExtractionDeadline) -> None:
+def _encode(
+    source: Path,
+    output: Path,
+    bitrate: int,
+    max_bytes: int,
+    deadline: ExtractionDeadline,
+    *,
+    passlogfile: Path,
+) -> None:
     common = [
         _executable("ffmpeg"),
         "-hide_banner",
@@ -125,7 +142,7 @@ def _encode(source: Path, output: Path, bitrate: int, max_bytes: int, deadline: 
         "-b:v",
         str(bitrate),
         "-passlogfile",
-        str(source.parent / "pass"),
+        str(passlogfile),
     ]
     _run([*common, "-pass", "1", "-an", "-f", "null", "-"], deadline)
     _run(
@@ -151,44 +168,44 @@ def _encode(source: Path, output: Path, bitrate: int, max_bytes: int, deadline: 
     )
 
 
-def _compress(content: bytes, max_bytes: int, deadline: ExtractionDeadline) -> bytes:
-    with tempfile.TemporaryDirectory(prefix="hovorun-video-") as directory:
-        source = Path(directory) / "source.media"
-        output = Path(directory) / "compressed.mp4"
-        source.write_bytes(content)
-        facts = _probe(source, deadline)
-        total_bitrate = int(max_bytes * BITS_PER_BYTE * OUTPUT_BUDGET_RATIO / facts.duration)
-        video_bitrate = total_bitrate - (AUDIO_BITRATE if facts.has_audio else 0)
-        if video_bitrate < MIN_VIDEO_BITRATE:
-            raise MediaDownloadError(MediaFailure.TOO_LARGE)
-        _encode(source, output, min(video_bitrate, MAX_VIDEO_BITRATE), max_bytes, deadline)
-        if output.stat().st_size > max_bytes:
-            raise MediaDownloadError(MediaFailure.TOO_LARGE)
-        result = _probe(output, deadline)
-        if facts.duration - result.duration > DURATION_TOLERANCE_SECONDS:
-            raise MediaDownloadError(MediaFailure.UNUSABLE)
-        if facts.has_audio and not result.has_audio:
-            raise MediaDownloadError(MediaFailure.UNUSABLE)
-        return output.read_bytes()
+def _compress(source: Path, work_dir: Path, max_bytes: int, deadline: ExtractionDeadline) -> Path:
+    output = work_dir / f"{source.stem}_compressed.mp4"
+    passlogfile = work_dir / f"{source.stem}_pass"
+    facts = _probe(source, deadline)
+    total_bitrate = int(max_bytes * BITS_PER_BYTE * OUTPUT_BUDGET_RATIO / facts.duration)
+    video_bitrate = total_bitrate - (AUDIO_BITRATE if facts.has_audio else 0)
+    if video_bitrate < MIN_VIDEO_BITRATE:
+        raise MediaDownloadError(MediaFailure.TOO_LARGE)
+    _encode(source, output, min(video_bitrate, MAX_VIDEO_BITRATE), max_bytes, deadline, passlogfile=passlogfile)
+    if not output.is_file() or output.stat().st_size > max_bytes:
+        raise MediaDownloadError(MediaFailure.TOO_LARGE)
+    result = _probe(output, deadline)
+    if facts.duration - result.duration > DURATION_TOLERANCE_SECONDS:
+        raise MediaDownloadError(MediaFailure.UNUSABLE)
+    if facts.has_audio and not result.has_audio:
+        raise MediaDownloadError(MediaFailure.UNUSABLE)
+    return output
 
 
 def prepare_video(
-    content: bytes,
+    source: Path,
     *,
+    work_dir: Path | None = None,
     max_bytes: int = TELEGRAM_VIDEO_BYTES,
     deadline: ExtractionDeadline | None = None,
     on_compression: Callable[[], None] | None = None,
-) -> bytes:
-    """Keep small videos intact or require a complete, bounded H.264/AAC replacement.
+) -> Path:
+    """Keep small videos intact or require a complete, bounded H.264/AAC replacement on disk.
 
     Args:
-        content: Downloaded video bytes, never a remote URL or playlist.
+        source: Downloaded video file path, never a remote URL or playlist.
+        work_dir: Caller-owned directory for compressed output; defaults to ``source.parent``.
         max_bytes: Maximum permitted output size, including container overhead.
         deadline: Optional shared cutoff for the owning download batch.
         on_compression: Optional callback invoked immediately before compression starts.
 
     Returns:
-        Original bytes or a compressed MP4 preserving video duration and audio.
+        Original path or a compressed MP4 path preserving video duration and audio.
 
     Raises:
         ValueError: If the requested output bound is not positive.
@@ -197,12 +214,15 @@ def prepare_video(
     if max_bytes <= 0:
         msg = "Video output bound must be positive."
         raise ValueError(msg)
-    if not content:
+    if not source.is_file():
         raise MediaDownloadError(MediaFailure.UNUSABLE)
-    if len(content) > MAX_SOURCE_MEDIA_BYTES:
+    size = source.stat().st_size
+    if size == 0:
+        raise MediaDownloadError(MediaFailure.UNUSABLE)
+    if size > MAX_SOURCE_MEDIA_BYTES:
         raise MediaDownloadError(MediaFailure.TOO_LARGE)
-    if len(content) <= max_bytes:
-        return content
+    if size <= max_bytes:
+        return source
     if on_compression is not None:
         try:
             on_compression()
@@ -210,7 +230,7 @@ def prepare_video(
             logger.exception("Failed to run compression progress callback")
     try:
         allowance = (deadline or ExtractionDeadline.after(COMPRESSION_SECONDS)).narrow(COMPRESSION_SECONDS)
-        return _compress(content, max_bytes, allowance)
+        return _compress(source, work_dir or source.parent, max_bytes, allowance)
     except MediaDownloadError:
         raise
     except OSError, subprocess.SubprocessError, MediaExtractionError:

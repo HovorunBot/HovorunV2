@@ -8,6 +8,7 @@ from contextlib import suppress
 from email.utils import parsedate_to_datetime
 from functools import partial
 from http import HTTPStatus
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import requests
@@ -356,6 +357,42 @@ class NativeHTTPClient(SyncHTTPClientBase):
     ) -> bytes:
         """Return bounded decompressed media bytes or a safe transport failure."""
         return self._get_bytes_required(url, self._max_bytes, headers=headers, cookies=cookies)
+
+    def download_to_path(
+        self,
+        url: str,
+        dest: Path,
+        headers: HTTPHeaders | None = None,
+        *,
+        cookies: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Stream bounded media directly to a file path without buffering in RAM."""
+        started = time.monotonic()
+        self._require_session()
+        try:
+            with self._request("GET", url, headers=headers, cookies=cookies, started=started) as response:
+                _require_success(response)
+                self._stream_to_path(response, dest, self._max_bytes, started)
+                return dest
+        except (requests.RequestException, OSError) as error:
+            if isinstance(error, HTTPTransportError):
+                raise
+            logger.exception("Worker HTTP media stream failed")
+            raise HTTPTransportError from None
+
+    def _stream_to_path(self, response: requests.Response, dest: Path, limit: int, started: float) -> None:
+        length = response.headers.get("Content-Length")
+        if length is not None and length.isdecimal() and int(length) > limit:
+            raise HTTPTransportError(HTTPFailure.TOO_LARGE)
+        size = 0
+        with dest.open("wb") as handle:
+            for chunk in response.iter_content(HTTP_CHUNK_BYTES):
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPTransportError(HTTPFailure.TOO_LARGE)
+                if time.monotonic() - started > self._total_timeout:
+                    raise HTTPTransportError
+                handle.write(chunk)
 
     def request_json(
         self, method: str, url: str, *, data: HTTPForm | None = None, files: HTTPFiles | None = None

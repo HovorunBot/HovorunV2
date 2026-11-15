@@ -1,8 +1,10 @@
 """Synchronous Telegram Bot API client for native workers."""
 
 import logging
+from contextlib import ExitStack
 from enum import StrEnum
 from http import HTTPStatus
+from pathlib import Path
 
 from hovorunv2.application.jobs.http_ports import (
     HTTPFiles,
@@ -218,7 +220,7 @@ class NativeTelegramAPI:
         self,
         chat_id: int,
         filename: str,
-        content: bytes,
+        content: bytes | Path,
         *,
         caption: str | None = None,
         reply_to_message_id: int | None = None,
@@ -232,10 +234,12 @@ class NativeTelegramAPI:
             data["reply_to_message_id"] = reply_to_message_id
         if message_thread_id is not None:
             data["message_thread_id"] = message_thread_id
-        files: HTTPFiles = {"document": (filename, content, "text/plain; charset=utf-8")}
         try:
-            result = self.call(TelegramMethod.SEND_DOCUMENT, data=data, files=files)
-        except TelegramRejectedError, TelegramDeliveryUncertainError:
+            with ExitStack() as stack:
+                file_content = stack.enter_context(content.open("rb")) if isinstance(content, Path) else content
+                files: HTTPFiles = {"document": (filename, file_content, "text/plain; charset=utf-8")}
+                result = self.call(TelegramMethod.SEND_DOCUMENT, data=data, files=files)
+        except TelegramRejectedError, TelegramDeliveryUncertainError, OSError:
             return None
         return _require_message_id(result)
 

@@ -10,6 +10,10 @@
 
 - **v0.6.0**: complete i18n, unify HTTP/translation deps, and migrate speech to CTranslate2
 
+### Perf
+
+- **media**: stream video processing on disk and eliminate separate compression stage
+
 ## v0.6.0.3 (2026-11-14)
 
 ### Fix

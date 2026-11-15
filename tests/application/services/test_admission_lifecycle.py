@@ -79,7 +79,7 @@ async def test_duplicate_claim_at_deadline_keeps_running_owner_and_capacity(test
         assert finished.state == TicketState.TERMINAL
 
 
-@pytest.mark.parametrize("next_stage", [JobStage.BROWSER, JobStage.COMPRESSION])
+@pytest.mark.parametrize("next_stage", [JobStage.BROWSER])
 async def test_stage_handoff_is_recoverable_and_fences_previous_owner(
     test_container: AsyncContainer, next_stage: JobStage
 ) -> None:

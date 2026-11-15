@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 import redis
@@ -114,6 +115,19 @@ class RecordingSyncHTTP(SyncHTTPPort):
     ) -> bytes:
         """Download binary payload stub."""
         return b""
+
+    def download_to_path(
+        self,
+        url: str,
+        dest: Path,
+        headers: HTTPHeaders | None = None,
+        *,
+        cookies: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Download binary payload to Path stub."""
+        del url, headers, cookies
+        dest.write_bytes(b"")
+        return dest
 
     def request_json(
         self,

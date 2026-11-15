@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import Mapping
+from pathlib import Path
 
 from dishka import AsyncContainer
 
@@ -49,6 +50,18 @@ class _RecordingSyncHTTP:
     ) -> bytes:
         del url, headers, cookies
         return b""
+
+    def download_to_path(
+        self,
+        url: str,
+        dest: Path,
+        headers: HTTPHeaders | None = None,
+        *,
+        cookies: Mapping[str, str] | None = None,
+    ) -> Path:
+        del url, headers, cookies
+        dest.write_bytes(b"")
+        return dest
 
     def request_json(
         self,

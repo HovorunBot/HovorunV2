@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 import redis.asyncio as redis
 from billiard.exceptions import SoftTimeLimitExceeded
-from celery import Celery
 from dishka import AsyncContainer
 
 from hovorunv2.application.features.ports import CommandStore
@@ -38,8 +37,9 @@ from hovorunv2.application.jobs.feature_jobs import (
     PayloadState,
 )
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort
+from hovorunv2.application.media.actions import ActionOutcome
 from hovorunv2.application.media.deadlines import ExtractionDeadline
-from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
+from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError, MediaFailure
 from hovorunv2.application.media.extractor import NativeMediaExtractor
 from hovorunv2.application.media.instagram.embed import DisabledEmbedAdapter
 from hovorunv2.application.media.payloads import (
@@ -65,11 +65,7 @@ from hovorunv2.bootstrap.worker_runtime import (
 from hovorunv2.domain.audit import ActorContext
 from hovorunv2.domain.enums import ChatStatus, TargetKind
 from hovorunv2.infrastructure.config import Settings
-from hovorunv2.infrastructure.queues.feature_queue import (
-    CeleryFeatureQueue,
-    register_feature_tasks,
-    set_feature_task_runner,
-)
+from hovorunv2.infrastructure.queues.feature_queue import CeleryFeatureQueue
 from hovorunv2.infrastructure.runtime.admission import ValkeyAdmissionStore
 from hovorunv2.infrastructure.runtime.feature_payloads import ValkeyPayloadStore
 from tests.utils.jobs import (
@@ -793,11 +789,10 @@ async def test_claimed_failure_releases_admission_without_refunding_uncertain_bu
             ).state == AdmissionState.ACCEPTED
 
 
-@pytest.mark.parametrize("cancel", [False, True])
-async def test_video_handoff_notifies_then_delivers_only_from_compression_task(
-    test_container: AsyncContainer, postgres_database_url: str, *, cancel: bool
+async def test_video_delivers_in_single_media_stage_without_compression_handoff(
+    test_container: AsyncContainer, postgres_database_url: str
 ) -> None:
-    """A video keeps its original reservation and cannot deliver before its fenced processing task."""
+    """A video delivers directly in JobStage.MEDIA without a JobStage.COMPRESSION handoff."""
     settings = (await test_container.get(Settings)).model_copy(update={"database_url": postgres_database_url})
     users = await test_container.get(UserStore)
     user = await users.ingest_user(390001)
@@ -847,32 +842,142 @@ async def test_video_handoff_notifies_then_delivers_only_from_compression_task(
                 embed=DisabledEmbedAdapter(),
             )
             assert runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA) == JobOutcome.COMPLETE.value
-            assert not delivery.calls
-            assert not telegram.calls
-            ticket = runtime.admission.get(envelope.job_id)
-            assert ticket is not None
-            assert ticket.stage == JobStage.COMPRESSION
-            assert ticket.envelope == envelope
-            assert ticket.budget_reserved
-            messages = broker_envelopes(settings, namespace.value, "compression")
-            assert messages == [envelope.model_dump(mode="json")]
-            runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA)
-            assert not delivery.calls
-            assert not telegram.calls
-            if cancel:
-                runtime.admission.cancel(envelope.job_id)
-                runner.recover()
-            app = Celery("compression-regression")
-            register_feature_tasks(app)
-            set_feature_task_runner(runner.run)
-            try:
-                app.tasks["run_compression_job"].apply(kwargs={"envelope": messages[0]}, throw=True)
-            finally:
-                set_feature_task_runner(None)
-                app.close()
-            assert len(delivery.calls) == (0 if cancel else 1)
-            runner.run(messages[0], JobStage.COMPRESSION)
-            assert len(delivery.calls) == (0 if cancel else 1)
+            assert len(delivery.calls) == 1
+            assert not broker_envelopes(settings, namespace.value, "compression")
+            # Duplicate delivery attempt on same envelope is idempotently ignored
+            assert runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA) == JobOutcome.COMPLETE.value
+            assert len(delivery.calls) == 1
             terminal = runtime.admission.get(envelope.job_id)
             assert terminal is not None
-            assert terminal.outcome == (JobOutcome.CANCELLED if cancel else JobOutcome.COMPLETE)
+            assert terminal.stage == JobStage.MEDIA
+            assert terminal.outcome == JobOutcome.COMPLETE
+
+
+async def test_browser_video_delivers_in_place_without_second_browser_launch(
+    test_container: AsyncContainer, postgres_database_url: str
+) -> None:
+    """Browser-extracted video delivers in-place in JobStage.BROWSER without a second Chromium launch."""
+    settings = (await test_container.get(Settings)).model_copy(
+        update={"database_url": postgres_database_url, "browser_enabled": True}
+    )
+    users = await test_container.get(UserStore)
+    user = await users.ingest_user(390002)
+    assert user is not None
+    await users.set_trust(390002, is_trusted=True, actor=ActorContext.cli())
+    await (await test_container.get(CommandStore)).enable_command(390002, "instagram_video", actor=ActorContext.cli())
+    clock = ManualClock(time.time())
+    safety = UsageSafetyCaps()
+    browser_launches = 0
+
+    class SingleLaunchBrowser:
+        def get_content(
+            self, url: str, wait_selector: str | None = None, *, deadline: ExtractionDeadline | None = None
+        ) -> str:
+            del url, wait_selector, deadline
+            return ""
+
+        def extract_and_download(
+            self,
+            url: str,
+            extractor_fn: object,
+            wait_selector: str | None = None,
+            cookies: object = None,
+            *,
+            deadline: ExtractionDeadline | None = None,
+        ) -> tuple[RichMediaPayload, list[bytes | MediaFailure]]:
+            nonlocal browser_launches
+            del url, extractor_fn, wait_selector, cookies, deadline
+            browser_launches += 1
+            payload = RichMediaPayload(
+                "Author",
+                "author",
+                "https://instagram.com/author",
+                "Browser video",
+                original_url="https://instagram.com/p/123",
+                media_items=[MediaItem("https://cdn.example/video.mp4", is_video=True)],
+            )
+            return payload, [b"browser-video-bytes"]
+
+        def close(self) -> None:
+            pass
+
+    class BrowserVideoClient(VideoMediaClient):
+        def extract_media_sync(
+            self,
+            url: str,
+            http: SyncHTTPPort,
+            extractor: NativeMediaExtractor,
+            *,
+            deadline: ExtractionDeadline | None = None,
+        ) -> RichMediaPayload:
+            del url, http, extractor, deadline
+            raise BrowserContinuationRequired(retained=None)
+
+        def extract_browser_outcome_sync(
+            self,
+            url: str,
+            http: SyncHTTPPort,
+            browser: SyncBrowserPort,
+            *,
+            deadline: ExtractionDeadline | None = None,
+        ) -> ActionOutcome:
+            del http
+            payload, downloaded = browser.extract_and_download(url, lambda _t, _u: None, deadline=deadline)
+            assert payload is not None
+            for item, content in zip(payload.media_items, downloaded, strict=True):
+                if isinstance(content, bytes):
+                    item.data = content
+            return ActionOutcome(payload, complete=True)
+
+    async with runtime_cache(test_container) as (cache, namespace):
+        payloads = ValkeyPayloadStore(cache, settings, clock, namespace, safety)
+        sealed = await payloads.seal("browser-video", PRIVATE_BODY, clock.now() + 300)
+        await payloads.put(sealed)
+        envelope = job_envelope(
+            sealed.reference,
+            clock,
+            job_id=sealed.job_id,
+            feature="instagram_video",
+            actor_id=390002,
+            charged_telegram_id=390002,
+            target=JobTarget(kind=TargetKind.USER, entity_id=user.id, generation=user.generation, telegram_id=390002),
+        )
+        await admit_test_job(settings, cache, namespace, clock, envelope)
+        delivery, telegram = RecordingDelivery(), RecordingTelegram()
+        with (
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            NativeHTTPClient() as http,
+            HTTPFixture({}) as model_server,
+            unavailable_translation(settings, database.policies, model_server) as translation,
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+        ):
+            runner = FeatureJobRunner(
+                admission=runtime.admission,
+                payloads=runtime.payloads,
+                budgets=runtime.budgets,
+                policies=database.policies,
+                ledger=database.ledger,
+                http=http,
+                delivery=delivery,
+                translation=translation,
+                extractor=NativeMediaExtractor(),
+                clock=clock,
+                settings=settings,
+                publisher=publisher,
+                browser=SingleLaunchBrowser(),
+                clients=[BrowserVideoClient()],
+                telegram=telegram,
+                feedback=AllowFeedback(),
+                gate=AllowGate(),
+                embed=DisabledEmbedAdapter(),
+            )
+            assert runner.run(envelope.model_dump(mode="json"), JobStage.MEDIA) == JobOutcome.COMPLETE.value
+            browser_msgs = broker_envelopes(settings, namespace.value, "browser")
+            assert len(browser_msgs) == 1
+            assert runner.run(browser_msgs[0], JobStage.BROWSER) == JobOutcome.COMPLETE.value
+            assert browser_launches == 1
+            assert len(delivery.calls) == 1
+            delivered_payload = delivery.calls[0]["payload"]
+            assert isinstance(delivered_payload, RichMediaPayload)
+            assert delivered_payload.media_items[0].data == b"browser-video-bytes"

@@ -2,15 +2,17 @@
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
 class MediaItem:
-    """Standardized media item with URL, type, and optional downloaded bytes."""
+    """Standardized media item with URL, type, and optional downloaded bytes or file path."""
 
     url: str
     is_video: bool
     data: bytes | None = None
+    file_path: Path | None = None
     requires_download: bool = False
 
 

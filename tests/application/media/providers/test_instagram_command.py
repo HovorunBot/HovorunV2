@@ -6,7 +6,6 @@ import pytest
 from dishka import AsyncContainer
 
 from hovorunv2.application.groups.chat_status_service import ChatStatusService
-from hovorunv2.application.jobs.admission import JobStage
 from hovorunv2.application.jobs.feature_jobs import JobOutcome
 from hovorunv2.application.media.deadlines import ExtractionDeadline
 from hovorunv2.application.media.errors import BrowserContinuationRequired, MediaExtractionError
@@ -75,11 +74,6 @@ async def _assert_instagram_command(
             messages = broker_envelopes(settings, namespace.value)
             assert len(messages) == 1
             assert runner.run(messages[0]) == JobOutcome.COMPLETE.value
-            if video:
-                compression = broker_envelopes(settings, namespace.value, "compression")
-                assert compression == messages
-                assert runner.run(compression[0], JobStage.COMPRESSION) == JobOutcome.COMPLETE.value
-                assert runner.run(compression[0], JobStage.COMPRESSION) == JobOutcome.COMPLETE.value
             assert runner.run(messages[0]) == JobOutcome.COMPLETE.value
             assert runtime.payloads.load_candidate(str(messages[0]["job_id"])) is None
         assert not any(request.path.startswith("/models/") for request in server.requests)

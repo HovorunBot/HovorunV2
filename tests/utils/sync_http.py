@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from socket import SHUT_RDWR
 from threading import Event, Lock, Thread
 from types import TracebackType
@@ -245,6 +246,18 @@ class FakeSyncHTTP:
                     raise response
                 return response
         raise HTTPTransportError(HTTPFailure.UNAVAILABLE)
+
+    def download_to_path(
+        self,
+        url: str,
+        dest: Path,
+        headers: HTTPHeaders | None = None,
+        *,
+        cookies: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Write configured byte response to dest Path or raise HTTPTransportError."""
+        dest.write_bytes(self.download_bytes(url, headers=headers, cookies=cookies))
+        return dest
 
     def request_json(
         self,

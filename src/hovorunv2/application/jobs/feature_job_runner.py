@@ -491,7 +491,7 @@ class FeatureJobRunner:
                 ),
             )
             return JobOutcome.FAILED.value
-        return self._finish_extraction(envelope, raw_payload, client, loaded.sender_label, token, now, stage)
+        return self._finish_extraction(envelope, raw_payload, client, loaded.sender_label, token, now)
 
     def _finish_extraction(
         self,
@@ -501,7 +501,6 @@ class FeatureJobRunner:
         sender_label: str | None,
         token: str,
         now: float,
-        stage: JobStage,
     ) -> str:
         self._delete_retained_candidate(envelope.job_id)
         split_def = self._check_post_extraction_gates(envelope, raw_payload, client)
@@ -509,25 +508,7 @@ class FeatureJobRunner:
             logger.info("Worker skipped delivery after the access or lifecycle check")
             self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
             return JobOutcome.COMPLETE.value
-        if stage != JobStage.COMPRESSION and any(item.is_video for item in raw_payload.media_items):
-            raw_payload.browser_download = stage == JobStage.BROWSER and any(
-                item.data is not None for item in raw_payload.media_items
-            )
-            return self._handoff_video(envelope, raw_payload, token)
         return self._deliver_and_account(envelope, raw_payload, client, sender_label, split_def, token, now)
-
-    def _handoff_video(self, envelope: JobEnvelope, payload: RichMediaPayload, token: str) -> str:
-        """Retain encrypted metadata and transfer execution without sending media bytes through Celery."""
-        stored = self._payloads.store_candidate(envelope.job_id, pack_media_payload(payload), envelope.deadline)
-        if not stored:
-            msg = "Video preparation metadata could not be retained."
-            raise MediaExtractionError(msg)
-        ready = self._admission.handoff_stage(envelope.job_id, token, JobStage.COMPRESSION)
-        if ready is None:
-            self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
-            return JobOutcome.CANCELLED.value
-        self._publisher.publish_stage(envelope, JobStage.COMPRESSION)
-        return JobOutcome.COMPLETE.value
 
     def _deliver_and_account(
         self,
@@ -587,25 +568,7 @@ class FeatureJobRunner:
         )
         if stage == JobStage.MEDIA:
             return self._extract_media_stage(envelope, url, client, token, deadline)
-        if stage == JobStage.COMPRESSION:
-            return self._load_video_stage(envelope, url, client, deadline), client
         return self._extract_browser_stage(envelope, url, client, deadline)
-
-    def _load_video_stage(
-        self, envelope: JobEnvelope, url: str, client: BaseMediaClient, deadline: ExtractionDeadline
-    ) -> RichMediaPayload:
-        """Restore video metadata and refresh browser-owned bytes in the processing child."""
-        payload = self._load_retained_candidate(envelope)
-        if payload is None:
-            msg = "Video preparation metadata is unavailable."
-            raise MediaExtractionError(msg)
-        if payload.browser_download:
-            browser = self._browser
-            if browser is None or not self._settings.browser_enabled:
-                msg = "Browser video download is unavailable."
-                raise BrowserError(msg)
-            return client.download_retained_browser_media(url, payload, browser, deadline=deadline)
-        return payload
 
     def _extract_media_stage(
         self, envelope: JobEnvelope, url: str, client: BaseMediaClient, token: str, deadline: ExtractionDeadline

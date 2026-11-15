@@ -475,3 +475,46 @@ def test_album_upload_fallback_does_not_send_duplicate_globe_markup() -> None:
         send_messages = [r for r in server.requests if r.path.endswith("sendMessage")]
         assert len(send_messages) == 1
         assert _methods(server) == ["sendMediaGroup", "sendMessage", "0.jpg", "1.jpg", "editMessageMedia"]
+
+
+def test_native_file_backed_video_and_document_stream_and_cleanup_tempdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """File-backed MediaItem and send_document stream from Path and clean up temporary delivery dirs."""
+    video_file = tmp_path / "local.mp4"
+    video_file.write_bytes(b"file-backed-video-bytes")
+    doc_file = tmp_path / "transcript.txt"
+    doc_file.write_bytes(b"file-backed-doc-bytes")
+
+    # 1. Direct file-backed MediaItem streams via sendVideo
+    with _native_delivery({API_PREFIX + "sendVideo": _ack(_message(31))}) as (delivery, server):
+        payload = _payload(0)
+        payload.media_items = [MediaItem("https://synthetic.invalid/v.mp4", is_video=True, file_path=video_file)]
+        assert delivery.deliver(42, 1, payload, "Synthetic", None) == (31,)
+        assert b"file-backed-video-bytes" in server.requests[0].body
+
+    # 2. Fallback delivery cleans up TemporaryDirectory even when upload fails
+    temp_root = tmp_path / "isolated_tmp"
+    temp_root.mkdir()
+    monkeypatch.setattr("tempfile.tempdir", str(temp_root))
+    routes_fail = {
+        API_PREFIX + "sendVideo": _reject(),
+        API_PREFIX + "sendMessage": _ack(_message(10)),
+        API_PREFIX + "editMessageMedia": HTTPReply(disconnect=True),
+        "/v.mp4": HTTPReply(b"streamed-video"),
+    }
+    with _native_delivery(routes_fail) as (delivery, server):
+        payload = _payload(0)
+        payload.media_items = [MediaItem(server.url("/v.mp4"), is_video=True)]
+        with pytest.raises(TelegramDeliveryUncertainError):
+            delivery.deliver(42, 1, payload, "Synthetic", None)
+    assert list(temp_root.iterdir()) == []
+
+    # 3. NativeTelegramAPI.send_document streams from Path
+    with (
+        HTTPFixture({API_PREFIX + "sendDocument": _ack(_message(55))}) as server,
+        NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1", "localhost"})) as http,
+    ):
+        api = NativeTelegramAPI(http, SYNTHETIC_BOT_IDENTITY, api_base=server.url(""))
+        assert api.send_document(42, "transcript.txt", doc_file) == 55
+        assert b"file-backed-doc-bytes" in server.requests[0].body

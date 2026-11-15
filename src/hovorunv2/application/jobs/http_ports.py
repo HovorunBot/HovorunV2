@@ -2,7 +2,8 @@
 
 from collections.abc import Callable, Mapping
 from enum import StrEnum
-from typing import Protocol
+from pathlib import Path
+from typing import BinaryIO, Protocol
 
 from hovorunv2.application.access.permissions import PermissionTarget
 from hovorunv2.application.jobs.admission import JobStage
@@ -15,7 +16,8 @@ from hovorunv2.application.media.payloads import RichMediaPayload
 HTTPHeaders = Mapping[str, str]
 HTTPQuery = Mapping[str, str | int | float | bool]
 HTTPForm = Mapping[str, str | int | float | bool]
-HTTPFiles = Mapping[str, tuple[str, bytes, str]]
+HTTPFileContent = bytes | BinaryIO
+HTTPFiles = Mapping[str, tuple[str, HTTPFileContent, str]]
 
 
 class HTTPFailure(StrEnum):
@@ -66,6 +68,17 @@ class SyncHTTPPort(DestinationPolicyPort, Protocol):
         self, url: str, headers: HTTPHeaders | None = None, *, cookies: Mapping[str, str] | None = None
     ) -> bytes:
         """Return bounded media bytes or raise HTTPTransportError."""
+        ...
+
+    def download_to_path(
+        self,
+        url: str,
+        dest: Path,
+        headers: HTTPHeaders | None = None,
+        *,
+        cookies: Mapping[str, str] | None = None,
+    ) -> Path:
+        """Stream bounded media to dest Path or raise HTTPTransportError."""
         ...
 
     def request_json(

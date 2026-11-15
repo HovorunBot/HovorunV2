@@ -515,8 +515,8 @@ def _require_stage_handoff(record: AdmissionRecord, request: AdmissionTransition
     if record.token != request.token:
         raise ValueError(_HANDOFF_CONFLICT_ERROR)
     allowed = {
-        JobStage.MEDIA: {JobStage.BROWSER, JobStage.COMPRESSION},
-        JobStage.BROWSER: {JobStage.COMPRESSION},
+        JobStage.MEDIA: {JobStage.BROWSER},
+        JobStage.BROWSER: set(),
         JobStage.SPEECH: set(),
     }
     if request.stage not in allowed.get(record.stage, set()):
@@ -593,7 +593,7 @@ def _notice(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionC
 
 
 def _preparing_video_notice(record: AdmissionRecord) -> AdmissionChange:
-    if record.stage != JobStage.COMPRESSION or record.preparing_video_notice_claimed:
+    if record.stage not in {JobStage.MEDIA, JobStage.BROWSER} or record.preparing_video_notice_claimed:
         return AdmissionChange(record)
     if record.state not in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.RUNNING}:
         return AdmissionChange(record)
