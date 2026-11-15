@@ -10,8 +10,10 @@ from hovorunv2.application.speech.contracts import NoSpeech, SpeechFailure, Spee
 from hovorunv2.application.speech.policies import MAX_AUDIO_BYTES
 from hovorunv2.application.speech.ports import SpeechAudioPort, SyncTelegramSpeechPort
 from hovorunv2.application.usage.budgets import Clock, WallClock
-from hovorunv2.interface.telegram.i18n.core import get_message
+from hovorunv2.interface.telegram.i18n.catalog import FluentTranslationCatalog
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI, TelegramMethod, extract_message_ids
+
+_SPEECH_CATALOG = FluentTranslationCatalog()
 
 MAX_MESSAGE_CHARACTERS = 4096
 SPEECH_FAILURE_TEXT = {
@@ -120,16 +122,20 @@ class NativeSpeechTransport(SyncTelegramSpeechPort):
         self, result: SpeechResult | SpeechFailure, *, ui_locale: str = "uk"
     ) -> tuple[TelegramMethod, HTTPForm, HTTPFiles | None]:
         if isinstance(result, SpeechFailure):
-            return TelegramMethod.SEND_MESSAGE, {"text": get_message(f"speech-failure-{result.value}", ui_locale)}, None
+            return (
+                TelegramMethod.SEND_MESSAGE,
+                {"text": _SPEECH_CATALOG.render(f"speech-failure-{result.value}", ui_locale)},
+                None,
+            )
         if isinstance(result, NoSpeech):
-            return TelegramMethod.SEND_MESSAGE, {"text": get_message("speech-no-speech", ui_locale)}, None
-        header_label = html.escape(get_message("speech-transcript-header", ui_locale))
+            return TelegramMethod.SEND_MESSAGE, {"text": _SPEECH_CATALOG.render("speech-no-speech", ui_locale)}, None
+        header_label = html.escape(_SPEECH_CATALOG.render("speech-transcript-header", ui_locale))
         header = f"<b>{header_label}</b> ({html.escape(result.language or 'und')}):\n\n"
         text = header + html.escape(result.text)
         if len(text) <= MAX_MESSAGE_CHARACTERS:
             return TelegramMethod.SEND_MESSAGE, {"text": text, "parse_mode": "HTML"}, None
         return (
             TelegramMethod.SEND_DOCUMENT,
-            {"caption": get_message("speech-transcript-document-caption", ui_locale)},
+            {"caption": _SPEECH_CATALOG.render("speech-transcript-document-caption", ui_locale)},
             {"document": ("transcript.txt", result.text.encode("utf-8"), "text/plain; charset=utf-8")},
         )

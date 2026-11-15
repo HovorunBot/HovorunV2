@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **worker**: decouple speech transport from aiogram_i18n and enforce worker import contract
+
 ## v0.6.1.1 (2026-11-15)
 
 ### Fix

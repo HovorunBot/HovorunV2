@@ -207,6 +207,7 @@ exclude = ["alembic/**"]
 
 [tool.importlinter]
 root_package = "hovorunv2"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Layered Architecture"
@@ -229,4 +230,41 @@ forbidden_modules = [
     "hovorunv2.infrastructure",
     "hovorunv2.interface",
     "hovorunv2.bootstrap",
+]
+
+[[tool.importlinter.contracts]]
+name = "Worker Runtime Bot/Browser Isolation"
+type = "forbidden"
+source_modules = [
+    "hovorunv2.bootstrap.worker_app",
+    "hovorunv2.bootstrap.worker_runtime",
+    "hovorunv2.bootstrap.worker_media_runner",
+    "hovorunv2.bootstrap.worker_speech_runner",
+    "hovorunv2.bootstrap.worker_database",
+    "hovorunv2.bootstrap.speech_assets",
+]
+forbidden_modules = [
+    "aiogram",
+    "aiogram_i18n",
+    "aiohttp",
+    "alembic",
+    "dishka",
+    "pydoll",
+    "hovorunv2.interface.telegram.i18n.core",
+    "hovorunv2.interface.telegram.i18n.manager",
+    "hovorunv2.interface.telegram.handlers",
+    "hovorunv2.interface.telegram.middlewares",
+    "hovorunv2.interface.telegram.bot",
+    "hovorunv2.bootstrap.container",
+    "hovorunv2.bootstrap.providers",
+    "hovorunv2.infrastructure.browser",
+]
+ignore_imports = [
+    "hovorunv2.application.access.ports -> aiogram",
+    "hovorunv2.application.access.access_service -> aiogram",
+    "hovorunv2.application.operations.cleanup_service -> aiogram",
+    "hovorunv2.infrastructure.logger -> aiogram",
+    "hovorunv2.bootstrap.worker_runtime -> hovorunv2.infrastructure.browser.native_browser",
+    "hovorunv2.interface.telegram.i18n -> hovorunv2.interface.telegram.i18n.core",
+    "hovorunv2.interface.telegram.i18n -> hovorunv2.interface.telegram.i18n.manager",
 ]
