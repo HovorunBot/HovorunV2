@@ -255,6 +255,7 @@ async def test_guided_setup_full_lifecycle_qualification(
 ) -> None:
     """Qualify approval -> Configure chat -> incomplete cancel -> /setup completion -> replay -> rerun."""
     settings = await test_container.get(Settings)
+    settings.speech_enabled = True
     chats = await test_container.get(ChatStore)
     commands = await test_container.get(CommandService)
     draft_store = await test_container.get(SetupDraftStorePort)

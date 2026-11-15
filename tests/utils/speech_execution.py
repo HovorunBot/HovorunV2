@@ -75,12 +75,14 @@ def speech_execution(
     }
     with (
         HTTPFixture(routes) as server,
-        SpeechAudioHTTPClient(BOT_CREDENTIAL, api_base=server.url(""), allowed_hosts=frozenset({"127.0.0.1"})) as http,
+        SpeechAudioHTTPClient(
+            BOT_CREDENTIAL, api_base=server.url(""), allowed_hosts=frozenset({"127.0.0.1"}), clock=clock
+        ) as http,
         SpeechModelHTTPClient() as model_http,
         WorkerDatabase(settings) as database,
         WorkerRuntime(settings, clock, namespace, UsageSafetyCaps()) as runtime,
     ):
-        engine = WhisperCppEngine(SpeechModelStore(model_dir, model_http), helper_path=helper_path)
+        engine = WhisperCppEngine(SpeechModelStore(model_dir, model_http), helper_path=helper_path, clock=clock)
         try:
             yield SpeechExecution(
                 SpeechJobRunner(
@@ -89,7 +91,9 @@ def speech_execution(
                     runtime.budgets,
                     database.policies,
                     database.ledger,
-                    NativeSpeechTransport(NativeTelegramAPI(http, BOT_CREDENTIAL, api_base=server.url("")), http),
+                    NativeSpeechTransport(
+                        NativeTelegramAPI(http, BOT_CREDENTIAL, api_base=server.url("")), http, clock=clock
+                    ),
                     engine,
                     clock,
                 ),

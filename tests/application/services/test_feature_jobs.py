@@ -270,9 +270,10 @@ class RecordingDelivery:
         sender_label: str | None = None,
         *,
         reply_markup: str | None = None,
+        message_thread_id: int | None = None,
     ) -> tuple[int, ...]:
         """Capture delivery payload without real Telegram network calls."""
-        _ = reply_markup
+        _ = reply_markup, message_thread_id
         self.calls.append({"chat_id": chat_id, "payload": payload})
         return (1000 + len(self.calls),)
 

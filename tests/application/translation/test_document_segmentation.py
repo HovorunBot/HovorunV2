@@ -55,3 +55,19 @@ def test_consecutive_oversized_sentences_preserve_token_join_separators() -> Non
     planned = plan_document_segments(text, 5)
     flat_segments = [segment for line in planned for segment in line.segments]
     assert assemble_translated_document(planned, flat_segments) == text
+
+
+def test_plan_document_segments_passes_through_non_alphabetic_lines_verbatim() -> None:
+    """Lines without enough alphabetic characters pass through untranslated with empty segments."""
+    document = "🔥🚀✨\n123456\n--- === ***\nHello world!\nOK"
+    planned = plan_document_segments(document, 100)
+    assert [line.segments for line in planned] == [
+        (),
+        (),
+        (),
+        ("Hello world!",),
+        (),
+    ]
+    assert (
+        assemble_translated_document(planned, ["Bonjour monde!"]) == "🔥🚀✨\n123456\n--- === ***\nBonjour monde!\nOK"
+    )

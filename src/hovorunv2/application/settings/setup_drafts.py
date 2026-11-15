@@ -7,6 +7,7 @@ from typing import Final, Protocol
 from pydantic import BaseModel, ConfigDict
 
 from hovorunv2.application.access.permissions import PermissionTarget
+from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.groups.group_management_service import GroupManagementService
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.ports import UserStore
@@ -123,7 +124,12 @@ def _speech_step_enabled(values: SetupConfigurationValues) -> bool:
     return any(feature in _SPEECH_FEATURE_KEYS for feature in values.enabled_features)
 
 
-def next_setup_step(current: SetupStep, values: SetupConfigurationValues) -> SetupStep:
+def next_setup_step(
+    current: SetupStep,
+    values: SetupConfigurationValues,
+    *,
+    speech_enabled: bool = True,
+) -> SetupStep:
     """Return the next guided setup step, skipping speech when speech is not enabled."""
     order = [
         SetupStep.UI_LOCALE,
@@ -131,7 +137,7 @@ def next_setup_step(current: SetupStep, values: SetupConfigurationValues) -> Set
         SetupStep.IGNORED_LANGS,
         SetupStep.FEATURES,
     ]
-    if _speech_step_enabled(values):
+    if speech_enabled and _speech_step_enabled(values):
         order.append(SetupStep.SPEECH)
     order.append(SetupStep.REVIEW)
     if current not in order:
@@ -140,7 +146,12 @@ def next_setup_step(current: SetupStep, values: SetupConfigurationValues) -> Set
     return order[min(idx + 1, len(order) - 1)]
 
 
-def previous_setup_step(current: SetupStep, values: SetupConfigurationValues) -> SetupStep:
+def previous_setup_step(
+    current: SetupStep,
+    values: SetupConfigurationValues,
+    *,
+    speech_enabled: bool = True,
+) -> SetupStep:
     """Return the previous guided setup step, skipping speech when speech is not enabled."""
     order = [
         SetupStep.UI_LOCALE,
@@ -148,7 +159,7 @@ def previous_setup_step(current: SetupStep, values: SetupConfigurationValues) ->
         SetupStep.IGNORED_LANGS,
         SetupStep.FEATURES,
     ]
-    if _speech_step_enabled(values):
+    if speech_enabled and _speech_step_enabled(values):
         order.append(SetupStep.SPEECH)
     order.append(SetupStep.REVIEW)
     if current not in order:
@@ -176,12 +187,14 @@ class SetupDraftService:
         users: UserStore,
         group_management: GroupManagementService,
         clock: Clock,
+        settings: AppSettings,
     ) -> None:
         self._store = store
         self._chats = chats
         self._users = users
         self._group_management = group_management
         self._clock = clock
+        self._settings = settings
 
     async def _authorize_actor(
         self,
@@ -212,7 +225,7 @@ class SetupDraftService:
         target_chat_id: int,
         transport_chat_id: int,
         actor_id: int,
-        message_id: int,
+        message_id: int | None,
         thread_id: int | None,
         baseline: SetupConfigurationValues,
         baseline_version: int = 0,
@@ -233,7 +246,7 @@ class SetupDraftService:
             owner_id=actor_id,
             owner_generation=actor_generation,
             transport_chat_id=transport_chat_id,
-            message_id=message_id,
+            message_id=message_id if message_id is not None else 0,
             thread_id=thread_id,
             step=SetupStep.UI_LOCALE,
             baseline=baseline,
@@ -252,13 +265,11 @@ class SetupDraftService:
         if existing.owner_id != actor_id or existing.owner_generation != actor_generation:
             return SetupDraftResult(outcome=SetupSessionOutcome.IN_PROGRESS)
         renewed_inactivity = min(now + SETUP_INACTIVITY_TTL_SECONDS, existing.absolute_expires_at)
-        resumed = existing.model_copy(
-            update={
-                "message_id": message_id,
-                "thread_id": thread_id,
-                "inactivity_expires_at": renewed_inactivity,
-            }
-        )
+        resume_update: dict[str, object] = {"inactivity_expires_at": renewed_inactivity}
+        if message_id is not None:
+            resume_update["message_id"] = message_id
+            resume_update["thread_id"] = thread_id
+        resumed = existing.model_copy(update=resume_update)
         if not await self._store.save(resumed):
             return SetupDraftResult(outcome=SetupSessionOutcome.EXPIRED)
         return SetupDraftResult(outcome=SetupSessionOutcome.RESUMED, draft=resumed)
@@ -323,10 +334,15 @@ class SetupDraftService:
             return loaded
         draft = loaded.draft
         now = self._clock.now()
-        next_step = next_setup_step(draft.step, draft_values) if advance else draft.step
+        next_step = (
+            next_setup_step(draft.step, draft_values, speech_enabled=self._settings.speech_enabled)
+            if advance
+            else draft.step
+        )
+        normalized_values = self._sync_speech_values(draft.step, next_step, draft_values, advance=advance)
         updated = draft.model_copy(
             update={
-                "draft": draft_values,
+                "draft": normalized_values,
                 "step": next_step,
                 "inactivity_expires_at": min(now + SETUP_INACTIVITY_TTL_SECONDS, draft.absolute_expires_at),
                 "seen_callbacks": _append_callback(draft.seen_callbacks, callback_id),
@@ -335,6 +351,26 @@ class SetupDraftService:
         if not await self._store.save(updated):
             return SetupDraftResult(outcome=SetupSessionOutcome.EXPIRED)
         return SetupDraftResult(outcome=SetupSessionOutcome.UPDATED, draft=updated)
+
+    def _sync_speech_values(
+        self,
+        current_step: SetupStep,
+        next_step: SetupStep,
+        values: SetupConfigurationValues,
+        *,
+        advance: bool,
+    ) -> SetupConfigurationValues:
+        """Synchronize speech_mode and transcribe feature across Step 4 and Step 5 transitions."""
+        if (
+            current_step == SetupStep.FEATURES
+            and next_step == SetupStep.SPEECH
+            and values.speech_mode in (None, SpeechMode.OFF)
+        ):
+            return values.model_copy(update={"speech_mode": SpeechMode.MANUAL_ONLY})
+        if current_step == SetupStep.SPEECH and advance and values.speech_mode in (None, SpeechMode.OFF):
+            cleaned_features = tuple(feat for feat in values.enabled_features if feat not in _SPEECH_FEATURE_KEYS)
+            return values.model_copy(update={"enabled_features": cleaned_features, "speech_mode": SpeechMode.OFF})
+        return values
 
     async def go_back(
         self,
@@ -361,7 +397,7 @@ class SetupDraftService:
         now = self._clock.now()
         updated = draft.model_copy(
             update={
-                "step": previous_setup_step(draft.step, draft.draft),
+                "step": previous_setup_step(draft.step, draft.draft, speech_enabled=self._settings.speech_enabled),
                 "inactivity_expires_at": min(now + SETUP_INACTIVITY_TTL_SECONDS, draft.absolute_expires_at),
                 "seen_callbacks": _append_callback(draft.seen_callbacks, callback_id),
             }
@@ -408,6 +444,10 @@ class SetupDraftService:
         if not await self._store.save(updated):
             return SetupDraftResult(outcome=SetupSessionOutcome.EXPIRED)
         return SetupDraftResult(outcome=SetupSessionOutcome.UPDATED, draft=updated)
+
+    async def release_session(self, *, chat_id: int, session_id: str) -> bool:
+        """Release an unstarted or aborted active chat slot owned by session_id."""
+        return await self._store.release(chat_id, session_id)
 
     async def cancel(
         self,

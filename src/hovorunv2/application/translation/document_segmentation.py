@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from hovorunv2.application.translation.ports import TranslationError
+from hovorunv2.application.translation.translation_rules import has_minimum_translatable_chars
 
 DEFAULT_GOOGLE_SEGMENT_CHARS: Final = 4000
 DEFAULT_LOCAL_SEGMENT_TOKENS: Final = 128
@@ -155,7 +156,7 @@ def plan_document_segments(
     planned: list[DocumentLine] = []
     total_segments = 0
     for raw_line in text.split("\n"):
-        if not raw_line.strip():
+        if not raw_line.strip() or not has_minimum_translatable_chars(raw_line):
             planned.append(DocumentLine(raw_line=raw_line, segments=(), separators=()))
             continue
         segments, separators = split_line_into_segments(raw_line, max_units, measure_fn=measure_fn)

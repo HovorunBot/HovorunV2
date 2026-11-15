@@ -2,7 +2,6 @@
 
 import html
 import json
-import time
 from collections.abc import Callable
 from pathlib import PurePosixPath
 
@@ -10,6 +9,7 @@ from hovorunv2.application.jobs.http_ports import HTTPFiles, HTTPForm, TelegramD
 from hovorunv2.application.speech.contracts import NoSpeech, SpeechFailure, SpeechRecognitionError, SpeechResult
 from hovorunv2.application.speech.policies import MAX_AUDIO_BYTES
 from hovorunv2.application.speech.ports import SpeechAudioPort, SyncTelegramSpeechPort
+from hovorunv2.application.usage.budgets import Clock, WallClock
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI, TelegramMethod, extract_message_ids
 
 MAX_MESSAGE_CHARACTERS = 4096
@@ -28,9 +28,10 @@ SPEECH_FAILURE_TEXT = {
 class NativeSpeechTransport(SyncTelegramSpeechPort):
     """Use a dedicated bounded HTTP client and preserve explicit delivery uncertainty."""
 
-    def __init__(self, api: NativeTelegramAPI, audio: SpeechAudioPort) -> None:
+    def __init__(self, api: NativeTelegramAPI, audio: SpeechAudioPort, *, clock: Clock | None = None) -> None:
         self._api = api
         self._audio = audio
+        self._clock = clock or WallClock()
 
     def download_audio(self, file_id: str, deadline: float, *, cancelled: Callable[[], bool]) -> bytes:
         """Require valid file metadata and bounded private audio before its original deadline.
@@ -46,7 +47,7 @@ class NativeSpeechTransport(SyncTelegramSpeechPort):
         Raises:
             SpeechRecognitionError: If metadata, download, or deadline validation fails.
         """
-        if time.time() >= deadline:
+        if self._clock.now() >= deadline:
             raise SpeechRecognitionError(SpeechFailure.DEADLINE_EXCEEDED)
         try:
             raw = self._audio.fetch_metadata(file_id, deadline, cancelled=cancelled)
@@ -58,7 +59,7 @@ class NativeSpeechTransport(SyncTelegramSpeechPort):
             raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT) from None
         if not audio or len(audio) > MAX_AUDIO_BYTES:
             raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT)
-        if time.time() >= deadline:
+        if self._clock.now() >= deadline:
             raise SpeechRecognitionError(SpeechFailure.DEADLINE_EXCEEDED)
         return audio
 

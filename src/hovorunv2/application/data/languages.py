@@ -161,6 +161,15 @@ def _add_language_aliases(languages: dict[str, Language]) -> None:
 
 
 LANGUAGES: Final[dict[str, Language]] = _generate_languages()
+_CANONICAL_LANGUAGE_CODES: Final[dict[str, str]] = {code.lower(): code for code in LANGUAGES}
+
+
+def resolve_language_code(code: str | None) -> str | None:
+    """Return the canonical LANGUAGES key for a case-insensitive code, or None if unsupported."""
+    if code is None:
+        return None
+    return _CANONICAL_LANGUAGE_CODES.get(code.strip().lower())
+
 
 # Reasonable popularity sorting: Ukrainian (dev priority), then English, Spanish, French, German, etc.
 POPULAR_LANGUAGES: Final[list[str]] = [

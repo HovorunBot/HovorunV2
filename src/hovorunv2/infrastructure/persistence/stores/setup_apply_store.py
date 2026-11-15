@@ -7,7 +7,8 @@ from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hovorunv2.application.configuration import AppSettings
-from hovorunv2.application.features.registry import FEATURE_REGISTRY
+from hovorunv2.application.data.languages import resolve_language_code
+from hovorunv2.application.features.registry import FEATURE_REGISTRY, FeatureChannel, FeatureScope
 from hovorunv2.application.settings.setup_apply import (
     SetupApplyOutcome,
     SetupApplyRequest,
@@ -16,11 +17,14 @@ from hovorunv2.application.settings.setup_apply import (
 )
 from hovorunv2.application.settings.setup_drafts import SetupConfigurationValues
 from hovorunv2.domain.audit import AuditEventDB
+from hovorunv2.domain.beta import ALL_BETA, BetaEntitlementDB
 from hovorunv2.domain.chat import ChatDB, chat_commands
 from hovorunv2.domain.command import CommandDB
 from hovorunv2.domain.emergency import FeatureEmergencyDB
 from hovorunv2.domain.enums import SPEECH_COMMANDS, ActorOrigin, ChatStatus, CommandName, Platform, SpeechMode
+from hovorunv2.domain.group_beta import GroupBetaFeatureDB
 from hovorunv2.domain.setup_operation import SetupOperationDB
+from hovorunv2.domain.user import UserDB
 from hovorunv2.infrastructure.persistence.locking import MutationLocks, lock_async_mutation
 from hovorunv2.infrastructure.persistence.repositories.chat_repository import SQLAlchemyChatRepository
 
@@ -30,21 +34,23 @@ _SPEECH_MARKER_KEYS: Final[frozenset[str]] = frozenset({*(str(cmd) for cmd in SP
 
 
 def _normalize_lang(code: str | None) -> str | None:
-    if code is None:
-        return None
-    stripped = code.strip().lower()
-    return stripped or None
+    return resolve_language_code(code)
 
 
-def _normalize_ignored(langs: tuple[str, ...] | list[str] | None) -> tuple[str, ...] | None:
+def _normalize_ignored(langs: tuple[str, ...] | list[str] | None) -> tuple[bool, tuple[str, ...] | None]:
     if langs is None:
-        return None
+        return True, None
     seen: list[str] = []
     for item in langs:
-        norm = item.strip().lower()
-        if norm and norm not in seen:
+        stripped = item.strip()
+        if not stripped:
+            continue
+        norm = "und" if stripped.lower() == "und" else resolve_language_code(stripped)
+        if norm is None:
+            return False, None
+        if norm not in seen:
             seen.append(norm)
-    return tuple(seen)
+    return True, tuple(seen)
 
 
 def _normalize_features(features: tuple[str, ...] | list[str]) -> tuple[str, ...]:
@@ -61,6 +67,7 @@ class SQLAlchemySetupApplyStore(SetupApplyStorePort):
 
     def __init__(self, session_maker: async_sessionmaker, settings: AppSettings) -> None:
         self._session_maker = session_maker
+        self._settings = settings
         self._default_target_lang = settings.translation_target_lang
         self._default_ignored_langs = tuple(settings.translation_ignored_langs)
 
@@ -134,6 +141,8 @@ class SQLAlchemySetupApplyStore(SetupApplyStorePort):
             return SetupApplyResult(outcome=SetupApplyOutcome.UNAVAILABLE)
 
         toggleable_commands = [feat for feat in normalized.enabled_features if feat not in _SPEECH_MARKER_KEYS]
+        if not await self._features_eligible(session, chat, request.actor_id, toggleable_commands):
+            return SetupApplyResult(outcome=SetupApplyOutcome.UNAVAILABLE)
         speech_enabled = any(feat in _SPEECH_MARKER_KEYS for feat in normalized.enabled_features)
         effective_speech = (
             normalized.speech_mode if speech_enabled and normalized.speech_mode is not None else SpeechMode.OFF
@@ -152,7 +161,12 @@ class SQLAlchemySetupApplyStore(SetupApplyStorePort):
         chat.speech_mode = effective_speech
         chat.settings_version = chat.settings_version + 1
 
-        applied = normalized.model_copy(update={"speech_mode": effective_speech})
+        applied_features = (
+            tuple(feat for feat in normalized.enabled_features if feat not in _SPEECH_MARKER_KEYS)
+            if effective_speech == SpeechMode.OFF
+            else normalized.enabled_features
+        )
+        applied = normalized.model_copy(update={"speech_mode": effective_speech, "enabled_features": applied_features})
         self._record_audit_and_operation(session, chat, request, applied, now)
         await session.flush()
         return SetupApplyResult(
@@ -209,8 +223,15 @@ class SQLAlchemySetupApplyStore(SetupApplyStorePort):
         target_lang = _normalize_lang(values.target_lang)
         if target_lang is None:
             return None
-        ignored_langs = _normalize_ignored(values.ignored_langs)
+        ignored_ok, ignored_langs = _normalize_ignored(values.ignored_langs)
+        if not ignored_ok:
+            return None
         enabled_features = _normalize_features(values.enabled_features)
+        speech_requested = any(feat in _SPEECH_MARKER_KEYS for feat in enabled_features) or (
+            values.speech_mode is not None and values.speech_mode != SpeechMode.OFF
+        )
+        if not self._settings.speech_enabled and speech_requested:
+            return None
         for feat in enabled_features:
             if feat in _SPEECH_MARKER_KEYS:
                 continue
@@ -223,6 +244,59 @@ class SQLAlchemySetupApplyStore(SetupApplyStorePort):
             enabled_features=enabled_features,
             speech_mode=values.speech_mode,
         )
+
+    async def _features_eligible(
+        self,
+        session: AsyncSession,
+        chat: ChatDB,
+        actor_id: int,
+        toggleable_commands: list[str],
+    ) -> bool:
+        for feat in toggleable_commands:
+            definition = FEATURE_REGISTRY.get(feat)
+            if definition is None or FeatureScope.GROUP not in definition.scopes:
+                return False
+            if definition.channel != FeatureChannel.BETA:
+                continue
+            if not await self._is_beta_eligible(session, chat.id, actor_id, definition.key):
+                return False
+        return True
+
+    async def _is_beta_eligible(
+        self,
+        session: AsyncSession,
+        chat_db_id: int,
+        actor_id: int,
+        feature_key: str,
+    ) -> bool:
+        group_beta = await session.scalar(
+            select(GroupBetaFeatureDB.id)
+            .where(
+                GroupBetaFeatureDB.group_id == chat_db_id,
+                GroupBetaFeatureDB.feature == feature_key,
+                GroupBetaFeatureDB.selected.is_(True),
+                GroupBetaFeatureDB.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        if group_beta is not None:
+            return True
+        user_db_id = await session.scalar(
+            select(UserDB.id).where(UserDB.telegram_id == actor_id, UserDB.deleted_at.is_(None)).limit(1)
+        )
+        if user_db_id is None:
+            return False
+        entitlement = await session.scalar(
+            select(BetaEntitlementDB.id)
+            .where(
+                BetaEntitlementDB.user_id == user_db_id,
+                BetaEntitlementDB.feature.in_((feature_key, ALL_BETA)),
+                BetaEntitlementDB.revoked_at.is_(None),
+                BetaEntitlementDB.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        return entitlement is not None
 
     async def _has_emergency_block(
         self,

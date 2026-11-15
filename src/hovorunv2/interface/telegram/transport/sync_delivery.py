@@ -4,6 +4,7 @@ import functools
 import json
 import logging
 from contextlib import suppress
+from dataclasses import dataclass
 
 from hovorunv2.application.jobs.http_ports import (
     HTTPFiles,
@@ -25,6 +26,14 @@ from hovorunv2.interface.telegram.transport.sync_api import (
 
 MAX_MEDIA_GROUP = 10
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _DeliveryOutcome:
+    """Receipts and whether reply_markup was already attached to a delivered message."""
+
+    receipts: tuple[int, ...]
+    markup_attached: bool = False
 
 
 def _media_group(items: list[MediaItem], start: int, caption: str) -> tuple[list[dict[str, str]], HTTPFiles]:
@@ -79,6 +88,7 @@ class NativeTelegramDelivery:
         message_id: int | None = None,
         reply_to_message_id: int | None = None,
         reply_markup: str | None = None,
+        message_thread_id: int | None = None,
     ) -> tuple[int, ...]:
         fields: dict[str, str | int | float | bool] = {
             "chat_id": chat_id,
@@ -92,8 +102,11 @@ class NativeTelegramDelivery:
         if message_id is not None:
             fields["message_id"] = message_id
             method = TelegramMethod.EDIT_MESSAGE_TEXT
-        elif reply_to_message_id is not None:
-            fields["reply_parameters"] = json.dumps({"message_id": reply_to_message_id})
+        else:
+            if reply_to_message_id is not None:
+                fields["reply_parameters"] = json.dumps({"message_id": reply_to_message_id})
+            if message_thread_id is not None:
+                fields["message_thread_id"] = message_thread_id
         return extract_message_ids(self._api.call(method, fields))
 
     def _edit_media(
@@ -181,7 +194,7 @@ class NativeTelegramDelivery:
         caption: str,
         *,
         reply_markup: str | None = None,
-    ) -> tuple[int, ...]:
+    ) -> _DeliveryOutcome:
         logger.info("Telegram could not fetch media URLs; starting download and upload fallback")
         oversized = any(
             item.is_video and item.data is not None and len(item.data) > TELEGRAM_VIDEO_BYTES
@@ -209,7 +222,7 @@ class NativeTelegramDelivery:
         placeholder: int,
         *,
         reply_markup: str | None = None,
-    ) -> tuple[int, ...]:
+    ) -> _DeliveryOutcome:
         contents = self._downloader.download_batch(
             payload.media_items,
             on_compression=functools.partial(self._notify_compression, chat_id, caption, placeholder),
@@ -226,15 +239,18 @@ class NativeTelegramDelivery:
                 if MediaFailure.TOO_LARGE in contents
                 else "Failed to download media."
             )
-            return self._text(
+            receipts = self._text(
                 chat_id,
                 caption + f"\n\n⚠️ <i>{reason}</i>",
                 message_id=placeholder,
                 reply_markup=reply_markup,
             )
+            return _DeliveryOutcome(receipts, markup_attached=reply_markup is not None)
+        markup_attached = False
         try:
             if len(items) == 1:
-                return self._edit_media(chat_id, placeholder, items[0], caption, reply_markup=reply_markup)
+                receipts = self._edit_media(chat_id, placeholder, items[0], caption, reply_markup=reply_markup)
+                return _DeliveryOutcome(receipts, markup_attached=reply_markup is not None)
             receipts = self._send_items(chat_id, message_id, items, caption)
         except TelegramRejectedError as exc:
             logger.exception("Telegram rejected worker media upload (%s)", exc.reason)
@@ -243,15 +259,16 @@ class NativeTelegramDelivery:
                 if exc.reason == TelegramRejection.TOO_LARGE
                 else ("Failed to upload media.")
             )
-            return self._text(
+            receipts = self._text(
                 chat_id,
                 caption + f"\n\n⚠️ <i>{text}</i>",
                 message_id=placeholder,
                 reply_markup=reply_markup,
             )
+            markup_attached = reply_markup is not None
         with suppress(TelegramRejectedError, TelegramDeliveryUncertainError):
             self._api.call(TelegramMethod.DELETE_MESSAGE, {"chat_id": chat_id, "message_id": placeholder})
-        return receipts
+        return _DeliveryOutcome(receipts, markup_attached=markup_attached)
 
     def deliver(
         self,
@@ -262,6 +279,7 @@ class NativeTelegramDelivery:
         sender_label: str | None,
         *,
         reply_markup: str | None = None,
+        message_thread_id: int | None = None,
     ) -> tuple[int, ...]:
         """Return minimal message receipts; uncertain acceptance always stops the delivery sequence.
 
@@ -272,6 +290,7 @@ class NativeTelegramDelivery:
             platform_name: Human-readable provider platform label.
             sender_label: Transient decrypted sender display label.
             reply_markup: Optional serialized inline keyboard markup JSON.
+            message_thread_id: Optional Telegram forum topic thread ID.
 
         Returns:
             Message IDs of every delivered or placeholder message.
@@ -295,7 +314,7 @@ class NativeTelegramDelivery:
             receipts: list[int] = []
             for idx, chunk in enumerate(chunks):
                 markup = reply_markup if idx == len(chunks) - 1 else None
-                receipts.extend(self._text(chat_id, chunk, reply_markup=markup))
+                receipts.extend(self._text(chat_id, chunk, reply_markup=markup, message_thread_id=message_thread_id))
             return tuple(receipts)
         plan = plan_caption(payload, sender_label, platform_name, total_text)
         preceding = ()
@@ -304,15 +323,29 @@ class NativeTelegramDelivery:
             preceding_receipts: list[int] = []
             for idx, chunk in enumerate(chunks):
                 markup = reply_markup if idx == len(chunks) - 1 else None
-                preceding_receipts.extend(self._text(chat_id, chunk, reply_markup=markup))
+                preceding_receipts.extend(
+                    self._text(chat_id, chunk, reply_markup=markup, message_thread_id=message_thread_id)
+                )
             preceding = tuple(preceding_receipts)
             reply_markup = None
         try:
-            media_receipts = self._deliver_media(chat_id, message_id, payload, plan.caption, reply_markup=reply_markup)
-            if reply_markup is not None and len(payload.media_items) > 1 and media_receipts:
-                extra = self._text(chat_id, "🌐", reply_to_message_id=media_receipts[0], reply_markup=reply_markup)
-                return preceding + media_receipts + extra
-            return preceding + media_receipts
+            media_outcome = self._deliver_media(
+                chat_id,
+                message_id,
+                payload,
+                plan.caption,
+                reply_markup=reply_markup,
+                message_thread_id=message_thread_id,
+            )
+            if reply_markup is not None and not media_outcome.markup_attached and media_outcome.receipts:
+                extra = self._text(
+                    chat_id,
+                    "🌐",
+                    reply_to_message_id=media_outcome.receipts[0],
+                    reply_markup=reply_markup,
+                )
+                return preceding + media_outcome.receipts + extra
+            return preceding + media_outcome.receipts
         except TelegramDeliveryUncertainError as error:
             raise TelegramDeliveryUncertainError((*preceding, *error.receipts)) from None
         except TelegramRejectedError:
@@ -328,7 +361,8 @@ class NativeTelegramDelivery:
         caption: str,
         *,
         reply_markup: str | None = None,
-    ) -> tuple[int, ...]:
+        message_thread_id: int | None = None,
+    ) -> _DeliveryOutcome:
         if any(item.requires_download and item.data is None for item in payload.media_items):
             return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
         if any(
@@ -337,7 +371,10 @@ class NativeTelegramDelivery:
         ):
             return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
         try:
-            return self._send_items(chat_id, message_id, payload.media_items, caption, reply_markup=reply_markup)
+            receipts = self._send_items(chat_id, message_id, payload.media_items, caption, reply_markup=reply_markup)
+            return _DeliveryOutcome(
+                receipts, markup_attached=reply_markup is not None and len(payload.media_items) == 1
+            )
         except TelegramRejectedError as exc:
             if exc.reason == TelegramRejection.FETCH:
                 return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
@@ -345,9 +382,11 @@ class NativeTelegramDelivery:
                 if any(item.is_video and item.data is None for item in payload.media_items):
                     return self._fallback(chat_id, message_id, payload, caption, reply_markup=reply_markup)
                 logger.exception("Telegram rejected oversized worker media")
-                return self._text(
+                receipts = self._text(
                     chat_id,
                     caption + "\n\n⚠️ <i>Media is too large, view on original resource.</i>",
                     reply_markup=reply_markup,
+                    message_thread_id=message_thread_id,
                 )
+                return _DeliveryOutcome(receipts, markup_attached=reply_markup is not None)
             raise

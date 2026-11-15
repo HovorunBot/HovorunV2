@@ -15,7 +15,7 @@ from dishka import AsyncContainer
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from hovorunv2.application.features.registry import FEATURE_REGISTRY
+from hovorunv2.application.features.registry import FEATURE_REGISTRY, TriggerKind
 from hovorunv2.application.groups.group_grants import GroupGrantStore
 from hovorunv2.application.groups.ports import ChatStore
 from hovorunv2.application.identity.membership import (
@@ -25,7 +25,7 @@ from hovorunv2.application.identity.membership import (
 )
 from hovorunv2.application.identity.membership_store import MembershipStore
 from hovorunv2.application.identity.ports import UserStore
-from hovorunv2.application.jobs.admission import JobEnvelope, JobStage
+from hovorunv2.application.jobs.admission import AdmissionLimits, AdmissionPort, JobEnvelope, JobStage
 from hovorunv2.application.jobs.feature_job_runner import FeatureJobRunner
 from hovorunv2.application.jobs.feature_jobs import JobOutcome, JobTarget, PayloadPort
 from hovorunv2.application.media.extractor import NativeMediaExtractor
@@ -39,6 +39,7 @@ from hovorunv2.application.translation.ports import (
     TranslationBudget,
     TranslationEnginePort,
     TranslationError,
+    TranslationScope,
 )
 from hovorunv2.application.translation.snapshots import (
     SNAPSHOT_TTL_SECONDS,
@@ -756,3 +757,360 @@ async def test_retained_translation_rejects_new_identity_generation(
     )
     await (await test_container.get(TranslateCallbackHandler)).handle_callback(query, recording_bot)
     assert not any(isinstance(call, SendMessage) for call in recording_bot.session.calls)
+
+
+async def test_auto_translation_media_caption_1025_to_4096_preserves_original_and_attaches_translate_button(
+    test_container: AsyncContainer,
+) -> None:
+    """Media posts whose translated caption is 1025..4096 UTF-16 units keep original caption + Translate button."""
+    settings = await test_container.get(Settings)
+    namespace = await test_container.get(RuntimeNamespace)
+    clock = WallClock()
+    safety = UsageSafetyCaps()
+    chat_id = 790801
+    users = await test_container.get(UserStore)
+    await users.ingest_user(chat_id)
+    await users.set_trust(chat_id, is_trusted=True, actor=ActorContext.cli())
+    chats = await test_container.get(ChatStore)
+    await chats.get_or_create_chat(chat_id)
+    await chats.update_translation_settings(chat_id, "uk", [], actor=ActorContext.cli())
+    source_target = await _translation_target(test_container, chat_id)
+
+    def _run_sync() -> tuple[str | None, str]:
+        with (
+            HTTPFixture(
+                {
+                    "/m": [_google_html("Переклад довгого підпису для медіа. " * 45)],
+                }
+            ) as server,
+            NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
+            GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+        ):
+            hybrid = HybridTranslationEngine(google_engine, _NeverCalledLocalEngine(), online_enabled=True)
+            translation = NativeTranslationService(Py3LangIdDetector(), hybrid, settings, database.policies)
+            snapshots = WorkerTranslationSnapshotClient(runtime.client, settings, clock, namespace)
+            api = NativeTelegramAPI(http_client, BOT_CREDENTIAL, api_base=server.url(""))
+            runner = FeatureJobRunner(
+                settings=settings,
+                admission=runtime.admission,
+                payloads=runtime.payloads,
+                budgets=runtime.budgets,
+                policies=database.policies,
+                ledger=database.ledger,
+                http=http_client,
+                telegram=api,
+                delivery=RecordingTelegramDelivery(),
+                translation=translation,
+                extractor=NativeMediaExtractor(),
+                feedback=database.policies,
+                gate=ValkeyFeedbackGate(runtime.client, namespace),
+                embed=DisabledEmbedAdapter(),
+                clock=clock,
+                safety=safety,
+                browser=None,
+                publisher=publisher,
+                catalog=FluentTranslationCatalog(),
+                snapshots=snapshots,
+            )
+            original_caption = "Original concise English media caption about spaceflight and orbital mechanics. " * 4
+            media_payload = RichMediaPayload(
+                author_name="Author",
+                author_handle="author",
+                author_url="https://example.com/a",
+                original_url="https://example.com/p/1",
+                content=original_caption,
+                media_items=[MediaItem(url="https://example.com/1.jpg", is_video=False)],
+            )
+            now_ts = clock.now()
+            env = JobEnvelope(
+                job_id="auto-media-overflow",
+                payload_ref="0" * 32,
+                feature=CommandName.TWITTER,
+                target=source_target,
+                actor_id=chat_id,
+                actor_generation=1,
+                trigger=TriggerKind.DIRECT,
+                charged_kind=TargetKind.USER,
+                charged_telegram_id=chat_id,
+                accepted_at=now_ts,
+                deadline=now_ts + 60,
+                dedupe_key="a" * 64,
+                feature_epoch=source_target.generation,
+                message_id=101,
+            )
+            markup = runner.prepare_auto_translation_markup(
+                media_payload, env, "X", "Sender", now_ts, strip_hashtags=False
+            )
+            return markup, media_payload.content
+
+    markup, final_content = await asyncio.to_thread(_run_sync)
+    assert markup is not None
+    assert "tr:s:" in markup
+    assert final_content == "Original concise English media caption about spaceflight and orbital mechanics. " * 4
+
+
+async def test_explicit_translation_releases_dedupe_on_failure_and_same_language_allowing_retry(
+    test_container: AsyncContainer, recording_bot: RecordingBot
+) -> None:
+    """Failed or same-language explicit translation jobs release admission dedupe so retry is admitted immediately."""
+    member_id = 790901
+    group_id = -100790902
+    await _seed_group_for_buttons(test_container, group_id, member_id, 790902, 790903)
+    settings = await test_container.get(Settings)
+    namespace = await test_container.get(RuntimeNamespace)
+    base_now = WallClock().now()
+    snapshot = TranslationSourceSnapshot(
+        target=await _translation_target(test_container, group_id),
+        chat_id=group_id,
+        source_message_id=60,
+        thread_id=7,
+        target_lang="uk",
+        ui_locale="en",
+        text="This is an English sentence that requires translation to Ukrainian.",
+        created_at=base_now,
+        expires_at=base_now + SNAPSHOT_TTL_SECONDS,
+    )
+    src_token = await asyncio.to_thread(_store_source_snapshot, settings, namespace, snapshot)
+    handler = await test_container.get(TranslateCallbackHandler)
+
+    # First click -> admitted
+    q1 = _make_callback_query(
+        recording_bot,
+        query_id="retry-1",
+        user_id=member_id,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=60,
+        data=f"tr:s:{src_token}",
+        thread_id=7,
+    )
+    await handler.handle_callback(q1, recording_bot)
+    envelopes_1 = [
+        env
+        for env in await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+        if JobEnvelope.model_validate(env).feature == CommandName.TRANSLATE
+    ]
+    assert len(envelopes_1) == 1
+
+    # Simulate worker failing with TranslationError (HTTP 500)
+    def _run_failing_worker(raw_env: dict[str, object]) -> str:
+        clock = WallClock()
+        safety = UsageSafetyCaps()
+        with (
+            HTTPFixture(
+                {
+                    "/m": [HTTPReply(body=b"error", status=HTTPStatus.INTERNAL_SERVER_ERROR)] * 3,
+                    f"/bot{BOT_CREDENTIAL}/sendMessage": json_reply({"ok": True, "result": {"message_id": 710}}),
+                }
+            ) as server,
+            NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
+            GoogleTranslationEngine(base_url=server.url("/m"), sleep_fn=lambda _s: None) as google_engine,
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+        ):
+            hybrid = HybridTranslationEngine(google_engine, _NeverCalledLocalEngine(), online_enabled=True)
+            translation = NativeTranslationService(Py3LangIdDetector(), hybrid, settings, database.policies)
+            snapshots = WorkerTranslationSnapshotClient(runtime.client, settings, clock, namespace)
+            api = NativeTelegramAPI(http_client, BOT_CREDENTIAL, api_base=server.url(""))
+            runner = FeatureJobRunner(
+                settings=settings,
+                admission=runtime.admission,
+                payloads=runtime.payloads,
+                budgets=runtime.budgets,
+                policies=database.policies,
+                ledger=database.ledger,
+                http=http_client,
+                telegram=api,
+                delivery=RecordingTelegramDelivery(),
+                translation=translation,
+                extractor=NativeMediaExtractor(),
+                feedback=database.policies,
+                gate=ValkeyFeedbackGate(runtime.client, namespace),
+                embed=DisabledEmbedAdapter(),
+                clock=clock,
+                safety=safety,
+                browser=None,
+                publisher=publisher,
+                catalog=FluentTranslationCatalog(),
+                snapshots=snapshots,
+            )
+            return runner.run(raw_env, JobStage.MEDIA)
+
+    assert await asyncio.to_thread(_run_failing_worker, envelopes_1[0]) == JobOutcome.FAILED.value
+
+    # Retry click within 15 minutes must be ADMITTED (enqueuing a 2nd job), not treated as duplicate
+    q2 = _make_callback_query(
+        recording_bot,
+        query_id="retry-2",
+        user_id=member_id,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=60,
+        data=f"tr:s:{src_token}",
+        thread_id=7,
+    )
+    await handler.handle_callback(q2, recording_bot)
+    envelopes_2 = [
+        env
+        for env in await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+        if JobEnvelope.model_validate(env).feature == CommandName.TRANSLATE
+    ]
+    assert len(envelopes_2) == 1
+
+    # Same-language explicit translation (result is None) also releases dedupe
+    same_lang_snapshot = TranslationSourceSnapshot(
+        target=await _translation_target(test_container, group_id),
+        chat_id=group_id,
+        source_message_id=61,
+        thread_id=7,
+        target_lang="uk",
+        ui_locale="en",
+        text="Привіт! Це вже український текст, який не потребує перекладу взагалі.",
+        created_at=base_now,
+        expires_at=base_now + SNAPSHOT_TTL_SECONDS,
+    )
+    same_token = await asyncio.to_thread(_store_source_snapshot, settings, namespace, same_lang_snapshot)
+    q3 = _make_callback_query(
+        recording_bot,
+        query_id="same-1",
+        user_id=member_id,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=61,
+        data=f"tr:s:{same_token}",
+        thread_id=7,
+    )
+    await handler.handle_callback(q3, recording_bot)
+    envelopes_3 = [
+        env
+        for env in await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+        if JobEnvelope.model_validate(env).feature == CommandName.TRANSLATE
+    ]
+    assert len(envelopes_3) == 1
+    outcome, _ = await asyncio.to_thread(_run_explicit_button_job, settings, namespace, envelopes_3[0], "unused")
+    assert outcome == JobOutcome.COMPLETE
+    q4 = _make_callback_query(
+        recording_bot,
+        query_id="same-2",
+        user_id=member_id,
+        chat_id=group_id,
+        chat_type="supergroup",
+        message_id=61,
+        data=f"tr:s:{same_token}",
+        thread_id=7,
+    )
+    await handler.handle_callback(q4, recording_bot)
+    envelopes_4 = [
+        env
+        for env in await asyncio.to_thread(broker_envelopes, settings, namespace.value, "media")
+        if JobEnvelope.model_validate(env).feature == CommandName.TRANSLATE
+    ]
+    assert len(envelopes_4) == 1
+
+
+async def test_explicit_translation_catches_snapshot_expiry_value_error_and_sends_localized_notice(
+    test_container: AsyncContainer,
+) -> None:
+    """When begin_result raises ValueError on snapshot expiry mid-flight, send localized translation-expired."""
+    member_id = 791001
+    group_id = -100791002
+    await _seed_group_for_buttons(test_container, group_id, member_id, 791002, 791003)
+    settings = await test_container.get(Settings)
+    namespace = await test_container.get(RuntimeNamespace)
+    target = await _translation_target(test_container, group_id)
+    now_ts = WallClock().now()
+    payload_input = ExplicitTranslationInput(
+        text="This is a valid English sentence to translate.",
+        scope=TranslationScope.FULL_SOURCE,
+        source_chat_id=group_id,
+        source_message_id=70,
+        reply_to_message_id=70,
+        message_thread_id=7,
+        requested_target_lang="uk",
+        ui_locale="uk",
+        snapshot_expires_at=now_ts + 5.0,
+    )
+    raw_bytes = json.dumps(payload_input.model_dump(mode="json")).encode("utf-8")
+    pstore = await test_container.get(PayloadPort)
+    adm = await test_container.get(AdmissionPort)
+    sealed = await pstore.seal("expired-midflight-job", raw_bytes, now_ts + 60.0)
+    env = JobEnvelope(
+        job_id="expired-midflight-job",
+        payload_ref=sealed.reference,
+        feature=CommandName.TRANSLATE,
+        target=target,
+        actor_id=member_id,
+        actor_generation=1,
+        trigger=TriggerKind.DIRECT,
+        charged_kind=TargetKind.USER,
+        charged_telegram_id=member_id,
+        accepted_at=now_ts,
+        deadline=now_ts + 60.0,
+        dedupe_key="b" * 64,
+        feature_epoch=0,
+        message_id=70,
+    )
+    await adm.admit(env, sealed, AdmissionLimits(10, 10, UsageSafetyCaps()), now_ts)
+    await adm.mark_enqueued(env.job_id, JobStage.MEDIA, 0)
+
+    def _run_sync() -> tuple[str, list[dict[str, str]]]:
+        clock = ManualClock(now_ts + 1.0)
+        safety = UsageSafetyCaps()
+        with (
+            HTTPFixture(
+                {
+                    "/m": [_google_html("Перекладений текст")],
+                    f"/bot{BOT_CREDENTIAL}/sendMessage": json_reply({"ok": True, "result": {"message_id": 720}}),
+                }
+            ) as server,
+            NativeHTTPClient(allowed_hosts=frozenset({"127.0.0.1"})) as http_client,
+            GoogleTranslationEngine(base_url=server.url("/m")) as google_engine,
+            WorkerDatabase(settings, FEATURE_REGISTRY, safety) as database,
+            WorkerRuntime(settings, clock, namespace, safety) as runtime,
+            closing(WorkerQueuePublisher(settings.valkey_url, namespace, safety, clock)) as publisher,
+        ):
+            # Snapshot expires at now_ts + 5.0; runner clock is now_ts + 1.0 (passes initial check),
+            # while snapshot store clock is now_ts + 6.0 (begin_result raises ValueError).
+            snap_clock = ManualClock(now_ts + 6.0)
+            snapshots = WorkerTranslationSnapshotClient(runtime.client, settings, snap_clock, namespace)
+            hybrid = HybridTranslationEngine(google_engine, _NeverCalledLocalEngine(), online_enabled=True)
+            translation = NativeTranslationService(Py3LangIdDetector(), hybrid, settings, database.policies)
+            api = NativeTelegramAPI(http_client, BOT_CREDENTIAL, api_base=server.url(""))
+            runner = FeatureJobRunner(
+                settings=settings,
+                admission=runtime.admission,
+                payloads=runtime.payloads,
+                budgets=runtime.budgets,
+                policies=database.policies,
+                ledger=database.ledger,
+                http=http_client,
+                telegram=api,
+                delivery=RecordingTelegramDelivery(),
+                translation=translation,
+                extractor=NativeMediaExtractor(),
+                feedback=database.policies,
+                gate=ValkeyFeedbackGate(runtime.client, namespace),
+                embed=DisabledEmbedAdapter(),
+                clock=clock,
+                safety=safety,
+                browser=None,
+                publisher=publisher,
+                catalog=FluentTranslationCatalog(),
+                snapshots=snapshots,
+            )
+            outcome = runner.run(env.model_dump(mode="json"), JobStage.MEDIA)
+            sent = [
+                {k: v[0] for k, v in parse_qs(req.body.decode()).items()}
+                for req in server.requests
+                if req.path.endswith("/sendMessage")
+            ]
+            return outcome, sent
+
+    outcome, sent = await asyncio.to_thread(_run_sync)
+    assert outcome == JobOutcome.EXPIRED.value
+    assert len(sent) == 1
+    assert sent[0]["text"] == get_message("translation-expired", "uk")

@@ -392,3 +392,86 @@ def test_failed_split_audio_download_never_uploads_silent_video(tmp_path: Path) 
         assert "sendVideo" not in _methods(server)
         assert "editMessageMedia" not in _methods(server)
         assert "Failed to download media" in parse_qs(server.requests[-1].body.decode())["text"][0]
+
+
+def test_deliver_preserves_message_thread_id_on_text_split_and_oversized_fallback() -> None:
+    """Forum topic message_thread_id is forwarded to text-only, split-caption, and oversized-media fallback calls."""
+    # 1. Text-only post
+    with _native_delivery({API_PREFIX + "sendMessage": _ack(_message(10))}) as (delivery, server):
+        text_payload = RichMediaPayload(
+            "Synthetic",
+            "fixture",
+            "https://synthetic.invalid/author",
+            "Hello forum topic",
+            original_url="https://synthetic.invalid/post",
+            media_items=[],
+        )
+        assert delivery.deliver(42, 1, text_payload, "Synthetic", None, message_thread_id=777) == (10,)
+        body = parse_qs(server.requests[0].body.decode())
+        assert body["message_thread_id"] == ["777"]
+
+    # 2. Split-caption post (separate_text)
+    routes = {
+        API_PREFIX + "sendMessage": _ack(_message(10)),
+        API_PREFIX + "sendPhoto": _ack(_message(11)),
+    }
+    with _native_delivery(routes) as (delivery, server):
+        receipts = delivery.deliver(42, 1, _payload(1, long_caption=True), "Synthetic", "Sender", message_thread_id=777)
+        assert receipts == (10, 11)
+        send_msg = next(r for r in server.requests if r.path.endswith("sendMessage"))
+        assert parse_qs(send_msg.body.decode())["message_thread_id"] == ["777"]
+
+    # 3. Oversized media fallback (TOO_LARGE)
+    oversized_routes = {
+        API_PREFIX + "sendPhoto": _reject("Request Entity Too Large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
+        API_PREFIX + "sendMessage": _ack(_message(12)),
+    }
+    with _native_delivery(oversized_routes) as (delivery, server):
+        assert delivery.deliver(42, 1, _payload(1), "Synthetic", None, message_thread_id=777) == (12,)
+        send_msg = next(r for r in server.requests if r.path.endswith("sendMessage"))
+        assert parse_qs(send_msg.body.decode())["message_thread_id"] == ["777"]
+
+
+def test_album_upload_fallback_does_not_send_duplicate_globe_markup() -> None:
+    """Do not send a duplicate globe markup message when _upload_fallback already attached reply_markup."""
+    markup = '{"inline_keyboard":[[{"text":"Translate","callback_data":"tr:s:abc"}]]}'
+    # Empty downloads on multi-item album
+    routes_empty = {
+        API_PREFIX + "sendMediaGroup": _reject(),
+        API_PREFIX + "sendMessage": _ack(_message(10)),
+        API_PREFIX + "editMessageText": _ack(_message(10)),
+        "/0.jpg": HTTPReply(status=HTTPStatus.NOT_FOUND),
+        "/1.jpg": HTTPReply(status=HTTPStatus.NOT_FOUND),
+    }
+    with _native_delivery(routes_empty) as (delivery, server):
+        album = _payload(2)
+        album.media_items = [
+            MediaItem(server.url("/0.jpg"), is_video=False),
+            MediaItem(server.url("/1.jpg"), is_video=False),
+        ]
+        receipts = delivery.deliver(42, 1, album, "Synthetic", None, reply_markup=markup)
+        assert receipts == (10,)
+        send_messages = [r for r in server.requests if r.path.endswith("sendMessage")]
+        assert len(send_messages) == 1
+        edit_req = next(r for r in server.requests if r.path.endswith("editMessageText"))
+        assert parse_qs(edit_req.body.decode())["reply_markup"] == [markup]
+
+    # Single downloaded item from 2-item album edited onto placeholder
+    routes_one = {
+        API_PREFIX + "sendMediaGroup": _reject(),
+        API_PREFIX + "sendMessage": _ack(_message(10)),
+        API_PREFIX + "editMessageMedia": _ack(_message(10)),
+        "/0.jpg": HTTPReply(b"jpeg-bytes", headers={"Content-Type": "image/jpeg"}),
+        "/1.jpg": HTTPReply(status=HTTPStatus.NOT_FOUND),
+    }
+    with _native_delivery(routes_one) as (delivery, server):
+        album = _payload(2)
+        album.media_items = [
+            MediaItem(server.url("/0.jpg"), is_video=False),
+            MediaItem(server.url("/1.jpg"), is_video=False),
+        ]
+        receipts = delivery.deliver(42, 1, album, "Synthetic", None, reply_markup=markup)
+        assert receipts == (10,)
+        send_messages = [r for r in server.requests if r.path.endswith("sendMessage")]
+        assert len(send_messages) == 1
+        assert _methods(server) == ["sendMediaGroup", "sendMessage", "0.jpg", "1.jpg", "editMessageMedia"]

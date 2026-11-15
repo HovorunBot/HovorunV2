@@ -19,6 +19,7 @@ from hovorunv2.application.speech.contracts import (
 )
 from hovorunv2.application.speech.policies import SpeechLimits
 from hovorunv2.application.speech.ports import SpeechRecognitionPort
+from hovorunv2.application.usage.budgets import Clock, WallClock
 from hovorunv2.infrastructure.speech.model_store import SpeechModelStore
 from hovorunv2.infrastructure.speech.process_io import (
     IO_POLL_SECONDS,
@@ -52,7 +53,11 @@ def _decoder_environment() -> dict[str, str]:
 
 
 def decode_audio_to_pcm(
-    audio_data: bytes, deadline: float | None = None, *, cancelled: Callable[[], bool] = never_cancelled
+    audio_data: bytes,
+    deadline: float | None = None,
+    *,
+    cancelled: Callable[[], bool] = never_cancelled,
+    clock: Clock | None = None,
 ) -> bytes:
     """Decode private audio in an isolated, byte/time-bounded FFmpeg child.
 
@@ -60,6 +65,7 @@ def decode_audio_to_pcm(
         audio_data: Bounded compressed audio.
         deadline: Optional Unix request deadline; standalone decoding retains its fixed decoder timeout.
         cancelled: Current cancellation predicate.
+        clock: Optional clock used for deadline checks.
 
     Returns:
         Bounded mono 16 kHz float32 PCM.
@@ -69,7 +75,8 @@ def decode_audio_to_pcm(
     """
     if not audio_data or len(audio_data) > MAX_COMPRESSED_AUDIO_BYTES:
         raise SpeechRecognitionError(SpeechFailure.INVALID_INPUT)
-    remaining = FFMPEG_TIMEOUT_SECONDS if deadline is None else min(FFMPEG_TIMEOUT_SECONDS, deadline - time.time())
+    now = (clock or WallClock()).now()
+    remaining = FFMPEG_TIMEOUT_SECONDS if deadline is None else min(FFMPEG_TIMEOUT_SECONDS, deadline - now)
     cutoff = time.monotonic() + remaining
     require_time(cutoff, cancelled)
     command = [
@@ -135,11 +142,13 @@ class WhisperCppEngine(SpeechRecognitionPort):
         *,
         helper_path: Path | None = None,
         idle_timeout_seconds: int = 300,
+        clock: Clock | None = None,
     ) -> None:
         SpeechLimits(model_idle_seconds=idle_timeout_seconds)
         self._store = store
         self._helper_path = helper_path or (Path(__file__).parent / "whisper_helper")
         self._idle_timeout_seconds = idle_timeout_seconds
+        self._clock = clock or WallClock()
         self._owner = os.getpid()
         self._process: subprocess.Popen[bytes] | None = None
         self._closed = False
@@ -161,10 +170,10 @@ class WhisperCppEngine(SpeechRecognitionPort):
             SpeechRecognitionError: If cancelled, timed out, or operational failure occurs.
         """
         self._verify_active_ownership()
-        cutoff = time.monotonic() + deadline - time.time()
+        cutoff = time.monotonic() + deadline - self._clock.now()
         require_time(cutoff, cancelled)
         try:
-            pcm = decode_audio_to_pcm(audio, deadline, cancelled=cancelled)
+            pcm = decode_audio_to_pcm(audio, deadline, cancelled=cancelled, clock=self._clock)
             return self._recognize_pcm(pcm, cutoff, cancelled)
         except SpeechRecognitionError:
             self._cleanup_helper()

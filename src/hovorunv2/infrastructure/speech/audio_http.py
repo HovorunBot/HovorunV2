@@ -2,7 +2,6 @@
 
 import json
 import logging
-import time
 from collections.abc import Callable
 
 import requests
@@ -10,6 +9,7 @@ import requests
 from hovorunv2.application.speech.contracts import SpeechFailure, SpeechRecognitionError
 from hovorunv2.application.speech.policies import MAX_AUDIO_BYTES
 from hovorunv2.application.speech.ports import SpeechAudioPort
+from hovorunv2.application.usage.budgets import Clock, WallClock
 from hovorunv2.infrastructure.http_transport.native_http import HTTP_CHUNK_BYTES, NativeHTTPClient
 
 AUDIO_READ_TIMEOUT_SECONDS = 5
@@ -22,7 +22,12 @@ class SpeechAudioHTTPClient(NativeHTTPClient, SpeechAudioPort):
     """Own a nonredirecting, capped Telegram audio connection in one worker child."""
 
     def __init__(
-        self, token: str, *, api_base: str = "https://api.telegram.org", allowed_hosts: frozenset[str] = frozenset()
+        self,
+        token: str,
+        *,
+        api_base: str = "https://api.telegram.org",
+        allowed_hosts: frozenset[str] = frozenset(),
+        clock: Clock | None = None,
     ) -> None:
         super().__init__(
             max_bytes=MAX_AUDIO_BYTES,
@@ -33,6 +38,7 @@ class SpeechAudioHTTPClient(NativeHTTPClient, SpeechAudioPort):
         )
         self._file_base = api_base.rstrip("/") + "/file/bot" + token + "/"
         self._metadata_url = api_base.rstrip("/") + "/bot" + token + "/getFile"
+        self._clock = clock or WallClock()
 
     def fetch_metadata(self, file_id: str, deadline: float, *, cancelled: Callable[[], bool]) -> dict[str, object]:
         """Read bounded file metadata with the same deadline and cancellation checks as audio.
@@ -48,7 +54,7 @@ class SpeechAudioHTTPClient(NativeHTTPClient, SpeechAudioPort):
         Raises:
             SpeechRecognitionError: If reading, authorization, deadline or metadata validation fails.
         """
-        cutoff = min(deadline, time.time() + AUDIO_TOTAL_TIMEOUT_SECONDS)
+        cutoff = min(deadline, self._clock.now() + AUDIO_TOTAL_TIMEOUT_SECONDS)
         self._require_live(cutoff, cancelled)
         try:
             with self._request("POST", self._metadata_url, data={"file_id": file_id}) as response:
@@ -81,7 +87,7 @@ class SpeechAudioHTTPClient(NativeHTTPClient, SpeechAudioPort):
         Raises:
             SpeechRecognitionError: If authorization, transport or resource bounds fail.
         """
-        cutoff = min(deadline, time.time() + AUDIO_TOTAL_TIMEOUT_SECONDS)
+        cutoff = min(deadline, self._clock.now() + AUDIO_TOTAL_TIMEOUT_SECONDS)
         self._require_live(cutoff, cancelled)
         try:
             with self._request("GET", self._file_base + file_path) as response:
@@ -112,7 +118,7 @@ class SpeechAudioHTTPClient(NativeHTTPClient, SpeechAudioPort):
         return bytes(output)
 
     def _require_live(self, cutoff: float, cancelled: Callable[[], bool]) -> None:
-        if time.time() >= cutoff:
+        if self._clock.now() >= cutoff:
             raise SpeechRecognitionError(SpeechFailure.DEADLINE_EXCEEDED)
         if cancelled():
             raise SpeechRecognitionError(SpeechFailure.CANCELLED)

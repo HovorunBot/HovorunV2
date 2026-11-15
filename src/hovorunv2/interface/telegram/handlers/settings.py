@@ -15,7 +15,7 @@ from aiogram_i18n.context import I18nContext
 
 from hovorunv2.application.access.access_service import AccessService, CommandPolicy
 from hovorunv2.application.access.permissions import DecisionReason, PermissionTarget
-from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
+from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES, resolve_language_code
 from hovorunv2.application.features.command_service import CommandService
 from hovorunv2.application.features.registry import FeatureChannel
 from hovorunv2.application.groups.group_management_service import GroupManagementService
@@ -471,8 +471,8 @@ class SettingsCommand(BaseCommand):
 
     async def _resolve_locale(self, context: SettingsContext) -> str:
         """Resolve the active UI locale for the current settings target or private actor."""
-        if context.target_chat_id < 0:
-            return await self._i18n_manager.get_chat_locale(context.target_chat_id) or DEFAULT_LOCALE
+        if context.target is not None and context.target.telegram_id < 0:
+            return await self._i18n_manager.get_chat_locale(context.target.telegram_id) or DEFAULT_LOCALE
         return await self._i18n_manager.get_user_locale(context.transport_chat_id)
 
     async def _show_main_menu(self, message: Message, context: SettingsContext) -> None:
@@ -557,7 +557,8 @@ class SettingsCommand(BaseCommand):
                 context.target.telegram_id,
             )
             speech = await self._speech_settings.mode(perm_target)
-            ignored_text = ", ".join(ignored) if ignored else get_message("settings-none", locale)
+            visible_ignored = [code for code in ignored if code != "und"]
+            ignored_text = ", ".join(visible_ignored) if visible_ignored else get_message("settings-none", locale)
             speech_label = get_message(f"settings-speech-mode-{speech.value}", locale)
             text += "\n" + get_message(
                 "settings-main-group-summary",
@@ -815,9 +816,10 @@ class SettingsCommand(BaseCommand):
                 callback_data=SettingsCallback(menu=SettingsMenu.LANG_TARGET, page=0).pack(),
             )
         )
+        visible_ignored = [code for code in ignored if code != "und"]
         builder.row(
             InlineKeyboardButton(
-                text=f"🚫 Ignored ({len(ignored)})",
+                text=f"🚫 Ignored ({len(visible_ignored)})",
                 callback_data=SettingsCallback(menu=SettingsMenu.LANG_IGNORED, page=0).pack(),
             )
         )
@@ -1023,7 +1025,7 @@ class SettingsCommand(BaseCommand):
 
         guidance: set[str] = set()
         for definition in self._access_service.features.registry.all():
-            if definition.key in SPEECH_COMMANDS:
+            if not definition.is_toggleable or definition.key in SPEECH_COMMANDS:
                 continue
             decision = await self._access_service.features.evaluate(
                 definition.key, chat_id, query.from_user.id, configure=True
@@ -1227,7 +1229,8 @@ class SettingsCommand(BaseCommand):
         chat_id = context.target_chat_id
         if callback_data.action == SettingsAction.TOGGLE and callback_data.value:
             cmd_name = callback_data.value
-            if cmd_name in SPEECH_COMMANDS:
+            registry_def = self._access_service.features.registry.get(cmd_name)
+            if registry_def is None or not registry_def.is_toggleable or cmd_name in SPEECH_COMMANDS:
                 await self._answer_user(query, "settings-feature-unavailable", show_alert=True)
                 return
             decision = await self._access_service.features.evaluate(
@@ -1276,12 +1279,15 @@ class SettingsCommand(BaseCommand):
             return
 
         chat_id = context.target_chat_id
-        if callback_data.action == SettingsAction.SELECT and callback_data.value in LANGUAGES:
+        canonical = (
+            resolve_language_code(callback_data.value) if callback_data.action == SettingsAction.SELECT else None
+        )
+        if callback_data.action == SettingsAction.SELECT and canonical is not None:
             _target, ignored = await self._language_service.get_chat_settings(chat_id)
             await self._language_service.update_settings(
-                chat_id, callback_data.value, ignored, actor=ActorContext.telegram(query.from_user.id)
+                chat_id, canonical, ignored, actor=ActorContext.telegram(query.from_user.id)
             )
-            await self._answer_user(query, "settings-target-set", language=callback_data.value)
+            await self._answer_user(query, "settings-target-set", language=canonical)
             await self._show_lang_menu(query, context)
         else:
             await self._show_lang_picker(msg, SettingsMenu.LANG_TARGET, callback_data.page, context)
@@ -1301,20 +1307,26 @@ class SettingsCommand(BaseCommand):
             return
 
         chat_id = context.target_chat_id
-        if callback_data.action == SettingsAction.TOGGLE and callback_data.value in LANGUAGES:
+        canonical = (
+            resolve_language_code(callback_data.value) if callback_data.action == SettingsAction.TOGGLE else None
+        )
+        if callback_data.action == SettingsAction.TOGGLE and canonical is not None:
             target, ignored = await self._language_service.get_chat_settings(chat_id)
-            if callback_data.value in ignored:
-                ignored.remove(callback_data.value)
+            if canonical in ignored:
+                ignored.remove(canonical)
             else:
-                ignored.append(callback_data.value)
+                ignored.append(canonical)
 
-            if "und" not in ignored:
+            user_ignored = [code for code in ignored if code != "und"]
+            if user_ignored and "und" not in ignored:
                 ignored.append("und")
+            elif not user_ignored:
+                ignored = []
 
             await self._language_service.update_settings(
                 chat_id, target, ignored, actor=ActorContext.telegram(query.from_user.id)
             )
-            await self._answer_user(query, "settings-ignored-toggled", language=callback_data.value)
+            await self._answer_user(query, "settings-ignored-toggled", language=canonical)
         await self._show_lang_picker(msg, SettingsMenu.LANG_IGNORED, callback_data.page, context)
 
     async def _speech_target(self, query: CallbackQuery, context: SettingsContext) -> PermissionTarget | None:

@@ -129,6 +129,18 @@ def sanitize_for_detection(text: str) -> str:
     return " ".join(letters.split())
 
 
+def has_minimum_translatable_chars(text: str) -> bool:
+    """Return True when text contains at least MIN_DETECTABLE_CHARS alphabetic characters.
+
+    Args:
+        text: Candidate text or HTML-escaped line.
+
+    Returns:
+        True when enough alphabetic characters exist for translation.
+    """
+    return sum(ch.isalpha() for ch in sanitize_for_detection(text)) >= MIN_DETECTABLE_CHARS
+
+
 def resolve_model_language(lang_code: str) -> str | None:
     """Resolve a supported language variety without replacing an explicit unsupported script.
 

@@ -52,9 +52,10 @@ class RecordingTelegramDelivery(SyncTelegramDeliveryPort):
         sender_label: str | None,
         *,
         reply_markup: str | None = None,
+        message_thread_id: int | None = None,
     ) -> tuple[int, ...]:
         """Convert payload to real aiogram method calls and record on recording_bot."""
-        _ = reply_markup
+        _ = reply_markup, message_thread_id
         caption = build_caption(payload, sender_label, platform_name)
         method: Any
         if not payload.media_items:

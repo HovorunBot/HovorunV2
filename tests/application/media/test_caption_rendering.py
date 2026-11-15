@@ -3,7 +3,12 @@
 import pytest
 
 from hovorunv2.application.media.payloads import RichMediaPayload
-from hovorunv2.application.media.rendering import build_caption, plan_caption
+from hovorunv2.application.media.rendering import (
+    CAPTION_LIMIT,
+    build_caption,
+    extract_rendered_post_content,
+    plan_caption,
+)
 
 
 @pytest.mark.unit
@@ -95,3 +100,65 @@ def test_plan_caption_with_hostile_urls() -> None:
     assert plan.separate_text is None
     assert "<b>bad</b>" not in plan.caption
     assert 'href="https://example.com/user/&quot;&gt;&lt;b&gt;bad&lt;/b&gt;"' in plan.caption
+
+
+@pytest.mark.unit
+def test_plan_caption_measures_unescaped_utf16_and_never_slices_tags_or_entities() -> None:
+    """Measure rendered UTF-16 units and avoid slicing HTML tags or entities when fallback exceeds limit."""
+    # Surrogate pairs: 520 emojis = 1040 UTF-16 units > 1024, even though len() < 1024
+    emoji_payload = RichMediaPayload(
+        author_name="Author",
+        author_handle="author",
+        author_url="https://x.com/author",
+        content="😀" * 520,
+        original_url="https://x.com/author/1",
+    )
+    emoji_plan = plan_caption(emoji_payload, sender_label="User", platform_name="X")
+    assert emoji_plan.separate_text is not None
+
+    # Long URL in footer + HTML tags should not trigger split when unescaped plain text <= 1024
+    long_url_payload = RichMediaPayload(
+        author_name="Author",
+        author_handle="author",
+        author_url="https://x.com/" + "a" * 600,
+        content="Short &amp; sweet",
+        original_url="https://x.com/" + "b" * 600,
+    )
+    url_plan = plan_caption(long_url_payload, sender_label="User", platform_name="X")
+    assert url_plan.separate_text is None
+
+    # Even if fallback caption exceeds CAPTION_LIMIT, fallback must stay valid HTML without broken tags/entities
+    huge_platform_payload = RichMediaPayload(
+        author_name="Author",
+        author_handle="author",
+        author_url="https://x.com/author",
+        content="x" * (CAPTION_LIMIT + 100),
+        original_url="https://x.com/author/1",
+    )
+    huge_plan = plan_caption(huge_platform_payload, sender_label="User", platform_name="P&" + "x" * 1050)
+    assert huge_plan.separate_text is not None
+    assert huge_plan.caption.count("<a ") == huge_plan.caption.count("</a>")
+    assert "&amp;" in huge_plan.caption or not huge_plan.caption.endswith("&")
+
+
+@pytest.mark.unit
+def test_extract_rendered_post_content_strips_quotes_translations_and_empty_split_captions() -> None:
+    """Strip QUOTE_TEMPLATE headers, prior append_translation blocks, and empty split captions."""
+    rendered_with_quote_and_translation = (
+        "🗣 User shared a post by Author (@author)\n\n"
+        "Original post text\n\n"
+        "🇺🇦 Translated:\n"
+        "Оригінальний текст\n\n"
+        "🔄 Quoted (@quoted)\n"
+        "Original quote text\n\n"
+        "🇺🇦 Translated:\n"
+        "Оригінальна цитата\n"
+        "❤️ 10\n"
+        "🔗 Open on X"
+    )
+    assert extract_rendered_post_content(rendered_with_quote_and_translation) == (
+        "Original post text\n\nOriginal quote text"
+    )
+
+    header_footer_only = "🗣 User shared a post by Author (@author)\n\n🔗 Open on X"
+    assert extract_rendered_post_content(header_footer_only) == ""

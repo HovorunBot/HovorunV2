@@ -52,3 +52,24 @@ def test_split_html_message_handles_giant_unbroken_words() -> None:
     assert chunks[1] == "a" * 4096
     assert chunks[2] == "a" * 1808
     assert "".join(chunks) == text
+
+
+@pytest.mark.unit
+def test_split_html_message_measures_unescaped_utf16_and_preserves_whitespace_tokens() -> None:
+    """Measure unescaped UTF-16 units, avoid cutting inside tags/entities, and keep post-break newlines."""
+    # Surrogate pairs (2 UTF-16 units each): 6 emojis = 12 UTF-16 units, even though len() is 6
+    emojis = "😀" * 6
+    chunks = split_html_message(emojis, limit=8)
+    assert chunks == ("😀😀😀😀", "😀😀")
+
+    # Long HTML attribute should not trigger splitting when rendered text fits within limit
+    long_url_html = f'<a href="https://example.com/{"x" * 200}">Short</a>'
+    assert split_html_message(long_url_html, limit=20) == (long_url_html,)
+
+    # Entities must not be split mid-entity when measuring UTF-16
+    entity_text = "abcd&amp;efgh"
+    entity_chunks = split_html_message(entity_text, limit=5)
+    assert entity_chunks == ("abcd&amp;", "efgh")
+
+    # Whitespace break followed by another whitespace token must not double-consume the second token
+    assert split_html_message("aaaa\n\n\nbbbb", limit=6) == ("aaaa", "\nbbbb")

@@ -121,6 +121,7 @@ async def _build_service(
         users=await container.get(UserStore),
         group_management=await container.get(GroupManagementService),
         clock=clock,
+        settings=settings,
     )
     return service, store
 

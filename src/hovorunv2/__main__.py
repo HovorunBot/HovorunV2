@@ -28,6 +28,8 @@ from hovorunv2.infrastructure.logger import AsyncTelegramHandler, get_logger, se
 from hovorunv2.interface.telegram.bot import build_router
 from hovorunv2.interface.telegram.handlers.base import BaseCommand
 from hovorunv2.interface.telegram.handlers.bot_join import BotJoinHandler
+from hovorunv2.interface.telegram.handlers.setup import SetupWizardHandler
+from hovorunv2.interface.telegram.handlers.translate_callbacks import TranslateCallbackHandler
 from hovorunv2.interface.telegram.middlewares import LogContextMiddleware
 from hovorunv2.interface.telegram.transport.identity import IdentityMiddleware
 
@@ -50,6 +52,8 @@ async def build_bot_router(container: AsyncContainer, settings: Settings) -> Rou
     access_service = await container.get(AccessService)
     commands = await container.get(list[BaseCommand])
     bot_join_handler = await container.get(BotJoinHandler)
+    translate_callback_handler = await container.get(TranslateCallbackHandler)
+    setup_wizard_handler = await container.get(SetupWizardHandler)
     identity_middleware = await container.get(IdentityMiddleware)
     cache = await container.get(CachePort)
     reminders = await container.get(ChatReminderService)
@@ -64,6 +68,8 @@ async def build_bot_router(container: AsyncContainer, settings: Settings) -> Rou
         reminders=reminders,
         reconciliation=reconciliation,
         bot_join_handler=bot_join_handler,
+        translate_callback_handler=translate_callback_handler,
+        setup_wizard_handler=setup_wizard_handler,
     )
 
 

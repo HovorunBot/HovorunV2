@@ -16,10 +16,51 @@ FOOTER_TEMPLATE = "🔗 {link}"
 MEDIA_UNAVAILABLE_TEXT = "⚠️ Media could not be extracted. View the original post using the link below."
 
 _TAG_TOKEN_RE = re.compile(r"^</?([a-zA-Z0-9]+)(?:\s+[^>]*)?>$")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 _TOKEN_RE = re.compile(r"<[^>]+>|&[a-zA-Z0-9#]+;|\n\n|\n|\s+|[^\s<&]+")
 _RENDERED_HEADER_RE = re.compile(r"^🗣 [^\n]+ shared a post by [^\n]+\n\n")
 _RENDERED_FOOTER_RE = re.compile(r"\n🔗 [^\n]+$")
 _RENDERED_METRICS_RE = re.compile(r"\n(?:[^\w\s]+(?:\s+[\d,.KMkmBb]+)+(?:\s*\|\s*)?)+\s*$")
+_RENDERED_TRANSLATION_RE = re.compile(r"(?:^|\n\n)[^\w\s\n][^\n]*\bTranslated:\n.*?(?=\n\n🔄 |\Z)", re.DOTALL)
+_RENDERED_QUOTE_HEADER_RE = re.compile(r"^🔄 [^\n]+\n?", re.MULTILINE)
+_BMP_MAX_CODEPOINT = 0xFFFF
+
+
+def html_utf16_length(text: str) -> int:
+    """Measure rendered Telegram text length in unescaped UTF-16 code units.
+
+    Args:
+        text: HTML-formatted or plain text.
+
+    Returns:
+        Number of UTF-16 code units after stripping HTML tags and unescaping entities.
+    """
+    if not text:
+        return 0
+    plain = html.unescape(_HTML_TAG_RE.sub("", text))
+    return len(plain.encode("utf-16-le")) // 2
+
+
+def _token_utf16_length(token: str) -> int:
+    if token.startswith("<") and token.endswith(">"):
+        return 0
+    return len(html.unescape(token).encode("utf-16-le")) // 2
+
+
+def _slice_plain_token_utf16(token: str, limit: int) -> tuple[str, str]:
+    if (token.startswith("<") and token.endswith(">")) or (token.startswith("&") and token.endswith(";")):
+        return token, ""
+    units = 0
+    split_at = 0
+    for idx, ch in enumerate(token):
+        ch_units = 2 if ord(ch) > _BMP_MAX_CODEPOINT else 1
+        if units + ch_units > limit and split_at > 0:
+            break
+        units += ch_units
+        split_at = idx + 1
+        if units >= limit:
+            break
+    return token[:split_at], token[split_at:]
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,30 +133,32 @@ def _build_next_chunk(tokens: list[str], open_tags: list[tuple[str, str]], limit
     prefix, _ = _tag_boundary_strings(open_tags)
     collected: list[str] = []
     tentative_tags = list(open_tags)
-    current_len = len(prefix)
+    current_len = 0
 
     for idx, token in enumerate(tokens):
         next_tentative = list(tentative_tags)
         _update_open_tags(next_tentative, token)
-        _, next_suffix = _tag_boundary_strings(next_tentative)
-        candidate_len = current_len + len(token) + len(next_suffix)
+        token_len = _token_utf16_length(token)
 
-        if candidate_len <= limit:
+        if current_len + token_len <= limit:
             collected.append(token)
             tentative_tags = next_tentative
-            current_len += len(token)
+            current_len += token_len
             continue
 
         if not collected:
-            avail = max(1, limit - len(prefix) - len(next_suffix))
-            sliced = token[:avail]
-            tokens[idx] = token[avail:]
+            sliced, remainder = _slice_plain_token_utf16(token, max(1, limit))
+            if remainder:
+                tokens[idx] = remainder
+                consumed = idx
+            else:
+                consumed = idx + 1
             collected.append(sliced)
             _update_open_tags(tentative_tags, sliced)
             _, suffix = _tag_boundary_strings(tentative_tags)
             del open_tags[:]
             open_tags.extend(tentative_tags)
-            return prefix + "".join(collected) + suffix, idx
+            return prefix + "".join(collected) + suffix, consumed
 
         break_idx = _find_best_break_point(collected)
         if break_idx is not None and break_idx > 0:
@@ -126,7 +169,7 @@ def _build_next_chunk(tokens: list[str], open_tags: list[tuple[str, str]], limit
             _, suffix = _tag_boundary_strings(recomputed_tags)
             del open_tags[:]
             open_tags.extend(recomputed_tags)
-            return prefix + "".join(final_collected) + suffix, break_idx + 1
+            return prefix + "".join(final_collected) + suffix, break_idx
 
         _, suffix = _tag_boundary_strings(tentative_tags)
         del open_tags[:]
@@ -144,12 +187,12 @@ def split_html_message(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> tuple[
 
     Args:
         text: HTML-formatted text to split.
-        limit: Maximum character length per chunk.
+        limit: Maximum unescaped UTF-16 code unit length per chunk.
 
     Returns:
         Tuple of balanced HTML chunks, each under the limit.
     """
-    if not text or len(text) <= limit:
+    if not text or html_utf16_length(text) <= limit:
         return (text,)
     tokens = _tokenize_html(text)
     chunks: list[str] = []
@@ -247,13 +290,13 @@ def plan_caption(
         Caption plan with an optional separate text message.
     """
     text = total_text if total_text is not None else build_caption(payload, sender_label, platform_name)
-    if len(text) <= CAPTION_LIMIT:
+    if html_utf16_length(text) <= CAPTION_LIMIT:
         return CaptionPlan(text)
     footer = _footer(payload, platform_name)
     caption = f"{_header(payload, sender_label)}{footer}".strip()
-    fallback = footer if len(caption) > CAPTION_LIMIT else caption
-    if len(fallback) > CAPTION_LIMIT:
-        fallback = fallback[:CAPTION_LIMIT]
+    fallback = footer if html_utf16_length(caption) > CAPTION_LIMIT else caption
+    if html_utf16_length(fallback) > CAPTION_LIMIT:
+        fallback = split_html_message(fallback, limit=CAPTION_LIMIT)[0]
     return CaptionPlan(fallback, text)
 
 
@@ -264,8 +307,9 @@ def extract_rendered_post_content(text: str) -> str:
         text: Plain message or caption text from a replied Telegram message.
 
     Returns:
-        Post content without the bot header, metrics, unavailable notice, or footer link,
-        or the original text when it does not match the rendered post envelope.
+        Post content without the bot header, metrics, unavailable notice, quote headers,
+        prior translation blocks, or footer link, or the original text when it does not
+        match the rendered post envelope.
     """
     header_match = _RENDERED_HEADER_RE.match(text)
     footer_match = _RENDERED_FOOTER_RE.search(text)
@@ -273,7 +317,9 @@ def extract_rendered_post_content(text: str) -> str:
         return text
     body = text[header_match.end() : footer_match.start()]
     body = _RENDERED_METRICS_RE.sub("", body)
+    body = _RENDERED_TRANSLATION_RE.sub("", body)
+    body = _RENDERED_QUOTE_HEADER_RE.sub("", body)
     stripped = body.strip()
     if stripped.endswith(MEDIA_UNAVAILABLE_TEXT):
         stripped = stripped.removesuffix(MEDIA_UNAVAILABLE_TEXT).strip()
-    return stripped or text
+    return stripped

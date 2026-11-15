@@ -1,6 +1,7 @@
 """Bounded native recovery using admission-owned stopped-effect and accounting facts."""
 
 import logging
+from collections.abc import Sequence
 
 from hovorunv2.application.jobs.admission import (
     RECOVERY_PAGE_LIMIT,
@@ -82,7 +83,9 @@ class WorkerLifecycleService:
             ):
                 msg = "Runtime settlement cannot yet be verified."
                 raise AdmissionUnavailableError(msg)
-        terminal = self._admission.finish(ticket.envelope.job_id, intent.outcome, token=ticket.token)
+        terminal = self._admission.finish(
+            ticket.envelope.job_id, intent.outcome, token=ticket.token, release_dedupe=intent.release_dedupe
+        )
         if terminal is None:
             msg = "Settlement admission release could not be verified."
             raise AdmissionUnavailableError(msg)
@@ -97,19 +100,27 @@ class WorkerLifecycleService:
             raise AdmissionUnavailableError(msg)
         return current
 
-    def recover(self, publisher: SyncQueuePublisherPort, limit: int = RECOVERY_PAGE_LIMIT) -> int:
+    def recover(
+        self,
+        publisher: SyncQueuePublisherPort,
+        limit: int = RECOVERY_PAGE_LIMIT,
+        *,
+        tickets: Sequence[AdmissionTicket] | None = None,
+    ) -> int:
         """Rotate a bounded fair page so one failed dependency cannot block another subject.
 
         Args:
             publisher: Queue publisher used to republish recoverable stages.
             limit: Maximum number of tickets to recover.
+            tickets: Optional pre-rotated recovery page to avoid double lane rotation.
 
         Returns:
             Number of tickets recovered.
         """
         recovered = 0
         logger.info("Starting worker lifecycle recovery sweep (limit=%d)", limit)
-        for ticket in self._admission.recovery_page(limit):
+        page = self._admission.recovery_page(limit) if tickets is None else tickets
+        for ticket in page:
             try:
                 recovered += self._recover_ticket(ticket, publisher)
             except Exception:

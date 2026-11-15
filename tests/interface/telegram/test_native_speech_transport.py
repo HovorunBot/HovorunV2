@@ -13,6 +13,7 @@ from hovorunv2.application.speech.contracts import NoSpeech, SpeechFailure, Spee
 from hovorunv2.infrastructure.speech.audio_http import SpeechAudioHTTPClient
 from hovorunv2.interface.telegram.transport.speech import NativeSpeechTransport
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
+from tests.utils.runtime import ManualClock
 from tests.utils.sync_http import HTTPFixture, HTTPReply, json_reply
 from tests.utils.telegram import BOT_CREDENTIAL
 
@@ -171,3 +172,36 @@ def test_drip_fed_metadata_cannot_extend_the_original_deadline() -> None:
             transport.download_audio("synthetic-file-id", time.time() + 0.2, cancelled=bool)
         assert failure.value.reason == SpeechFailure.DEADLINE_EXCEEDED
         assert time.monotonic() - started < 1
+
+
+def test_speech_transport_and_audio_client_honor_injected_clock() -> None:
+    """Deadline checks in NativeSpeechTransport and SpeechAudioHTTPClient use the injected Clock."""
+    clock = ManualClock(time.time() + 10_000)
+    expired_for_clock = clock.now() - 1
+    with (
+        HTTPFixture(
+            {
+                f"/bot{BOT_CREDENTIAL}/getFile": json_reply(
+                    {"ok": True, "result": {"file_path": "voice/synthetic.oga"}}
+                ),
+                f"/file/bot{BOT_CREDENTIAL}/voice/synthetic.oga": HTTPReply(body=b"audio"),
+            }
+        ) as server,
+        SpeechAudioHTTPClient(
+            BOT_CREDENTIAL, api_base=server.url(""), allowed_hosts=frozenset({"127.0.0.1"}), clock=clock
+        ) as http,
+    ):
+        transport = NativeSpeechTransport(
+            NativeTelegramAPI(http, BOT_CREDENTIAL, api_base=server.url("")), http, clock=clock
+        )
+        with pytest.raises(SpeechRecognitionError) as failure_transport:
+            transport.download_audio("synthetic-file-id", expired_for_clock, cancelled=bool)
+        assert failure_transport.value.reason == SpeechFailure.DEADLINE_EXCEEDED
+
+        with pytest.raises(SpeechRecognitionError) as failure_meta:
+            http.fetch_metadata("synthetic-file-id", expired_for_clock, cancelled=bool)
+        assert failure_meta.value.reason == SpeechFailure.DEADLINE_EXCEEDED
+
+        with pytest.raises(SpeechRecognitionError) as failure_file:
+            http.fetch_file("voice/synthetic.oga", expired_for_clock, cancelled=bool)
+        assert failure_file.value.reason == SpeechFailure.DEADLINE_EXCEEDED

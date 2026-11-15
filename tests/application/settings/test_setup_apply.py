@@ -116,6 +116,7 @@ async def _build_services(
         users=await container.get(UserStore),
         group_management=group_management,
         clock=clock,
+        settings=settings,
     )
     apply_service = SetupApplyService(
         apply_store=apply_store,
@@ -159,6 +160,7 @@ async def test_atomic_apply_persists_all_fields_audit_idempotency_and_erases_on_
     assert baseline_version == 0
 
     settings = await test_container.get(Settings)
+    settings.speech_enabled = True
     with RecordedResponses() as http:
         _stub_admin(http, settings.bot_token or "", admin_id)
         started = await draft_service.start_or_resume(
@@ -245,6 +247,7 @@ async def test_atomic_apply_rollback_conflict_refresh_and_access_loss(
     baseline, baseline_version = loaded
 
     settings = await test_container.get(Settings)
+    settings.speech_enabled = True
     with RecordedResponses() as http:
         _stub_admin(http, settings.bot_token or "", admin_id)
         started = await draft_service.start_or_resume(
@@ -326,3 +329,116 @@ async def test_atomic_apply_rollback_conflict_refresh_and_access_loss(
         assert denied.outcome == SetupApplyOutcome.DENIED
 
     assert isinstance(await test_container.get(SetupApplyService), SetupApplyService)
+
+
+async def test_apply_enforces_speech_enabled_off_cleanup_and_canonical_language_casing(
+    test_container: AsyncContainer,
+) -> None:
+    """Verify SPEECH_ENABLED gating, SpeechMode.OFF feature cleanup, zh-CN/zh-TW casing, and invalid lang rejection."""
+    group_id, admin_id = -100920003, 920003
+    await _seed_group(test_container, group_id, admin_id)
+    clock = ManualClock(3_000_000.0)
+    draft_service, apply_service, _draft_store, _ = await _build_services(test_container, clock)
+    settings = await test_container.get(Settings)
+    settings.speech_enabled = False
+
+    loaded = await apply_service.load_baseline(group_id)
+    assert loaded is not None
+    baseline, baseline_version = loaded
+
+    with RecordedResponses() as http:
+        _stub_admin(http, settings.bot_token or "", admin_id)
+        started = await draft_service.start_or_resume(
+            target_chat_id=group_id,
+            transport_chat_id=group_id,
+            actor_id=admin_id,
+            message_id=703,
+            thread_id=None,
+            baseline=baseline,
+            baseline_version=baseline_version,
+        )
+        assert started.draft is not None
+        draft = started.draft
+
+        # 1. SPEECH_ENABLED=False rejects speech apply
+        speech_attempt = await apply_service.commit_draft(
+            draft.model_copy(
+                update={
+                    "step": SetupStep.REVIEW,
+                    "draft": SetupConfigurationValues(
+                        ui_locale="en",
+                        target_lang="uk",
+                        ignored_langs=(),
+                        enabled_features=(CommandName.TRANSCRIBE.value,),
+                        speech_mode=SpeechMode.MANUAL_ONLY,
+                    ),
+                }
+            ),
+            actor_id=admin_id,
+        )
+        assert speech_attempt.outcome == SetupApplyOutcome.UNAVAILABLE
+
+        # 2. Invalid target or ignored language is rejected
+        invalid_target = await apply_service.commit_draft(
+            draft.model_copy(
+                update={
+                    "step": SetupStep.REVIEW,
+                    "draft": SetupConfigurationValues(
+                        ui_locale="en",
+                        target_lang="xx-invalid",
+                        ignored_langs=(),
+                        enabled_features=(),
+                        speech_mode=SpeechMode.OFF,
+                    ),
+                }
+            ),
+            actor_id=admin_id,
+        )
+        assert invalid_target.outcome == SetupApplyOutcome.UNAVAILABLE
+
+        invalid_ignored = await apply_service.commit_draft(
+            draft.model_copy(
+                update={
+                    "step": SetupStep.REVIEW,
+                    "draft": SetupConfigurationValues(
+                        ui_locale="en",
+                        target_lang="uk",
+                        ignored_langs=("xx-invalid",),
+                        enabled_features=(),
+                        speech_mode=SpeechMode.OFF,
+                    ),
+                }
+            ),
+            actor_id=admin_id,
+        )
+        assert invalid_ignored.outcome == SetupApplyOutcome.UNAVAILABLE
+
+        # 3. zh-CN / zh-TW normalize to canonical casing and SpeechMode.OFF strips transcribe
+        settings.speech_enabled = True
+        canonical_result = await apply_service.commit_draft(
+            draft.model_copy(
+                update={
+                    "step": SetupStep.REVIEW,
+                    "draft": SetupConfigurationValues(
+                        ui_locale="en",
+                        target_lang="zh-cn",
+                        ignored_langs=("zh-tw", "und"),
+                        enabled_features=(CommandName.YOUTUBE_VIDEO.value, CommandName.TRANSCRIBE.value),
+                        speech_mode=SpeechMode.OFF,
+                    ),
+                }
+            ),
+            actor_id=admin_id,
+        )
+        assert canonical_result.outcome == SetupApplyOutcome.APPLIED
+        assert canonical_result.applied_values is not None
+        assert canonical_result.applied_values.target_lang == "zh-CN"
+        assert canonical_result.applied_values.ignored_langs == ("zh-TW", "und")
+        assert CommandName.TRANSCRIBE.value not in canonical_result.applied_values.enabled_features
+
+    chats = await test_container.get(ChatStore)
+    persisted = await chats.get_chat(group_id)
+    assert persisted is not None
+    assert persisted.target_lang == "zh-CN"
+    assert persisted.ignored_langs == ["zh-TW", "und"]
+    assert persisted.speech_mode == SpeechMode.OFF

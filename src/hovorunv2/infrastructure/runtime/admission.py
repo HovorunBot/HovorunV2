@@ -57,6 +57,36 @@ SORTED_SET_ENTRY_SIZE = 2
 logger = logging.getLogger(__name__)
 
 
+def _write_release_fields(
+    pipe: AsyncPipeline | Pipeline,
+    keys: AdmissionKeys,
+    record: AdmissionRecord,
+    capacity: AdmissionCapacity,
+    *,
+    release_dedupe: bool,
+) -> None:
+    job = record.job
+    pipe.hset(keys.totals, mapping={"count": capacity.count - 1, "bytes": capacity.byte_size - record.byte_size})
+    if capacity.subject > 1:
+        pipe.set(keys.subject, capacity.subject - 1)
+    else:
+        pipe.delete(keys.subject)
+    if capacity.ingress > 1:
+        pipe.set(keys.ingress, capacity.ingress - 1)
+    else:
+        pipe.delete(keys.ingress)
+    pipe.delete(keys.payload)
+    pipe.zrem(keys.pending, job.job_id)
+    pipe.zrem(keys.lane, job.job_id)
+    if capacity.lane_pending == 1:
+        pipe.zrem(keys.rotation, keys.lane)
+    pipe.set(keys.ticket, record.encode(), ex=RUNTIME_RETENTION_SECONDS)
+    if release_dedupe:
+        pipe.delete(keys.dedupe)
+    else:
+        pipe.expire(keys.dedupe, RUNTIME_RETENTION_SECONDS)
+
+
 def _validate_payload(envelope: JobEnvelope, payload: SealedPayload, now: float) -> None:
     msg = "Admission payload, original timing and envelope binding disagree."
     if not math.isfinite(now) or now < envelope.accepted_at:
@@ -418,24 +448,7 @@ class ValkeyAdmissionStore(AdmissionPort):
         job = record.job
         if change.release:
             assert capacity is not None
-            pipe.hset(
-                keys.totals, mapping={"count": capacity.count - 1, "bytes": capacity.byte_size - record.byte_size}
-            )
-            if capacity.subject > 1:
-                pipe.set(keys.subject, capacity.subject - 1)
-            else:
-                pipe.delete(keys.subject)
-            if capacity.ingress > 1:
-                pipe.set(keys.ingress, capacity.ingress - 1)
-            else:
-                pipe.delete(keys.ingress)
-            pipe.delete(keys.payload)
-            pipe.zrem(keys.pending, job.job_id)
-            pipe.zrem(keys.lane, job.job_id)
-            if capacity.lane_pending == 1:
-                pipe.zrem(keys.rotation, keys.lane)
-            pipe.set(keys.ticket, record.encode(), ex=RUNTIME_RETENTION_SECONDS)
-            pipe.expire(keys.dedupe, RUNTIME_RETENTION_SECONDS)
+            _write_release_fields(pipe, keys, record, capacity, release_dedupe=change.release_dedupe)
         else:
             pipe.set(keys.ticket, record.encode(), keepttl=True)
         if change.handoff is True:
@@ -474,11 +487,16 @@ class ValkeyAdmissionStore(AdmissionPort):
         change = await self._apply(job_id, AdmissionTransition(AdmissionOperation.CANCEL))
         return change is not None and change.success
 
-    async def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
+    async def finish(
+        self, job_id: str, outcome: JobOutcome, *, token: str | None = None, release_dedupe: bool = False
+    ) -> AdmissionTicket | None:
         """Release once after verified terminal execution using the current owner's fence."""
         return _ticket(
             await self._apply(
-                job_id, AdmissionTransition(AdmissionOperation.FINISH, outcome=outcome, token=token or "")
+                job_id,
+                AdmissionTransition(
+                    AdmissionOperation.FINISH, outcome=outcome, token=token or "", release_dedupe=release_dedupe
+                ),
             )
         )
 
@@ -675,24 +693,7 @@ class WorkerAdmissionClient:
         job = record.job
         if change.release:
             assert capacity is not None
-            pipe.hset(
-                keys.totals, mapping={"count": capacity.count - 1, "bytes": capacity.byte_size - record.byte_size}
-            )
-            if capacity.subject > 1:
-                pipe.set(keys.subject, capacity.subject - 1)
-            else:
-                pipe.delete(keys.subject)
-            if capacity.ingress > 1:
-                pipe.set(keys.ingress, capacity.ingress - 1)
-            else:
-                pipe.delete(keys.ingress)
-            pipe.delete(keys.payload)
-            pipe.zrem(keys.pending, job.job_id)
-            pipe.zrem(keys.lane, job.job_id)
-            if capacity.lane_pending == 1:
-                pipe.zrem(keys.rotation, keys.lane)
-            pipe.set(keys.ticket, record.encode(), ex=RUNTIME_RETENTION_SECONDS)
-            pipe.expire(keys.dedupe, RUNTIME_RETENTION_SECONDS)
+            _write_release_fields(pipe, keys, record, capacity, release_dedupe=change.release_dedupe)
         else:
             pipe.set(keys.ticket, record.encode(), keepttl=True)
         if change.handoff is True:
@@ -732,10 +733,17 @@ class WorkerAdmissionClient:
         change = self._apply(job_id, AdmissionTransition(AdmissionOperation.CANCEL))
         return change is not None and change.success
 
-    def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
+    def finish(
+        self, job_id: str, outcome: JobOutcome, *, token: str | None = None, release_dedupe: bool = False
+    ) -> AdmissionTicket | None:
         """Settle once using the current owner's token and the shared terminal rules."""
         return _ticket(
-            self._apply(job_id, AdmissionTransition(AdmissionOperation.FINISH, outcome=outcome, token=token or ""))
+            self._apply(
+                job_id,
+                AdmissionTransition(
+                    AdmissionOperation.FINISH, outcome=outcome, token=token or "", release_dedupe=release_dedupe
+                ),
+            )
         )
 
     def claim_notice(self, job_id: str, kind: NoticeKind) -> bool:

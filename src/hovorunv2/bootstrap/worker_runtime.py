@@ -20,6 +20,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     SPEECH_JOB_FUNCTION,
     JobEnvelope,
 )
+from hovorunv2.application.jobs.feature_recovery import FeatureRecoveryService
 from hovorunv2.application.jobs.http_ports import SyncBrowserPort, SyncHTTPPort, SyncTelegramDeliveryPort
 from hovorunv2.application.media.limits import MAX_SOURCE_MEDIA_BYTES
 from hovorunv2.application.operations.notification_delivery import NotificationDeliveryService
@@ -42,6 +43,7 @@ from hovorunv2.infrastructure.queues.feature_queue import (
 from hovorunv2.infrastructure.runtime.admission import WorkerAdmissionClient
 from hovorunv2.infrastructure.runtime.budgets import WorkerBudgetClient
 from hovorunv2.infrastructure.runtime.feature_payloads import WorkerPayloadClient
+from hovorunv2.infrastructure.runtime.feedback_gate import ValkeyFeedbackGate
 from hovorunv2.interface.telegram.transport.sync_api import NativeTelegramAPI
 from hovorunv2.interface.telegram.transport.sync_prompts import SyncTelegramUnauthorizedPromptSender
 lazy from hovorunv2.bootstrap.worker_media_runner import create_feature_runner
@@ -277,6 +279,7 @@ class WorkerChildContext:
         self._http: SyncHTTPPort | None = None
         self._browser: SyncBrowserPort | None = None
         self._publisher: WorkerQueuePublisher | None = None
+        self._recovery: FeatureRecoveryService | None = None
         self._operations: WorkerOperationsRunner | None = None
         self._speech_runner: SpeechJobRunner | None = None
         self._opened = runner is not None
@@ -311,6 +314,21 @@ class WorkerChildContext:
             self._owned_http = http
         self._http = http
         api = NativeTelegramAPI(http, self._settings.bot_token)
+        publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
+        self._resources.callback(publisher.close)
+        self._publisher = publisher
+        self._recovery = FeatureRecoveryService(
+            admission=runtime.admission,
+            payloads=runtime.payloads,
+            budgets=runtime.budgets,
+            policies=database.policies,
+            ledger=database.ledger,
+            telegram=api,
+            feedback=database.policies,
+            gate=ValkeyFeedbackGate(runtime.client, self._namespace),
+            clock=self._clock,
+            publisher=publisher,
+        )
 
         # 1. Initialize operations runner if role includes operations
         if self._role in {WorkerRole.OPERATIONS, WorkerRole.ALL}:
@@ -323,7 +341,7 @@ class WorkerChildContext:
             WorkerRole.COMPRESSION,
             WorkerRole.ALL,
         }:
-            self._runner = self._open_feature_runner(database, runtime, http, api)
+            self._runner = self._open_feature_runner(database, runtime, http, api, publisher)
 
         # 3. Initialize speech runner if role includes speech
         if self._role == WorkerRole.SPEECH or (self._role == WorkerRole.ALL and self._settings.speech_enabled):
@@ -371,16 +389,18 @@ class WorkerChildContext:
         )
 
     def _open_feature_runner(
-        self, database: WorkerDatabase, runtime: WorkerRuntime, http: SyncHTTPPort, api: NativeTelegramAPI
+        self,
+        database: WorkerDatabase,
+        runtime: WorkerRuntime,
+        http: SyncHTTPPort,
+        api: NativeTelegramAPI,
+        publisher: WorkerQueuePublisher,
     ) -> FeatureJobRunner:
         if self._role in {WorkerRole.BROWSER, WorkerRole.COMPRESSION} or (
             self._role == WorkerRole.ALL and self._settings.browser_enabled
         ):
             self._browser = self._custom_browser or LazyBrowserService()
             self._resources.callback(self._browser.close)
-        publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
-        self._resources.callback(publisher.close)
-        self._publisher = publisher
         return create_feature_runner(
             settings=self._settings,
             resources=self._resources,
@@ -439,20 +459,11 @@ class WorkerChildContext:
         return self._browser
 
     def recover(self) -> int:
-        """Run bounded recovery sweep across admission lifecycle."""
+        """Run bounded single-pass recovery sweep across admission lifecycle."""
         if self._runner is not None:
             return self._runner.recover()
-        if self._runtime is not None and self._db is not None:
-            publisher = WorkerQueuePublisher(self._settings.valkey_url, self._namespace, self._safety, self._clock)
-            try:
-                from hovorunv2.application.jobs.worker_lifecycle_service import WorkerLifecycleService  # noqa: PLC0415
-
-                lifecycle = WorkerLifecycleService(
-                    self._runtime.admission, self._runtime.budgets, self._db.ledger, self._clock
-                )
-                return lifecycle.recover(publisher)
-            finally:
-                publisher.close()
+        if self._recovery is not None:
+            return self._recovery.recover()
         return 0
 
     def close(self) -> None:
@@ -463,6 +474,7 @@ class WorkerChildContext:
             self._operations = None
             self._speech_runner = None
             self._runner = None
+            self._recovery = None
             self._publisher = None
             self._browser = None
             self._owned_http = None

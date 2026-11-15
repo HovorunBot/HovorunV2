@@ -10,6 +10,7 @@ from hovorunv2.application.operations.notification_preferences import (
 )
 from hovorunv2.application.settings.settings_session_service import SettingsSessionService
 from hovorunv2.application.speech.ports import SpeechSettingsStore
+from hovorunv2.application.translation.language_service import LanguageService
 from hovorunv2.domain.enums import SpeechMode
 from hovorunv2.interface.telegram.handlers.settings import SettingsCommand
 from hovorunv2.interface.telegram.settings.callbacks import (
@@ -243,3 +244,77 @@ async def _assert_group_main_menu_localized(
     assert "🌐 Мови" in button_texts
     assert "⚙️ Налаштувати чат" in button_texts
     assert "❌ Close" not in button_texts
+
+
+async def test_settings_modules_excludes_non_toggleable_and_preserves_canonical_langs_and_und_hidden(
+    test_container: AsyncContainer,
+    recording_bot: RecordingBot,
+) -> None:
+    """Verify /settings Modules excludes translate/transcribe_auto, zh-CN/zh-TW casing, and hides und in summaries."""
+    await group_speech_target(test_container)
+    await provision_role(test_container, USER)
+    command = await test_container.get(SettingsCommand)
+    message = settings_message(chat_id=GROUP, actor_id=USER)
+
+    # 1. Modules menu excludes translate and transcribe_auto
+    modules_edit = await _send_group_callback(
+        test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.MODULES)
+    )
+    module_values = {
+        cb.value for cb in _unpack_callbacks(modules_edit.reply_markup) if cb.menu == SettingsMenu.MODULES and cb.value
+    }
+    assert "translate" not in module_values
+    assert "transcribe_auto" not in module_values
+    assert "transcribe" not in module_values
+
+    # Forged toggle for translate is rejected without changing state
+    forged_cb = await bind_settings_callback(
+        test_container,
+        message,
+        USER,
+        SettingsCallback(menu=SettingsMenu.MODULES, action=SettingsAction.TOGGLE, value="translate"),
+    )
+    await command.handle_callback(query_for(message, recording_bot, USER), forged_cb)
+    last_answer = next(c for c in reversed(recording_bot.session.calls) if isinstance(c, AnswerCallbackQuery))
+    assert last_answer.show_alert is True
+
+    # 2. zh-cn / zh-tw normalize to canonical zh-CN / zh-TW and und is hidden in summaries
+    await _send_group_callback(
+        test_container,
+        command,
+        recording_bot,
+        message,
+        USER,
+        SettingsCallback(menu=SettingsMenu.LANG_TARGET, action=SettingsAction.SELECT, value="zh-cn"),
+    )
+    await _send_group_callback(
+        test_container,
+        command,
+        recording_bot,
+        message,
+        USER,
+        SettingsCallback(menu=SettingsMenu.LANG_IGNORED, action=SettingsAction.TOGGLE, value="zh-tw"),
+    )
+    lang_service = await test_container.get(LanguageService)
+    _, updated_ignored = await lang_service.get_chat_settings(GROUP)
+    visible_count = len([code for code in updated_ignored if code != "und"])
+    assert "zh-TW" in updated_ignored
+    assert "und" in updated_ignored
+    lang_menu_edit = await _send_group_callback(
+        test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.LANG)
+    )
+    assert lang_menu_edit.reply_markup is not None
+    assert "🎯 Target: 🇨🇳 Chinese (Simplified)" in (lang_menu_edit.text or "") or any(
+        "Target: 🇨🇳 Chinese (Simplified)" in btn.text
+        for row in lang_menu_edit.reply_markup.inline_keyboard
+        for btn in row
+    )
+    assert any(
+        f"Ignored ({visible_count})" in btn.text for row in lang_menu_edit.reply_markup.inline_keyboard for btn in row
+    )
+    main_edit = await _send_group_callback(
+        test_container, command, recording_bot, message, USER, SettingsCallback(menu=SettingsMenu.MAIN)
+    )
+    assert "zh-CN" in (main_edit.text or "")
+    assert "zh-TW" in (main_edit.text or "")
+    assert "und" not in (main_edit.text or "")

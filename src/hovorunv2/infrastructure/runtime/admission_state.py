@@ -365,6 +365,7 @@ class AdmissionTransition:
     expected_envelope: JobEnvelope | None = None
     not_before: float = 0
     settlement: SettlementIntent | None = None
+    release_dedupe: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,6 +389,7 @@ class AdmissionChange:
     success: bool = False
     publication_state: EnqueueState = EnqueueState.EXISTS
     should_publish: bool = False
+    release_dedupe: bool = False
 
 
 def _finish(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:
@@ -408,7 +410,9 @@ def _finish(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionC
     terminal = record.model_copy(
         update={"state": TicketState.TERMINAL, "outcome": request.outcome, "terminal_notice_requested": True}
     )
-    return AdmissionChange(terminal, write=True, release=True, handoff=False, success=True)
+    return AdmissionChange(
+        terminal, write=True, release=True, handoff=False, success=True, release_dedupe=request.release_dedupe
+    )
 
 
 def _replay_finish(record: AdmissionRecord, request: AdmissionTransition) -> AdmissionChange:

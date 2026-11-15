@@ -29,6 +29,7 @@ from hovorunv2.application.jobs.feature_jobs import (
     PayloadState,
     SyncPayloadPort,
 )
+from hovorunv2.application.jobs.feature_recovery import TIMEOUT_NOTICE_TEXT, FeatureRecoveryService
 from hovorunv2.application.jobs.http_ports import (
     HTTPTransportError,
     SyncBrowserPort,
@@ -62,8 +63,10 @@ from hovorunv2.application.media.providers.tiktok import TikTokService
 from hovorunv2.application.media.providers.twitter import TwitterService
 from hovorunv2.application.media.providers.youtube import YoutubeService
 from hovorunv2.application.media.rendering import (
+    CAPTION_LIMIT,
     TELEGRAM_MESSAGE_LIMIT,
     build_caption,
+    html_utf16_length,
     split_html_message,
 )
 from hovorunv2.application.translation.explicit_input import ExplicitTranslationInput
@@ -109,7 +112,6 @@ logger = logging.getLogger(__name__)
 
 DELAYED_NOTICE_SECONDS = 20.0
 DELAYED_NOTICE_TEXT = "⏳ This request is taking longer than usual. It is still queued."
-TIMEOUT_NOTICE_TEXT = "⌛ This request timed out before it could finish. Please try again."
 EXTRACTION_FAILURE_NOTICE_TEXT = "⚠️ Media could not be extracted. The post may be unavailable or require signing in."
 LIMIT_WAIT_NOTICE_TEXT = "⏳ Request limits are currently reached. Your request is queued until capacity is available."
 LIMIT_FAILURE_NOTICE_TEXT = "⚠️ This request could not run within the current usage limits. Please try again later."
@@ -195,6 +197,19 @@ class FeatureJobRunner:
         self._catalog = catalog
         self._snapshots = snapshots
         self._lifecycle = WorkerLifecycleService(admission, budgets, ledger, clock)
+        self._recovery = FeatureRecoveryService(
+            admission,
+            payloads,
+            budgets,
+            policies,
+            ledger,
+            telegram,
+            feedback,
+            gate,
+            clock,
+            publisher,
+            lifecycle=self._lifecycle,
+        )
 
     def _init_clients(
         self,
@@ -303,7 +318,12 @@ class FeatureJobRunner:
             return self._execute_reserved(envelope, loaded, stage, token, now)
         except Exception:
             logger.exception("Claimed execution reconciliation deferred")
-            self._finish_ticket_safe(envelope.job_id, token, JobOutcome.FAILED)
+            self._finish_ticket_safe(
+                envelope.job_id,
+                token,
+                JobOutcome.FAILED,
+                release_dedupe=envelope.feature == CommandName.TRANSLATE,
+            )
             self._notify_application_failure(envelope)
             return JobOutcome.FAILED.value
 
@@ -383,28 +403,7 @@ class FeatureJobRunner:
 
     def _notify(self, envelope: JobEnvelope, kind: NoticeKind, text: str) -> None:
         """Send one deduplicated progress notice only to a still-authorized target."""
-        target = PermissionTarget(
-            envelope.target.kind.value,
-            envelope.target.entity_id,
-            envelope.target.generation,
-            envelope.target.telegram_id,
-        )
-        if not self._feedback.feedback_allowed(target):
-            return
-        if kind == NoticeKind.DELAYED and not self._gate.claim_delayed(
-            f"{envelope.target.kind.value}:{envelope.target.entity_id}", 60
-        ):
-            return
-        if not self._admission.claim_notice(envelope.job_id, kind):
-            return
-        try:
-            message_id = self._telegram.send_message(
-                envelope.target.telegram_id, text, reply_to_message_id=envelope.message_id
-            )
-            if message_id is None:
-                self._telegram.send_message(envelope.target.telegram_id, text)
-        except Exception:
-            logger.exception("Request progress feedback deferred")
+        self._recovery.notify(envelope, kind, text)
 
     def _handle_denied_reservation(self, envelope: JobEnvelope, token: str, reservation: ReservationDecision) -> str:
         logger.info("Worker execution budget was not granted: %s", reservation.state)
@@ -534,6 +533,7 @@ class FeatureJobRunner:
                 client.platform_label,
                 sender_label,
                 reply_markup=reply_markup,
+                message_thread_id=envelope.message_thread_id,
             )
         except TelegramDeliveryUncertainError:
             logger.exception("Telegram media delivery acceptance is uncertain; automatic resend stopped")
@@ -718,7 +718,8 @@ class FeatureJobRunner:
         if not (content_translated or quote_translated) or self._snapshots is None:
             return None
         rendered = build_caption(payload, sender_label, platform_label)
-        if len(rendered) <= TELEGRAM_MESSAGE_LIMIT:
+        limit = CAPTION_LIMIT if payload.media_items else TELEGRAM_MESSAGE_LIMIT
+        if html_utf16_length(rendered) <= limit:
             return None
         if prepared_content is not None:
             payload.content = prepared_content
@@ -827,7 +828,8 @@ class FeatureJobRunner:
             return JobOutcome.COMPLETE.value
 
         if req.snapshot_expires_at is not None and req.snapshot_expires_at <= self._clock.now():
-            self._complete_zero(envelope.job_id, token, JobOutcome.EXPIRED)
+            self._send_expired_notice(envelope, req)
+            self._complete_zero(envelope.job_id, token, JobOutcome.EXPIRED, release_dedupe=True)
             return JobOutcome.EXPIRED.value
         budget = self._translation_budget(envelope)
         cancellation = TranslationJobCancellation(self._admission, self._policies, envelope)
@@ -869,7 +871,7 @@ class FeatureJobRunner:
                 reply_to_message_id=req.reply_to_message_id,
                 message_thread_id=req.message_thread_id,
             )
-            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
+            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE, release_dedupe=True)
             return JobOutcome.COMPLETE.value
 
         label = self._render_catalog_text("translation-label", req.ui_locale, "Translated:")
@@ -898,27 +900,57 @@ class FeatureJobRunner:
                 reply_to_message_id=req.reply_to_message_id,
                 message_thread_id=req.message_thread_id,
             )
-        self._complete_zero(envelope.job_id, token, outcome)
+        self._complete_zero(envelope.job_id, token, outcome, release_dedupe=True)
         return outcome.value
+
+    def _send_expired_notice(self, envelope: JobEnvelope, req: ExplicitTranslationInput) -> None:
+        expired_notice = self._render_catalog_text(
+            "translation-expired",
+            req.ui_locale,
+            "This translation button has expired.",
+        )
+        self._telegram.send_message(
+            envelope.target.telegram_id,
+            html.escape(expired_notice),
+            reply_to_message_id=req.reply_to_message_id,
+            message_thread_id=req.message_thread_id,
+        )
+
+    def _begin_explicit_result_snapshot(
+        self, envelope: JobEnvelope, req: ExplicitTranslationInput, token: str
+    ) -> str | None:
+        expires_at = req.snapshot_expires_at or envelope.accepted_at + SNAPSHOT_TTL_SECONDS
+        try:
+            if self._snapshots is not None and not self._snapshots.begin_result(envelope.dedupe_key, expires_at):
+                self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE, release_dedupe=True)
+                return JobOutcome.COMPLETE.value
+        except ValueError:
+            self._send_expired_notice(envelope, req)
+            self._complete_zero(envelope.job_id, token, JobOutcome.EXPIRED, release_dedupe=True)
+            return JobOutcome.EXPIRED.value
+        return None
 
     def _send_explicit_result(
         self, envelope: JobEnvelope, req: ExplicitTranslationInput, rendered: str, token: str, now: float
     ) -> str:
         """Fence retained result delivery and settle only acknowledged sends."""
-        expires_at = req.snapshot_expires_at or envelope.accepted_at + SNAPSHOT_TTL_SECONDS
-        if self._snapshots is not None and not self._snapshots.begin_result(envelope.dedupe_key, expires_at):
-            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
-            return JobOutcome.COMPLETE.value
+        snapshot_outcome = self._begin_explicit_result_snapshot(envelope, req, token)
+        if snapshot_outcome is not None:
+            return snapshot_outcome
         if self._admission.begin_delivery(envelope.job_id, token, self._clock.now()) is None:
-            self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED)
+            self._complete_zero(envelope.job_id, token, JobOutcome.CANCELLED, release_dedupe=True)
             return JobOutcome.CANCELLED.value
         try:
             delivered = self._deliver_explicit_parts(envelope, req, rendered, now)
         except TelegramDeliveryUncertainError:
             return TicketState.DELIVERY_UNCERTAIN.value
+        except ValueError:
+            self._send_expired_notice(envelope, req)
+            self._complete_zero(envelope.job_id, token, JobOutcome.EXPIRED, release_dedupe=True)
+            return JobOutcome.EXPIRED.value
         if not delivered:
-            self._complete_zero(envelope.job_id, token, JobOutcome.COMPLETE)
-            return JobOutcome.COMPLETE.value
+            self._complete_zero(envelope.job_id, token, JobOutcome.EXPIRED, release_dedupe=True)
+            return JobOutcome.EXPIRED.value
         if self._snapshots is not None:
             self._snapshots.complete_result(envelope.dedupe_key)
         split_def = self._registry.require(CommandName.TRANSLATE)
@@ -948,17 +980,7 @@ class FeatureJobRunner:
             raise TranslationError(msg)
         expires_at = req.snapshot_expires_at if req.snapshot_expires_at is not None else now + SNAPSHOT_TTL_SECONDS
         if expires_at <= now:
-            expired_notice = self._render_catalog_text(
-                "translation-expired",
-                req.ui_locale,
-                "This translation button has expired.",
-            )
-            self._telegram.send_message(
-                envelope.target.telegram_id,
-                html.escape(expired_notice),
-                reply_to_message_id=req.reply_to_message_id,
-                message_thread_id=req.message_thread_id,
-            )
+            self._send_expired_notice(envelope, req)
             return False
         chain_token = self._snapshots.new_chain_token()
         continue_label = self._render_catalog_text("translation-btn-continue", req.ui_locale, "Continue translation")
@@ -995,83 +1017,34 @@ class FeatureJobRunner:
             self._snapshots.save_chain_with_token(chain_token, state)
         return True
 
-    def _complete_zero(self, job_id: str, token: str, outcome: JobOutcome) -> None:
+    def _complete_zero(self, job_id: str, token: str, outcome: JobOutcome, *, release_dedupe: bool = False) -> None:
         self._lifecycle.complete(
-            job_id, token, SettlementIntent(outcome=outcome, actual=(UnitAmount(UsageUnit.REQUESTS, 0),))
+            job_id,
+            token,
+            SettlementIntent(
+                outcome=outcome,
+                actual=(UnitAmount(UsageUnit.REQUESTS, 0),),
+                release_dedupe=release_dedupe,
+            ),
         )
 
     def recover(self) -> int:
-        """Run bounded recovery and clear durable work for disabled features.
+        """Run bounded single-pass recovery and clear durable work for disabled features.
 
         Returns:
             Number of recovered tickets plus cleared disabled-feature tickets.
         """
-        return (
-            self._notify_expired_notices() + self._lifecycle.recover(self._publisher) + self._clear_disabled_features()
-        )
+        return self._recovery.recover()
 
-    def _notify_expired_notices(self) -> int:
-        """Send terminal feedback for expired tickets before lifecycle reconciliation."""
-        now = self._clock.now()
-        notified = 0
-        for ticket in self._admission.recovery_page():
-            if ticket.state not in {TicketState.ACCEPTED, TicketState.ENQUEUED, TicketState.WAITING}:
-                continue
-            if now < ticket.envelope.deadline:
-                continue
-            self._notify(ticket.envelope, NoticeKind.TERMINAL, TIMEOUT_NOTICE_TEXT)
-            notified += 1
-        return notified
-
-    def _clear_disabled_features(self) -> int:
-        """Retry per-feature cleanup from the durable disabled state each sweep.
-
-        Returns:
-            Number of tickets cleared.
-        """
-        cleared = 0
-        for state in self._policies.disabled_features():
-            cleared += self._clear_feature(state.feature_key)
-        return cleared
-
-    def _clear_feature(self, feature: str) -> int:
-        """Cancel pending or running work, drop ciphertext, and release reservations idempotently.
-
-        Args:
-            feature: Feature whose tickets are cleared.
-
-        Returns:
-            Number of tickets cleared.
-        """
-        cleared = 0
-        for ticket in self._admission.pending_for_feature(feature):
-            job_id = ticket.envelope.job_id
-            if ticket.state in {
-                TicketState.ACCEPTED,
-                TicketState.ENQUEUED,
-                TicketState.WAITING,
-                TicketState.RUNNING,
-            }:
-                self._admission.cancel(job_id)
-            updated = self._admission.get(job_id) or ticket
-            terminal = updated.state == TicketState.TERMINAL or (
-                updated.state == TicketState.CANCELLING and self._clock.now() >= updated.envelope.deadline
-            )
-            if terminal:
-                self._payloads.delete(updated.envelope.payload_ref)
-                self._payloads.delete_candidate(job_id)
-                if updated.budget_reserved:
-                    self._budgets.finish(job_id, (), self._clock.now())
-            cleared += 1
-        return cleared
-
-    def _finish_ticket_safe(self, job_id: str, token: str, outcome: JobOutcome) -> None:
+    def _finish_ticket_safe(
+        self, job_id: str, token: str, outcome: JobOutcome, *, release_dedupe: bool = False
+    ) -> None:
         try:
             ticket = self._admission.get(job_id)
             if ticket is not None and ticket.budget_reserved:
-                self._complete_zero(job_id, token, outcome)
+                self._complete_zero(job_id, token, outcome, release_dedupe=release_dedupe)
                 return
-            self._admission.finish(job_id, outcome, token=token)
+            self._admission.finish(job_id, outcome, token=token, release_dedupe=release_dedupe)
         except Exception as error:
             logger.log(logging.ERROR, "Ticket completion deferred: %s", type(error).__name__)
 

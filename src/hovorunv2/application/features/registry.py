@@ -51,6 +51,7 @@ class FeatureDefinition:
     notification_category: str = "feature_status"
     provider: CommandName | None = None
     is_video: bool | None = None
+    is_toggleable: bool = True
 
     def __post_init__(self) -> None:
         """Reject incomplete definitions and implicit beta activation."""
@@ -182,6 +183,7 @@ FEATURE_REGISTRY = FeatureRegistry(
             triggers=frozenset({TriggerKind.DIRECT}),
             usage_policy=SPEECH_POLICY,
             queue_policy=SPEECH_POLICY,
+            is_toggleable=False,
         ),
         FeatureDefinition(
             key=CommandName.TRANSCRIBE_AUTO,
@@ -190,12 +192,14 @@ FEATURE_REGISTRY = FeatureRegistry(
             triggers=frozenset({TriggerKind.AUTOMATIC}),
             usage_policy=SPEECH_POLICY,
             queue_policy=SPEECH_POLICY,
+            is_toggleable=False,
         ),
         FeatureDefinition(
             key=CommandName.TRANSLATE,
             display_name="Explicit translation",
             default_enabled=True,
             triggers=frozenset({TriggerKind.DIRECT}),
+            is_toggleable=False,
         ),
     )
 )

@@ -191,14 +191,18 @@ class AccessMiddleware(BaseMiddleware):
             and not policy.is_toggleable
             and not policy.requires_admin
         )
-        if policy.requires_admin or (policy.requires_group_admin and not settings_entry):
+        setup_callback = (
+            command_name == CommandName.SETUP and isinstance(event, CallbackQuery) and not policy.requires_admin
+        )
+        if settings_entry or setup_callback:
+            # Settings entry and setup callbacks enforce target/group-only rules in the handler.
+            logger.info("Private chat access delegated (command: %s)", command_name or "none")
+            return await handler(event, data)
+
+        if policy.requires_admin or policy.requires_group_admin:
             logger.info("Private chat access denied: admin required (command: %s)", command_name or "none")
             await self._deny_private_chat(event)
             return None
-        if settings_entry:
-            # Only the real settings entry dispatches; the handler verifies every selected target.
-            logger.info("Private chat access granted for settings entry")
-            return await handler(event, data)
 
         if await self._access_service.is_trusted(user_id):
             logger.info("Private chat access granted for trusted user (command: %s)", command_name or "none")

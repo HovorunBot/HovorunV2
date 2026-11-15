@@ -142,6 +142,7 @@ class SyncTelegramDeliveryPort(Protocol):
         sender_label: str | None,
         *,
         reply_markup: str | None = None,
+        message_thread_id: int | None = None,
     ) -> tuple[int, ...]:
         """Deliver using canonical route facts and the transient decrypted sender label."""
         ...

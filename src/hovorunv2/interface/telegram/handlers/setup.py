@@ -1,19 +1,23 @@
 """Telegram callback and rendering handler for sequential guided chat configuration."""
 
+import contextlib
 from typing import ClassVar, Final
 
 from aiogram import Bot, Router
 from aiogram.enums import ChatType
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from hovorunv2.application.access.access_service import CommandPolicy
-from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES
-from hovorunv2.application.features.registry import COMMAND_PRESENTATION, FEATURE_REGISTRY
+from hovorunv2.application.configuration import AppSettings
+from hovorunv2.application.data.languages import LANGUAGES, POPULAR_LANGUAGES, resolve_language_code
+from hovorunv2.application.features.feature_access_service import FeatureAccessService
+from hovorunv2.application.features.registry import FEATURE_REGISTRY
 from hovorunv2.application.settings.setup_apply import SetupApplyOutcome, SetupApplyService
 from hovorunv2.application.settings.setup_drafts import (
+    _SPEECH_FEATURE_KEYS,
     SetupConfigurationValues,
     SetupDraft,
     SetupDraftService,
@@ -44,22 +48,6 @@ def _ordered_language_codes() -> tuple[str, ...]:
     return (*popular, *rest)
 
 
-def _toggleable_feature_keys() -> tuple[str, ...]:
-    keys: list[str] = []
-    for feature in FEATURE_REGISTRY.all():
-        try:
-            pres = COMMAND_PRESENTATION.get(CommandName(feature.key))
-        except ValueError:
-            pres = None
-        if pres is not None and not pres.toggleable:
-            continue
-        if feature.key not in keys:
-            keys.append(feature.key)
-    if CommandName.TRANSCRIBE.value not in keys:
-        keys.append(CommandName.TRANSCRIBE.value)
-    return tuple(keys)
-
-
 def _feature_display_label(key: str) -> str:
     feature = FEATURE_REGISTRY.get(key)
     if feature is not None:
@@ -73,8 +61,9 @@ def _format_summary_values(values: SetupConfigurationValues, locale: str) -> dic
     tgt_code = values.target_lang or "uk"
     tgt_lang = LANGUAGES.get(tgt_code)
     tgt_label = tgt_lang.display_name if tgt_lang else tgt_code
-    if values.ignored_langs:
-        ignored_label = ", ".join(LANGUAGES[c].display_name if c in LANGUAGES else c for c in values.ignored_langs)
+    visible_ignored = [c for c in (values.ignored_langs or ()) if c != "und"]
+    if visible_ignored:
+        ignored_label = ", ".join(LANGUAGES[c].display_name if c in LANGUAGES else c for c in visible_ignored)
     else:
         ignored_label = get_message("setup-none", locale)
     features_label = (
@@ -118,7 +107,7 @@ def _build_nav_row(
         nav.append(
             InlineKeyboardButton(
                 text=get_message("setup-btn-next", locale),
-                callback_data=SetupCallback(action=SetupAction.NEXT, session_id=session_id).pack(),
+                callback_data=SetupCallback(action=SetupAction.NEXT, session_id=session_id, value=step.value).pack(),
             )
         )
     nav.append(
@@ -136,6 +125,7 @@ def render_setup_screen(
     *,
     page: int = 0,
     notice_key: str | None = None,
+    available_features: tuple[str, ...] = (),
 ) -> tuple[str, InlineKeyboardMarkup]:
     """Render the current guided setup step text and keyboard in the target group's preview locale."""
     locale = draft.draft.ui_locale or group_locale or DEFAULT_LOCALE
@@ -181,7 +171,7 @@ def render_setup_screen(
             f"{get_message('setup-step-features-body', locale)}"
         )
         enabled = set(draft.draft.enabled_features)
-        for key in _toggleable_feature_keys():
+        for key in available_features:
             mark = "✅ " if key in enabled else "☐ "
             builder.button(
                 text=f"{mark}{_feature_display_label(key)}",
@@ -273,19 +263,48 @@ def _append_language_page(
 class SetupWizardHandler:
     """Coordinate group-bound sequential guided setup rendering and callback actions."""
 
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(
+        requires_admin=False,
+        requires_group_admin=False,
+        requires_approval=True,
+        is_toggleable=False,
+    )
+
     def __init__(
         self,
         draft_service: SetupDraftService,
         apply_service: SetupApplyService,
         i18n_manager: AudienceI18nManager,
+        settings: AppSettings,
+        feature_access: FeatureAccessService,
     ) -> None:
         self._draft_service = draft_service
         self._apply_service = apply_service
         self._i18n_manager = i18n_manager
+        self._settings = settings
+        self._feature_access = feature_access
+
+    async def _available_feature_keys(self, chat_id: int, actor_id: int) -> tuple[str, ...]:
+        keys: list[str] = []
+        for definition in self._feature_access.registry.all():
+            if not definition.is_toggleable and definition.key != CommandName.TRANSCRIBE:
+                continue
+            if definition.key == CommandName.TRANSCRIBE and not self._settings.speech_enabled:
+                continue
+            decision = await self._feature_access.evaluate(definition.key, chat_id, actor_id, configure=True)
+            if not decision.visible:
+                continue
+            if definition.key not in keys:
+                keys.append(definition.key)
+        return tuple(keys)
 
     def register(self, router: Router) -> None:
         """Register guided setup callbacks on the supplied router."""
-        router.callback_query.register(self.handle_callback, SetupCallback.filter())
+        router.callback_query.register(
+            self.handle_callback,
+            SetupCallback.filter(),
+            flags={"command_name": CommandName.SETUP, "policy": self.POLICY},
+        )
 
     async def _actor_locale(self, actor_id: int) -> str:
         return await self._i18n_manager.get_user_locale(actor_id) or DEFAULT_LOCALE
@@ -312,7 +331,7 @@ class SetupWizardHandler:
             target_chat_id=chat_id,
             transport_chat_id=chat_id,
             actor_id=actor_id,
-            message_id=0,
+            message_id=None,
             thread_id=thread_id,
             baseline=baseline,
             baseline_version=baseline_version,
@@ -320,15 +339,25 @@ class SetupWizardHandler:
         if started.outcome not in {SetupSessionOutcome.CREATED, SetupSessionOutcome.RESUMED} or started.draft is None:
             return started.outcome
 
+        previous_message_id = started.draft.message_id if started.outcome == SetupSessionOutcome.RESUMED else 0
         group_locale = await self._group_locale(chat_id)
-        text, markup = render_setup_screen(started.draft, group_locale)
-        sent = await bot.send_message(
-            chat_id=chat_id,
-            message_thread_id=thread_id,
-            text=text,
-            reply_markup=markup,
-            parse_mode="HTML",
+        available = (
+            await self._available_feature_keys(chat_id, actor_id) if started.draft.step == SetupStep.FEATURES else ()
         )
+        text, markup = render_setup_screen(started.draft, group_locale, available_features=available)
+        try:
+            sent = await bot.send_message(
+                chat_id=chat_id,
+                message_thread_id=thread_id,
+                text=text,
+                reply_markup=markup,
+                parse_mode="HTML",
+            )
+        except TelegramAPIError:
+            if started.outcome == SetupSessionOutcome.CREATED:
+                await self._draft_service.release_session(chat_id=chat_id, session_id=started.draft.session_id)
+            return SetupSessionOutcome.UNAVAILABLE
+
         bound = await self._draft_service.bind_message(
             session_id=started.draft.session_id,
             actor_id=actor_id,
@@ -337,6 +366,17 @@ class SetupWizardHandler:
         )
         if bound.outcome != SetupSessionOutcome.UPDATED:
             return bound.outcome
+        if (
+            started.outcome == SetupSessionOutcome.RESUMED
+            and previous_message_id > 0
+            and previous_message_id != sent.message_id
+        ):
+            with contextlib.suppress(TelegramAPIError):
+                await bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=previous_message_id,
+                    reply_markup=None,
+                )
         return started.outcome
 
     async def handle_callback(self, query: CallbackQuery, callback_data: SetupCallback) -> None:
@@ -380,6 +420,8 @@ class SetupWizardHandler:
             await query.answer(get_message("setup-in-progress", actor_locale), show_alert=True)
         elif outcome == SetupSessionOutcome.DENIED:
             await query.answer(get_message("setup-denied", actor_locale), show_alert=True)
+        elif outcome == SetupSessionOutcome.UNAVAILABLE:
+            await query.answer(get_message("setup-unavailable", actor_locale), show_alert=True)
         else:
             await query.answer()
 
@@ -391,103 +433,196 @@ class SetupWizardHandler:
         actor_id: int,
         actor_locale: str,
     ) -> None:
-        chat_id = msg.chat.id
-        thread_id = msg.message_thread_id
-        session_id = callback_data.session_id
         action = callback_data.action
-
-        if action == SetupAction.CANCEL:
-            res = await self._draft_service.cancel(
-                session_id=session_id,
-                transport_chat_id=chat_id,
-                actor_id=actor_id,
-                message_id=msg.message_id,
-                thread_id=thread_id,
-                callback_id=query.id,
-            )
-            await self._finalize_cancel(query, msg, res.outcome, actor_locale)
-            return
-
-        if action == SetupAction.APPLY:
-            await self._handle_apply(query, msg, session_id, actor_id, actor_locale)
-            return
-
-        if action == SetupAction.BACK:
-            res = await self._draft_service.go_back(
-                session_id=session_id,
-                transport_chat_id=chat_id,
-                actor_id=actor_id,
-                message_id=msg.message_id,
-                thread_id=thread_id,
-                callback_id=query.id,
-            )
-            await self._render_mutation_result(query, msg, res.outcome, res.draft, actor_locale)
+        if action in {SetupAction.CANCEL, SetupAction.APPLY, SetupAction.BACK}:
+            await self._handle_navigation_action(query, msg, callback_data, actor_id, actor_locale)
             return
 
         loaded = await self._draft_service.load_owned(
-            session_id=session_id,
-            transport_chat_id=chat_id,
+            session_id=callback_data.session_id,
+            transport_chat_id=msg.chat.id,
             actor_id=actor_id,
             message_id=msg.message_id,
-            thread_id=thread_id,
+            thread_id=msg.message_thread_id,
             callback_id=query.id,
         )
         if loaded.outcome != SetupSessionOutcome.UPDATED or loaded.draft is None:
             await self._answer_error(query, loaded.outcome, actor_locale)
             return
 
+        if not self._is_action_valid_for_step(loaded.draft, callback_data):
+            await query.answer(get_message("setup-duplicate", actor_locale))
+            return
+
         if action == SetupAction.PAGE:
             page = int(callback_data.value) if callback_data.value.isdigit() else 0
-            group_locale = await self._group_locale(chat_id)
+            group_locale = await self._group_locale(msg.chat.id)
             text, markup = render_setup_screen(loaded.draft, group_locale, page=page)
             await self._safe_edit(msg, text, markup)
             await query.answer()
             return
 
-        updated_values, advance = self._apply_draft_choice(loaded.draft.draft, callback_data)
-        res = await self._draft_service.update_and_advance(
+        await self._apply_and_render_step(query, msg, loaded.draft, callback_data, actor_id, actor_locale)
+
+    async def _handle_navigation_action(
+        self,
+        query: CallbackQuery,
+        msg: Message,
+        callback_data: SetupCallback,
+        actor_id: int,
+        actor_locale: str,
+    ) -> None:
+        action = callback_data.action
+        session_id = callback_data.session_id
+        if action == SetupAction.CANCEL:
+            res = await self._draft_service.cancel(
+                session_id=session_id,
+                transport_chat_id=msg.chat.id,
+                actor_id=actor_id,
+                message_id=msg.message_id,
+                thread_id=msg.message_thread_id,
+                callback_id=query.id,
+            )
+            await self._finalize_cancel(query, msg, res.outcome, actor_locale)
+            return
+        if action == SetupAction.APPLY:
+            await self._handle_apply(query, msg, session_id, actor_id, actor_locale)
+            return
+        res = await self._draft_service.go_back(
             session_id=session_id,
-            transport_chat_id=chat_id,
+            transport_chat_id=msg.chat.id,
             actor_id=actor_id,
             message_id=msg.message_id,
-            thread_id=thread_id,
+            thread_id=msg.message_thread_id,
+            callback_id=query.id,
+        )
+        await self._render_mutation_result(query, msg, res.outcome, res.draft, actor_locale, actor_id=actor_id)
+
+    async def _apply_and_render_step(
+        self,
+        query: CallbackQuery,
+        msg: Message,
+        draft: SetupDraft,
+        callback_data: SetupCallback,
+        actor_id: int,
+        actor_locale: str,
+    ) -> None:
+        available_features = (
+            await self._available_feature_keys(msg.chat.id, actor_id) if draft.step == SetupStep.FEATURES else ()
+        )
+        applied_choice = self._apply_draft_choice(draft.draft, callback_data, available_features)
+        if applied_choice is None:
+            await query.answer(get_message("setup-unavailable", actor_locale), show_alert=True)
+            return
+        updated_values, advance, page = applied_choice
+        res = await self._draft_service.update_and_advance(
+            session_id=callback_data.session_id,
+            transport_chat_id=msg.chat.id,
+            actor_id=actor_id,
+            message_id=msg.message_id,
+            thread_id=msg.message_thread_id,
             callback_id=query.id,
             draft_values=updated_values,
             advance=advance,
         )
-        await self._render_mutation_result(query, msg, res.outcome, res.draft, actor_locale)
+        await self._render_mutation_result(
+            query, msg, res.outcome, res.draft, actor_locale, actor_id=actor_id, page=page
+        )
+
+    def _is_action_valid_for_step(self, draft: SetupDraft, callback_data: SetupCallback) -> bool:
+        action = callback_data.action
+        step = draft.step
+        step_requirements = {
+            SetupAction.SELECT_UI: SetupStep.UI_LOCALE,
+            SetupAction.SELECT_TARGET: SetupStep.TARGET_LANG,
+            SetupAction.TOGGLE_IGNORED: SetupStep.IGNORED_LANGS,
+            SetupAction.CLEAR_IGNORED: SetupStep.IGNORED_LANGS,
+            SetupAction.TOGGLE_FEATURE: SetupStep.FEATURES,
+            SetupAction.SELECT_SPEECH: SetupStep.SPEECH,
+        }
+        if action in step_requirements:
+            if action == SetupAction.SELECT_SPEECH and not self._settings.speech_enabled:
+                return False
+            return step == step_requirements[action]
+        if action == SetupAction.PAGE:
+            return step in {SetupStep.TARGET_LANG, SetupStep.IGNORED_LANGS}
+        if action == SetupAction.NEXT:
+            if step == SetupStep.REVIEW:
+                return False
+            return not callback_data.value or callback_data.value == step.value
+        return True
 
     def _apply_draft_choice(
         self,
         current: SetupConfigurationValues,
         callback_data: SetupCallback,
-    ) -> tuple[SetupConfigurationValues, bool]:
+        available_features: tuple[str, ...],
+    ) -> tuple[SetupConfigurationValues, bool, int] | None:
         action = callback_data.action
         val = callback_data.value
-        result: tuple[SetupConfigurationValues, bool] = (current, True)
+        result: tuple[SetupConfigurationValues, bool, int] | None = (current, True, 0)
         if action == SetupAction.SELECT_UI:
-            result = (current.model_copy(update={"ui_locale": val}), True)
+            result = (current.model_copy(update={"ui_locale": val}), True, 0) if val in SUPPORTED_LOCALES else None
         elif action == SetupAction.SELECT_TARGET:
-            result = (current.model_copy(update={"target_lang": val}), True)
+            canonical = resolve_language_code(val)
+            result = (current.model_copy(update={"target_lang": canonical}), True, 0) if canonical is not None else None
         elif action == SetupAction.CLEAR_IGNORED:
-            result = (current.model_copy(update={"ignored_langs": ()}), False)
+            result = (current.model_copy(update={"ignored_langs": ()}), False, 0)
         elif action == SetupAction.TOGGLE_IGNORED:
-            existing = list(current.ignored_langs or ())
-            if val in existing:
-                existing.remove(val)
-            else:
-                existing.append(val)
-            result = (current.model_copy(update={"ignored_langs": tuple(existing)}), False)
+            result = self._toggle_ignored_choice(current, val)
         elif action == SetupAction.TOGGLE_FEATURE:
-            feats = list(current.enabled_features)
-            if val in feats:
-                feats.remove(val)
-            else:
-                feats.append(val)
-            result = (current.model_copy(update={"enabled_features": tuple(feats)}), False)
+            result = self._toggle_feature_choice(current, val, available_features)
         elif action == SetupAction.SELECT_SPEECH:
-            result = (current.model_copy(update={"speech_mode": SpeechMode(val)}), True)
+            result = self._select_speech_choice(current, val)
         return result
+
+    def _toggle_ignored_choice(
+        self,
+        current: SetupConfigurationValues,
+        val: str,
+    ) -> tuple[SetupConfigurationValues, bool, int] | None:
+        canonical = resolve_language_code(val)
+        if canonical is None:
+            return None
+        existing = [c for c in (current.ignored_langs or ()) if c != "und"]
+        if canonical in existing:
+            existing.remove(canonical)
+        else:
+            existing.append(canonical)
+        if existing:
+            existing.append("und")
+        codes = _ordered_language_codes()
+        page = codes.index(canonical) // _LANGS_PER_PAGE if canonical in codes else 0
+        return (current.model_copy(update={"ignored_langs": tuple(existing)}), False, page)
+
+    def _toggle_feature_choice(
+        self,
+        current: SetupConfigurationValues,
+        val: str,
+        available_features: tuple[str, ...],
+    ) -> tuple[SetupConfigurationValues, bool, int] | None:
+        if val not in available_features:
+            return None
+        feats = list(current.enabled_features)
+        if val in feats:
+            feats.remove(val)
+        else:
+            feats.append(val)
+        return (current.model_copy(update={"enabled_features": tuple(feats)}), False, 0)
+
+    def _select_speech_choice(
+        self,
+        current: SetupConfigurationValues,
+        val: str,
+    ) -> tuple[SetupConfigurationValues, bool, int] | None:
+        try:
+            mode = SpeechMode(val)
+        except ValueError:
+            return None
+        if mode == SpeechMode.OFF:
+            feats = tuple(feat for feat in current.enabled_features if feat not in _SPEECH_FEATURE_KEYS)
+            return (current.model_copy(update={"speech_mode": mode, "enabled_features": feats}), True, 0)
+        return (current.model_copy(update={"speech_mode": mode}), True, 0)
 
     async def _handle_apply(
         self,
@@ -507,6 +642,9 @@ class SetupWizardHandler:
         )
         if loaded.outcome != SetupSessionOutcome.UPDATED or loaded.draft is None:
             await self._answer_error(query, loaded.outcome, actor_locale)
+            return
+        if loaded.draft.step != SetupStep.REVIEW:
+            await query.answer(get_message("setup-duplicate", actor_locale))
             return
 
         result = await self._apply_service.commit_draft(loaded.draft, actor_id=actor_id)
@@ -556,12 +694,18 @@ class SetupWizardHandler:
         outcome: SetupSessionOutcome,
         draft: SetupDraft | None,
         actor_locale: str,
+        *,
+        actor_id: int,
+        page: int = 0,
     ) -> None:
         if outcome != SetupSessionOutcome.UPDATED or draft is None:
             await self._answer_error(query, outcome, actor_locale)
             return
         group_locale = await self._group_locale(msg.chat.id)
-        text, markup = render_setup_screen(draft, group_locale)
+        available = (
+            await self._available_feature_keys(msg.chat.id, actor_id) if draft.step == SetupStep.FEATURES else ()
+        )
+        text, markup = render_setup_screen(draft, group_locale, page=page, available_features=available)
         await self._safe_edit(msg, text, markup)
         await query.answer()
 
@@ -629,3 +773,5 @@ class SetupCommand(BaseCommand):
             await message.answer(get_message("setup-in-progress", actor_locale))
         elif outcome == SetupSessionOutcome.DENIED:
             await message.answer(get_message("setup-denied", actor_locale))
+        elif outcome == SetupSessionOutcome.UNAVAILABLE:
+            await message.answer(get_message("setup-unavailable", actor_locale))

@@ -4,11 +4,13 @@ import json
 import logging
 import uuid
 from contextlib import suppress
+from typing import ClassVar
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from hovorunv2.application.access.access_service import CommandPolicy
 from hovorunv2.application.configuration import AppSettings
 from hovorunv2.application.features.feature_access_service import FeatureAccessService
 from hovorunv2.application.features.registry import TriggerKind
@@ -60,6 +62,13 @@ def _parse_chain_callback(data: str) -> tuple[str, int] | None:
 
 class TranslateCallbackHandler:
     """Handle source-bound Translate and Continue translation inline button callbacks."""
+
+    POLICY: ClassVar[CommandPolicy] = CommandPolicy(
+        requires_admin=False,
+        requires_group_admin=False,
+        requires_approval=True,
+        is_toggleable=False,
+    )
 
     def __init__(
         self,
@@ -359,5 +368,5 @@ class TranslateCallbackHandler:
         router.callback_query.register(
             self.handle_callback,
             F.data.startswith("tr:"),
-            flags={"requires_group_admin": False},
+            flags={"command_name": CommandName.TRANSLATE, "policy": self.POLICY},
         )

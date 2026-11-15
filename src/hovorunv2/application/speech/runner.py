@@ -95,7 +95,7 @@ class SpeechJobRunner:
         except SpeechRecognitionError as error:
             return self._handle_failure(envelope, token, error.reason)
         except Exception as error:
-            return self._handle_unexpected(envelope, error)
+            return self._handle_unexpected(envelope, token, error)
         finally:
             self._source = None
 
@@ -104,7 +104,7 @@ class SpeechJobRunner:
             return JobOutcome.CANCELLED.value
         return ticket.outcome.value if ticket.outcome is not None else ticket.state.value
 
-    def _handle_unexpected(self, envelope: JobEnvelope, error: Exception) -> str:
+    def _handle_unexpected(self, envelope: JobEnvelope, token: str, error: Exception) -> str:
         logger.log(logging.ERROR, "Speech execution deferred: %s", type(error).__name__)
         for frame in extract_tb(error.__traceback__):
             logger.error("Speech failure frame: %s:%d", frame.name, frame.lineno)
@@ -114,6 +114,14 @@ class SpeechJobRunner:
             return JobOutcome.FAILED.value
         if current is not None and current.state == TicketState.DELIVERY_UNCERTAIN:
             return TicketState.DELIVERY_UNCERTAIN.value
+        if current is not None and current.state == TicketState.TERMINAL:
+            return current.outcome.value if current.outcome is not None else JobOutcome.FAILED.value
+        try:
+            self._finish_zero(envelope, token, JobOutcome.FAILED)
+        except Exception:
+            logger.exception("Speech unexpected-failure cleanup deferred")
+            return JobOutcome.FAILED.value
+        self._send_failure_notice(envelope, SpeechFailure.INFERENCE_FAILED)
         return JobOutcome.FAILED.value
 
     def _execute(self, envelope: JobEnvelope, token: str) -> str:
@@ -123,6 +131,8 @@ class SpeechJobRunner:
         usage = self._usage(envelope)
         decision = self._reserve(envelope, usage)
         if decision.state == ReservationState.UNAVAILABLE:
+            self._finish_zero(envelope, token, JobOutcome.FAILED)
+            self._send_failure_notice(envelope, SpeechFailure.INFERENCE_FAILED)
             return ReservationState.UNAVAILABLE.value
         if not decision.allowed:
             return self._defer_or_finish(envelope, token, decision.state, decision.next_eligible_at)
@@ -270,14 +280,18 @@ class SpeechJobRunner:
             SpeechFailure.DEADLINE_EXCEEDED: JobOutcome.EXPIRED,
         }.get(reason, JobOutcome.FAILED)
         self._finish_zero(envelope, token, outcome)
-        if reason == SpeechFailure.CANCELLED or self._source is None or not self._authorized(envelope):
-            return outcome.value
+        if reason != SpeechFailure.CANCELLED:
+            self._send_failure_notice(envelope, reason)
+        return outcome.value
+
+    def _send_failure_notice(self, envelope: JobEnvelope, reason: SpeechFailure) -> None:
+        if self._source is None or not self._authorized(envelope):
+            return
         if not self._admission.claim_notice(envelope.job_id, NoticeKind.FAILURE):
-            return outcome.value
+            return
         try:
             self._telegram.deliver_speech(
                 envelope.target.telegram_id, envelope.message_id, self._source.message_thread_id, reason
             )
         except TelegramRejectedError, TelegramDeliveryUncertainError:
-            return outcome.value  # The notice claim prevents retries after uncertain acceptance.
-        return outcome.value
+            return  # The notice claim prevents retries after uncertain acceptance.

@@ -232,8 +232,6 @@ class NativeTelegramAPI:
             data["reply_to_message_id"] = reply_to_message_id
         if message_thread_id is not None:
             data["message_thread_id"] = message_thread_id
-        if message_thread_id is not None:
-            data["message_thread_id"] = message_thread_id
         files: HTTPFiles = {"document": (filename, content, "text/plain; charset=utf-8")}
         try:
             result = self.call(TelegramMethod.SEND_DOCUMENT, data=data, files=files)

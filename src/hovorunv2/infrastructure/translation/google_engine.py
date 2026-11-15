@@ -42,7 +42,7 @@ GOOGLE_BACKOFF_MAX_SECONDS: Final = 8.0
 GOOGLE_MAX_JITTER_SECONDS: Final = 0.5
 GOOGLE_MAX_RESPONSE_BYTES: Final = 1024 * 1024
 GOOGLE_TRANSLATION_URL: Final = "https://translate.googleapis.com/translate_a/single"
-MIN_CURL_TIMEOUT_SECONDS: Final = 0.001
+MIN_CURL_TIMEOUT_SECONDS: Final = 0.05
 HTTP_STATUS_ENHANCE_YOUR_CALM: Final = 427
 GOOGLE_RETRYABLE_STATUSES: Final[frozenset[int]] = frozenset(
     {
@@ -346,12 +346,11 @@ class GoogleTranslationEngine(TranslationEnginePort):
             msg = "Google translation deadline exceeded"
             raise TranslationError(msg)
 
-        if remaining < MIN_CURL_TIMEOUT_SECONDS:
+        if remaining <= MIN_CURL_TIMEOUT_SECONDS:
             msg = "Google translation deadline exceeded"
             raise TranslationError(msg)
-        transfer_timeout = min(self._read_timeout_seconds, remaining)
-        connect_timeout = min(self._connect_timeout_seconds, transfer_timeout)
-        read_timeout = max(0.0, transfer_timeout - connect_timeout)
+        connect_timeout = min(self._connect_timeout_seconds, remaining)
+        read_timeout = min(self._read_timeout_seconds, remaining)
         collector = _GoogleResponseCollector(self._max_response_bytes, budget, self._clock, cancel_token)
         try:
             response = self._session.get(

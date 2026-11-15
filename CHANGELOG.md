@@ -2,6 +2,7 @@
 
 ### Fix
 
+- **v0.6.0**: stabilize setup, settings, translation, forum delivery, and job recovery
 - **telegram**: fix setup HTML rendering, speech mode locale key, and pipe metrics
 - **translation**: restore direct Google GTX endpoint with env override
 

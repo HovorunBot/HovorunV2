@@ -229,6 +229,7 @@ def test_google_engine_rejects_non_retryable_invalid_malformed_oversized_slow_an
             base_url=server.url("/m"),
             max_attempts=1,
             total_timeout_seconds=1.0,
+            connect_timeout_seconds=0.1,
             read_timeout_seconds=0.1,
         ) as engine,
         pytest.raises(TranslationError, match="transport failure"),
@@ -321,3 +322,33 @@ def test_google_gtx_json_endpoint_translates_segments() -> None:
     assert "sl=es" in path
     assert "tl=uk" in path
     assert "q=" in path
+
+
+def test_google_engine_computes_positive_read_timeout_when_remaining_below_connect_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When remaining <= connect_timeout_seconds, read_timeout must remain min(read_timeout, remaining)."""
+    captured_timeouts: list[object] = []
+
+    class _RecordingSession:
+        def get(self, url: str, **kwargs: object) -> object:
+            captured_timeouts.append(kwargs.get("timeout"))
+            msg = "stop after capturing timeout"
+            raise TranslationError(msg)
+
+        def close(self) -> None:
+            return None
+
+    clock = _SequenceClock(100.0)
+    with GoogleTranslationEngine(
+        base_url="https://synthetic.invalid/m",
+        connect_timeout_seconds=5.0,
+        read_timeout_seconds=10.0,
+        clock_fn=clock,
+    ) as engine:
+        monkeypatch.setattr(engine, "_session", _RecordingSession())
+        budget = TranslationBudget.from_timeout(3.0, now_monotonic=clock())
+        with pytest.raises(TranslationError, match="stop after capturing timeout"):
+            engine.translate_with_budget("Hello world", "en", "uk", budget=budget)
+
+    assert captured_timeouts == [(3.0, 3.0)]

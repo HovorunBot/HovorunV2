@@ -88,9 +88,10 @@ class RecordingDelivery:
         sender_label: str | None = None,
         *,
         reply_markup: str | None = None,
+        message_thread_id: int | None = None,
     ) -> tuple[int, ...]:
         """Capture one delivery payload."""
-        _ = reply_markup
+        _ = reply_markup, message_thread_id
         self.calls.append(payload)
         return (1,)
 

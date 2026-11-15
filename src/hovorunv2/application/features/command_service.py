@@ -55,6 +55,9 @@ class CommandService:
         presentation = COMMAND_PRESENTATION.get(command_name)
         if presentation is not None and not presentation.toggleable:
             return True
+        definition = FEATURE_REGISTRY.get(str(command_name))
+        if definition is not None and not definition.is_toggleable and definition.default_enabled:
+            return True
 
         allowed = set(await self._command_data_service.get_allowed_commands(chat_id))
         cmd_str = str(command_name)

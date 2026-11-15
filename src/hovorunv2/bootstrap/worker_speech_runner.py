@@ -60,9 +60,12 @@ def create_speech_runner(
         msg = "The speech helper must be installed before worker startup."
         raise FileNotFoundError(msg)
     engine = WhisperCppEngine(
-        model_store, helper_path=settings.speech_helper_path, idle_timeout_seconds=settings.speech_model_idle_timeout
+        model_store,
+        helper_path=settings.speech_helper_path,
+        idle_timeout_seconds=settings.speech_model_idle_timeout,
+        clock=clock,
     )
-    audio_http = resources.enter_context(SpeechAudioHTTPClient(settings.bot_token))
+    audio_http = resources.enter_context(SpeechAudioHTTPClient(settings.bot_token, clock=clock))
     speech_api = NativeTelegramAPI(audio_http, settings.bot_token)
     resources.callback(engine.close)
     return SpeechJobRunner(
@@ -71,7 +74,7 @@ def create_speech_runner(
         budgets=budgets,
         policies=db.policies,
         ledger=db.ledger,
-        telegram=NativeSpeechTransport(speech_api, audio_http),
+        telegram=NativeSpeechTransport(speech_api, audio_http, clock=clock),
         engine=engine,
         clock=clock,
     )

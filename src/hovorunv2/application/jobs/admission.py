@@ -87,6 +87,7 @@ class SettlementIntent(BaseModel):
     outcome: JobOutcome
     actual: tuple[UnitAmount, ...] = ()
     event: UsageEvent | None = None
+    release_dedupe: bool = False
 
     @model_validator(mode="after")
     def validate_consumption(self) -> SettlementIntent:
@@ -197,7 +198,9 @@ class AdmissionPort(Protocol):
         """Tombstone queued work atomically; running work transitions to cancelling."""
         ...
 
-    async def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
+    async def finish(
+        self, job_id: str, outcome: JobOutcome, *, token: str | None = None, release_dedupe: bool = False
+    ) -> AdmissionTicket | None:
         """Release once; missing/stale ownership returns None, conflicts or unavailable state raise."""
         ...
 
@@ -235,7 +238,9 @@ class SyncAdmissionPort(Protocol):
         """Hand off without a second ciphertext, new deadline or admission refund."""
         ...
 
-    def finish(self, job_id: str, outcome: JobOutcome, *, token: str | None = None) -> AdmissionTicket | None:
+    def finish(
+        self, job_id: str, outcome: JobOutcome, *, token: str | None = None, release_dedupe: bool = False
+    ) -> AdmissionTicket | None:
         """Settle once using the current owner's token and the shared terminal rules."""
         ...
 
