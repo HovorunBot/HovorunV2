@@ -792,7 +792,7 @@ wheels = [
 
 [[package]]
 name = "hovorunv2"
-version = "0.6.0.3"
+version = "0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "casbin" },
