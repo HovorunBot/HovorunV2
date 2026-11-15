@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **speech**: defer speech model readiness check until transcription
+
 ## v0.6.2 (2026-11-15)
 
 ### Fix

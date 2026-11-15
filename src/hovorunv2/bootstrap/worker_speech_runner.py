@@ -56,7 +56,6 @@ def create_speech_runner(
     """
     model_http = resources.enter_context(SpeechModelHTTPClient(total_timeout=MODEL_DOWNLOAD_SECONDS))
     model_store = SpeechModelStore(settings.speech_model_dir, model_http)
-    model_store.require_ready()
     engine = CTranslate2WhisperEngine(
         model_store,
         idle_timeout_seconds=settings.speech_model_idle_timeout,

@@ -316,3 +316,23 @@ async def test_consolidated_worker_role_composes_speech_when_enabled(test_contai
         assert context.speech_runner is not None
     finally:
         context.close()
+
+
+async def test_consolidated_worker_role_opens_when_speech_model_unprepared(
+    test_container: AsyncContainer, tmp_path: Path
+) -> None:
+    """Consolidated worker startup must not crash operations or media when speech model is unprepared."""
+    settings = (await test_container.get(Settings)).model_copy(
+        update={
+            "speech_enabled": True,
+            "speech_model_dir": tmp_path,
+        }
+    )
+    context = WorkerChildContext(settings=settings, role=WorkerRole.ALL)
+    try:
+        context.open()
+        assert context.runner is not None
+        assert context.operations is not None
+        assert context.speech_runner is not None
+    finally:
+        context.close()
