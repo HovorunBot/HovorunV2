@@ -49,6 +49,7 @@ worker-ops = [
     "requests",
 ]
 worker-media = [
+    "beautifulsoup4",
     "ctranslate2",
     "curl-cffi",
     "fluent-runtime",

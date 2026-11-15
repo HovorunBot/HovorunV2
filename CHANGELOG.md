@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- fix missing bs4 dependency
+
 ## v0.6.1 (2026-11-15)
 
 ### Fix
